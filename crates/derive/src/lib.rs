@@ -49,9 +49,11 @@
 //!
 //! ## `derive(DdsType)` on an enum
 //!
-//! A field-less enum is an IDL `enum`: `name`, `bit_bound = N`; on a
-//! variant `name` and `value = N` (or an integer discriminant), the IDL
-//! `@value`. It is also a union discriminator type.
+//! A field-less enum is an IDL `enum`: `name`, `extensibility = "final" |
+//! "appendable"` (DDS-XTypes 1.3 §7.2.3, Table 12; unwritten, the IDL
+//! default), `bit_bound = N`; on a variant `name` and `value = N` (or an
+//! integer discriminant), the IDL `@value`. It is also a union
+//! discriminator type.
 //!
 //! An enum whose variants carry data is an IDL `union`:
 //!
@@ -80,7 +82,11 @@
 //! `default` the label is one past the highest label before it, the first
 //! `0`; `default`; `id = N`, `hashid`, `name`, `bound`; `no_member` for a
 //! variant `V(D)` that holds a discriminator no case takes (the member is
-//! absent, IDL 4.2 §7.4.1.4.4.4). A variant `V(T)` holds the branch member;
+//! absent, IDL 4.2 §7.4.1.4.4.4). A unit variant with one label,
+//! `#[dds(case = label)] V`, is that discriminator value without a member:
+//! it goes out alone and declares no branch, beside or instead of the
+//! `no_member` variant, which then holds the values no variant names; a
+//! `default` case leaves no such value and excludes both. A variant `V(T)` holds the branch member;
 //! a variant of a case with several labels, and of the `default:` case, is
 //! `V(D, T)` and holds the discriminator it was read with, so it goes out
 //! again under the same label. A hand-written codec names the branch by a
@@ -1341,6 +1347,9 @@ fn union(
     let mut field_arms = Vec::new();
     let mut branch_names = Vec::new();
     let mut no_member_arm = None;
+    // Variants without a member, each one discriminator value:
+    // `#[dds(case = label)] V`.
+    let mut unit_variants: Vec<(syn::Ident, syn::Expr)> = Vec::new();
     let mut seen_names: Vec<String> = Vec::new();
     let mut defaults = 0usize;
     // XTypes 1.3 Table 9 for a union: the discriminator's default, and the
@@ -1359,12 +1368,55 @@ fn union(
         }
         let fields: Vec<&syn::Field> = match &variant.fields {
             Fields::Unnamed(fields) => fields.unnamed.iter().collect(),
+            // A discriminator value that selects no member (IDL 4.2
+            // §7.4.1.4.4.4): it goes out alone, and the union's type
+            // declares no branch for it.
             Fields::Unit => {
-                return Err(syn::Error::new(
-                    variant.span(),
-                    "an IDL union branch has a member: `V(T)`, or `V(D, T)` with the \
-                     discriminator; a discriminator without a member is `#[dds(no_member)] V(D)`",
-                ));
+                let labels = va.labels.clone().unwrap_or_default();
+                let extra = va.default
+                    || va.no_member
+                    || va.id.is_some()
+                    || va.hashid.is_some()
+                    || va.name.is_some()
+                    || va.bound.is_some();
+                let [label] = labels.as_slice() else {
+                    return Err(syn::Error::new(
+                        variant.span(),
+                        "a variant without a member is one discriminator value: \
+                         `#[dds(case = label)] V`; for several, `#[dds(no_member)] V(D)`; a branch \
+                         with a member is `V(T)` or `V(D, T)`",
+                    ));
+                };
+                if extra {
+                    return Err(syn::Error::new(
+                        variant.span(),
+                        "a variant without a member takes `case` only: it declares no branch",
+                    ));
+                }
+                unit_variants.push((variant_ident.clone(), label.clone()));
+                serialize_arms.push(quote! {
+                    Self::#variant_ident => {
+                        let __d: #discriminator = #label;
+                        __union.no_member(&__d)
+                    }
+                });
+                field_arms.push(quote! {
+                    Self::#variant_ident => {
+                        if __head == "#discriminator" {
+                            let __d: #discriminator = #label;
+                            return match __rest {
+                                ::core::option::Option::None => #codec::DdsMember::field_value(&__d, ::core::option::Option::None),
+                                ::core::option::Option::Some(_) => ::core::option::Option::None,
+                            };
+                        }
+                    }
+                });
+                default_by_label.push(quote! {
+                    if <#discriminator as #codec::Discriminator>::label(&(#label)) == __label {
+                        return ::core::result::Result::Ok(Self::#variant_ident);
+                    }
+                });
+                continue;
             }
             Fields::Named(fields) => {
                 return Err(syn::Error::new(
@@ -1385,9 +1437,6 @@ fn union(
                 return Err(syn::Error::new(variant.span(), "one `no_member` variant"));
             }
             no_member_arm = Some(variant_ident.clone());
-            serialize_arms.push(quote! {
-                Self::#variant_ident(__d) => __union.no_member(__d),
-            });
             field_arms.push(quote! {
                 Self::#variant_ident(__d) => {
                     if __head == "#discriminator" {
@@ -1594,6 +1643,37 @@ fn union(
             "one `default` case, as IDL 4.2 §7.4.1.4.4.4 allows",
         ));
     }
+    // The `no_member` variant holds the values no unit variant names: one
+    // that a unit variant names would be read back as that variant.
+    if let Some(variant_ident) = &no_member_arm {
+        let unit_labels: Vec<Tokens> = unit_variants
+            .iter()
+            .map(|(_, label)| quote!(<#discriminator as #codec::Discriminator>::label(&(#label))))
+            .collect();
+        serialize_arms.push(if unit_labels.is_empty() {
+            quote!(Self::#variant_ident(__d) => __union.no_member(__d),)
+        } else {
+            quote! {
+            Self::#variant_ident(__d) => {
+                let __label = <#discriminator as #codec::Discriminator>::label(__d);
+                if [#(#unit_labels),*].contains(&__label) {
+                    return ::core::result::Result::Err(::zerodds_codec::WireError::refused(
+                        0,
+                        "the variant without a member that names this discriminator",
+                    ));
+                }
+                __union.no_member(__d)
+            }
+            }
+        });
+    }
+    if defaults == 1 && !unit_variants.is_empty() {
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "a variant without a member and a `default` case exclude each other: the \
+             `default:` case takes every label no other case takes (IDL 4.2 §7.4.1.4.4.4)",
+        ));
+    }
     if branch_types.is_empty() {
         return Err(syn::Error::new(
             input.ident.span(),
@@ -1619,14 +1699,40 @@ fn union(
         #codec::TypeDesc::union::<#members_list, #kind_ty, #discriminator>(#template, __CASES)
             #modifiers #keyed #generic
     };
-    let no_member_read = match &no_member_arm {
-        Some(variant_ident) => quote! {
+    // A discriminator that selects no member: the variant of its value,
+    // else the `no_member` variant, else refused.
+    let unit_reads: Vec<Tokens> = unit_variants
+        .iter()
+        .map(|(variant_ident, label)| {
+            quote! {
+                if __label == <#discriminator as #codec::Discriminator>::label(&(#label)) {
+                    return ::core::result::Result::Ok(__finish.with(Self::#variant_ident));
+                }
+            }
+        })
+        .collect();
+    let no_member_read = match (&no_member_arm, unit_variants.is_empty()) {
+        (Some(variant_ident), _) => quote! {
             ::core::option::Option::None => {
                 let (__d, __finish) = __input.no_member()?;
+                let __label = <#discriminator as #codec::Discriminator>::label(&__d);
+                #(#unit_reads)*
                 ::core::result::Result::Ok(__finish.with(Self::#variant_ident(__d)))
             }
         },
-        None => quote! {
+        (None, false) => quote! {
+            ::core::option::Option::None => {
+                let (__d, __finish) = __input.no_member()?;
+                let __label = <#discriminator as #codec::Discriminator>::label(&__d);
+                #(#unit_reads)*
+                let _ = __finish;
+                ::core::result::Result::Err(::zerodds_codec::WireError::refused(
+                    0,
+                    "a discriminator without a member that the Rust type holds",
+                ))
+            }
+        },
+        (None, true) => quote! {
             ::core::option::Option::None => ::core::result::Result::Err(
                 ::zerodds_codec::WireError::refused(
                     0,
@@ -1750,7 +1856,6 @@ fn enumeration(
     data: &syn::DataEnum,
 ) -> syn::Result<Tokens> {
     for (what, set) in [
-        ("extensibility", attrs.extensibility.is_some()),
         ("autoid", attrs.autoid.is_some()),
         ("nested", attrs.nested),
         ("codec", attrs.manual),
@@ -1759,11 +1864,27 @@ fn enumeration(
             return Err(syn::Error::new(
                 input.ident.span(),
                 format!(
-                    "`{what}` is for a struct or a union; an enum takes `name` and `bit_bound`"
+                    "`{what}` is for a struct or a union; an enum takes `name`, `extensibility` \
+                     and `bit_bound`"
                 ),
             ));
         }
     }
+    // DDS-XTypes 1.3 §7.2.3, Table 12: "Enumerated Types: These types may
+    // be final or appendable on a type-by-type basis." Unwritten, the IDL
+    // default; the TypeObject carries the kind in `enum_flags`, and Table 18
+    // assigns enumerations of one kind only.
+    let enum_extensibility = match attrs.extensibility.as_ref() {
+        None => None,
+        Some((kind, _)) if kind == "final" => Some(quote!(Final)),
+        Some((kind, _)) if kind == "appendable" => Some(quote!(Appendable)),
+        Some((_, span)) => {
+            return Err(syn::Error::new(
+                *span,
+                "an enum is \"final\" or \"appendable\" (DDS-XTypes 1.3 §7.2.3, Table 12)",
+            ));
+        }
+    };
     if data.variants.is_empty() {
         return Err(syn::Error::new(
             input.ident.span(),
@@ -1844,6 +1965,9 @@ fn enumeration(
             ));
         }
         layout = quote!(#layout.bit_bound(#bits));
+    }
+    if let Some(kind) = enum_extensibility {
+        layout = quote!(#layout.enum_extensibility(#codec::Extensibility::#kind));
     }
     Ok(quote! {
         const _: () = {

@@ -292,8 +292,13 @@ fn declaration(name: &str, desc: &TypeDesc) -> Result<String, IdlError> {
         TypeKind::Enum {
             enumerators,
             bit_bound,
+            extensibility,
         } => {
             let mut out = String::new();
+            if let Some(kind) = extensibility {
+                out.push_str(kind.annotation());
+                out.push(' ');
+            }
             if let Some(bits) = bit_bound {
                 let _ = write!(out, "@bit_bound({bits}) ");
             }

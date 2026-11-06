@@ -326,6 +326,10 @@ pub enum TypeKind {
         enumerators: &'static [EnumeratorDesc],
         /// `@bit_bound`, when written.
         bit_bound: Option<u16>,
+        /// `@final` or `@appendable`, when written (DDS-XTypes 1.3
+        /// §7.2.3, Table 12: "Enumerated Types: These types may be final
+        /// or appendable"); unwritten, the IDL default.
+        extensibility: Option<Extensibility>,
     },
     /// A `union`.
     Union {
@@ -397,6 +401,7 @@ impl TypeDesc {
             kind: TypeKind::Enum {
                 enumerators,
                 bit_bound: None,
+                extensibility: None,
             },
         }
     }
@@ -505,6 +510,21 @@ impl TypeDesc {
         } = self.kind
         {
             *slot = Some(bits);
+        }
+        self
+    }
+
+    /// `@final` or `@appendable` on an enumeration (DDS-XTypes 1.3
+    /// §7.2.3, Table 12). `@mutable` is no extensibility of an enumeration;
+    /// the derive refuses it before it gets here.
+    #[must_use]
+    pub const fn enum_extensibility(mut self, kind: Extensibility) -> Self {
+        if let TypeKind::Enum {
+            extensibility: ref mut slot,
+            ..
+        } = self.kind
+        {
+            *slot = Some(kind);
         }
         self
     }

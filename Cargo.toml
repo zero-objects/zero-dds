@@ -427,6 +427,7 @@ exclude = [
     "examples/tutorials/dds-chat/integrations/websocket",
     "interop/cyclone-xtypes-27/reader",
     "interop/typelookup-probe",
+    "tests/interop/ci/hdds",
     "tests/issue32",
     "tests/perf/dds-roundtrip-bench/hdds",
     "tools/wireprobe/hdds-shim",

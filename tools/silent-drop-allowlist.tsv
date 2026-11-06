@@ -1998,6 +1998,7 @@
 1	unwrap_or	crates/codec/src/model.rs	zerodds_types::from_ast::dependency_type_objects(&ast, root).unwrap_or_default()	the dependency objects of a type whose own object survived, as zerodds-build's identity_items: a closure that does not build registers nothing beside the object, and TypeLookup answers what it has
 1	unwrap_or	crates/derive/src/lib.rs	.unwrap_or_else(|| syn::parse_quote!(i32));	a union without `discriminator`: the default discriminator type, i32 (IDL long), documented
 1	unwrap_or	crates/derive/src/lib.rs	let explicit = va.labels.clone().unwrap_or_default();	a variant without `case`: no written labels, so its label is counted or it is the default case
+1	unwrap_or	crates/derive/src/lib.rs	let labels = va.labels.clone().unwrap_or_default();	union(): a unit variant without `case` has no label, and the let-else after it refuses the variant at compile time with the forms to write
 1	unwrap_or	crates/float128/src/convert.rs	rounded: i64::try_from(inexact.rounded).unwrap_or(if inexact.rounded < 0 {	this is inside the Err arm and the fallback is the correctly signed saturation, reported as Inexact rather than returned as a value
 1	unwrap_or	crates/float128/src/decimal.rs	let digits = i32::try_from(digits).unwrap_or(i32::MAX);	the digit-count bound above; unreachable and saturating in the direction that shows
 1	unwrap_or	crates/float128/src/decimal.rs	let scale = i32::try_from(scale).unwrap_or(i32::MAX);	the scale bound above; likewise

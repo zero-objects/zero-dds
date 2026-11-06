@@ -1916,6 +1916,13 @@ module eq {
     @final struct Grid_3 { long cells[3]; };
     @final struct Borrowed { string text; sequence<octet> data; string note; sequence<octet> blob;
         @key string name; };
+    @final struct Vec3F32 { float x; float y; float z; };
+    @final enum MessagePayloadDiscriminator { @value(0) MESSAGE_PAYLOAD_DISCRIMINATOR_POSITION,
+        MESSAGE_PAYLOAD_DISCRIMINATOR_VELOCITY, MESSAGE_PAYLOAD_DISCRIMINATOR_HEARTBEAT,
+        MESSAGE_PAYLOAD_DISCRIMINATOR_ACKNOWLEDGEMENT };
+    @final union MessagePayload switch (eq::MessagePayloadDiscriminator) {
+        case MESSAGE_PAYLOAD_DISCRIMINATOR_POSITION: eq::Vec3F32 position;
+        case MESSAGE_PAYLOAD_DISCRIMINATOR_VELOCITY: eq::Vec3F32 velocity; };
 };
 ";
 
@@ -1951,6 +1958,51 @@ pub mod derived {
         #[dds(name = "RED")] Red,
         #[dds(name = "GREEN")] Green,
         #[dds(name = "BLUE")] Blue,
+    }
+
+    // GitHub #33: a `@final` enumeration as a discriminator, two of whose
+    // values select no member; once as unit variants, once as `no_member`.
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Vec3F32", extensibility = "final")]
+    pub struct Vec3F32 {
+        pub x: f32,
+        pub y: f32,
+        pub z: f32,
+    }
+
+    #[derive(DdsType, Debug, Clone, Copy, PartialEq)]
+    #[dds(name = "eq::MessagePayloadDiscriminator", extensibility = "final")]
+    pub enum MessagePayloadDiscriminator {
+        #[dds(name = "MESSAGE_PAYLOAD_DISCRIMINATOR_POSITION", value = 0)] Position,
+        #[dds(name = "MESSAGE_PAYLOAD_DISCRIMINATOR_VELOCITY")] Velocity,
+        #[dds(name = "MESSAGE_PAYLOAD_DISCRIMINATOR_HEARTBEAT")] Heartbeat,
+        #[dds(name = "MESSAGE_PAYLOAD_DISCRIMINATOR_ACKNOWLEDGEMENT")] Acknowledgement,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::MessagePayload", extensibility = "final",
+        discriminator = "MessagePayloadDiscriminator")]
+    pub enum MessagePayload {
+        #[dds(case = MessagePayloadDiscriminator::Position, name = "position")]
+        Position(Vec3F32),
+        #[dds(case = MessagePayloadDiscriminator::Velocity, name = "velocity")]
+        Velocity(Vec3F32),
+        #[dds(case = MessagePayloadDiscriminator::Heartbeat)]
+        Heartbeat,
+        #[dds(case = MessagePayloadDiscriminator::Acknowledgement)]
+        Acknowledgement,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::MessagePayload", extensibility = "final",
+        discriminator = "MessagePayloadDiscriminator")]
+    pub enum MessagePayloadSignal {
+        #[dds(case = MessagePayloadDiscriminator::Position, name = "position")]
+        Position(Vec3F32),
+        #[dds(case = MessagePayloadDiscriminator::Velocity, name = "velocity")]
+        Velocity(Vec3F32),
+        #[dds(no_member)]
+        Signal(MessagePayloadDiscriminator),
     }
 
     #[derive(DdsType, Debug, Clone, Copy, PartialEq)]
@@ -2453,6 +2505,40 @@ fn xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type() {
             );
             one_type(&derived::Flex::X(4), &eq::Flex::X(4));
             one_type(&derived::Flex::Y("why".into()), &eq::Flex::Y("why".into()));
+        }
+
+        /// GitHub #33: a union switched by a `@final` enumeration, two of
+        /// whose values select no member — as unit variants with `case`,
+        /// and as one `no_member` variant — is the type of its IDL.
+        #[test]
+        fn issue_33_a_union_whose_discriminator_values_select_no_member() {
+            let v = |x: f32| (
+                derived::Vec3F32 { x, y: 2.0, z: -3.5 },
+                eq::Vec3F32 { x, y: 2.0, z: -3.5 },
+            );
+            let (dv, gv) = v(1.0);
+            one_type(&derived::MessagePayload::Position(dv.clone()), &eq::MessagePayload::Position(gv.clone()));
+            one_type(&derived::MessagePayloadSignal::Position(dv), &eq::MessagePayload::Position(gv));
+            let (dv, gv) = v(-0.25);
+            one_type(&derived::MessagePayload::Velocity(dv), &eq::MessagePayload::Velocity(gv));
+            use eq::MessagePayloadDiscriminator as G;
+            use derived::MessagePayloadDiscriminator as D;
+            one_type(
+                &derived::MessagePayload::Heartbeat,
+                &eq::MessagePayload::_NoMember(G::MESSAGE_PAYLOAD_DISCRIMINATOR_HEARTBEAT),
+            );
+            one_type(
+                &derived::MessagePayload::Acknowledgement,
+                &eq::MessagePayload::_NoMember(G::MESSAGE_PAYLOAD_DISCRIMINATOR_ACKNOWLEDGEMENT),
+            );
+            one_type(
+                &derived::MessagePayloadSignal::Signal(D::Heartbeat),
+                &eq::MessagePayload::_NoMember(G::MESSAGE_PAYLOAD_DISCRIMINATOR_HEARTBEAT),
+            );
+            one_type(
+                &derived::MessagePayloadSignal::Signal(D::Acknowledgement),
+                &eq::MessagePayload::_NoMember(G::MESSAGE_PAYLOAD_DISCRIMINATOR_ACKNOWLEDGEMENT),
+            );
         }
 
         #[test]

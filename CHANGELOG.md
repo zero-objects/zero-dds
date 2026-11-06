@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **`derive(DdsType)`: a `@final` or `@appendable` enumeration, and a
+  discriminator value without a member as a unit variant** (GitHub #33;
+  `zerodds-derive`, `zerodds-codec`, `zerodds-wire` `TypeDesc::
+  enum_extensibility`; DDS-XTypes 1.3 §7.2.3 Table 12, IDL 4.2
+  §7.4.1.4.4.4). A field-less enum takes `extensibility = "final"` or
+  `"appendable"` and exports it; the TypeObject carries it, and Table 18
+  assigns enumerations of one kind only. In a union, `#[dds(case = label)]
+  V` is that discriminator value without a member: it goes out alone,
+  reads back as `V` and declares no branch; the `no_member` variant beside
+  it takes the values no variant names and refuses one a variant names.
+  Tests: `issue_33_a_union_whose_discriminator_values_select_no_member`
+  (in `xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type`:
+  the reporter's `@final enum` and union, as unit variants and as
+  `no_member`, give the TypeIdentifier, TypeObject, dependencies and the
+  octets of all four encodings of the IDL route), and two tests in
+  `crates/codec/tests/derive_union_generic_borrowed.rs`.
 - **A loaned take, and a type whose fields borrow through a DataReader and
   a DataWriter** (GitHub #33; `zerodds-dcps` `DataReader::take_loan`,
   `return_loan_of`, `loan::Loan`, `WriteAs`, `DataWriter::write_as`,

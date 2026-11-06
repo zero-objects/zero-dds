@@ -1,0 +1,25 @@
+# `hdds_robot`, the HDDS client of the #28 interop gate
+# (tests/interop/ci/run_vendor.sh, vendor `hdds`). HDDS and its IDL code
+# generator are pinned as in tests/perf/dds-roundtrip-bench/hdds; HDDS is
+# dual licensed Apache-2.0 OR MIT (LICENSE of git.hdds.io/hdds/hdds at
+# v1.1.5), hddsgen likewise. build.sh builds this manifest for the release
+# and a copy of it, with the HDDS dependency moved to the pinned `master`,
+# for the master cells. Not a member of the root workspace.
+[package]
+name = "hdds_robot"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "hdds_robot"
+path = "src/main.rs"
+
+[dependencies]
+hdds = { git = "https://git.hdds.io/hdds/hdds.git", tag = "v1.1.5" }
+
+[build-dependencies]
+hddsgen = { git = "https://git.hdds.io/hdds/hdds_gen.git", rev = "14fbe7d7253557c3b197e04b6c7bfc359c6b54cd" }

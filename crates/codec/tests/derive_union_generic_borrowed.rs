@@ -327,3 +327,131 @@ fn xtypes_7_6_8_the_key_holder_of_a_union_keyed_by_its_discriminator() {
         Command::Reason(String::new())
     );
 }
+
+#[derive(DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "u::Vec3F32", extensibility = "final")]
+struct Vec3F32 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(DdsType, Debug, Clone, Copy, PartialEq)]
+#[dds(name = "u::Signal", extensibility = "final")]
+enum Signal {
+    #[dds(name = "POSITION")]
+    Position,
+    #[dds(name = "VELOCITY")]
+    Velocity,
+    #[dds(name = "HEARTBEAT")]
+    Heartbeat,
+    #[dds(name = "ACKNOWLEDGEMENT")]
+    Acknowledgement,
+}
+
+#[derive(DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "u::Payload", extensibility = "final", discriminator = "Signal")]
+enum Payload {
+    #[dds(case = Signal::Position, name = "position")]
+    Position(Vec3F32),
+    #[dds(case = Signal::Velocity, name = "velocity")]
+    Velocity(Vec3F32),
+    #[dds(case = Signal::Heartbeat)]
+    Heartbeat,
+    #[dds(case = Signal::Acknowledgement)]
+    Acknowledgement,
+}
+
+#[derive(DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "u::Payload", extensibility = "final", discriminator = "Signal")]
+enum PayloadOther {
+    #[dds(case = Signal::Position, name = "position")]
+    Position(Vec3F32),
+    #[dds(case = Signal::Velocity, name = "velocity")]
+    Velocity(Vec3F32),
+    #[dds(case = Signal::Heartbeat)]
+    Heartbeat,
+    #[dds(no_member)]
+    Other(Signal),
+}
+
+/// DDS-XTypes 1.3 §7.2.3, Table 12: an enumeration is `@final` or
+/// `@appendable`, and the derive writes the kind it is given into the IDL
+/// it exports. IDL 4.2 §7.4.1.4.4.4: a discriminator value without a member
+/// declares no branch.
+#[test]
+fn xtypes_7_2_3_issue_33_a_final_enum_and_values_without_a_member_in_the_idl() {
+    let idl = Payload::idl().expect("the IDL");
+    assert_eq!(
+        idl,
+        "module u { @final enum Signal { POSITION, VELOCITY, HEARTBEAT, ACKNOWLEDGEMENT }; };\n\
+         module u { @final struct Vec3F32 { float x; float y; float z; }; };\n\
+         module u { @final union Payload switch (::u::Signal) { case ::u::POSITION: ::u::Vec3F32 \
+         position; case ::u::VELOCITY: ::u::Vec3F32 velocity; }; };\n"
+    );
+    assert_eq!(
+        PayloadOther::idl().expect("the IDL"),
+        idl,
+        "one IDL type, two Rust forms"
+    );
+    assert_eq!(
+        <Payload as zerodds_dcps::DdsType>::type_identifier(),
+        <PayloadOther as zerodds_dcps::DdsType>::type_identifier()
+    );
+}
+
+/// IDL 4.2 §7.4.1.4.4.4, XTypes 1.3 §7.4.3.5.3 rule (10): a value without a
+/// member goes out as its discriminator alone and is read back as the
+/// variant that names it; the `no_member` variant takes the values no
+/// variant names and refuses one that a variant names.
+#[test]
+fn idl_4_2_7_4_1_4_4_4_issue_33_a_discriminator_value_without_a_member() {
+    for encapsulation in Encapsulation::ALL {
+        let heartbeat = encoded(&Payload::Heartbeat, encapsulation);
+        let acknowledgement = encoded(&Payload::Acknowledgement, encapsulation);
+        let value = |v: u32| match encapsulation {
+            Encapsulation::Xcdr2Be | Encapsulation::Xcdr1Be => v.to_be_bytes().to_vec(),
+            Encapsulation::Xcdr2Le | Encapsulation::Xcdr1Le => v.to_le_bytes().to_vec(),
+        };
+        assert_eq!(heartbeat, value(2), "{encapsulation:?}");
+        assert_eq!(acknowledgement, value(3), "{encapsulation:?}");
+        let back: Payload = zerodds_codec::decode(&heartbeat, encapsulation).expect("read");
+        assert_eq!(back, Payload::Heartbeat);
+        let back: Payload = zerodds_codec::decode(&acknowledgement, encapsulation).expect("read");
+        assert_eq!(back, Payload::Acknowledgement);
+        let position = Payload::Position(Vec3F32 {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        });
+        let back: Payload =
+            zerodds_codec::decode(&encoded(&position, encapsulation), encapsulation).expect("read");
+        assert_eq!(back, position);
+
+        let other: PayloadOther =
+            zerodds_codec::decode(&acknowledgement, encapsulation).expect("read");
+        assert_eq!(other, PayloadOther::Other(Signal::Acknowledgement));
+        let other: PayloadOther = zerodds_codec::decode(&heartbeat, encapsulation).expect("read");
+        assert_eq!(other, PayloadOther::Heartbeat);
+        let mut out = Vec::new();
+        assert!(
+            zerodds_codec::encode(
+                &PayloadOther::Other(Signal::Heartbeat),
+                encapsulation,
+                &mut out
+            )
+            .is_err(),
+            "HEARTBEAT is the variant Heartbeat"
+        );
+        assert!(
+            zerodds_codec::encode(
+                &PayloadOther::Other(Signal::Position),
+                encapsulation,
+                &mut out
+            )
+            .is_err(),
+            "POSITION selects a member"
+        );
+        assert!(out.is_empty(), "a refused value writes nothing");
+    }
+}

@@ -1,7 +1,7 @@
 # Cross-vendor DDS interoperability — issue #28.
 #
 # Exchanges typed `Robot` samples over live DDS/RTPS between ZeroDDS and one
-# open-source vendor (CycloneDDS or Fast DDS), in BOTH directions, and asserts
+# open-source vendor (CycloneDDS, Fast DDS or HDDS), in BOTH directions, and asserts
 # endpoint matching AND actual decoded sample delivery — SPDP discovery alone
 # is never a pass (tests/interop/ci/run_vendor.sh).
 #
@@ -10,7 +10,8 @@
 # The only difference is provisioning: the GitLab gate runs on a pinned image
 # with the vendor SDKs baked in; here the same pinned vendor sources are
 # installed on the hosted runner (CycloneDDS wheel from PyPI, Fast DDS built
-# from the eProsima commits pinned in install_fastdds.sh).
+# from the eProsima commits pinned in install_fastdds.sh, HDDS fetched by
+# Cargo at the commits pinned in tests/interop/ci/hdds).
 #
 # WHY schedule-only (no `pull_request` / `push` trigger): live-network interop
 # on shared hosted runners is timing-sensitive and can flake in ways the
@@ -131,6 +132,42 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: interop-fastdds
+          path: interop-out/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # HDDS — the Rust client tests/interop/ci/hdds, built against HDDS at the
+  # release tag v1.1.5 and at the pinned `master` commit (hdds/build.sh).
+  # ---------------------------------------------------------------------------
+  hdds:
+    name: interop / hdds ${{ matrix.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [release, master]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build hdds_robot (HDDS ${{ matrix.ref }})
+        run: bash tests/interop/ci/hdds/build.sh "${{ matrix.ref }}"
+      - name: Run hdds interop cells (both directions)
+        env:
+          HDDS_REF: ${{ matrix.ref }}
+          DOMAIN_BASE: "190"
+          READ_WINDOW: "12"
+          WRITE_WINDOW: "30"
+          START_DELAY: "3"
+        run: |
+          mkdir -p interop-out
+          bash tests/interop/ci/run_vendor.sh hdds interop-out
+      - name: Upload hdds artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: interop-hdds-${{ matrix.ref }}
           path: interop-out/
           retention-days: 30
 

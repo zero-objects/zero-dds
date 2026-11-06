@@ -5,24 +5,27 @@
 # Cross-vendor DDS interop CI gate runner (issue #28).
 #
 # Exchanges typed `Robot` samples over live DDS/RTPS between ZeroDDS and one
-# open-source vendor (CycloneDDS or Fast DDS), in BOTH directions, and asserts
+# vendor (Cyclone DDS, Fast DDS, RTI Connext or HDDS), in BOTH directions, and asserts
 # endpoint matching AND actual decoded sample delivery — SPDP discovery alone
 # is never a pass.
 #
 # Usage:
-#   run_vendor.sh <cyclone|fastdds|rti> <outdir>
+#   run_vendor.sh <cyclone|fastdds|rti|hdds> <outdir>
 #
 # Vendor client configuration (all optional, sensible CI defaults):
 #   PYBIN            python with `cyclonedds` importable         (cyclone)
 #   FASTDDS_ROBOT    path to the fastdds_robot pub/sub binary    (fastdds)
 #   RTI_ROBOT        path to the rti_robot pub/sub binary        (rti)
+#   HDDS_REF         release or master, the HDDS build to use    (hdds, default release)
+#   HDDS_ROBOT       path to the hdds_robot pub/sub binary       (hdds)
 #   READ_WINDOW      reader observation window, seconds          (default 12)
 #   WRITE_WINDOW     writer lifetime, seconds                    (default 30)
 #   START_DELAY      bounded writer warm-up before the reader    (default 3)
 #   DOMAIN_BASE      first DDS domain id used                    (per vendor)
 #
 # Exit status: 0 iff every cell is green (PASS or EXPECTED_NEGATIVE).
-# Writes <outdir>/<vendor>-result.json (machine-readable) and prints a human
+# Writes <outdir>/<vendor>-result.json (machine-readable; hdds-master-result.json
+# for HDDS_REF=master) and prints a human
 # summary. Per-cell logs are kept in <outdir>/.
 # ============================================================================
 set -uo pipefail
@@ -45,8 +48,8 @@ export ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO=1
 # pads_declared_length) get a ZeroDDS reader with wire.pl_cdr1_reading=tolerant;
 # Fast DDS and OpenDDS write the exact length. This is the only place the runner
 # sets it.
-VENDOR="${1:?usage: run_vendor.sh <cyclone|fastdds|rti> <outdir>}"
-OUTDIR="${2:?usage: run_vendor.sh <cyclone|fastdds|rti> <outdir>}"
+VENDOR="${1:?usage: run_vendor.sh <cyclone|fastdds|rti|hdds> <outdir>}"
+OUTDIR="${2:?usage: run_vendor.sh <cyclone|fastdds|rti|hdds> <outdir>}"
 case "$VENDOR" in cyclone|rti) export ZERODDS_WIRE_PL_CDR1_READING=tolerant ;; esac
 # A reader that announces no TypeConsistencyEnforcement (PID 0x0074). DDS-XTypes
 # 1.3 section 7.6.3.4.1 has a writer assume DISALLOW_TYPE_COERCION for it, the
@@ -70,6 +73,12 @@ RESULT_PY=("python3" "$HERE/interop_result.py")
 PYBIN="${PYBIN:-${INTEROP_PYBIN:-python3}}"
 FASTDDS_ROBOT="${FASTDDS_ROBOT:-$HERE/fastdds/build/fastdds_robot}"
 RTI_ROBOT="${RTI_ROBOT:-$HERE/rti/build/rti_robot}"
+HDDS_REF="${HDDS_REF:-release}"
+HDDS_ROBOT="${HDDS_ROBOT:-$HERE/hdds/build/$HDDS_REF/hdds_robot}"
+# The name a cell and the result file carry: the vendor, and for HDDS the
+# build of HDDS_REF other than the release.
+LABEL="$VENDOR"
+case "$VENDOR:$HDDS_REF" in hdds:release) ;; hdds:*) LABEL="hdds-$HDDS_REF" ;; esac
 FASTDDS_PREFIX="${FASTDDS_PREFIX:-/opt/fastdds}"
 READ_WINDOW="${READ_WINDOW:-12}"
 WRITE_WINDOW="${WRITE_WINDOW:-30}"
@@ -88,6 +97,7 @@ case "$VENDOR" in
   cyclone) DOMAIN_BASE="${DOMAIN_BASE:-121}";;
   fastdds) DOMAIN_BASE="${DOMAIN_BASE:-141}";;
   rti)     DOMAIN_BASE="${DOMAIN_BASE:-220}";;
+  hdds)    DOMAIN_BASE="${DOMAIN_BASE:-190}";;
   *) log "unknown vendor: $VENDOR"; exit 2;;
 esac
 CELL_IDX=0
@@ -112,6 +122,7 @@ vendor_writer() {
     cyclone) "$PYBIN" "$CYC_DIR/cyclone_writer.py" "$ext" "$rep" "$secs" "$domain" >"$logf" 2>&1 & echo $!;;
     fastdds) "$FASTDDS_ROBOT" pub "$secs" "$domain" >"$logf" 2>&1 & echo $!;;
     rti)     "$RTI_ROBOT" pub "$secs" "$domain" >"$logf" 2>&1 & echo $!;;
+    hdds)    "$HDDS_ROBOT" pub "$secs" "$domain" >"$logf" 2>&1 & echo $!;;
   esac
 }
 # vendor_reader <ext> <secs> <domain> <logfile> -> prints the vendor RESULT line.
@@ -122,6 +133,7 @@ vendor_reader() {
     cyclone) timeout -k 5 "$hard" "$PYBIN" "$CYC_DIR/cyclone_reader.py" "$ext" "$secs" "$domain" 2>"$logf" | grep -E '^CYCLONE_RESULT';;
     fastdds) timeout -k 5 "$hard" "$FASTDDS_ROBOT" sub "$secs" "$domain" 2>"$logf" | grep -E '^FASTDDS_RESULT';;
     rti)     timeout -k 5 "$hard" "$RTI_ROBOT" sub "$secs" "$domain" 2>"$logf" | grep -E '^RTI_RESULT';;
+    hdds)    timeout -k 5 "$hard" "$HDDS_ROBOT" sub "$secs" "$domain" 2>"$logf" | grep -E '^HDDS_RESULT';;
   esac
 }
 
@@ -145,11 +157,11 @@ forward() {
   local dom=$((DOMAIN_BASE + CELL_IDX)); CELL_IDX=$((CELL_IDX + 1))
   local wlog="$OUTDIR/${VENDOR}-fwd-${CELL_IDX}-writer.log"
   local rlog="$OUTDIR/${VENDOR}-fwd-${CELL_IDX}-reader.log"
-  build_zerodds "$zext" || { record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction vendor_to_zerodds --case "$case" --expect "$expect" --setup-failed --detail 'zerodds build failed')"; return; }
+  build_zerodds "$zext" || { record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction vendor_to_zerodds --case "$case" --expect "$expect" --setup-failed --detail 'zerodds build failed')"; return; }
   local wp; wp="$(vendor_writer "$wext" "$rep" "$WRITE_WINDOW" "$dom" "$wlog")"; track "$wp"
   sleep "$START_DELAY"
   if ! kill -0 "$wp" 2>/dev/null; then
-    record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction vendor_to_zerodds --case "$case" --expect "$expect" --setup-failed --detail "vendor writer died: $(tail -1 "$wlog" 2>/dev/null)")"
+    record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction vendor_to_zerodds --case "$case" --expect "$expect" --setup-failed --detail "vendor writer died: $(tail -1 "$wlog" 2>/dev/null)")"
     return
   fi
   local out timed=0
@@ -158,10 +170,10 @@ forward() {
   local flags=(); [ "$timed" = 1 ] && flags+=(--timed-out)
   local dmis; dmis="$(domain_report "$dom" "$wlog" 'vendor writer')$(domain_report "$dom" "$rlog" 'zerodds reader')"
   if [ -n "$dmis" ]; then
-    record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction vendor_to_zerodds --case "$case" --expect "$expect" --setup-failed --detail "domain contract: ${dmis}")"
+    record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction vendor_to_zerodds --case "$case" --expect "$expect" --setup-failed --detail "domain contract: ${dmis}")"
     return
   fi
-  record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction vendor_to_zerodds --case "$case" --expect "$expect" --result-line "${out:-no-result}" "${flags[@]}")"
+  record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction vendor_to_zerodds --case "$case" --expect "$expect" --result-line "${out:-no-result}" "${flags[@]}")"
 }
 
 # reverse: ZeroDDS writer -> vendor reader
@@ -171,12 +183,12 @@ reverse() {  # <case> <zerodds-ext> <vendor-ext> [env for the ZeroDDS writer]
   local dom=$((DOMAIN_BASE + CELL_IDX)); CELL_IDX=$((CELL_IDX + 1))
   local wlog="$OUTDIR/${VENDOR}-rev-${CELL_IDX}-writer.log"
   local rlog="$OUTDIR/${VENDOR}-rev-${CELL_IDX}-reader.log"
-  build_zerodds "$zext" || { record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction zerodds_to_vendor --case "$case" --expect samples --setup-failed --detail 'zerodds build failed')"; return; }
+  build_zerodds "$zext" || { record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction zerodds_to_vendor --case "$case" --expect samples --setup-failed --detail 'zerodds build failed')"; return; }
   # shellcheck disable=SC2086 # zenv is a list of NAME=value words
   local wp; wp="$(env $zenv "$ZW" "$WRITE_WINDOW" "$dom" >"$wlog" 2>&1 & echo $!)"; track "$wp"
   sleep "$START_DELAY"
   if ! kill -0 "$wp" 2>/dev/null; then
-    record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction zerodds_to_vendor --case "$case" --expect samples --setup-failed --detail "zerodds writer died: $(tail -1 "$wlog" 2>/dev/null)")"
+    record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction zerodds_to_vendor --case "$case" --expect samples --setup-failed --detail "zerodds writer died: $(tail -1 "$wlog" 2>/dev/null)")"
     return
   fi
   local out timed=0
@@ -185,10 +197,10 @@ reverse() {  # <case> <zerodds-ext> <vendor-ext> [env for the ZeroDDS writer]
   local flags=(); [ "$timed" = 1 ] && flags+=(--timed-out)
   local dmis; dmis="$(domain_report "$dom" "$wlog" 'zerodds writer')$(domain_report "$dom" "$rlog" 'vendor reader')"
   if [ -n "$dmis" ]; then
-    record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction zerodds_to_vendor --case "$case" --expect samples --setup-failed --detail "domain contract: ${dmis}")"
+    record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction zerodds_to_vendor --case "$case" --expect samples --setup-failed --detail "domain contract: ${dmis}")"
     return
   fi
-  record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction zerodds_to_vendor --case "$case" --expect samples --result-line "${out:-no-result}" "${flags[@]}")"
+  record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction zerodds_to_vendor --case "$case" --expect samples --result-line "${out:-no-result}" "${flags[@]}")"
 }
 
 # ---- preflight -------------------------------------------------------------
@@ -249,6 +261,20 @@ preflight() {
       "$RTI_ROBOT" version >&2 \
         || { log "SETUP: rti_robot version check failed"; return 1; }
       ;;
+    hdds)
+      # Builds OUR client with Cargo; HDDS is its git dependency, at the
+      # release tag or the pinned master (hdds/build.sh).
+      if [ ! -x "$HDDS_ROBOT" ]; then
+        log "hdds_robot absent — building HDDS $HDDS_REF"
+        bash "$HERE/hdds/build.sh" "$HDDS_REF" >&2 \
+          || { log "SETUP: hdds_robot build failed"; return 1; }
+      fi
+      if [ ! -x "$HDDS_ROBOT" ]; then
+        log "SETUP: hdds_robot still missing at $HDDS_ROBOT after build"; return 1
+      fi
+      "$HDDS_ROBOT" version >&2 \
+        || { log "SETUP: hdds_robot version check failed"; return 1; }
+      ;;
   esac
   return 0
 }
@@ -256,7 +282,7 @@ preflight() {
 # ---- run -------------------------------------------------------------------
 if ! preflight; then
   # Emit a single SETUP_FAIL cell so the artifact states what happened.
-  record "$("${RESULT_PY[@]}" --vendor "$VENDOR" --direction preflight --case "vendor available" --expect samples --setup-failed --detail 'vendor preflight failed')"
+  record "$("${RESULT_PY[@]}" --vendor "$LABEL" --direction preflight --case "vendor available" --expect samples --setup-failed --detail 'vendor preflight failed')"
 else
   case "$VENDOR" in
     cyclone)
@@ -323,12 +349,17 @@ else
       forward "RTI writer -> ZeroDDS reader" final xcdr1 final samples
       reverse "ZeroDDS writer -> RTI reader" final final
       ;;
+    hdds)
+      # The same @final pairing as the Fast DDS and RTI cells.
+      forward "HDDS writer -> ZeroDDS reader" final xcdr1 final samples
+      reverse "ZeroDDS writer -> HDDS reader" final final
+      ;;
   esac
 fi
 
 # ---- aggregate + report ----------------------------------------------------
-RUN_JSON="$OUTDIR/${VENDOR}-result.json"
-python3 - "$VENDOR" "$RUN_JSON" "${CELLS_JSON[@]}" <<'PY'
+RUN_JSON="$OUTDIR/${LABEL}-result.json"
+python3 - "$LABEL" "$RUN_JSON" "${CELLS_JSON[@]}" <<'PY'
 import json, sys
 vendor, out = sys.argv[1], sys.argv[2]
 cells = [json.loads(x) for x in sys.argv[3:] if x.strip()]

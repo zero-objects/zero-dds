@@ -57,7 +57,7 @@ cd "$root" || exit 2
 # offline half of the table before it starts skipping.
 # ---------------------------------------------------------------------
 ALL_TESTS="interop-corpus interop-results vendor-bytes vendor-roundtrip \
-results-record ci-cyclone ci-fastdds ci-rti ci-harness live-spdp live-roundtrip \
+results-record ci-cyclone ci-fastdds ci-rti ci-hdds ci-hdds-master ci-harness live-spdp live-roundtrip \
 live-rust live-discovery writer-restart-32 cross-language-e2e \
 warehouse-e2e endpoint-e2e endpoints-gate"
 
@@ -162,6 +162,7 @@ domain_band() {
         ci-cyclone)         printf '121 125' ;;
         ci-fastdds)         printf '141 145' ;;
         ci-rti)             printf '220 224' ;;
+        ci-hdds|ci-hdds-master) printf '190 194' ;;
         ci-harness)         printf '141 145' ;;
         # ddsperf and the spdp_demo example both take the default domain.
         live-spdp)          printf '0 0' ;;
@@ -308,6 +309,21 @@ need_ci_rti() {
 run_ci_rti() {
     ( cd interop/cyclone-xtypes-27/reader && cargo build -q ) || return 1
     bash tests/interop/ci/run_vendor.sh rti "$out/ci-rti"
+}
+
+# ---- 7c. the same two cells against HDDS, release and master ---------
+#
+# The client is Rust (tests/interop/ci/hdds), and Cargo fetches HDDS from
+# git.hdds.io at the release tag or the pinned master commit.
+need_ci_hdds() { missing_cmds cargo; }
+run_ci_hdds() {
+    ( cd interop/cyclone-xtypes-27/reader && cargo build -q ) || return 1
+    HDDS_REF=release bash tests/interop/ci/run_vendor.sh hdds "$out/ci-hdds"
+}
+need_ci_hdds_master() { missing_cmds cargo; }
+run_ci_hdds_master() {
+    ( cd interop/cyclone-xtypes-27/reader && cargo build -q ) || return 1
+    HDDS_REF=master bash tests/interop/ci/run_vendor.sh hdds "$out/ci-hdds-master"
 }
 
 # ---- 8. the gate's own harness: the classifier and the cleanup -------

@@ -257,7 +257,7 @@ impl<M, D: Discriminator> UnionSerializer<'_, M, D> {
         if plan.select(discriminator.label()).is_some() {
             return Err(WireError::refused(
                 self.w.position(),
-                "a discriminator no case and no default: takes, for a union without a member",
+                "a discriminator that no case and no default takes, for a union without a member",
             ));
         }
         write_frame(self.w, self.plans, &plan.discriminator, discriminator)?;

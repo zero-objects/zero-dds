@@ -111,11 +111,13 @@ fn idl_4_2_a_field_less_enum_is_an_enumeration() {
     let TypeKind::Enum {
         enumerators,
         bit_bound,
+        extensibility,
     } = desc.kind
     else {
         panic!("an enumeration");
     };
     assert_eq!(bit_bound, Some(16));
+    assert_eq!(extensibility, None, "unwritten, the IDL default");
     assert_eq!(
         enumerators,
         [
