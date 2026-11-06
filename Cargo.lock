@@ -7205,7 +7205,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-ast"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
  "zerodds-ast-core",
@@ -7214,14 +7214,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-ast-core"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "zerodds-ast-layout"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
  "zerodds-ast",
@@ -7272,7 +7272,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-build"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "tempfile",
  "zerodds-ast",
@@ -7329,7 +7329,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-ccm"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-ast",
  "zerodds-ast-core",
@@ -7379,7 +7379,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-codec"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-ast",
  "zerodds-ast-core",
@@ -7394,7 +7394,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-config"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-conformance"
@@ -7642,7 +7642,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-dcps"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "metrics",
@@ -7710,7 +7710,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-derive"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7719,7 +7719,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-discovery"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "rcgen 0.13.2",
  "rustls-pki-types",
@@ -7875,7 +7875,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-flatdata"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "iceoryx2",
@@ -7896,7 +7896,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-float128"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-foreign-typeobject-probe"
@@ -7912,7 +7912,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-foundation"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-grpc-bridge"
@@ -7952,7 +7952,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-idl-compose"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-ast",
  "zerodds-ast-layout",
@@ -7964,14 +7964,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-cst"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "zerodds-idl-lower"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
  "zerodds-ast",
@@ -7982,7 +7982,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-parse"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "proptest",
@@ -8014,7 +8014,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-inspect-endpoint"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -8062,18 +8062,18 @@ dependencies = [
 
 [[package]]
 name = "zerodds-lang-cst"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-lang-render"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-lang-cst",
 ]
 
 [[package]]
 name = "zerodds-lang-rules"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "seesaw-tgg",
  "serde_json",
@@ -8105,7 +8105,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-monitor"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-foundation",
 ]
@@ -8335,7 +8335,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-qos"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-wire",
 ]
@@ -8485,7 +8485,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-rt-linux"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
 ]
@@ -8496,7 +8496,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-rtps"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "portable-atomic",
@@ -8531,14 +8531,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-idl-parse",
 ]
 
 [[package]]
 name = "zerodds-security-crypto"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "aws-lc-rs",
  "criterion",
@@ -8552,7 +8552,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-keyexchange"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "aws-lc-rs",
  "crypto-bigint 0.7.9",
@@ -8564,14 +8564,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-logging"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-security",
 ]
 
 [[package]]
 name = "zerodds-security-permissions"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "aws-lc-rs",
  "cms",
@@ -8593,7 +8593,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-pki"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "aes",
  "aws-lc-rs",
@@ -8619,7 +8619,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-rtps"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-security",
  "zerodds-security-crypto",
@@ -8627,7 +8627,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-runtime"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "base64 0.22.1",
  "cryptoki",
@@ -8707,7 +8707,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-sql-filter"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-sys"
@@ -8728,7 +8728,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-time-service"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-traceability"
@@ -8736,14 +8736,14 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-transport"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-rtps",
 ]
 
 [[package]]
 name = "zerodds-transport-shm"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "shared_memory",
@@ -8755,7 +8755,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-tcp"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-rtps",
  "zerodds-transport",
@@ -8763,7 +8763,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-tsn"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "roxmltree",
@@ -8774,7 +8774,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-udp"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "if-addrs",
@@ -8788,7 +8788,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-uds"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "socket2 0.5.10",
@@ -8808,7 +8808,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-types"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
  "serde_json",
@@ -8881,7 +8881,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-wire"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "zerodds-float128",
@@ -8889,7 +8889,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-wire-codec"
-version = "1.0.0-rc.7.2"
+version = "1.0.0-rc.7"
 dependencies = [
  "serde_json",
  "zerodds-ast",

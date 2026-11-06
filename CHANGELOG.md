@@ -1448,6 +1448,23 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   `corba-rt`, `corba-rust`, `corba-cos-notify`, `opcua-pubsub`,
   `recorder-decode` and `opcua-server` (`e398c0db084`).
 
+## [1.0.0-rc.7.2] — 2026-11-06
+
+44 crates on crates.io only; no other channel.
+
+### Added
+
+- The crates of GitHub #33 on crates.io, ahead of RC8: `zerodds-codec`
+  and `zerodds-derive` (new), `zerodds-build` with `rust_type`, and the 41
+  other crates of the workspace they depend on that changed since rc.7,
+  among them `zerodds-dcps`, `-types`, `-wire` and `-rtps`
+  (`7726f6ce3a8`). Their requirements on each other are `^1.0.0-rc.7.2`;
+  the published crates that ask for `^1.0.0-rc.7` take them when they
+  resolve. Checked before the upload: every published zerodds crate checks
+  against them as against rc.7, and the cargo examples of zero-dds-snippets
+  build against them. `rust-version` is 1.97 (rc.7: 1.88). With the next
+  release the 44 return to the workspace version.
+
 ## [1.0.0-rc.7.1] — 2026-10-31
 
 Three crates on crates.io only; no other channel.

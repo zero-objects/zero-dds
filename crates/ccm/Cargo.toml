@@ -1,8 +1,6 @@
 [package]
 name = "zerodds-ccm"
-# Published on crates.io with the other crates GitHub #33 needs, ahead
-# of RC8; `version.workspace = true` again once they are out.
-version = "1.0.0-rc.7.2"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -28,8 +26,8 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-ast = { version = "1.0.0-rc.7.2", path = "../ast" }
-zerodds-ast-core = { version = "1.0.0-rc.7.2", path = "../ast-core" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
 
 [dev-dependencies]
 zerodds-idl-parse = { path = "../idl-parse" }
