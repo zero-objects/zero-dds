@@ -141,6 +141,15 @@ ignore = [
     # against a network peer. No upgrade path until webrtc-dtls moves to
     # elliptic-curve 0.14; until then the `dtls` features carry it.
     { id = "RUSTSEC-2026-0387", reason = "only under zerodds-coap-bridge/dtls or zerodds-xrce/dtls; crypto-bigint 0.5.5 via p256/p384 0.13 <- webrtc-dtls 0.12, no fixed webrtc-dtls" },
+    # RUSTSEC-2026-0441 (pin-utils 0.1.0): unmaintained — the upstream
+    # repository was archived on 2026-10-01. Not a safety bug, a maintenance
+    # warning; the advisory names no safe upgrade. Transitive via nix 0.26.4,
+    # which the newest serialport (4.10.1) and the newest webrtc-util
+    # (0.17.2) still require (`^0.26`); webrtc-dtls 0.12 pins webrtc-util
+    # 0.11. Goes away when both move to a newer nix.
+    # FEATURE: `zerodds-xrce-agent/serial` (serialport) and
+    # `zerodds-coap-bridge/dtls` or `zerodds-xrce/dtls` (webrtc-util).
+    { id = "RUSTSEC-2026-0441", reason = "only under zerodds-xrce-agent/serial, zerodds-coap-bridge/dtls or zerodds-xrce/dtls; pin-utils via nix 0.26, which the newest serialport and webrtc-util require" },
 ]
 
 [licenses]
