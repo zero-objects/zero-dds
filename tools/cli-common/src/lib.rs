@@ -189,9 +189,9 @@ pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig
 /// that it sees every writer: by the RxO rule of RELIABILITY (DDS 1.4
 /// §2.2.3.14, offered ≥ requested) a RELIABLE reader matches only RELIABLE
 /// writers, whose repairs it takes, and a BEST_EFFORT reader matches every
-/// writer. `(config, reliable)` pairs, the RELIABLE one first. What the
-/// BEST_EFFORT reader takes from a RELIABLE writer the RELIABLE reader has
-/// too; [`WriterReliability::keep`] tells the two apart.
+/// writer. `(config, reliable)` pairs, the RELIABLE one first. Both take
+/// the samples of a RELIABLE writer they match; [`WriterReliability::keep`]
+/// keeps the first copy of each.
 #[must_use]
 pub fn monitor_reader_configs(topic: &str, type_name: &str) -> [(UserReaderConfig, bool); 2] {
     let reliable = raw_reader_config_typed(topic, type_name);
@@ -202,11 +202,72 @@ pub fn monitor_reader_configs(topic: &str, type_name: &str) -> [(UserReaderConfi
     [(reliable, true), (best_effort, false)]
 }
 
-/// The reliability of the writers a monitoring tool's readers see, as
-/// discovery reports them (`DcpsRuntime::discovered_publication_endpoints`).
+/// What a monitoring tool keeps of the samples its two readers
+/// ([`monitor_reader_configs`]) take: the first copy of each sample, by its
+/// source identity, and for a sample without one the reliability of its
+/// writer, as discovery reports it
+/// (`DcpsRuntime::discovered_publication_endpoints`).
 #[derive(Debug, Default)]
 pub struct WriterReliability {
     known: std::collections::HashMap<[u8; 16], bool>,
+    copies: SourceCopies,
+}
+
+/// The samples a monitoring tool has kept, by their source identity: the
+/// writer's GUID and the sample's sequence number in that writer
+/// (DDSI-RTPS 2.5 §8.3.5.4, `UserSample::source_sequence_number`). Both
+/// readers of [`monitor_reader_configs`] take a sample of a RELIABLE writer
+/// they match; the first copy, from either, is new and a second one is not.
+///
+/// The RELIABLE reader alone does not have every sample: one written after
+/// the writer matched the BEST_EFFORT reader and before it matched the
+/// RELIABLE one reaches only the BEST_EFFORT reader (VOLATILE, DDS 1.4
+/// §2.2.3.4).
+///
+/// Per writer it holds the last [`SourceCopies::WINDOW`] sequence numbers
+/// kept, and it forgets a writer that sent nothing for
+/// [`SourceCopies::IDLE`]. A copy arriving after more than `WINDOW` later
+/// samples of its writer counts as new again: the tool keeps such a sample
+/// twice rather than dropping one.
+#[derive(Debug, Default)]
+pub struct SourceCopies {
+    writers: std::collections::HashMap<[u8; 16], WriterCopies>,
+    calls: u64,
+}
+
+#[derive(Debug)]
+struct WriterCopies {
+    kept: std::collections::BTreeSet<i64>,
+    last: std::time::Instant,
+}
+
+impl SourceCopies {
+    /// The sequence numbers held per writer.
+    pub const WINDOW: usize = 4096;
+    /// How long a writer that sent nothing is held.
+    pub const IDLE: Duration = Duration::from_secs(60);
+
+    /// Whether this is the first copy of sample `sn` of `writer`, at
+    /// `now`; records it.
+    pub fn first_copy(&mut self, writer: [u8; 16], sn: i64, now: std::time::Instant) -> bool {
+        self.calls += 1;
+        if self.calls.is_multiple_of(Self::WINDOW as u64) {
+            self.writers
+                .retain(|_, w| now.saturating_duration_since(w.last) < Self::IDLE);
+        }
+        let w = self.writers.entry(writer).or_insert_with(|| WriterCopies {
+            kept: std::collections::BTreeSet::new(),
+            last: now,
+        });
+        w.last = now;
+        if !w.kept.insert(sn) {
+            return false;
+        }
+        if w.kept.len() > Self::WINDOW {
+            w.kept.pop_first();
+        }
+        true
+    }
 }
 
 impl WriterReliability {
@@ -235,9 +296,11 @@ impl WriterReliability {
     }
 
     /// Whether to keep `sample`, taken by a reader that is RELIABLE or not
-    /// ([`monitor_reader_configs`]): a RELIABLE reader keeps everything; the
-    /// BEST_EFFORT reader keeps what a BEST_EFFORT writer wrote, and drops
-    /// what a RELIABLE writer wrote, which the RELIABLE reader keeps.
+    /// ([`monitor_reader_configs`]). A sample with a sequence number is kept
+    /// when it is the first copy of it ([`SourceCopies`]). Of a sample
+    /// without one, a RELIABLE reader keeps everything; the BEST_EFFORT
+    /// reader keeps what a BEST_EFFORT writer wrote, and drops what a
+    /// RELIABLE writer wrote, which the RELIABLE reader keeps.
     pub fn keep(
         &mut self,
         runtime: &zerodds_dcps::runtime::DcpsRuntime,
@@ -245,10 +308,22 @@ impl WriterReliability {
         sample: &zerodds_dcps::runtime::UserSample,
     ) -> bool {
         use zerodds_dcps::runtime::UserSample;
-        if reader_reliable {
-            return true;
-        }
         match sample {
+            UserSample::Alive {
+                writer_guid,
+                source_sequence_number,
+                ..
+            }
+            | UserSample::Lifecycle {
+                writer_guid,
+                source_sequence_number,
+                ..
+            } if *source_sequence_number > 0 => self.copies.first_copy(
+                *writer_guid,
+                *source_sequence_number,
+                std::time::Instant::now(),
+            ),
+            _ if reader_reliable => true,
             UserSample::Alive { writer_guid, .. }
             | UserSample::Lifecycle { writer_guid, .. }
             | UserSample::CoherentSetEnd { writer_guid, .. } => {
@@ -394,6 +469,50 @@ mod tests {
         assert_eq!(
             fresh,
             vec![("Track".to_string(), "cuas::Track".to_string())]
+        );
+    }
+
+    /// The copy of a sample the BEST_EFFORT reader took first is the one
+    /// kept, when the RELIABLE reader matched the writer later and never
+    /// gets it, and when the RELIABLE reader's copy follows.
+    #[test]
+    fn source_copies_keep_the_first_copy_of_each_sample() {
+        let now = std::time::Instant::now();
+        let mut c = SourceCopies::default();
+        let w = [7u8; 16];
+        // Sample 1 reaches the BEST_EFFORT reader alone.
+        assert!(c.first_copy(w, 1, now));
+        // Sample 2 reaches both, the BEST_EFFORT reader first.
+        assert!(c.first_copy(w, 2, now));
+        assert!(!c.first_copy(w, 2, now));
+        // A repair of 3 after 4 arrived.
+        assert!(c.first_copy(w, 4, now));
+        assert!(c.first_copy(w, 3, now));
+        assert!(!c.first_copy(w, 4, now));
+        // Another writer has numbers of its own.
+        assert!(c.first_copy([8u8; 16], 2, now));
+    }
+
+    /// Past the window a late copy counts as new (kept twice rather than
+    /// dropped), and an idle writer is forgotten.
+    #[test]
+    fn source_copies_hold_a_window_per_writer_and_forget_idle_writers() {
+        let now = std::time::Instant::now();
+        let mut c = SourceCopies::default();
+        let w = [7u8; 16];
+        let window = i64::try_from(SourceCopies::WINDOW).unwrap();
+        for sn in 1..=window + 1 {
+            assert!(c.first_copy(w, sn, now));
+        }
+        assert!(c.first_copy(w, 1, now), "sample 1 is past the window");
+        assert!(!c.first_copy(w, window + 1, now));
+        let later = now + SourceCopies::IDLE + Duration::from_secs(1);
+        for sn in 1..=window {
+            c.first_copy([9u8; 16], sn, later);
+        }
+        assert!(
+            c.first_copy(w, window + 1, later),
+            "the idle writer was forgotten"
         );
     }
 
