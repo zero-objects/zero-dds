@@ -68,21 +68,33 @@ fn partition(p: &Option<String>) -> Option<PartitionQosPolicy> {
     })
 }
 
+/// `-b` → BEST_EFFORT, else RELIABLE, for writer and reader alike: the
+/// reference client sets `reliability_kind = RELIABLE_RELIABILITY_QOS` by
+/// default and only `-b` changes it (OMG `dds-rtps` `srcCxx/shape_main.cxx`,
+/// `ShapeOptions()`, and the `dw_qos`/`dr_qos` reliability). The DDS default
+/// of a DataReader is BEST_EFFORT; left at it, the reader of a case that names
+/// neither flag was best-effort where the reference reader is reliable.
+fn reliability(opts: &Options) -> ReliabilityQosPolicy {
+    if opts.best_effort {
+        ReliabilityQosPolicy {
+            kind: ReliabilityKind::BestEffort,
+            max_blocking_time: Duration::ZERO,
+        }
+    } else {
+        ReliabilityQosPolicy {
+            kind: ReliabilityKind::Reliable,
+            max_blocking_time: Duration::from_millis(100),
+        }
+    }
+}
+
 /// Builds the `DataWriterQos` for `-P` from the parsed flags.
 #[must_use]
 pub fn writer_qos(opts: &Options) -> DataWriterQos {
-    let mut qos = DataWriterQos::default();
-    if opts.reliable {
-        qos.reliability = ReliabilityQosPolicy {
-            kind: ReliabilityKind::Reliable,
-            max_blocking_time: Duration::from_millis(100),
-        };
-    } else if opts.best_effort {
-        qos.reliability = ReliabilityQosPolicy {
-            kind: ReliabilityKind::BestEffort,
-            max_blocking_time: Duration::ZERO,
-        };
-    }
+    let mut qos = DataWriterQos {
+        reliability: reliability(opts),
+        ..DataWriterQos::default()
+    };
     qos.durability = DurabilityQosPolicy {
         kind: durability_kind(opts.durability),
     };
@@ -128,18 +140,10 @@ pub fn writer_qos(opts: &Options) -> DataWriterQos {
 /// Builds the `DataReaderQos` for `-S` from the parsed flags.
 #[must_use]
 pub fn reader_qos(opts: &Options) -> DataReaderQos {
-    let mut qos = DataReaderQos::default();
-    if opts.reliable {
-        qos.reliability = ReliabilityQosPolicy {
-            kind: ReliabilityKind::Reliable,
-            max_blocking_time: Duration::from_millis(100),
-        };
-    } else if opts.best_effort {
-        qos.reliability = ReliabilityQosPolicy {
-            kind: ReliabilityKind::BestEffort,
-            max_blocking_time: Duration::ZERO,
-        };
-    }
+    let mut qos = DataReaderQos {
+        reliability: reliability(opts),
+        ..DataReaderQos::default()
+    };
     qos.durability = DurabilityQosPolicy {
         kind: durability_kind(opts.durability),
     };
@@ -193,5 +197,49 @@ pub fn subscriber_qos(opts: &Options) -> SubscriberQos {
             ordered_access: opts.ordered,
         },
         ..SubscriberQos::default()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Options {
+        Options::try_parse_from(args).expect("parse")
+    }
+
+    /// OMG `dds-rtps` `srcCxx/shape_main.cxx`: `ShapeOptions()` sets
+    /// `reliability_kind = RELIABLE_RELIABILITY_QOS`, only `-b` sets
+    /// BEST_EFFORT, and the writer and the reader both take it. A case that
+    /// names neither flag (`Test_FinalInstanceState_1`: `-S -t Square`) runs
+    /// a RELIABLE reader.
+    #[test]
+    fn reliability_is_reliable_unless_b_for_writer_and_reader() {
+        for args in [&["shape_main", "-P"][..], &["shape_main", "-P", "-r"]] {
+            assert_eq!(
+                writer_qos(&parse(args)).reliability.kind,
+                ReliabilityKind::Reliable
+            );
+        }
+        for args in [&["shape_main", "-S"][..], &["shape_main", "-S", "-r"]] {
+            assert_eq!(
+                reader_qos(&parse(args)).reliability.kind,
+                ReliabilityKind::Reliable
+            );
+        }
+        assert_eq!(
+            writer_qos(&parse(&["shape_main", "-P", "-b"]))
+                .reliability
+                .kind,
+            ReliabilityKind::BestEffort
+        );
+        assert_eq!(
+            reader_qos(&parse(&["shape_main", "-S", "-b"]))
+                .reliability
+                .kind,
+            ReliabilityKind::BestEffort
+        );
     }
 }

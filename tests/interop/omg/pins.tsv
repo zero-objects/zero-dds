@@ -1,0 +1,10 @@
+# The sources the OMG suite runs take at a fixed commit, one `kind name commit` line each:
+# the three suites (their harnesses and the cases), from github.com/omg-dds/<name>, and
+# Cyclone DDS master, built by build-cyclone-suite-clients.sh beside the released 11.0.1
+# (GitHub #60; its date and why in the commit that set it). provision.sh and
+# ci/Dockerfile.omg read them here. A change here rebuilds the ci-omg image.
+# kind	name	commit
+suite	dds-rtps	863b86f97cef931a437c84c47c97a3deea38347e
+suite	dds-xtypes	5a6454ad6317d431651c9ca6e575f26e305df4c8
+suite	dds-security	62f5ec427fa0da217bb60f54337ffa41eeff0cd0
+source	cyclonedds-master	3a5526315e64ac1d2a52e6ac1ae7f3e861c593d3

@@ -183,7 +183,7 @@ Location: `zerodds.yaml`/`zerodds.d/`, environment, `--set path=value`; preceden
 | `fastdds` | `K=0`, `PID_KEY_HASH` only | locators only | Fast DDS 3.6.1 |
 | `opendds` | as default | locators + sender | OpenDDS 3.34.0 |
 
-The default is accepted by all three measured implementations (per code comment `dialect.rs`, `DisposeKeyForm::KeyInPayloadWithHash`). The code gives no reason to change the value for one of the three peers; `cyclone`/`fastdds` reproduce their own form. The third axis `DirectedAddressing` is fixed to `PrefixEveryDatagram` for SEDP writers (`sedp/writer.rs:555–563`). Four more axes concern user writers only and belong to no dialect name: `GroupCoherentSetPid` (`writer.group_coherent_set_pid`), `HeartbeatGroupDigests` (`wire.omit_heartbeat_group_digests`), `GroupWireForm` (`writer.group_info_on_wire`) and `EndOfSetForm` (API only; the end of a set as a GAP, for InterCOM 4.3.1).
+The default is accepted by all three measured implementations (per code comment `dialect.rs`, `DisposeKeyForm::KeyInPayloadWithHash`). The code gives no reason to change the value for one of the three peers; `cyclone`/`fastdds` reproduce their own form. The third axis `DirectedAddressing` is fixed to `PrefixEveryDatagram` for SEDP writers (`sedp/writer.rs:555–563`). Five more axes concern user writers only and belong to no dialect name: `GroupCoherentSetPid` (`writer.group_coherent_set_pid`), `HeartbeatGroupDigests` (`wire.omit_heartbeat_group_digests`), `GroupWireForm` (`writer.group_info_on_wire`), `EndOfSetForm` (API only; the end of a set as a GAP, for InterCOM 4.3.1) and `WriterGroupInfoWidth` (API only; `PID_WRITER_GROUP_INFO` in 16 octets, for Dust 0.17.0).
 
 #### 6.1.4 `wire.big_endian`
 

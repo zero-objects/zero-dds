@@ -885,6 +885,22 @@ mod tests {
         assert_eq!(find_writer_group_info(&pl), Some(digest));
     }
 
+    /// Dust DDS 0.17.0 writes `PID_WRITER_GROUP_INFO` with sixteen octets
+    /// (`crate::dialect::WriterGroupInfoWidth`); the digest is its first
+    /// four, the `GroupDigest_t` of DDSI-RTPS 2.5 §9.3.2.5.
+    #[test]
+    fn a_sixteen_octet_writer_group_info_is_read_by_its_first_four() {
+        let mut pl = ParameterList::new();
+        let mut wide = [0u8; 16];
+        wide[..4].copy_from_slice(&[0x6f, 0x62, 0x13, 0x62]);
+        wide[4..].copy_from_slice(&[0xaa; 12]);
+        pl.push(Parameter::new(pid::WRITER_GROUP_INFO, wide));
+        assert_eq!(
+            find_writer_group_info(&pl),
+            Some(crate::group_digest::GroupDigest([0x6f, 0x62, 0x13, 0x62]))
+        );
+    }
+
     #[test]
     fn a_short_group_parameter_is_not_read() {
         let mut pl = ParameterList::new();

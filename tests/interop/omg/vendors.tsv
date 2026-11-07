@@ -1,0 +1,23 @@
+# The vendor executables of the OMG interoperability suites, as the suites release them.
+# provision.sh downloads each from the suite's GitHub release, checks the sha256
+# GitHub publishes for the asset and unpacks it under <dest>/vendors/<suite>/: in the
+# ci-omg image of GitLab (ci/Dockerfile.omg, /opt/omg) and in the interop workflow of
+# GitHub. A change here rebuilds the ci-omg image.
+# suite	release	asset	sha256
+dds-rtps	v2.1.2026	connext_dds-7.7.0_shape_main_linux.zip	98e19c5cb38e77becf606f738b1de4b6bc2d1a12600b973cffd223d14ce8132c
+dds-rtps	v2.1.2026	dust_dds-0.17.0_shape_main_linux.zip	5e7e12f6cdd14d8283442561f87c7a7386cd726547d2d7ff5c06d44d5623fcea
+dds-rtps	v2.1.2026	eclipse_cyclone-11.0.1_shape_main_linux.zip	5b1f40e6dc56f875c5dad384ce57dc42ee5149296e3ca9ea8a6a815a8e45a97a
+dds-rtps	v2.1.2026	eprosima_fastdds-3.6.1_shape_main_linux.zip	78da741fae9e421d1397dd49583e63067ab289cd0ae37a31d203bddf1b12c210
+dds-rtps	v2.1.2026	hdds-1.4.9_shape_main_linux.zip	b3eab7da3b6d2e49e9e890c98cf3e3432b3e55ad4be8658b8296b16667e958bf
+dds-rtps	v2.1.2026	intercom_dds-4.3.1_shape_main_linux.zip	6f9a9fe7bed1e62710093ade15f75faaaa42cfe468f4cca6ded2fa9b24062b5e
+dds-rtps	v2.1.2026	opendds-3.35.0-dev_shape_main_linux.zip	831f501cf74566b91ba72bd1f2f965b71c6106896281cbb437d948e02762d5f4
+dds-rtps	v2.1.2026	toc_coredx_dds-6.15.3_shape_main_linux.zip	29ceb0b07bb4b2647f7bf3377f1c8d28bc026b4ce9144bf3624f56e2ab189dea
+dds-rtps	v2.1.2026	zzdds-0.3.2_shape_main_linux.zip	937cd9e2331b52030bcddfcf87e8039e6126858a32888ef709e425ae42a391c0
+dds-xtypes	v2.0.2025-wip	connext_dds-7.7.0_test_main_linux.zip	0d090e2d264e8614c20ca28c1fa917b71904561975e4c3cb3cc16629840e411c
+dds-xtypes	v2.0.2025-wip	dust_dds-0.16.0_test_main_linux.zip	2f0bf6f92c32d3454bccaa7a0727b2b8f5029a8909ed9ee0855d598c07bc1339
+dds-xtypes	v2.0.2025-wip	eclipse_cyclone-11.0.1_test_main_linux.zip	66306530a2f3e905b3f3fcbfe7e09741ecfe7d8b744f21a59aa6d96391d1e8e8
+dds-xtypes	v2.0.2025-wip	hdds-1.3.0_test_main_linux.zip	86493c0090a1f52b14904058035df78d773f4000d10a5f63a6bba78af5d31e74
+dds-xtypes	v2.0.2025-wip	opendds-3.35.0-dev_test_main_linux.zip	50b843748246fd3b07c3e8c48e192d94235ca683e569cb991fb4c506026edd83
+dds-xtypes	v2.0.2025-wip	toc_coredx_dds-6.15.3_test_main_linux.zip	9327d25fd0adc59c4d3c960186876b55001138d18d90e21e91c7bb17b9e4eff7
+dds-security	2026-05-20	rti_connext_dds_7.7.zip	438c60554649809c6600868be2cfc340d5565ba4a5130a6eea0ccf78a64c4145
+dds-security	2026-05-20	toc_coredx_dds_6.14.1_test_sec_linux.zip	6f7413e322a8da8ebbd285502645e7396aebb094104af4dfce44e590792435e5

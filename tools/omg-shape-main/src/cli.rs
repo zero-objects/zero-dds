@@ -96,10 +96,11 @@ pub struct Options {
     pub domain_id: i32,
 
     /// `-b`: BEST_EFFORT reliability.
-    #[arg(short = 'b')]
+    #[arg(short = 'b', conflicts_with = "reliable")]
     pub best_effort: bool,
 
-    /// `-r`: RELIABLE reliability.
+    /// `-r`: RELIABLE reliability, also the default without `-b`
+    /// (`qos_map::reliability`).
     #[arg(short = 'r')]
     pub reliable: bool,
 

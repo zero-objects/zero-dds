@@ -23,6 +23,11 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `dialect::WriterGroupInfoWidth` (`RtpsBehaviour::writer_group_info_width`,
+  `with_writer_group_info_width`): `Sixteen` writes `PID_WRITER_GROUP_INFO`
+  as the 4-octet `GroupDigest_t` of DDSI-RTPS 2.5 §9.3.2.5 followed by 12
+  zero octets, the form a Dust DDS 0.17.0 reader requires; `Specification`
+  (the default) writes the 4 octets. `VendorId::DUST` (0x0114).
 - `PublicationBuiltinTopicData` and `SubscriptionBuiltinTopicData` carry
   `properties` (`PID_PROPERTY_LIST` 0x0059, DDS-Security 1.2 §7.3.21,
   §7.5.1.7, §7.5.1.8): the `propagate = TRUE` entries of the endpoint's

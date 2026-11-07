@@ -79,7 +79,7 @@ use zerodds_dcps::{
     InstanceHandle, InstanceStateKind, TopicQos,
 };
 use zerodds_qos::Duration;
-use zerodds_rtps::dialect::{EndOfSetForm, GroupWireForm};
+use zerodds_rtps::dialect::{EndOfSetForm, GroupWireForm, WriterGroupInfoWidth};
 use zerodds_rtps::wire_types::VendorId;
 use zerodds_types::assignability::KeyMemberBounds;
 
@@ -441,6 +441,12 @@ fn the_runtime_calls_keep_the_shape_shape_main_uses() {
             runtime
                 .user_writer_behaviour()
                 .with_end_of_set_form(EndOfSetForm::Gap),
+        );
+        runtime.set_vendor_rtps_behaviour(
+            VendorId::DUST,
+            runtime
+                .user_writer_behaviour()
+                .with_writer_group_info_width(WriterGroupInfoWidth::Sixteen),
         );
     };
     let _ = |config: RuntimeConfig| -> zerodds_dcps::Result<DomainParticipant> {

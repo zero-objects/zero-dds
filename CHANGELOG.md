@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **`PID_WRITER_GROUP_INFO` in 16 octets for Dust DDS participants**
+  (`zerodds-rtps` `dialect::WriterGroupInfoWidth`, `VendorId::DUST`). A Dust
+  0.17.0 reader reads the parameter as 16 octets (`GroupDigest = [Octet;
+  16]`, dust-dds `dds/src/rtps_messages/types.rs`, read in
+  `cache_change.rs`) and drops a DATA that carries the 4 octets of
+  DDSI-RTPS 2.5 §9.3.2.5. `WriterGroupInfoWidth::Sixteen` writes the digest
+  followed by 12 zero octets; the default stays the specification's form, and
+  a ZeroDDS reader reads the first 4 octets of either. `shape_main` sets it
+  for `VendorId::DUST` (0x0114). Measured on the Linux test host: OMG
+  dds-rtps ZeroDDS -> Dust `Test_CoherentSets_6`, `_7`, `_8`, `_12`, `_16`,
+  `_17`, `_18`, `_21` and `Test_OrderedAccess_6`, `_7`, `_8`, `_14`, `_15`,
+  `_16` red before, 14 of 14 green after; the whole suite ZeroDDS -> Dust
+  110 of 110, ZeroDDS -> Connext 110 of 110. Tests:
+  `a_participant_set_to_sixteen_octets_gets_the_writer_set_widened`,
+  `a_sixteen_octet_writer_group_info_is_read_by_its_first_four`.
+
 - **`derive(DdsType)`: a `@final` or `@appendable` enumeration, and a
   discriminator value without a member as a unit variant** (GitHub #33;
   `zerodds-derive`, `zerodds-codec`, `zerodds-wire` `TypeDesc::
@@ -636,6 +652,24 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   domains by the protocol of `crates/test-domains`.
 
 ### Fixed
+
+- **A `shape_main` reader without `-b` is RELIABLE**, as in the reference
+  client: OMG dds-rtps `srcCxx/shape_main.cxx` sets `reliability_kind =
+  RELIABLE_RELIABILITY_QOS` in `ShapeOptions()` and applies it to the writer
+  and the reader; only `-b` gives BEST_EFFORT. `shape_main` left the DDS
+  default when neither `-r` nor `-b` was given, and the default of a
+  DataReader is BEST_EFFORT: in the 39 suite cases whose subscriber names
+  neither flag the ZeroDDS reader was the one best-effort endpoint.
+  Measured: `Test_FinalInstanceState_1` CoreDX -> ZeroDDS red in both runs
+  of the whole suite (the zero-objects fork of dds-rtps on GitHub, the Linux
+  test host), green in 16 runs outside it (11 alone, 5 after
+  `Test_FinalInstanceState_0`); in the red run no HEARTBEAT or ACKNACK of
+  the user writer was on the wire and CoreDX never sent its four dispose
+  DATA. After:
+  each of the ten products (ZeroDDS included) -> ZeroDDS 39 of 39 for the
+  39 cases, the whole suite CoreDX -> ZeroDDS 110 of 110, and HEARTBEAT and
+  ACKNACK of the user writer on the wire. `-b` with `-r` is refused. Test:
+  `reliability_is_reliable_unless_b_for_writer_and_reader`.
 
 - **`zerodds-lint check` reports no error**
   (`docs/architecture/04_safety_by_architecture.md` §3.4): of the 40, 24 were a method named `expect` in `zerodds-wire`'s

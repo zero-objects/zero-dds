@@ -342,6 +342,27 @@ pub enum EndOfSetForm {
     Gap,
 }
 
+/// How wide the `writerSet` is that `PID_WRITER_GROUP_INFO` and
+/// `PID_SECURE_WRITER_GROUP_INFO` carry to a peer.
+///
+/// DDSI-RTPS 2.5 §9.3.2.5 has `typedef octet GroupDigest_t[4]`, which
+/// ZeroDDS sends. Dust DDS 0.17.0 reads the parameter as sixteen octets
+/// (`GroupDigest = [Octet; 16]`, dust-dds `dds/src/rtps_messages/types.rs`
+/// at `7cd45ff`) and drops a DATA whose parameter is shorter
+/// (`dds/src/rtps/cache_change.rs`); its reader only looks at whether the
+/// parameter is there. Measured on OMG dds-rtps `Test_OrderedAccess_6` and
+/// `Test_CoherentSets_6`: ZeroDDS -> Dust `DATA_NOT_RECEIVED` with the four
+/// octets, OK without the parameter. [`Self::Sixteen`] gives such a peer
+/// the four octets followed by twelve zero octets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum WriterGroupInfoWidth {
+    /// `GroupDigest_t`, four octets. The default.
+    #[default]
+    Specification,
+    /// Sixteen octets: the four of `GroupDigest_t`, then twelve zero octets.
+    Sixteen,
+}
+
 /// Whether the HEARTBEAT of a writer with group information carries
 /// `writerSet` and `secureWriterSet` (DDSI-RTPS 2.5 Table 8.44, §9.4.2.19).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -378,6 +399,8 @@ pub struct RtpsBehaviour {
     pub group_wire_form: GroupWireForm,
     /// How the end-of-coherent-set DATA of a writer reaches the peer.
     pub end_of_set_form: EndOfSetForm,
+    /// How wide the `writerSet` of `PID_WRITER_GROUP_INFO` is.
+    pub writer_group_info_width: WriterGroupInfoWidth,
 }
 
 impl RtpsBehaviour {
@@ -392,6 +415,7 @@ impl RtpsBehaviour {
             heartbeat_group_digests: HeartbeatGroupDigests::Sent,
             group_wire_form: GroupWireForm::Specification,
             end_of_set_form: EndOfSetForm::Data,
+            writer_group_info_width: WriterGroupInfoWidth::Specification,
         }
     }
 
@@ -441,6 +465,13 @@ impl RtpsBehaviour {
     #[must_use]
     pub const fn with_end_of_set_form(mut self, f: EndOfSetForm) -> Self {
         self.end_of_set_form = f;
+        self
+    }
+
+    /// Builder: sets [`Self::writer_group_info_width`].
+    #[must_use]
+    pub const fn with_writer_group_info_width(mut self, w: WriterGroupInfoWidth) -> Self {
+        self.writer_group_info_width = w;
         self
     }
 }

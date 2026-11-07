@@ -38,7 +38,7 @@ use zerodds_dcps::{
     DomainParticipantQos, HANDLE_NIL, InstanceHandle, InstanceStateKind, Sample, TopicQos,
 };
 
-use zerodds_rtps::dialect::{EndOfSetForm, GroupWireForm};
+use zerodds_rtps::dialect::{EndOfSetForm, GroupWireForm, WriterGroupInfoWidth};
 use zerodds_rtps::wire_types::VendorId;
 
 use cli::{AccessScopeArg, FinalInstanceStateArg, Options};
@@ -180,6 +180,12 @@ fn create_participant(
 /// the DATA of Table 9.22 (`zerodds_rtps::dialect::EndOfSetForm`; measured:
 /// ZeroDDS -> InterCOM Test_CoherentSets_10/_19 DATA_NOT_RECEIVED, the
 /// reader requesting the end DATA again and again).
+///
+/// Dust 0.17.0 reads `PID_WRITER_GROUP_INFO` as sixteen octets and drops a
+/// DATA that carries the four of DDSI-RTPS 2.5 §9.3.2.5
+/// (`zerodds_rtps::dialect::WriterGroupInfoWidth`; measured: ZeroDDS -> Dust
+/// the 14 GROUP-scope cases of CoherentSets and OrderedAccess
+/// DATA_NOT_RECEIVED, green without the parameter).
 fn vendor_forms(participant: &DomainParticipant, group_form: bool) {
     let Some(runtime) = participant.runtime() else {
         return;
@@ -197,6 +203,12 @@ fn vendor_forms(participant: &DomainParticipant, group_form: bool) {
         runtime
             .user_writer_behaviour()
             .with_end_of_set_form(EndOfSetForm::Gap),
+    );
+    runtime.set_vendor_rtps_behaviour(
+        VendorId::DUST,
+        runtime
+            .user_writer_behaviour()
+            .with_writer_group_info_width(WriterGroupInfoWidth::Sixteen),
     );
 }
 

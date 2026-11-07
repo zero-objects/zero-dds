@@ -79,7 +79,7 @@
 #   `security-protection-1`), workers of at most 70 and 15 s.
 # - dds-xtypes runs against Cyclone only, every case.
 # - Cyclone DDS master beside its release (GitHub #60; ci/Dockerfile.omg builds
-#   its clients at CYCLONEDDS_MASTER_COMMIT): dds-rtps `rtps-vendor-1`, as
+#   its clients at the cyclonedds-master commit of pins.tsv): dds-rtps `rtps-vendor-1`, as
 #   Fast DDS, its dialect of the wire elements; dds-xtypes `xtypes-master-1`,
 #   the families whose code changed between the release's build and master
 #   (union labels, discriminators and their keys, mutable unions, defaults,

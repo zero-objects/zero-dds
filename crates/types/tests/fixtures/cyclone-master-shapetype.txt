@@ -1,7 +1,7 @@
 Provenance of the two lines below: a capture on the Linux test host of one
 OMG dds-rtps pair, ZeroDDS `shape_main` (main ce436e7098a) publishing
 `Square` and Cyclone DDS master 3a5526315e64ac1d2a52e6ac1ae7f3e861c593d3
-subscribing, its `shape_main` built by ci/build-cyclone-suite-clients.sh with
+subscribing, its `shape_main` built by tests/interop/omg/build-cyclone-suite-clients.sh with
 SHAPE_TYPELIB=ON (Cyclone's default build, with the type library) from the
 dds-rtps harness at 863b86f97cef931a437c84c47c97a3deea38347e. The type is
 the suite's `ShapeType` (srcC/shape.idl: `@appendable`, `@key string<128>

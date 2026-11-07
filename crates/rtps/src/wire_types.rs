@@ -121,6 +121,10 @@ impl VendorId {
     /// zzdds (the VendorId its participants announce).
     pub const ZZDDS: Self = Self([0x01, 0x1B]);
 
+    /// Dust DDS of S2E Software Systems (the VendorId its participants
+    /// announce).
+    pub const DUST: Self = Self([0x01, 0x14]);
+
     /// Bytes unchanged.
     #[must_use]
     pub fn to_bytes(self) -> [u8; 2] {

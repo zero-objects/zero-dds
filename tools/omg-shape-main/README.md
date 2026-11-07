@@ -29,7 +29,7 @@ table, cross-checked against both committed Rust reference clients
 | `-v [e|d]` | `Options::debug_verbosity` -> the `debugln!` diagnostics in `src/main.rs` | full (`d` prints per-step diagnostics on **stderr**, `e` and the absent flag print errors only; stdout is byte-identical either way, so the harness's `pexpect` matching is unaffected) |
 | `-P` / `-S` | pub/sub dispatch | full |
 | `-d <int>` | `DomainParticipantFactory::create_participant` | full |
-| `-b` / `-r` | `ReliabilityQosPolicy` | full (QoS *set* correctly — see "Known runtime quirks": the live SEDP matcher does not *enforce* RELIABILITY compatibility) |
+| `-b` / `-r` | `ReliabilityQosPolicy` | full; without either flag the writer and the reader are RELIABLE, as in the reference client (`srcCxx/shape_main.cxx`, `ShapeOptions()`); `-b` with `-r` is refused |
 | `-k <depth>` | `HistoryQosPolicy` (0 → KeepAll) | full |
 | `-f <ms>` | `DeadlineQosPolicy` | full |
 | `-s <strength>` | `OwnershipQosPolicy` + `OwnershipStrengthQosPolicy` | full |
@@ -444,3 +444,12 @@ Table 9.22 (no data, no in-line QoS): it requests the number again and again and
 nothing after it. HDDS answers that request with a GAP, which InterCOM takes; InterCOM itself
 sends no coherent set. `shape_main` gives InterCOM participants the end of a set as a GAP
 (`zerodds_rtps::dialect::EndOfSetForm`).
+
+A Dust 0.17.0 reader reads `PID_WRITER_GROUP_INFO` as 16 octets (`GroupDigest = [Octet; 16]`,
+`dds/src/rtps_messages/types.rs`, read in `cache_change.rs`) and drops a DATA whose parameter
+holds the 4 octets of DDSI-RTPS 2.5 §9.3.2.5 (`GroupDigest_t`). With that form
+`Test_CoherentSets_6`, `_7`, `_8`, `_12`, `_16`, `_17`, `_18`, `_21` and
+`Test_OrderedAccess_6`, `_7`, `_8`, `_14`, `_15`, `_16` from ZeroDDS were red against Dust.
+`shape_main` gives Dust participants the digest followed by 12 zero octets
+(`zerodds_rtps::dialect::WriterGroupInfoWidth::Sixteen`); a ZeroDDS reader reads the first 4
+octets of either form.

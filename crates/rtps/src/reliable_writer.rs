@@ -2939,6 +2939,22 @@ impl ReliableWriter {
         })
     }
 
+    /// How wide `PID_WRITER_GROUP_INFO` is for `peer`
+    /// (`crate::dialect::WriterGroupInfoWidth`). `None` is the largest case,
+    /// the widest any matched reader gets.
+    fn writer_group_info_width(&self, peer: Option<Guid>) -> crate::dialect::WriterGroupInfoWidth {
+        let width = |peer: Guid| self.behaviour.for_peer(peer).writer_group_info_width;
+        match peer {
+            Some(peer) => width(peer),
+            None => self
+                .reader_proxies
+                .iter()
+                .map(|p| width(p.remote_reader_guid))
+                .find(|w| *w == crate::dialect::WriterGroupInfoWidth::Sixteen)
+                .unwrap_or_default(),
+        }
+    }
+
     /// Whether `peer` gets this writer's group information on the wire
     /// (`crate::dialect::GroupWireForm`).
     fn group_info_for(&self, peer: Guid) -> bool {
@@ -3160,11 +3176,18 @@ impl ReliableWriter {
         if let Some(group) = change.group.filter(|_| group_info) {
             let list = qos.get_or_insert_with(crate::parameter_list::ParameterList::new);
             list.push(crate::inline_qos::group_seq_num_param(group.gsn, true));
-            list.push(if self.secure_group_info {
+            let mut writer_set = if self.secure_group_info {
                 crate::inline_qos::secure_writer_group_info_param(group.writer_set)
             } else {
                 crate::inline_qos::writer_group_info_param(group.writer_set)
-            });
+            };
+            if self.writer_group_info_width(peer) == crate::dialect::WriterGroupInfoWidth::Sixteen {
+                let mut wide = [0u8; 16];
+                wide[..crate::group_digest::GroupDigest::WIRE_SIZE]
+                    .copy_from_slice(&group.writer_set.to_bytes());
+                writer_set = crate::parameter_list::Parameter::new(writer_set.id, wide);
+            }
+            list.push(writer_set);
             // A peer may be set to go without it (see
             // `crate::dialect::GroupCoherentSetPid`).
             // `None` is the largest case: every parameter that any peer gets.
@@ -4388,6 +4411,43 @@ mod tests {
                 crate::group_digest::GroupDigest::of_entities(&[w.guid().entity_id])
             );
         }
+    }
+
+    /// `WriterGroupInfoWidth::Sixteen` for a peer's participant gives that
+    /// peer's DATA a `PID_WRITER_GROUP_INFO` of sixteen octets, the four of
+    /// the digest and twelve zero octets; the default sends the four of
+    /// `GroupDigest_t` (DDSI-RTPS 2.5 §9.3.2.5).
+    #[test]
+    fn a_participant_set_to_sixteen_octets_gets_the_writer_set_widened() {
+        let group = alloc::sync::Arc::new(crate::writer_group::WriterGroup::new());
+        let mut w = group_writer(1, &group);
+        group.set_writers(&[w.guid().entity_id]);
+        let writer_set = |w: &mut ReliableWriter, value: u8| -> alloc::vec::Vec<u8> {
+            let dgs = w.write(&[value]).unwrap();
+            let data = only_data(&dgs[0].bytes).unwrap();
+            let qos = data.inline_qos.unwrap().into_list();
+            qos.parameters
+                .iter()
+                .find(|p| p.id == crate::parameter_list::pid::WRITER_GROUP_INFO)
+                .map(|p| p.value.to_vec())
+                .unwrap()
+        };
+        let digest =
+            crate::group_digest::GroupDigest::of_entities(&[w.guid().entity_id]).to_bytes();
+        assert_eq!(
+            writer_set(&mut w, 1),
+            digest.to_vec(),
+            "the default sends four"
+        );
+        w.set_participant_behaviour(
+            reader_guid().prefix,
+            crate::dialect::RtpsBehaviour::new()
+                .with_writer_group_info_width(crate::dialect::WriterGroupInfoWidth::Sixteen),
+        );
+        let wide = writer_set(&mut w, 2);
+        assert_eq!(wide.len(), 16);
+        assert_eq!(wide[..4], digest);
+        assert!(wide[4..].iter().all(|octet| *octet == 0));
     }
 
     /// `GroupCoherentSetPid::Omitted` for a peer's participant leaves
