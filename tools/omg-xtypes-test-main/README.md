@@ -116,6 +116,29 @@ Reading the XML instead needs a DDS-XML type description to become a
 it, not a model. That is the next piece of work and it is production
 work, not client work.
 
+## Where the suite expects another answer than the clause
+
+On four axes the suite's expectations assume the other answer, and the
+default of ZeroDDS stays the clause's. The suite runs pass the four flags
+to this client: the weekly run of ZeroDDS's own CI (`OMG_OURS_ARGS`), and
+the interop workflow of the `dds-xtypes` fork on GitHub.
+
+| flag | the case it is for | where it is argued |
+|---|---|---|
+| `--key-member-bounds ignored` | `struct_key_string_3`, `struct_key_enum_2`, `struct_key_seq_2`, `struct_key_struct_2`, `struct_key_union_2`; the default enforces the key-member bullets of XTypes 1.3 §7.2.4.4.4.4, Table 19 | `crates/types/src/assignability.rs`, `KeyMemberBounds` |
+| `--key-on-union-discriminator carried` | `union_uint32_one_key`, whose discriminator carries `key="true"` | `crates/idl-lower/src/lower.rs`, `KeyOnUnionDiscriminator` |
+| `--defaulted-discriminator-member stream-value` | `tryc_union_enum_disc_2`; the default is Table 19's member step, what RTI Connext and OpenDDS were measured handing back | `crates/ast-layout/src/key.rs`, `DefaultedDiscriminatorMember` |
+| `--strong-assignability names_ignored` | `SFinal[10]_S[20]_SFinalAlt[10]_S[20]`, `seq(SFinal,10)_seq(SFinalAlt,10)`; the default is the MINIMAL relation of XTypes 1.3 §7.2.4.3 | `crates/types/src/assignability.rs`, `StrongAssignability` |
+
+Measured on the Linux test host with the suite at the fork's commit
+`4529036`, ZeroDDS against itself, in the four `-x`/`--type-object-version`
+configurations: without the flags the eight cases above other than
+`union_uint32_one_key` fail in all four (32 of 32 runs), as in the GitHub
+runs 42392808571 and 42392811708 of the fork; with the four flags all 32
+pass. `struct_key_union_2` passes with `--key-member-bounds ignored` alone
+and fails with each of the other three alone (measured with `-x 2
+--type-object-version 2`).
+
 ## Empty ACKNACK of the vendors
 
 Fast DDS (and, as recorded, OpenDDS and RTI Connext) send the ACKNACK of a reader that
