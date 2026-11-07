@@ -429,6 +429,7 @@ exclude = [
     "interop/typelookup-probe",
     "tests/interop/ci/hdds",
     "tests/issue32",
+    "tests/perf/dds-roundtrip-bench/dust",
     "tests/perf/dds-roundtrip-bench/hdds",
     "tools/wireprobe/hdds-shim",
     "tools/xtypes-1.3-gap-scan/probe",

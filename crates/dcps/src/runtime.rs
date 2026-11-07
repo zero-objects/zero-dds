@@ -7529,6 +7529,11 @@ struct UserReaderSlot {
     /// payload cannot hold, is not delivered, and this says so once per
     /// writer instead of dropping it without a word.
     encapsulation_refused_reported: alloc::collections::BTreeSet<[u8; 16]>,
+    /// Remote writer GUIDs this reader already filed
+    /// `reader.sample.oversize_refused` for: a payload beyond the
+    /// `dataMaxSizeSerialized` its writer announced (DDSI-RTPS 2.5 Table
+    /// 8.72) is not delivered, and this says so once per writer.
+    oversize_refused_reported: alloc::collections::BTreeSet<[u8; 16]>,
     /// Per-instance canonical key holder (XTypes 1.3 §7.6.8 big-endian
     /// PLAIN_CDR2 — the same form [`UserSample::Lifecycle::key_holder`]
     /// documents), captured whenever this reader already decodes a sample
@@ -7723,6 +7728,12 @@ impl UserReaderSlot {
     /// `writer_guid` on this reader, as [`Self::note_key_hash_unavailable`].
     fn note_encapsulation_refused(&mut self, writer_guid: [u8; 16]) -> bool {
         self.encapsulation_refused_reported.insert(writer_guid)
+    }
+
+    /// First report of `reader.sample.oversize_refused` for `writer_guid`
+    /// on this reader, as [`Self::note_key_hash_unavailable`].
+    fn note_oversize_refused(&mut self, writer_guid: [u8; 16]) -> bool {
+        self.oversize_refused_reported.insert(writer_guid)
     }
 }
 
@@ -13901,6 +13912,7 @@ impl DcpsRuntime {
                     key_hash_support: KeyHashSupport::default(),
                     key_hash_unavailable_reported: alloc::collections::BTreeSet::new(),
                     encapsulation_refused_reported: alloc::collections::BTreeSet::new(),
+                    oversize_refused_reported: alloc::collections::BTreeSet::new(),
                     instance_key_holders: alloc::collections::BTreeMap::new(),
                     max_instance_key_holders,
                 })),
@@ -26639,6 +26651,44 @@ fn past_max_blocking_time<'a>(
 /// ([`ReaderRoom`]): it hands over at most what the reader has room for,
 /// and a sample it holds back is noted, so the DataReader wakes the
 /// runtime when it takes.
+/// Files `reader.sample.oversize_refused` the first time the RTPS reader of
+/// `slot` refused a payload of `writer` because it exceeds the
+/// `dataMaxSizeSerialized` that writer announced (DDSI-RTPS 2.5 Table 8.72):
+/// [`ReliableReader::oversize_payload_count`] rose past `before`. The
+/// refusal stands; without the event it left no trace outside that counter,
+/// which nothing reads, and a writer whose every sample was refused looked
+/// like a writer that sent nothing.
+fn report_oversize_refused(rt: &DcpsRuntime, slot: &mut UserReaderSlot, before: u64, writer: Guid) {
+    if slot.reader.oversize_payload_count() <= before {
+        return;
+    }
+    let writer_guid = writer.to_bytes();
+    if !slot.note_oversize_refused(writer_guid) {
+        return;
+    }
+    let announced = slot
+        .reader
+        .writer_data_max_size(writer)
+        .map_or_else(|| String::from("none"), |max| alloc::format!("{max}"));
+    rt.config.observability.record(
+        &zerodds_foundation::observability::Event::new(
+            zerodds_foundation::observability::Level::Warn,
+            zerodds_foundation::observability::Component::Dcps,
+            "reader.sample.oversize_refused",
+        )
+        .with_attr(
+            "reader",
+            alloc::format!("{:02x?}", slot.reader.guid().to_bytes()),
+        )
+        .with_attr("writer", alloc::format!("{writer_guid:02x?}"))
+        .with_attr("data_max_size_serialized", announced)
+        .with_attr(
+            "setting",
+            "reader.honor_data_max_size_serialized=false takes such payloads",
+        ),
+    );
+}
+
 fn within_reader_room<R>(
     slot: &mut UserReaderSlot,
     handle: impl FnOnce(&mut ReliableReader) -> R,
@@ -27362,6 +27412,7 @@ fn handle_user_datagram_from(
                         let opener = opener.as_ref();
                         #[cfg(not(feature = "security"))]
                         let opener = opener.as_ref().filter(|_| !slot.relay);
+                        let oversize_before = slot.reader.oversize_payload_count();
                         within_reader_room(&mut slot, |reader| {
                             for (data, source_ts) in &run {
                                 reader.handle_data_opening(
@@ -27373,6 +27424,12 @@ fn handle_user_datagram_from(
                                 );
                             }
                         });
+                        report_oversize_refused(
+                            rt,
+                            &mut slot,
+                            oversize_before,
+                            Guid::new(src_prefix, d.writer_id),
+                        );
                         for sample in released_by_run.drain(..) {
                             // Listener zero-copy view only for alive
                             // samples with a valid encap header.
@@ -27455,7 +27512,8 @@ fn handle_user_datagram_from(
                         let opener = opener.as_ref();
                         #[cfg(not(feature = "security"))]
                         let opener = opener.as_ref().filter(|_| !slot.relay);
-                        for sample in within_reader_room(&mut slot, |reader| {
+                        let oversize_before = slot.reader.oversize_payload_count();
+                        let reassembled = within_reader_room(&mut slot, |reader| {
                             reader.handle_data_frag_opening(
                                 src_prefix,
                                 df,
@@ -27463,7 +27521,14 @@ fn handle_user_datagram_from(
                                 cur_source_ts,
                                 opener,
                             )
-                        }) {
+                        });
+                        report_oversize_refused(
+                            rt,
+                            &mut slot,
+                            oversize_before,
+                            Guid::new(src_prefix, df.writer_id),
+                        );
+                        for sample in reassembled {
                             let listener_view = listener_view_of(&sample);
                             if let Some(item) = deliver_sample_with_key_hash(
                                 rt,
@@ -49457,6 +49522,144 @@ mod tests {
             "listener and channel are exclusive: nothing may wait in the channel"
         );
         rt.shutdown();
+    }
+
+    /// A writer that announces the `dataMaxSizeSerialized` (DDSI-RTPS 2.5
+    /// Table 8.72) of its type without the alignment padding is read: RTI
+    /// Connext 7.7.0 announces 5 for `@final struct { uint8 x1; }` and sends
+    /// eight octets, three of them padding its encapsulation options count
+    /// (XTypes 1.3 §7.6.3.1.2). A payload beyond the bound without such
+    /// padding is still refused, and `reader.sample.oversize_refused` says so
+    /// once for the writer, not once per sample.
+    #[test]
+    fn declared_padding_passes_the_announced_maximum_and_a_refusal_is_reported_once() {
+        use zerodds_foundation::observability::{Component, Level, VecSink};
+        use zerodds_rtps::header::RtpsHeader;
+        use zerodds_rtps::submessage_header::{
+            FLAG_E_LITTLE_ENDIAN, SubmessageHeader, SubmessageId,
+        };
+        use zerodds_rtps::submessages::DataSubmessage;
+        use zerodds_rtps::wire_types::SequenceNumber;
+
+        let sink = Arc::new(VecSink::new());
+        let domain_lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            domain_lease.id(),
+            GuidPrefix::from_bytes([0xC3; 12]),
+            RuntimeConfig {
+                observability: sink.clone(),
+                ..RuntimeConfig::default()
+            },
+        )
+        .expect("start runtime");
+        let _stop_rt = StopOnDrop(Arc::clone(&rt));
+
+        let (reader_eid, _rx) = rt
+            .register_user_reader_kind(
+                UserReaderConfig {
+                    topic_name: "PaddedToMaximum".into(),
+                    type_name: "PaddedToMaximumType".into(),
+                    reliable: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .expect("register reader");
+        let heard: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&heard);
+        assert!(rt.set_user_reader_listener(
+            reader_eid,
+            Some(Box::new(move |body: &[u8], _, _, _: &SampleOrigin| {
+                into.lock().expect("heard").push(body.to_vec());
+            })),
+        ));
+
+        let writer_eid = EntityId::user_writer_no_key([0x41, 0x42, 0x43]);
+        let prefix = GuidPrefix::from_bytes([0xD5; 12]);
+        let writer = Guid::new(prefix, writer_eid);
+        {
+            let mut publication = test_publication(
+                writer,
+                "PaddedToMaximum",
+                zerodds_qos::ReliabilityKind::Reliable,
+            );
+            publication.data_max_size_serialized = Some(5);
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            let now = rt.start_instant.elapsed();
+            sedp.cache_mut().insert_publication(publication, now);
+        }
+        rt.match_local_reader_against_cache(reader_eid);
+
+        let data = |n: i64, payload: &[u8]| {
+            let (body, flags) = DataSubmessage {
+                extra_flags: 0,
+                reader_id: reader_eid,
+                writer_id: writer_eid,
+                writer_sn: SequenceNumber(n),
+                inline_qos: None,
+                data_flag: true,
+                key_flag: false,
+                non_standard_flag: false,
+                serialized_payload: zerodds_rtps::payload::Payload::from(payload),
+            }
+            .write_body(true);
+            let mut bytes = RtpsHeader::new(VendorId::ZERODDS, prefix)
+                .to_bytes()
+                .to_vec();
+            let sh = SubmessageHeader {
+                submessage_id: SubmessageId::Data,
+                flags: FLAG_E_LITTLE_ENDIAN | (flags & !FLAG_E_LITTLE_ENDIAN),
+                octets_to_next_header: u16::try_from(body.len()).expect("body fits u16"),
+            };
+            bytes.extend_from_slice(&sh.to_bytes());
+            bytes.extend_from_slice(&body);
+            bytes
+        };
+        let heard_now = || heard.lock().expect("heard").clone();
+        // CDR_LE, one octet of data, three octets of padding declared.
+        let padded = [0x00, 0x01, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00];
+        // CDR_LE, four octets of data and no padding: eight octets of data.
+        let oversized = [0x00, 0x01, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04];
+
+        handle_user_datagram(&rt, &data(1, &padded), rt.start_instant.elapsed());
+        assert_eq!(heard_now(), alloc::vec![alloc::vec![0x01]]);
+        handle_user_datagram(&rt, &data(2, &oversized), rt.start_instant.elapsed());
+        handle_user_datagram(&rt, &data(3, &oversized), rt.start_instant.elapsed());
+        handle_user_datagram(&rt, &data(4, &padded), rt.start_instant.elapsed());
+        assert_eq!(
+            heard_now(),
+            alloc::vec![alloc::vec![0x01], alloc::vec![0x01]],
+            "SN 2 and 3 are refused, SN 4 follows in order"
+        );
+        // DDS 1.4 §2.2.4.1: a refused sample never reaches the DataReader.
+        assert_eq!(
+            rt.user_reader_sample_lost(reader_eid),
+            2,
+            "SN 2 and 3 are SAMPLE_LOST"
+        );
+        rt.shutdown();
+
+        let events: Vec<_> = sink
+            .snapshot()
+            .into_iter()
+            .filter(|e| e.name == "reader.sample.oversize_refused")
+            .collect();
+        assert_eq!(events.len(), 1, "once per writer: {events:?}");
+        let event = &events[0];
+        assert_eq!(event.level, Level::Warn);
+        assert_eq!(event.component, Component::Dcps);
+        let attr = |key: &str| {
+            event
+                .attrs
+                .iter()
+                .find(|a| a.key == key)
+                .map(|a| a.value.clone())
+        };
+        assert_eq!(attr("data_max_size_serialized").as_deref(), Some("5"));
+        assert_eq!(
+            attr("writer"),
+            Some(alloc::format!("{:02x?}", writer.to_bytes()))
+        );
     }
 
     /// The SEDP announcement of a remote ZeroDDS writer `writer` of `topic`

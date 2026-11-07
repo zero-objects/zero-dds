@@ -414,6 +414,17 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   rate at the reader, loss, latency quantiles). Its values are in
   `tests/perf/baseline/speed.json` under the label `vendors`.
 
+- **Dust DDS in the speed pillar**: the row `dust` of
+  `tests/perf/speed/speed.py`, a Rust app over the dust_dds API
+  (`tests/perf/dds-roundtrip-bench/dust`, dust_dds and dust_dds_gen 0.16.0
+  from crates.io, the type generated from `roundtrip.idl`), built by
+  `build.sh` and measured by `speed-vendors-5` in the same run as HDDS. Dust
+  DDS 0.16.0 has RTPS over UDPv4 only; its app refuses
+  `ZERODDS_BENCH_TRANSPORT=SHM`. Under KEEP_ALL its writer keeps every
+  sample, so a write after `max_samples` writes returns `OutOfResources`
+  (measured on the Linux test host, `max_samples` 1000: 1000 written, every
+  later write refused, RELIABLE and BEST_EFFORT); the app's header says so.
+
 - **Cyclone DDS `master` beside its release in the interop pillar** (GitHub
   #60). The ci-omg image builds Cyclone at `CYCLONEDDS_MASTER_COMMIT`
   (`ci/Dockerfile.omg`, stage `cyclone-master`) and the dds-rtps and
@@ -652,6 +663,21 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   domains by the protocol of `crates/test-domains`.
 
 ### Fixed
+
+- **Samples of an RTI Connext writer whose type ends in a one- or two-octet
+  member were refused**: the reader held the payload against the writer's
+  `dataMaxSizeSerialized` (DDSI-RTPS 2.5 Table 8.72) with the padding octets
+  the encapsulation options count. DDS-XTypes 1.3 §7.6.3.1.2 puts them after
+  the end of the serialized payload, and ZeroDDS' own writer announces the
+  header and the data without them. Connext 7.7.0 announces 5 for
+  `@final struct { uint8 x1; }` and sends 8 octets, three declared padding;
+  OMG dds-xtypes, Connext as publisher: `struct_uint8_uint8` and seven other
+  cases ended in `DATA_NOT_RECEIVED` in all four configurations and pass in
+  32 of 32 runs (Linux test host). The refusal of a payload beyond the bound
+  is no longer silent: it counts as SAMPLE_LOST (DDS 1.4 §2.2.4.1; it was
+  marked irrelevant, which RTPS leaves out of the lost changes), and the
+  event `reader.sample.oversize_refused`, once per reader and writer, names
+  the bound.
 
 - **A `shape_main` reader without `-b` is RELIABLE**, as in the reference
   client: OMG dds-rtps `srcCxx/shape_main.cxx` sets `reliability_kind =

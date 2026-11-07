@@ -96,8 +96,9 @@ pub struct WriterProxyState {
     pub delivered_any: bool,
     /// Changes of this writer that can no longer arrive, since the last
     /// [`ReliableReader::take_lost`]: missing behind a gap a BEST_EFFORT
-    /// reader stepped over, or dropped by the writer before a RELIABLE
-    /// reader had them (its HEARTBEAT's `firstSN` passed them).
+    /// reader stepped over, dropped by the writer before a RELIABLE
+    /// reader had them (its HEARTBEAT's `firstSN` passed them), or refused
+    /// beyond the writer's `dataMaxSizeSerialized`.
     pub lost_changes: u64,
     /// The writer's open coherent set, followed across the changes handed
     /// out in order (DDSI-RTPS 2.5 §8.7.6).
@@ -501,6 +502,47 @@ pub struct DeliveredSample {
     /// The QoS the DATA carried in-line, which override its writer's
     /// (DDSI-RTPS 2.5 §8.3.8.2).
     pub inline_qos_override: crate::inline_qos::InlineQosOverride,
+}
+
+/// The length of a SerializedPayload that `dataMaxSizeSerialized`
+/// (DDSI-RTPS 2.5 Table 8.72) is held against: the encapsulation header and
+/// the serialized data, without the padding octets the low two bits of the
+/// encapsulation options count. XTypes 1.3 §7.6.3.1.2 has the receiver
+/// interpret them "to determine where the serialized data exactly ended";
+/// the octets behind that end are alignment, not data the writer bounded.
+///
+/// Measured on the Linux test host with the OMG dds-xtypes suite: an RTI
+/// Connext 7.7.0 writer of `@final struct { uint8 x1; }` announces
+/// `PID_TYPE_MAX_SIZE_SERIALIZED` 5 and sends every sample as
+/// `00 07 00 03 01 00 00 00`, eight octets, three of them declared padding.
+/// Held against all eight, every sample was refused, and `struct_uint8_uint8`
+/// and seven other cases whose types have one- or two-octet members ended in
+/// `DATA_NOT_RECEIVED`; the `uint32` twin, `00 07 00 00 01 00 00 00` under an
+/// announced 8, was delivered.
+///
+/// Counted whole: a payload that is not a standard one (`non_standard`, the
+/// NonStandardPayloadFlag on a payload nobody opened), and one whose first
+/// two octets name no encapsulation of DDS-XTypes 1.3 Table 60 or Table 39.
+/// The padding is taken off only where it is there, by the rule of
+/// `zerodds_wire_codec::decode::padding_present`: a count larger than the
+/// body, or a payload that is not a multiple of four (OpenDDS 3.34 counts
+/// padding it does not append), takes nothing off.
+fn serialized_size(payload: &[u8], non_standard: bool) -> usize {
+    let len = payload.len();
+    if non_standard {
+        return len;
+    }
+    let &[0x00, identifier, _, options, ..] = payload else {
+        return len;
+    };
+    if !matches!(identifier, 0x00..=0x03 | 0x06..=0x0b | 0x10..=0x15) {
+        return len;
+    }
+    let declared = usize::from(options & 0x03);
+    if declared > len - 4 || !len.is_multiple_of(4) {
+        return len;
+    }
+    len - declared
 }
 
 /// `PID_ORIGINAL_WRITER_INFO` from an in-line QoS (DDSI-RTPS 2.5 §8.7.9),
@@ -981,7 +1023,9 @@ impl ReliableReader {
 
     /// How many changes can no longer arrive, since the last call (DDS 1.4
     /// §2.2.4.1 SAMPLE_LOST): what writers that left had missing in front
-    /// of a held sample, and per writer [`WriterProxyState::lost_changes`].
+    /// of a held sample, and per writer [`WriterProxyState::lost_changes`],
+    /// among them the payloads refused beyond the writer's
+    /// `dataMaxSizeSerialized`.
     /// A BEST_EFFORT reader's samples lost in transit counted nowhere: the
     /// reader stepped over the gap, and SAMPLE_LOST stayed 0.
     pub fn take_lost(&mut self) -> u64 {
@@ -1034,6 +1078,15 @@ impl ReliableReader {
         if let Some(idx) = self.proxy_index_by_writer(writer) {
             self.writer_proxies[idx].data_max_size = max.and_then(|m| u32::try_from(m).ok());
         }
+    }
+
+    /// The `dataMaxSizeSerialized` recorded for the matched writer `writer`
+    /// ([`Self::set_writer_data_max_size`]); `None` without a bound or
+    /// without a proxy.
+    #[must_use]
+    pub fn writer_data_max_size(&self, writer: Guid) -> Option<u32> {
+        self.proxy_index_by_writer(writer)
+            .and_then(|idx| self.writer_proxies[idx].data_max_size)
     }
 
     /// Payloads larger than the `dataMaxSizeSerialized` their writer
@@ -1318,12 +1371,19 @@ impl ReliableReader {
             }
         };
         // `dataMaxSizeSerialized` bounds the payload as the writer produced
-        // it, so it is checked on the opened one.
-        if state
-            .data_max_size
-            .is_some_and(|max| payload.len() as u64 > u64::from(max))
-        {
+        // it, so it is checked on the opened one, and without the padding
+        // its encapsulation options declare (see `serialized_size`).
+        let non_standard = data.non_standard_flag && opener.is_none();
+        if state.data_max_size.is_some_and(|max| {
+            serialized_size(payload.as_ref(), non_standard) as u64 > u64::from(max)
+        }) {
+            // The change was meant for this reader and will not arrive in a
+            // form it takes: SAMPLE_LOST (DDS 1.4 §2.2.4.1), not one of the
+            // resource-limit reasons of SAMPLE_REJECTED. Marked known so it
+            // is not asked for again; counted in `lost_changes`, which
+            // `lost_changes_update` leaves out for a change marked irrelevant.
             self.oversize_payload_count = self.oversize_payload_count.saturating_add(1);
+            state.lost_changes = state.lost_changes.saturating_add(1);
             state.proxy.irrelevant_change_set(sn);
             Self::collect_in_order_into(state, self.best_effort, &mut self.release_budget, out);
             return;
@@ -1554,11 +1614,13 @@ impl ReliableReader {
                     }
                 }
             }
-            if state
-                .data_max_size
-                .is_some_and(|max| completed.payload.len() as u64 > u64::from(max))
-            {
+            let non_standard_whole = df.non_standard_flag && opener.is_none();
+            if state.data_max_size.is_some_and(|max| {
+                serialized_size(&completed.payload, non_standard_whole) as u64 > u64::from(max)
+            }) {
+                // SAMPLE_LOST, as for a DATA beyond the bound.
                 self.oversize_payload_count = self.oversize_payload_count.saturating_add(1);
+                state.lost_changes = state.lost_changes.saturating_add(1);
                 state.proxy.irrelevant_change_set(sn);
                 let mut released =
                     Self::collect_in_order_for(state, self.best_effort, &mut self.release_budget);
@@ -3830,6 +3892,126 @@ mod tests {
         r.set_writer_data_max_size(w, None);
         let out = r.handle_data(p1(), &big_with(w.entity_id, rd, 4), None);
         assert_eq!(out.len(), 1);
+        assert_eq!(r.oversize_payload_count(), 1);
+    }
+
+    /// Table 8.72 `dataMaxSizeSerialized` and XTypes 1.3 §7.6.3.1.2: the
+    /// padding octets the encapsulation options count are not part of what
+    /// the writer bounds. The first payload is a sample of an RTI Connext
+    /// 7.7.0 writer of `@final struct { uint8 x1; }`, which announces 5, as
+    /// captured on the Linux test host.
+    #[test]
+    fn declared_padding_does_not_count_against_the_announced_maximum() {
+        let mut r = make_reader(10);
+        let w = single_writer_guid();
+        let rd = r.guid().entity_id;
+        r.set_writer_data_max_size(w, Some(5));
+        assert_eq!(r.writer_data_max_size(w), Some(5));
+        let with = |n: i64, octets: &[u8]| {
+            let mut d = data(w.entity_id, rd, n, 0);
+            d.serialized_payload = crate::payload::Payload::from(octets.to_vec());
+            d
+        };
+        // PLAIN_CDR2_LE with three octets of padding declared: header and
+        // data are five octets, within the bound.
+        let connext = [0x00, 0x07, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00];
+        let out = r.handle_data(p1(), &with(1, &connext), None);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].payload.as_ref(), connext.as_slice());
+        assert_eq!(r.oversize_payload_count(), 0);
+        // The same length with no padding declared: eight octets of data.
+        let undeclared = [0x00, 0x07, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04];
+        assert!(r.handle_data(p1(), &with(2, &undeclared), None).is_empty());
+        assert_eq!(r.oversize_payload_count(), 1);
+        // Padding counted but not appended (the payload is not a multiple of
+        // four, as OpenDDS 3.34 writes it): nothing comes off, six octets.
+        let not_appended = [0x00, 0x07, 0x00, 0x02, 0x01, 0x02];
+        assert!(
+            r.handle_data(p1(), &with(3, &not_appended), None)
+                .is_empty()
+        );
+        assert_eq!(r.oversize_payload_count(), 2);
+        // No encapsulation identifier this reader knows: counted whole.
+        let unknown = [0x7f, 0x07, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00];
+        assert!(r.handle_data(p1(), &with(4, &unknown), None).is_empty());
+        assert_eq!(r.oversize_payload_count(), 3);
+        // NonStandardPayloadFlag on a payload nobody opened: counted whole.
+        let mut protected = with(5, &connext);
+        protected.non_standard_flag = true;
+        assert!(r.handle_data(p1(), &protected, None).is_empty());
+        assert_eq!(r.oversize_payload_count(), 4);
+        // The stream goes on in order behind the refusals.
+        let out = r.handle_data(p1(), &with(6, &connext), None);
+        assert_eq!(
+            out.iter().map(|s| s.sequence_number).collect::<Vec<_>>(),
+            alloc::vec![sn(6)]
+        );
+    }
+
+    /// DDS 1.4 §2.2.4.1: a payload refused beyond the writer's
+    /// `dataMaxSizeSerialized` is a lost change, under RELIABLE and under
+    /// BEST_EFFORT, counted once, and the stream goes on behind it.
+    #[test]
+    fn a_payload_refused_beyond_the_bound_is_a_lost_change() {
+        for best_effort in [false, true] {
+            let mut r = make_reader(10);
+            r.set_best_effort(best_effort);
+            let w = single_writer_guid();
+            let rd = r.guid().entity_id;
+            r.set_writer_data_max_size(w, Some(5));
+            let with = |n: i64, octets: &[u8]| {
+                let mut d = data(w.entity_id, rd, n, 0);
+                d.serialized_payload = crate::payload::Payload::from(octets.to_vec());
+                d
+            };
+            let oversized = [0x00, 0x07, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04];
+            let padded = [0x00, 0x07, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00];
+            assert!(r.handle_data(p1(), &with(1, &oversized), None).is_empty());
+            assert_eq!(r.take_lost(), 1, "best_effort={best_effort}");
+            // The same SN again is known and not counted a second time.
+            assert!(r.handle_data(p1(), &with(1, &oversized), None).is_empty());
+            assert_eq!(r.take_lost(), 0, "best_effort={best_effort}");
+            let out = r.handle_data(p1(), &with(2, &padded), None);
+            assert_eq!(
+                out.iter().map(|s| s.sequence_number).collect::<Vec<_>>(),
+                alloc::vec![sn(2)],
+                "best_effort={best_effort}"
+            );
+            assert_eq!(r.take_lost(), 0, "best_effort={best_effort}");
+        }
+    }
+
+    /// The same rule for a sample reassembled from DATA_FRAG.
+    #[test]
+    fn declared_padding_of_a_reassembled_sample_does_not_count_against_the_maximum() {
+        let mut r = make_reader(10);
+        let w = single_writer_guid();
+        let rd = r.guid().entity_id;
+        r.set_writer_data_max_size(w, Some(5));
+        let whole = |n: i64, octets: &[u8]| crate::submessages::DataFragSubmessage {
+            inline_qos: None,
+            extra_flags: 0,
+            reader_id: rd,
+            writer_id: w.entity_id,
+            writer_sn: sn(n),
+            fragment_starting_num: crate::wire_types::FragmentNumber(1),
+            fragments_in_submessage: 1,
+            fragment_size: 8,
+            sample_size: 8,
+            serialized_payload: alloc::sync::Arc::from(octets),
+            inline_qos_flag: false,
+            key_flag: false,
+            non_standard_flag: false,
+        };
+        let connext = [0x00, 0x07, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00];
+        let out = r.handle_data_frag(p1(), &whole(1, &connext), Duration::ZERO, None);
+        assert_eq!(out.len(), 1);
+        assert_eq!(r.oversize_payload_count(), 0);
+        let undeclared = [0x00, 0x07, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04];
+        assert!(
+            r.handle_data_frag(p1(), &whole(2, &undeclared), Duration::ZERO, None)
+                .is_empty()
+        );
         assert_eq!(r.oversize_payload_count(), 1);
     }
 

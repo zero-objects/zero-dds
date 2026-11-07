@@ -6662,13 +6662,17 @@ Unicast-Locatoren.
 the maximum size of any SerializedPayload that may be sent by the matched
 Writer."
 
-**Repo:** `crates/rtps/src/reliable_reader.rs` (`set_writer_data_max_size`, `oversize_payload_count`);
-`crates/dcps/src/runtime.rs` (Verdrahtung beim Anlegen des Writer-Proxys, `reader.honor_data_max_size_serialized`)
+**Repo:** `crates/rtps/src/reliable_reader.rs` (`set_writer_data_max_size`, `serialized_size`, `oversize_payload_count`);
+`crates/dcps/src/runtime.rs` (Verdrahtung beim Anlegen des Writer-Proxys, `reader.honor_data_max_size_serialized`, `report_oversize_refused`)
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::a_payload_beyond_the_announced_maximum_is_refused_and_counted`,
+`crates/rtps/src/reliable_reader.rs::tests::declared_padding_does_not_count_against_the_announced_maximum`,
+`crates/rtps/src/reliable_reader.rs::tests::declared_padding_of_a_reassembled_sample_does_not_count_against_the_maximum`,
+`crates/rtps/src/reliable_reader.rs::tests::a_payload_refused_beyond_the_bound_is_a_lost_change`,
+`crates/dcps/src/runtime.rs::tests::declared_padding_passes_the_announced_maximum_and_a_refusal_is_reported_once`,
 `crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_10_4_the_data_max_size_setting_is_on_by_default_and_read_from_yaml`
 
-**Status:** `done` — der Reader übernimmt das Attribut aus der Ankündigung und weist ein SerializedPayload darüber ab (nach dem Öffnen eines geschützten Payloads; die Nummer gilt als nicht verfügbar, der Zähler `oversize_payload_count` steigt). Ein DATA_FRAG-Sample wird nach dem Zusammensetzen geprüft; `AssemblerCaps` begrenzt weiter die Größe zusammengesetzter Samples. Die benannte Einstellung `reader.honor_data_max_size_serialized=false` nimmt den Payload trotzdem an, für einen Writer, der seine eigene Ankündigung überschreitet (Fast DDS 3.6.1: 160 Oktette angekündigt, 100 036 gesendet).
+**Status:** `done` — der Reader übernimmt das Attribut aus der Ankündigung und weist ein SerializedPayload darüber ab (nach dem Öffnen eines geschützten Payloads; die Nummer gilt als nicht verfügbar, der Zähler `oversize_payload_count` steigt). Ein DATA_FRAG-Sample wird nach dem Zusammensetzen geprüft; `AssemblerCaps` begrenzt weiter die Größe zusammengesetzter Samples. Die Füll-Oktette, die die Options des Encapsulation-Headers zählen, gehen nicht gegen die Grenze: DDS-XTypes 1.3 §7.6.3.1.2 setzt sie „after the end of the serialized payload“ und lässt den Empfänger damit bestimmen, „where the serialized data exactly ended“, und der eigene Writer von ZeroDDS kündigt Kopf und Daten ohne sie an (RTI Connext 7.7.0, `@final struct { uint8 x1; }`: 5 angekündigt, 8 gesendet, davon 3 als Füllung deklariert). Jede Ablehnung zählt als SAMPLE_LOST (DDS 1.4 §2.2.4.1) und wird je Reader und Writer einmal als Ereignis `reader.sample.oversize_refused` gemeldet, mit der angekündigten Grenze. Die benannte Einstellung `reader.honor_data_max_size_serialized=false` nimmt den Payload trotzdem an, für einen Writer, der seine eigene Ankündigung überschreitet (Fast DDS 3.6.1: 160 Oktette angekündigt, 100 036 gesendet).
 
 ### §8.4.10.4 Table 8.72 WriterProxy changes_from_writer
 

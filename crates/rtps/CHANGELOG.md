@@ -36,6 +36,8 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `ReliableReader` holds a payload against the writer's `dataMaxSizeSerialized` without the padding octets its encapsulation options count (DDS-XTypes 1.3 §7.6.3.1.2: "after the end of the serialized payload"), for DATA and for a sample reassembled from DATA_FRAG; a payload with the NonStandardPayloadFlag that nobody opened, one with an unknown encapsulation identifier and one whose declared padding is not there count whole. An RTI Connext 7.7.0 writer of `@final struct { uint8 x1; }` announces 5 and sends 8 octets, three declared padding; every such sample was refused. `ReliableReader::writer_data_max_size` returns the recorded bound. A refused payload is a lost change (`take_lost`, DDS 1.4 §2.2.4.1 SAMPLE_LOST) instead of only an irrelevant one, once per sequence number, under RELIABLE and BEST_EFFORT. Tests: `declared_padding_does_not_count_against_the_announced_maximum`, `declared_padding_of_a_reassembled_sample_does_not_count_against_the_maximum`, `a_payload_refused_beyond_the_bound_is_a_lost_change`.
+
 - `ParticipantSecurityInfo::optional_attributes`
   (`ParticipantSecurityAttributesMaskExt`, DDS-Security 1.2 §7.3.23): read from
   the third member (12 octets), written only when `is_set` is not 0; the

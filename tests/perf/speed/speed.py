@@ -7,7 +7,9 @@ shm`), the same type, the same sample sizes and the same QoS:
 
 * the vendors' apps are the roundtrip apps of tests/perf/dds-roundtrip-bench,
   one per stack, generated from the one roundtrip.idl by the stack's own code
-  generator (HDDS: a Rust app over its Rust API, hddsgen's Rust backend) (`RoundtripBench::Roundtrip`, @final, a uint32 sequence number, a
+  generator (HDDS: a Rust app over its Rust API, hddsgen's Rust backend;
+  Dust DDS: a Rust app over its Rust API, dust_dds_gen)
+  (`RoundtripBench::Roundtrip`, @final, a uint32 sequence number, a
   uint64 time stamp and a `sequence<octet, 65536>`); ZeroDDS runs as the same
   C++ app over its C API (row `zerodds`) and as `zerodds_perf`, the Rust API
   (row `zerodds-rust`, crates/dcps/examples/zerodds_perf.rs);
@@ -82,6 +84,11 @@ ROWS = {
     # A Rust app over the HDDS API (dds-roundtrip-bench/hdds, its main.rs
     # says why), the same modes and output lines as the C++ apps.
     "hdds": {"app": "hdds-roundtrip", "settle": 1.0},
+    # A Rust app over the dust_dds API (dds-roundtrip-bench/dust, its
+    # main.rs says what differs), the same modes and output lines; Dust DDS
+    # 0.16.0 has no shared-memory transport and its app refuses
+    # ZERODDS_BENCH_TRANSPORT=SHM.
+    "dust": {"app": "dust-roundtrip", "settle": 1.0},
     # ZeroDDS with the reliability timing HDDS 1.1.5 uses instead of the
     # specification's defaults, which stay ZeroDDS' own (rc8-plan.md, arc 3,
     # D3): its reader answers a HEARTBEAT at once (crates/hdds/src/core/
@@ -181,6 +188,8 @@ def vendor_versions():
     rti = re.search(r"rti_connext_dds-([\d.]+)", NDDSHOME)
     # HDDS is built from source by build.sh at the tag its app pins.
     hdds = grep(str(BENCH_DIR / "hdds" / "Cargo.toml"), r'^hdds = .*tag = "v([^"]+)"')
+    # Dust DDS likewise, from crates.io at the version its app pins.
+    dust = grep(str(BENCH_DIR / "dust" / "Cargo.toml"), r'^dust_dds = "=([^"]+)"')
     return {
         "cyclone": grep("/opt/cyclone/lib/pkgconfig/CycloneDDS.pc", r"^Version:\s*(\S+)"),
         "fastdds": fastdds,
@@ -188,6 +197,7 @@ def vendor_versions():
         "opendds": grep("/opt/opendds/include/dds/Version.h", r'#define OPENDDS_VERSION "([^"]+)"'),
         "opensplice": ospl,
         "hdds": hdds,
+        "dust": dust,
     }
 
 

@@ -8345,10 +8345,14 @@ instances of data published under the Topic."
 
 **Tests:**
 `crates/dcps/src/runtime.rs::tests::dcps_2_2_4_1_samples_a_best_effort_reader_steps_over_are_sample_lost`,
+`crates/dcps/src/runtime.rs::tests::declared_padding_passes_the_announced_maximum_and_a_refusal_is_reported_once`,
+`crates/rtps/src/reliable_reader.rs::tests::a_payload_refused_beyond_the_bound_is_a_lost_change`,
 `crates/dcps/tests/reader_history_resource_limits.rs::dcps_2_2_3_18_keep_all_max_samples_per_instance_discards_the_oldest_when_best_effort`
 
 **Status:** `done` — gezählt werden die Lücken, die ein BEST_EFFORT-Reader
-überspringt, und was ein gegangener Writer vor gehaltenen Samples fehlen ließ;
+überspringt, was ein gegangener Writer vor gehaltenen Samples fehlen ließ und
+ein Sample, das der Reader über dem `dataMaxSizeSerialized` seines Writers
+abweist (unter RELIABLE und BEST_EFFORT; es erreicht den DataReader nie);
 verdrängte, empfangene Samples zählen nicht.
 
 ### §2.2.4.1 SampleLostStatus.total_count — nur nie empfangene Samples

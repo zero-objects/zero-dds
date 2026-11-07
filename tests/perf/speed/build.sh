@@ -12,6 +12,9 @@
 #   <out>/bench/hdds-roundtrip                  the HDDS app (a cargo package
 #                                               of its own, dds-roundtrip-bench/
 #                                               hdds, target <out>/hdds-target)
+#   <out>/bench/dust-roundtrip                  the Dust DDS app (a cargo
+#                                               package of its own, dds-roundtrip-
+#                                               bench/dust, target <out>/dust-target)
 #
 # Usage: build.sh <zerodds-tree> <out-dir> [<harness-tree>]
 #
@@ -46,10 +49,14 @@ cmake -S "$HARNESS/tests/perf/dds-roundtrip-bench" -B "$OUT/bench" \
     -DZERODDS_REPO="$TREE" \
     -DZERODDS_LIB="$OUT/target/release/libzerodds.so" \
     -DZERODDS_BENCH_NOSEC=ON >"$OUT/cmake-configure.log"
-# TARGETS without hdds-roundtrip, which is not a CMake target.
+# TARGETS without hdds-roundtrip and dust-roundtrip, which are not CMake
+# targets.
 cmake_targets=""
 for t in ${TARGETS:-}; do
-    [ "$t" = hdds-roundtrip ] || cmake_targets="$cmake_targets${cmake_targets:+ }$t"
+    case "$t" in
+    hdds-roundtrip | dust-roundtrip) ;;
+    *) cmake_targets="$cmake_targets${cmake_targets:+ }$t" ;;
+    esac
 done
 if [ -z "${TARGETS:-}" ] || [ -n "$cmake_targets" ]; then
     # shellcheck disable=SC2086
@@ -62,6 +69,15 @@ case " ${TARGETS:-hdds-roundtrip} " in
     CARGO_TARGET_DIR="$OUT/hdds-target" \
         cargo build --locked --release --manifest-path "$HARNESS/tests/perf/dds-roundtrip-bench/hdds/Cargo.toml"
     cp "$OUT/hdds-target/release/hdds-roundtrip" "$OUT/bench/hdds-roundtrip"
+    ;;
+esac
+# Dust DDS (and its IDL code generator) from crates.io at the versions its
+# Cargo.toml pins, with its Cargo.lock.
+case " ${TARGETS:-dust-roundtrip} " in
+*" dust-roundtrip "*)
+    CARGO_TARGET_DIR="$OUT/dust-target" \
+        cargo build --locked --release --manifest-path "$HARNESS/tests/perf/dds-roundtrip-bench/dust/Cargo.toml"
+    cp "$OUT/dust-target/release/dust-roundtrip" "$OUT/bench/dust-roundtrip"
     ;;
 esac
 echo "build.sh: $OUT/bench, $OUT/target/release/examples/zerodds_perf"

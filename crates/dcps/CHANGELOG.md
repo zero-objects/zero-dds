@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- A payload refused against the writer's `dataMaxSizeSerialized` is reported: the event `reader.sample.oversize_refused` (Warn), once per reader and writer, with the reader, the writer, the announced bound and the setting `reader.honor_data_max_size_serialized`. Until now only `oversize_payload_count` rose, which nothing read; the refused sample now counts as SAMPLE_LOST (DDS 1.4 §2.2.4.1). The padding octets the encapsulation options count no longer go against the bound (`zerodds-rtps`). Test: `declared_padding_passes_the_announced_maximum_and_a_refusal_is_reported_once`.
+
 - The SHM user transport (`transport.user_transport = SHM`) receives from a
   participant on this host before it has sent that participant anything. Its
   adapter opened the ring it reads a peer from at its own first send to the
