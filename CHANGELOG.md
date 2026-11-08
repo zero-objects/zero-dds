@@ -1634,6 +1634,33 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   `corba-rt`, `corba-rust`, `corba-cos-notify`, `opcua-pubsub`,
   `recorder-decode` and `opcua-server` (`e398c0db084`).
 
+## [1.0.0-rc.7.3] — 2026-11-08
+
+Six crates on crates.io only; no other channel.
+
+### Fixed
+
+- The crates the clients of the OMG interoperability pull requests build
+  against (dds-rtps, dds-xtypes, dds-security): `zerodds-wire`,
+  `zerodds-wire-codec`, `zerodds-types`, `zerodds-build`, `zerodds-rtps`
+  and `zerodds-dcps`, the six that changed since rc.7.2. Their fixes are in
+  the Unreleased section above (`804c1b4989c` to `b6b8179437c`), among
+  them `PID_WRITER_GROUP_INFO` in 16 octets for Dust
+  DDS, `dataMaxSizeSerialized` without declared padding, the must-understand
+  bit on `PID_EXTENDED` and `PID_LIST_END` read either way, TypeLookup
+  requests naming their sender and peers that answer only for COMPLETE
+  identifiers, OpenDDS's `TypeConsistencyKind` numbering, lifespan before
+  every send, one group cut per `begin_access`, and the end of a group
+  coherent set without `PID_COHERENT_SET`. Their requirements on each other
+  are `^1.0.0-rc.7.3`; the other crates stay as published and take them
+  when they resolve. Checked after the upload on the Linux test host: every
+  published zerodds crate checks against them as against rc.7.2 (133 of
+  146; the 13 others are the crates that stop with "no longer part of
+  ZeroDDS" either way), and the three clients built from crates.io pass a
+  short run (dds-rtps against themselves and both ways with Connext 7.7.0,
+  dds-xtypes against themselves). With the next release the six return to
+  the workspace version.
+
 ## [1.0.0-rc.7.2] — 2026-11-06
 
 44 crates on crates.io only; no other channel.
