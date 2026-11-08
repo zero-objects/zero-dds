@@ -230,8 +230,18 @@ impl<R: Clone + Ord> GroupOrdering<R> {
         let Ok(mut order) = self.order.lock() else {
             return Some(item);
         };
+        let set_first_sn = coherent_member(&item).map(|(_, sn)| sn);
         let item = end.is_none().then_some(item);
-        order.offer(key, group.writer, reader, group.info, end, item, now);
+        order.offer_with_set_first_sn(
+            key,
+            group.writer,
+            reader,
+            group.info,
+            end,
+            set_first_sn,
+            item,
+            now,
+        );
         None
     }
 

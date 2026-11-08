@@ -664,6 +664,18 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **The end of a group coherent set is checked against its members'
+  first sequence number** (DDSI-RTPS 2.5 §8.7.6; `zerodds-dcps`, and through
+  it `zerodds-c-api`). The end-of-coherent-set DATA of a group coherent set
+  carries `PID_GROUP_SEQ_NUM`, `PID_GROUP_COHERENT_SET` and
+  `PID_WRITER_GROUP_INFO`; `PID_COHERENT_SET`, where the writer's part
+  began, is on each member. ZeroDDS read an end without it as "this writer
+  wrote nothing into the set" and discarded every set of Dust DDS 0.17.0 as
+  incomplete. Measured in the official dds-rtps workflow of the ZeroDDS fork
+  and on the Linux test host: Dust 0.17.0 -> ZeroDDS `Test_CoherentSets_12`
+  and `_21` `DATA_NOT_RECEIVED`, the subscriber reporting
+  `subscriber.group_order.incomplete_set_discarded` 63 times in one run.
+
 - **`begin_access` presents one cut of the group** (DDS 1.4 §2.2.2.5.2.8;
   `zerodds-dcps` `Subscriber`, `zerodds-c-api` `zerodds_sub_begin_access`).
   Under GROUP access scope with ordered or coherent access, a coherent set

@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- The end of a group coherent set that carries no `PID_COHERENT_SET` is checked against its members' (`GroupOrder::offer_with_set_first_sn`, `finish_set`): DDSI-RTPS 2.5 §8.7.6 gives the end `PID_GROUP_SEQ_NUM`, `PID_GROUP_COHERENT_SET` and `PID_WRITER_GROUP_INFO` and puts `PID_COHERENT_SET` on every member. Before, such an end meant "the writer wrote nothing into the set", and every set of Dust DDS 0.17.0 was discarded as incomplete. An end with `SEQUENCENUMBER_UNKNOWN` and no members keeps that meaning. Test: `rtps_8_7_6_an_end_without_its_first_sn_is_checked_against_the_members`.
+
 - `Subscriber::begin_access` under GROUP access scope with ordered or coherent access releases what the group order holds complete, then opens the access; nothing more is released until the last `end_access`, which releases what waited (DDS 1.4 §2.2.2.5.2.8). Before, a set completed inside the bracket reached the readers read after it and not those read before. `GroupOrdering::release_if` asks its condition under the order's lock, `GroupOrdering::fence` waits out a release under way; `release` is unchanged. Tests: `dcps_2_2_2_5_2_8_a_set_completed_inside_an_access_waits_for_its_end_same_runtime`, `..._over_udp`.
 
 - `expire_lifespan_of` runs before each `writer.tick` of a user writer, on the housekeeping tick and on receipt of an ACKNACK, so a repair never carries a sample whose lifespan has run out (DDS 1.4 §2.2.3.16). Test: `dcps_2_2_3_16_an_expired_sample_is_gone_before_the_writer_next_sends`.

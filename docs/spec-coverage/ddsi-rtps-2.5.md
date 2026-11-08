@@ -9834,9 +9834,16 @@ Inline-QoS PID_GROUP_SEQ_NUM, PID_GROUP_COHERENT_SET, PID_WRITER_GROUP_INFO.
 **Repo:** —
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::a_group_coherent_set_carries_the_parameters_of_table_9_23`,
-`crates/dcps/src/group_order.rs::tests::rtps_8_7_6_a_set_waits_for_the_end_of_every_counted_writer`
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_6_a_set_waits_for_the_end_of_every_counted_writer`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_6_an_end_without_its_first_sn_is_checked_against_the_members`
 
-**Status:** `done`
+**Status:** `done` — ein empfangenes ECS braucht kein `PID_COHERENT_SET`:
+der Anteil eines Writers am Set wird vom `PID_COHERENT_SET` seiner Members
+bis zur Sequenznummer des ECS geprüft (`finish_set`). Dust DDS 0.17.0
+schreibt das ECS mit den drei Parametern der Klausel und ohne
+`PID_COHERENT_SET` (gemessen, OMG dds-rtps `Test_CoherentSets_12` und
+`_21`); RTI Connext 7.7.0 schreibt dort `SEQUENCENUMBER_UNKNOWN` für einen
+Writer ohne Members, was „hat nichts ins Set geschrieben“ bleibt.
 
 ### §8.7.6 Keine Writer hinzufügen oder entfernen während eines Coherent-Sets
 

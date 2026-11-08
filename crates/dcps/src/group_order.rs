@@ -71,6 +71,8 @@ struct Entry<R, I> {
     info: ChangeGroupInfo,
     /// `Some` for an end-of-coherent-set DATA.
     end: Option<SetEnd>,
+    /// A member's `PID_COHERENT_SET`: its writer's first sample of the set.
+    set_first_sn: Option<i64>,
     item: Option<I>,
     offered_at: Duration,
 }
@@ -267,6 +269,7 @@ impl<R: Clone + Ord, I> GroupOrder<R, I> {
     /// A sample of `writer` of the remote `group`, in its writer's order,
     /// for `reader`. `end` for an end-of-coherent-set DATA, whose `item` is
     /// `None`.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn offer(
         &mut self,
@@ -275,6 +278,26 @@ impl<R: Clone + Ord, I> GroupOrder<R, I> {
         reader: R,
         info: ChangeGroupInfo,
         end: Option<SetEnd>,
+        item: Option<I>,
+        now: Duration,
+    ) {
+        self.offer_with_set_first_sn(group, writer, reader, info, end, None, item, now);
+    }
+
+    /// [`Self::offer`], with a member's `PID_COHERENT_SET` (`set_first_sn`):
+    /// the end of a group coherent set carries none (DDSI-RTPS 2.5 §8.7.6
+    /// lists `PID_GROUP_SEQ_NUM`, `PID_GROUP_COHERENT_SET` and
+    /// `PID_WRITER_GROUP_INFO`), and the members name where their writer's
+    /// part began.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn offer_with_set_first_sn(
+        &mut self,
+        group: WriterGuid,
+        writer: WriterGuid,
+        reader: R,
+        info: ChangeGroupInfo,
+        end: Option<SetEnd>,
+        set_first_sn: Option<i64>,
         item: Option<I>,
         now: Duration,
     ) {
@@ -302,6 +325,7 @@ impl<R: Clone + Ord, I> GroupOrder<R, I> {
             writer,
             info,
             end,
+            set_first_sn,
             item,
             offered_at: now,
         });
@@ -521,15 +545,21 @@ fn finish_set<R: Ord, I>(
     let complete = all_ends
         && counted.iter().all(|pair| {
             let end = set.ends[pair];
-            let got = set
-                .members
-                .iter()
-                .filter(|m| m.writer == pair.0 && m.reader == pair.1)
-                .count() as i64;
-            match (end.first_sn, end.ecs_sn) {
+            let part = || {
+                set.members
+                    .iter()
+                    .filter(|m| m.writer == pair.0 && m.reader == pair.1)
+            };
+            let got = part().count() as i64;
+            // The end's `PID_COHERENT_SET`, else the members': §8.7.6 puts
+            // it on every member and not on the end (Dust DDS 0.17.0 writes
+            // none there).
+            let first = end.first_sn.or_else(|| part().find_map(|m| m.set_first_sn));
+            match (first, end.ecs_sn) {
                 // Every change from its first sample up to its end.
                 (Some(first), Some(ecs)) => got == ecs - first,
-                // It wrote nothing into the set.
+                // It wrote nothing into the set (`SEQUENCENUMBER_UNKNOWN`
+                // on the end, RTI Connext 7.7.0).
                 (None, _) => got == 0,
                 // An end without its own sequence number cannot be
                 // checked; what arrived is what there is.
@@ -886,6 +916,73 @@ mod tests {
         out.sort_unstable();
         assert_eq!(out, [1, 1, 2, 2]);
         assert_eq!(o.counts().incomplete_sets, 0);
+    }
+
+    /// §8.7.6: the end of a group coherent set carries no
+    /// `PID_COHERENT_SET`; the members do, and name where their writer's
+    /// part began (Dust DDS 0.17.0). A part with every change from there
+    /// to the end is complete, one that misses its first is not.
+    #[test]
+    fn rtps_8_7_6_an_end_without_its_first_sn_is_checked_against_the_members() {
+        let v = view(&[W1]);
+        let set = Some(1);
+        // The writer's sequence numbers 10 to 12 are the set, 13 its end.
+        let end = SetEnd {
+            first_sn: None,
+            ecs_sn: Some(13),
+        };
+        let mut o = GroupOrder::new(LONG);
+        for (gsn, sn) in [(1, 10), (2, 11), (3, 12)] {
+            o.offer_with_set_first_sn(
+                G,
+                W1,
+                1,
+                info(gsn, set),
+                None,
+                Some(10),
+                Some(sn),
+                Duration::ZERO,
+            );
+        }
+        o.offer_with_set_first_sn(
+            G,
+            W1,
+            1,
+            info(4, set),
+            Some(end),
+            None,
+            None,
+            Duration::ZERO,
+        );
+        assert_eq!(released(&mut o, &v), [10, 11, 12]);
+        assert_eq!(o.counts().incomplete_sets, 0);
+
+        // A reader that joined after the first change of the set.
+        let mut late = GroupOrder::new(Duration::ZERO);
+        for (gsn, sn) in [(2, 11), (3, 12)] {
+            late.offer_with_set_first_sn(
+                G,
+                W1,
+                1,
+                info(gsn, set),
+                None,
+                Some(10),
+                Some(sn),
+                Duration::ZERO,
+            );
+        }
+        late.offer_with_set_first_sn(
+            G,
+            W1,
+            1,
+            info(4, set),
+            Some(end),
+            None,
+            None,
+            Duration::ZERO,
+        );
+        assert_eq!(released(&mut late, &v), [] as [i64; 0]);
+        assert_eq!(late.counts().incomplete_sets, 1);
     }
 
     #[test]
