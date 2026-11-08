@@ -118,10 +118,16 @@ work, not client work.
 
 ## Where the suite expects another answer than the clause
 
-On four axes the suite's expectations assume the other answer, and the
-default of ZeroDDS stays the clause's. The suite runs pass the four flags
-to this client: the weekly run of ZeroDDS's own CI (`OMG_OURS_ARGS`), and
-the interop workflow of the `dds-xtypes` fork on GitHub.
+On four axes the suite's expectations assume the other answer. The
+runtime's defaults stay the clause's; this client's defaults are the
+suite's answers, because the official matrix starts it with a case's
+arguments only. The flags give the clause's reading
+(`--key-member-bounds enforced`, `--key-on-union-discriminator refused`,
+`--defaulted-discriminator-member type-default`,
+`--strong-assignability equivalence`). The suite runs also pass the four
+suite values as flags: the weekly run of ZeroDDS's own CI
+(`OMG_OURS_ARGS`), and the interop workflow of the `dds-xtypes` fork on
+GitHub.
 
 | flag | the case it is for | where it is argued |
 |---|---|---|
@@ -159,7 +165,15 @@ parameter rounded up to four, the form of DDSI-RTPS 2.5 §9.4.2.11 (recorded row
 §7.4.1.2.2 has the exact length, and the default reader of ZeroDDS refuses the other form.
 `run_configs.sh` sets `ZERODDS_WIRE_PL_CDR1_READING=tolerant` (setting `wire.pl_cdr1_reading`) for every run (it meets both vendors),
 in the same place as the empty-ACKNACK setting. Fast DDS and OpenDDS write the exact
-length. The default of ZeroDDS stays the reading of the spec.
+length. The default of ZeroDDS stays the reading of the spec. The client reads a received
+sample with its own codec and hands that codec the setting of the run's configuration
+(`carrier::request_for`); before, the setting reached the runtime and not the samples. A
+sample that does not decode is reported with the codec's reason after the verdict line.
+
+The must-understand bit on `PID_EXTENDED` and `PID_LIST_END` needs no setting: XTypes 1.3
+§7.4.1.2.1 has every reader take either setting, and the default reader does (CoreDX 6.15.3
+closes a list with a bare `3f02`). A suite run without the setting meets Cyclone's rounded
+length as the declared deviation in `tests/interop/omg/vendor-deviations.tsv` (under `-x 1`).
 
 The TypeLookup samples of ZeroDDS are CDR2_LE (XCDR2) by default (XTypes 1.4 Beta 1
 §7.6.3.3.3), the form Cyclone DDS 11.0.1, OpenDDS 3.34.0 and RTI Connext 7.7.0 write and the

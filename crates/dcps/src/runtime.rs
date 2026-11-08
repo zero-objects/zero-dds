@@ -9543,14 +9543,44 @@ impl DcpsRuntime {
         };
 
         // Separate sender socket for the SPDP announce. Ephemeral port; with
-        // interface pinning it binds to the pinned IP (egress source), otherwise
+        // interface pinning it binds to the pinned IP (egress source) and
+        // names it as the multicast device (`IP_MULTICAST_IF`), otherwise
         // `0.0.0.0` (the kernel picks the outgoing interface per route).
+        // The source address alone is not enough: Linux picks the multicast
+        // device by it, macOS by the route, so a participant pinned to
+        // 127.0.0.1 sent its SPDP and the wake-up datagram of
+        // `wake_socket_receivers` out through the route's interface, and a
+        // receiver joined on 127.0.0.1 got neither (runner 8, a socket bound
+        // to 127.0.0.1 without the option: 0 of 200 datagrams arrived, with
+        // it 4000 of 4000). On macOS, where closing a socket does not wake
+        // its receive thread, `zdds-recv-spdp-mc` then waited out its read
+        // timeout on every shutdown.
+        let pinned_sender = (!pinned.is_unspecified()).then(|| {
+            UdpTransport::bind_multicast_sender_v4_with_config(pinned, config.udp.clone())
+                .map_err(|error| {
+                    // Not the end of the start: the address is bound as
+                    // before, without naming it as the multicast device.
+                    config.observability.record(
+                        &zerodds_foundation::observability::Event::new(
+                            zerodds_foundation::observability::Level::Warn,
+                            zerodds_foundation::observability::Component::Dcps,
+                            "discovery.spdp_multicast.sender_refused",
+                        )
+                        .with_attr("interface", pinned.to_string().as_str())
+                        .with_attr("error", alloc::format!("{error:?}").as_str()),
+                    );
+                })
+                .ok()
+        });
         let spdp_mc_tx =
-            UdpTransport::bind_v4_with_config(pinned, 0, config.udp.clone()).map_err(|_| {
-                DdsError::TransportError {
-                    label: "spdp mc-tx bind",
-                }
-            })?;
+            match pinned_sender.flatten() {
+                Some(sender) => sender,
+                None => UdpTransport::bind_v4_with_config(pinned, 0, config.udp.clone()).map_err(
+                    |_| DdsError::TransportError {
+                        label: "spdp mc-tx bind",
+                    },
+                )?,
+            };
         // One sender per interface the group was joined on, unpinned: the
         // multicast goes out through each, not through the one the route
         // picks. Pinned, `spdp_mc_tx` is already bound to that interface.
@@ -16377,7 +16407,11 @@ impl DcpsRuntime {
                 &server.registry,
                 &slot.type_identifier,
                 &slot.type_name,
-                &sub.type_identifier,
+                &matched_identifier(
+                    &server.registry,
+                    &sub.type_identifier,
+                    sub.type_information.as_deref(),
+                ),
                 &sub.type_name,
                 &self.remote_reader_consistency(sub),
                 self.config.assignability_axes(),
@@ -16395,8 +16429,10 @@ impl DcpsRuntime {
         // type whose dependencies are deeper than one level would stop
         // resolving after the first reply.
         if let TypeConsistency::Unresolved(h) = &verdict {
-            let _ = self.send_type_lookup_request(sub.key.prefix, core::slice::from_ref(h));
-            let _ = self.send_type_dependencies_request(sub.key.prefix, core::slice::from_ref(h));
+            let ids =
+                type_lookup_identifiers(h, &sub.type_identifier, sub.type_information.as_deref());
+            let _ = self.send_type_lookup_request(sub.key.prefix, &ids);
+            let _ = self.send_type_dependencies_request(sub.key.prefix, &ids);
             return;
         }
         let TypeConsistency::Inconsistent(reason) = verdict else {
@@ -16558,7 +16594,11 @@ impl DcpsRuntime {
         let verdict = match self.type_lookup_server.lock() {
             Ok(server) => decide_type_consistency(
                 &server.registry,
-                &pubd.type_identifier,
+                &matched_identifier(
+                    &server.registry,
+                    &pubd.type_identifier,
+                    pubd.type_information.as_deref(),
+                ),
                 &pubd.type_name,
                 &slot.type_identifier,
                 &slot.type_name,
@@ -16570,8 +16610,10 @@ impl DcpsRuntime {
         // See the writer half: the miss keeps the pair and keeps the
         // round trip going.
         if let TypeConsistency::Unresolved(h) = &verdict {
-            let _ = self.send_type_lookup_request(pubd.key.prefix, core::slice::from_ref(h));
-            let _ = self.send_type_dependencies_request(pubd.key.prefix, core::slice::from_ref(h));
+            let ids =
+                type_lookup_identifiers(h, &pubd.type_identifier, pubd.type_information.as_deref());
+            let _ = self.send_type_lookup_request(pubd.key.prefix, &ids);
+            let _ = self.send_type_dependencies_request(pubd.key.prefix, &ids);
             return;
         }
         let TypeConsistency::Inconsistent(reason) = verdict else {
@@ -16951,7 +16993,11 @@ impl DcpsRuntime {
                             &server.registry,
                             &slot.type_identifier,
                             &slot.type_name,
-                            &sub.type_identifier,
+                            &matched_identifier(
+                                &server.registry,
+                                &sub.type_identifier,
+                                sub.type_information.as_deref(),
+                            ),
                             &sub.type_name,
                             &tce,
                             self.config.assignability_axes(),
@@ -16997,12 +17043,13 @@ impl DcpsRuntime {
                     // asks for every identifier in it the registry is still
                     // missing.
                     if let Some(h) = &type_fetch {
-                        let _ =
-                            self.send_type_lookup_request(sub.key.prefix, core::slice::from_ref(h));
-                        let _ = self.send_type_dependencies_request(
-                            sub.key.prefix,
-                            core::slice::from_ref(h),
+                        let ids = type_lookup_identifiers(
+                            h,
+                            &sub.type_identifier,
+                            sub.type_information.as_deref(),
                         );
+                        let _ = self.send_type_lookup_request(sub.key.prefix, &ids);
+                        let _ = self.send_type_dependencies_request(sub.key.prefix, &ids);
                     }
                     if let TypeConsistency::Unresolved(h) = &verdict {
                         self.record_match_refusal(
@@ -17554,7 +17601,11 @@ impl DcpsRuntime {
                         match self.type_lookup_server.lock() {
                             Ok(server) => match decide_type_consistency(
                                 &server.registry,
-                                &pubd.type_identifier,
+                                &matched_identifier(
+                                    &server.registry,
+                                    &pubd.type_identifier,
+                                    pubd.type_information.as_deref(),
+                                ),
                                 &pubd.type_name,
                                 &slot.type_identifier,
                                 &slot.type_name,
@@ -17590,12 +17641,13 @@ impl DcpsRuntime {
                     // `wire_writer_to_remote_reader` for why `getTypes`
                     // alone does not close a miss whose depth is unknown.
                     if let Some(h) = &type_fetch {
-                        let _ = self
-                            .send_type_lookup_request(pubd.key.prefix, core::slice::from_ref(h));
-                        let _ = self.send_type_dependencies_request(
-                            pubd.key.prefix,
-                            core::slice::from_ref(h),
+                        let ids = type_lookup_identifiers(
+                            h,
+                            &pubd.type_identifier,
+                            pubd.type_information.as_deref(),
                         );
+                        let _ = self.send_type_lookup_request(pubd.key.prefix, &ids);
+                        let _ = self.send_type_dependencies_request(pubd.key.prefix, &ids);
                     }
                     if !matches!(decision, Decision::MissDefer) {
                         self.type_resolution_decided(reader_eid, pubd.key);
@@ -23925,6 +23977,7 @@ fn run_tick_iteration(rt: Arc<DcpsRuntime>, st: &mut TickState) {
                     let at = batch.opened_at + budget;
                     next_budget_due = Some(next_budget_due.map_or(at, |n| n.min(at)));
                 }
+                let _ = expire_lifespan_of(&mut slot, sedp_now);
                 if let Ok(dgs) = slot.writer.tick(sedp_now) {
                     for dg in dgs {
                         all.push((eid, slot.transport_priority, dg));
@@ -24569,37 +24622,54 @@ fn check_liveliness(rt: &Arc<DcpsRuntime>, now: std::time::Duration) -> Option<u
 /// by insert time (= SN, because monotonic). Front-pop while expired;
 /// the highest expired SN runs through via `cache.remove_up_to(sn + 1)`.
 fn expire_by_lifespan(rt: &Arc<DcpsRuntime>, now: std::time::Duration) -> Option<u64> {
-    let now_nanos = now.as_nanos() as u64;
     let mut next_due = NextDue::new();
     for (_eid, arc) in rt.writer_slots_snapshot() {
         let Ok(mut slot) = arc.lock() else { continue };
-        if slot.lifespan_nanos == 0 {
-            continue;
-        }
-        let mut highest_expired = None;
-        while let Some(&(sn, inserted)) = slot.sample_insert_times.front() {
-            let inserted_nanos = inserted.as_nanos() as u64;
-            if now_nanos.saturating_sub(inserted_nanos) >= slot.lifespan_nanos {
-                highest_expired = Some(sn);
-                slot.sample_insert_times.pop_front();
-            } else {
-                break;
-            }
-        }
-        if let Some(sn) = highest_expired {
-            let _removed = slot
-                .writer
-                .remove_samples_up_to(zerodds_rtps::wire_types::SequenceNumber(sn.0 + 1));
-            slot.capacity_signal.notify_all();
-        }
-        // Next lifespan due = expiry of the now-oldest sample still
-        // remaining in the cache. Empty deque → nothing due,
-        // until a new sample is written (raise_tick_wake covers that).
-        if let Some(&(_sn, inserted)) = slot.sample_insert_times.front() {
-            next_due.note((inserted.as_nanos() as u64).saturating_add(slot.lifespan_nanos));
+        if let Some(due) = expire_lifespan_of(&mut slot, now) {
+            next_due.note(due);
         }
     }
     next_due.into_inner()
+}
+
+/// One writer's part of [`expire_by_lifespan`]: removes its samples whose
+/// lifespan has run out and returns when the next one does.
+///
+/// Also run right before the writer's `tick` sends, because a repair of an
+/// expired sample is the sample delivered after its expiry. The tick that
+/// removes it can come late under load, and a repair sent on receipt of an
+/// ACKNACK did not look at the lifespan at all: measured on the Linux test
+/// host, OMG dds-rtps `Test_Lifespan_0` ZeroDDS -> Connext 7.7.0, SN 13 and
+/// 14 sent again 300 ms after their source timestamp with a lifespan of
+/// 250 ms, and Connext, which counts a lifespan from reception, delivered
+/// them (OPEN-ITEMS 109). Removed, a repair of them is a GAP.
+fn expire_lifespan_of(slot: &mut UserWriterSlot, now: std::time::Duration) -> Option<u64> {
+    if slot.lifespan_nanos == 0 {
+        return None;
+    }
+    let now_nanos = now.as_nanos() as u64;
+    let mut highest_expired = None;
+    while let Some(&(sn, inserted)) = slot.sample_insert_times.front() {
+        let inserted_nanos = inserted.as_nanos() as u64;
+        if now_nanos.saturating_sub(inserted_nanos) >= slot.lifespan_nanos {
+            highest_expired = Some(sn);
+            slot.sample_insert_times.pop_front();
+        } else {
+            break;
+        }
+    }
+    if let Some(sn) = highest_expired {
+        let _removed = slot
+            .writer
+            .remove_samples_up_to(zerodds_rtps::wire_types::SequenceNumber(sn.0 + 1));
+        slot.capacity_signal.notify_all();
+    }
+    // Next lifespan due = expiry of the now-oldest sample still
+    // remaining in the cache. Empty deque → nothing due,
+    // until a new sample is written (raise_tick_wake covers that).
+    slot.sample_insert_times
+        .front()
+        .map(|&(_sn, inserted)| (inserted.as_nanos() as u64).saturating_add(slot.lifespan_nanos))
 }
 
 /// Checks for all user writers + user readers whether the deadline period
@@ -24828,6 +24898,98 @@ impl RuntimeConfig {
             key_must_understand: self.key_must_understand,
         }
     }
+}
+
+/// The TypeInformation a discovered endpoint announced
+/// (`PID_TYPE_INFORMATION`, kept as the octets of the parameter).
+///
+/// The octets follow the byte order of the SEDP message they came in, which
+/// the discovered data does not keep. The TypeInformation is a mutable
+/// struct, so in XCDR2 it starts with a DHEADER naming the length of the
+/// rest (XTypes 1.3 §7.4.3.5.3); it is read in the byte order in which that
+/// length fits, up to the three octets of padding the parameter list adds.
+fn peer_type_information(
+    blob: Option<&[u8]>,
+) -> Option<zerodds_types::type_information::TypeInformation> {
+    let blob = blob?;
+    let head: [u8; 4] = blob.get(..4)?.try_into().ok()?;
+    let rest = blob.len() - 4;
+    [
+        zerodds_wire::Endianness::Little,
+        zerodds_wire::Endianness::Big,
+    ]
+    .into_iter()
+    .find_map(|endianness| {
+        let length = match endianness {
+            zerodds_wire::Endianness::Little => u32::from_le_bytes(head),
+            zerodds_wire::Endianness::Big => u32::from_be_bytes(head),
+        } as usize;
+        if length > rest || rest - length > 3 {
+            return None;
+        }
+        zerodds_types::type_information::TypeInformation::from_bytes(blob, endianness).ok()
+    })
+}
+
+/// The COMPLETE identifier of a discovered endpoint's TypeInformation, when
+/// it differs from the one the endpoint is identified by.
+fn announced_complete_identifier(
+    announced: &zerodds_types::TypeIdentifier,
+    type_information: Option<&[u8]>,
+) -> Option<zerodds_types::TypeIdentifier> {
+    let complete = peer_type_information(type_information)?
+        .complete
+        .typeid_with_size
+        .type_id;
+    (complete != zerodds_types::TypeIdentifier::None && complete != *announced).then_some(complete)
+}
+
+/// The identifiers a discovered endpoint's type is asked for when `missing`
+/// is not resolved: `missing`, and, when it is the identifier the endpoint
+/// announced, the COMPLETE one of the same TypeInformation.
+///
+/// XTypes 1.3 §7.6.3.3.4 has a peer answer a request for any identifier it
+/// announced. Dust DDS 0.16.0 files only COMPLETE TypeObjects and leaves a
+/// request for the MINIMAL identifier it announces unanswered (its
+/// `type_register.rs`; measured: OMG dds-xtypes, 30 cases in each direction
+/// with Dust); asked for both, it answers for the complete one.
+fn type_lookup_identifiers(
+    missing: &zerodds_types::TypeIdentifier,
+    announced: &zerodds_types::TypeIdentifier,
+    type_information: Option<&[u8]>,
+) -> Vec<zerodds_types::TypeIdentifier> {
+    let mut ids = alloc::vec![missing.clone()];
+    if missing == announced
+        && let Some(complete) = announced_complete_identifier(announced, type_information)
+    {
+        ids.push(complete);
+    }
+    ids
+}
+
+/// The identifier a discovered endpoint's type is decided by: the one it
+/// announced, or the COMPLETE one of the same TypeInformation when the
+/// announced one is not resolved and the complete one is, with its whole
+/// closure.
+///
+/// The assignability walk projects a COMPLETE pair down itself
+/// (`TypeMatcher`), so a type obtained only in its complete form is decided
+/// without the peer's MINIMAL object and without its minimal hash, which
+/// for Dust DDS 0.16.0 agrees with neither of the two computations of
+/// `docs/omg-xtypes-issues.md` C2 (measured: `enum1x10`, Dust `424ec7…`,
+/// ZeroDDS `ba3911…` or `1dab70…`).
+fn matched_identifier(
+    reg: &zerodds_types::resolve::TypeRegistry,
+    announced: &zerodds_types::TypeIdentifier,
+    type_information: Option<&[u8]>,
+) -> zerodds_types::TypeIdentifier {
+    if unresolved_type_identifier(reg, announced).is_some()
+        && let Some(complete) = announced_complete_identifier(announced, type_information)
+        && unresolved_type_identifier(reg, &complete).is_none()
+    {
+        return complete;
+    }
+    announced.clone()
 }
 
 fn decide_type_consistency(
@@ -25274,9 +25436,13 @@ fn complete_key_revision(
     let Some(gate) = rt.config.security.as_ref() else {
         return;
     };
-    let Some((revision, deadline)) = rt.pending_key_revision.lock().ok().and_then(|p| *p) else {
+    if !rt
+        .pending_key_revision
+        .lock()
+        .is_ok_and(|pending| pending.is_some())
+    {
         return;
-    };
+    }
     let acknowledged = stack.lock().is_ok_and(|s| {
         let writer = &s.volatile_writer;
         writer.pending_count() == 0
@@ -25284,13 +25450,19 @@ fn complete_key_revision(
                 .inner()
                 .is_acked_by_all(writer.inner().last_written_sn())
     });
-    if !acknowledged && now < deadline {
-        return;
+    // Looked at and taken under one lock: of two callers that both find
+    // the revision due, one activates it. Read and cleared under two, both
+    // did (`activate_key_revision` twice, merge job 233999).
+    let due = rt.pending_key_revision.lock().ok().and_then(|mut pending| {
+        let (revision, deadline) = (*pending)?;
+        (acknowledged || now >= deadline).then(|| {
+            *pending = None;
+            revision
+        })
+    });
+    if let Some(revision) = due {
+        activate_revision(rt, gate, revision);
     }
-    if let Ok(mut pending) = rt.pending_key_revision.lock() {
-        *pending = None;
-    }
-    activate_revision(rt, gate, revision);
 }
 
 /// `activate_key_revision` (§9.5.1.8.8); a failure is recorded.
@@ -26299,6 +26471,34 @@ fn reader_key_hash_context(
         );
     }
     (keyed, support)
+}
+
+/// Whether a TypeLookup request is for this participant's service, by the
+/// `instanceName` of its RequestHeader.
+///
+/// XTypes 1.3 §7.6.3.3.4 sets it to "dds.builtin.TOS." and "the
+/// DomainParticipant GUID" without saying which participant's. Read as the
+/// service's (DDS-RPC names the instance a request is for), that is this
+/// participant. Dust DDS 0.16.0 names the requesting participant, its own
+/// (measured: OMG dds-xtypes, Dust publisher, the request
+/// `dds.builtin.TOS.ac1100013869130000000000000001c1` from `ac1100013869…`;
+/// refused, Dust matched no ZeroDDS reader of a type it had to look up:
+/// Dust -> ZeroDDS 258 cases red in the fork run of 2026-11-07, 30 of 335 with
+/// this reading on the Linux test host), and a request with all zeros names
+/// none. A request that names its
+/// own sender is for no other service, so it is answered like the other
+/// two: what the check keeps out is a request for another participant's
+/// service, and §7.6.3.3.4 asks for an answer to every TypeIdentifier
+/// announced.
+fn request_names_this_service(
+    instance_name: &str,
+    this: &GuidPrefix,
+    requester: &GuidPrefix,
+) -> bool {
+    use zerodds_types::type_lookup::service_instance_name;
+    instance_name == service_instance_name(&this.0)
+        || instance_name == service_instance_name(&requester.0)
+        || instance_name == "dds.builtin.TOS.00000000000000000000000000000000"
 }
 
 /// Whether what a TypeLookup envelope leaves after its decoder is the
@@ -27754,6 +27954,8 @@ fn handle_user_datagram_from(
                         // D.5e Phase-2: synchronous resend on NACK receipt.
                         // An ACKNACK may have listed requested SNs for resend;
                         // tick delivers the resend datagrams directly in the recv thread.
+                        // An expired sample is not among them (`expire_lifespan_of`).
+                        let _ = expire_lifespan_of(&mut slot, now);
                         if let Ok(dgs) = slot.writer.tick(now) {
                             sync_outbound = dgs;
                         }
@@ -31013,7 +31215,7 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
     use zerodds_rtps::inline_qos::SampleIdentityBytes;
     use zerodds_types::type_lookup::{
         GetTypeDependenciesResult, GetTypesResult, TypeLookupCall, TypeLookupReplyMessage,
-        TypeLookupRequest, TypeLookupReturn, service_instance_name,
+        TypeLookupRequest, TypeLookupReturn,
     };
 
     if !crate::type_lookup_transport::may_carry_type_lookup(bytes) {
@@ -31151,10 +31353,11 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
                 ));
                 continue;
             }
-            if request.header.instance_name != service_instance_name(&rt.guid_prefix.0)
-                && request.header.instance_name
-                    != "dds.builtin.TOS.00000000000000000000000000000000"
-            {
+            if !request_names_this_service(
+                &request.header.instance_name,
+                &rt.guid_prefix,
+                &src_prefix,
+            ) {
                 reject_request(alloc::format!(
                     "instanceName {:?} names another service",
                     request.header.instance_name
@@ -31563,6 +31766,153 @@ mod tests {
             };
             assert_eq!(query.type_ids.len(), 1);
         }
+    }
+
+    /// A peer's COMPLETE TypeObject with an announced MINIMAL hash this
+    /// registry cannot reach, as from Dust DDS 0.16.0: the type is asked for
+    /// in both forms, and decided by the complete one once it is here.
+    fn complete_only_peer() -> (
+        zerodds_types::TypeObject,
+        zerodds_types::TypeIdentifier,
+        zerodds_types::TypeIdentifier,
+        zerodds_types::type_information::TypeInformation,
+    ) {
+        use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+        use zerodds_types::type_information::{
+            TypeIdentifierWithDependencies, TypeIdentifierWithSize, TypeInformation,
+        };
+        let complete = TypeObjectBuilder::struct_type("::dust::Robot")
+            .extensibility(Extensibility::Final)
+            .member(
+                "id",
+                zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::UInt32),
+                |m| m,
+            )
+            .build_complete();
+        let object = zerodds_types::TypeObject::Complete(
+            zerodds_types::CompleteTypeObject::Struct(complete),
+        );
+        let complete_id = zerodds_types::TypeIdentifier::EquivalenceHashComplete(
+            zerodds_types::hash::compute_hash(&object).unwrap(),
+        );
+        // Dust's minimal hash of `enum1x10`, which no computation here gives.
+        let minimal_id = zerodds_types::TypeIdentifier::EquivalenceHashMinimal(
+            zerodds_types::EquivalenceHash([
+                0x42, 0x4e, 0xc7, 0x09, 0xaf, 0x26, 0xb8, 0x9c, 0x8d, 0x7c, 0x69, 0xf6, 0xb1, 0x58,
+            ]),
+        );
+        let with = |type_id| {
+            TypeIdentifierWithDependencies::without_dependencies(TypeIdentifierWithSize {
+                type_id,
+                typeobject_serialized_size: 40,
+            })
+        };
+        let ti = TypeInformation {
+            minimal: with(minimal_id.clone()),
+            complete: with(complete_id.clone()),
+        };
+        (object, minimal_id, complete_id, ti)
+    }
+
+    /// The announced TypeInformation is read in either byte order: the
+    /// DHEADER names the length of the rest in one of them.
+    #[test]
+    fn a_peers_type_information_is_read_in_either_byte_order() {
+        let (_, minimal, complete, ti) = complete_only_peer();
+        let le = ti.to_bytes_le().unwrap();
+        let mut w = zerodds_wire::Writer::with_max_align(zerodds_wire::Endianness::Big, 4);
+        ti.encode_into(&mut w).unwrap();
+        let be = w.finish();
+        assert_ne!(le, be);
+        for blob in [le, be] {
+            let read = peer_type_information(Some(&blob)).expect("read");
+            assert_eq!(read.minimal.typeid_with_size.type_id, minimal);
+            assert_eq!(read.complete.typeid_with_size.type_id, complete);
+        }
+        assert!(peer_type_information(Some(&[1, 2, 3])).is_none());
+        assert!(peer_type_information(None).is_none());
+    }
+
+    /// XTypes 1.3 §7.6.3.3.4: a peer answers for any identifier it announced.
+    /// Asked for the announced MINIMAL one, the COMPLETE one of the same
+    /// TypeInformation goes with it; asked for a dependency, only that.
+    #[test]
+    fn a_missing_announced_type_is_asked_for_in_both_forms() {
+        let (_, minimal, complete, ti) = complete_only_peer();
+        let blob = ti.to_bytes_le().unwrap();
+        assert_eq!(
+            type_lookup_identifiers(&minimal, &minimal, Some(&blob)),
+            alloc::vec![minimal.clone(), complete.clone()]
+        );
+        assert_eq!(
+            type_lookup_identifiers(&complete, &minimal, Some(&blob)),
+            alloc::vec![complete.clone()]
+        );
+        assert_eq!(
+            type_lookup_identifiers(&minimal, &minimal, None),
+            alloc::vec![minimal]
+        );
+    }
+
+    /// The announced identifier decides while it is resolved or the
+    /// complete one is not; a complete object that is here decides in its
+    /// place, and the pair is then decided, not left unresolved.
+    #[test]
+    fn a_type_obtained_only_in_its_complete_form_is_decided_by_it() {
+        let (object, minimal, complete, ti) = complete_only_peer();
+        let blob = ti.to_bytes_le().unwrap();
+        let mut reg = zerodds_types::resolve::TypeRegistry::new();
+        assert_eq!(matched_identifier(&reg, &minimal, Some(&blob)), minimal);
+        reg.insert_object(object).unwrap();
+        reg.project_completes_to_minimal();
+        assert!(unresolved_type_identifier(&reg, &minimal).is_some());
+        assert_eq!(matched_identifier(&reg, &minimal, Some(&blob)), complete);
+        assert_eq!(matched_identifier(&reg, &minimal, None), minimal);
+        let verdict = decide_type_consistency(
+            &reg,
+            &matched_identifier(&reg, &minimal, Some(&blob)),
+            "::dust::Robot",
+            &complete,
+            "::zerodds::Robot",
+            &zerodds_types::qos::TypeConsistencyEnforcement::default(),
+            RuntimeConfig::default().assignability_axes(),
+        );
+        assert!(
+            matches!(verdict, TypeConsistency::Consistent),
+            "{verdict:?}"
+        );
+    }
+
+    /// XTypes 1.3 §7.6.3.3.4: a TypeLookup request naming this participant's
+    /// service, no service (all zeros) or its own sender is answered; one
+    /// naming a third participant's service is not. The sender's form is the
+    /// instanceName of Dust DDS 0.16.0 as captured on the Linux test host.
+    #[test]
+    fn a_type_lookup_request_naming_this_service_no_service_or_its_sender_is_answered() {
+        let this = GuidPrefix::from_bytes([
+            0x01, 0xf0, 0x91, 0x83, 0x92, 0x48, 0x91, 0xc3, 0x32, 0x00, 0x5f, 0xb4,
+        ]);
+        let dust = GuidPrefix::from_bytes([
+            0xac, 0x11, 0x00, 0x01, 0x38, 0x69, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        let third = GuidPrefix::from_bytes([0x44; 12]);
+        for named in [
+            "dds.builtin.TOS.01f09183924891c332005fb4000001c1",
+            "dds.builtin.TOS.00000000000000000000000000000000",
+            "dds.builtin.TOS.ac1100013869130000000000000001c1",
+        ] {
+            assert!(request_names_this_service(named, &this, &dust), "{named}");
+        }
+        assert!(!request_names_this_service(
+            "dds.builtin.TOS.444444444444444444444444000001c1",
+            &this,
+            &dust
+        ));
+        assert!(!request_names_this_service(
+            "dds.builtin.TOS.ac1100013869130000000000000001c1",
+            &this,
+            &third
+        ));
     }
 
     /// Up to three zero octets that end the payload on a four-octet offset
@@ -45683,6 +46033,51 @@ mod tests {
             ))
             .expect("register type object");
         zerodds_types::TypeIdentifier::EquivalenceHashComplete(hash)
+    }
+
+    /// DDS 1.4 §2.2.3.16: a writer's sample whose lifespan has run out is
+    /// removed before the writer next sends, at whatever time that is, so a
+    /// repair of it is a GAP and not the sample after its expiry
+    /// (`expire_lifespan_of`; OPEN-ITEMS 109).
+    #[test]
+    fn dcps_2_2_3_16_an_expired_sample_is_gone_before_the_writer_next_sends() {
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0x6c; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        // TRANSIENT_LOCAL keeps the sample without a reader to acknowledge it.
+        let mut cfg = qr_writer_cfg(
+            "LifespanRepair",
+            zerodds_qos::DurabilityKind::TransientLocal,
+            alloc::vec![],
+            zerodds_qos::LivelinessKind::Automatic,
+        );
+        cfg.lifespan = zerodds_qos::LifespanQosPolicy {
+            duration: QosDuration::from_millis(250),
+        };
+        let eid = rt.register_user_writer(cfg).expect("writer");
+        rt.write_user_sample(eid, b"lifespan".to_vec())
+            .expect("write");
+        let (_, arc) = rt
+            .writer_slots_snapshot()
+            .into_iter()
+            .find(|(e, _)| *e == eid)
+            .expect("slot");
+        let mut slot = arc.lock().unwrap();
+        assert_eq!(slot.writer.cache().len(), 1);
+        let written = slot.sample_insert_times.front().expect("insert time").1;
+        assert!(expire_lifespan_of(&mut slot, written + Duration::from_millis(100)).is_some());
+        assert_eq!(slot.writer.cache().len(), 1, "not expired yet");
+        assert_eq!(
+            expire_lifespan_of(&mut slot, written + Duration::from_millis(300)),
+            None
+        );
+        assert!(slot.writer.cache().is_empty(), "expired, gone");
+        drop(slot);
+        rt.shutdown();
     }
 
     /// Issue #42, send direction: a ZeroDDS endpoint whose type has a

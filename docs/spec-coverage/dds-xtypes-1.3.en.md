@@ -6827,9 +6827,9 @@ setting of the FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless."
 `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel`,
 `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_flagged_sentinel_and_a_flagged_extended_header_are_recognised`
 
-**Status:** `done` — writing per Table 34. Reading: `PlCdr1Reading::Tolerant` (`Reader::with_pl_cdr1_reading`, `LayoutKey::with_pl_cdr1_reading`, `zerodds_build::Config::pl_cdr1_reading`) accepts every setting of `FLAG_MUST_UNDERSTAND` and `FLAG_IMPL_EXTENSION` on `PID_EXTENDED` and `PID_LIST_END`. The default reader still reports the flags of another dialect as `WrongFraming`: maintainer decision, tolerant reading only behind a named setting. For the runtime: `wire.pl_cdr1_reading` (`ZERODDS_WIRE_PL_CDR1_READING`), process-wide; no `--` flag.
+**Status:** `done` — writing per Table 34. Reading: `PlCdr1Reading::Tolerant` (`Reader::with_pl_cdr1_reading`, `LayoutKey::with_pl_cdr1_reading`, `zerodds_build::Config::pl_cdr1_reading`) accepts every setting of `FLAG_MUST_UNDERSTAND` and `FLAG_IMPL_EXTENSION` on `PID_EXTENDED` and `PID_LIST_END`. The default reader takes either setting of `FLAG_MUST_UNDERSTAND` on the two, as the sentence below Table 34 requires (maintainer, 2026-11-08; CoreDX 6.15.3 closes a list with a bare `3f02`), and still reports another `FLAG_IMPL_EXTENSION` as `WrongFraming`: tolerance beyond the clause only behind a named setting. For the runtime: `wire.pl_cdr1_reading` (`ZERODDS_WIRE_PL_CDR1_READING`), process-wide; no `--` flag.
 
-### §7.4.1.2.1 Reading: differing flags on PID_EXTENDED and PID_LIST_END refused
+### §7.4.1.2.1 Reading: the must-understand bit on PID_EXTENDED and PID_LIST_END taken either way
 
 **Spec:** §7.4.1.2.1, p. 141 — "robust to any setting of the
 FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless."
@@ -6837,9 +6837,12 @@ FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless."
 **Repo:** `crates/wire/src/reader.rs::read_pid_as`
 
 **Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_extended_marker`,
-`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_the_default_reader_takes_a_sentinel_without_the_must_understand_bit`,
+`crates/wire-codec/tests/contract_wire.rs::xtypes_7_4_1_2_the_three_measured_parameter_list_flag_conventions`,
+`tools/omg-xtypes-test-main/tests/contract_wire_codec.rs::xtypes_7_4_1_2_1_a_list_closed_without_the_must_understand_bit_is_read`
 
-**Status:** `done` — the test reads `0x3f02`, `0x7f02`, `0xbf02`, `0xff02` and `0x3f01`, `0x7f01`, `0xbf01`, `0xff01`: the default reader takes the form of its dialect only, the tolerant reader all of them.
+**Status:** `done` — the test reads `0x3f02`, `0x7f02`, `0xbf02`, `0xff02` and `0x3f01`, `0x7f01`, `0xbf01`, `0xff01`: the default reader takes either setting of the must-understand bit and the `FLAG_IMPL_EXTENSION` of its dialect only, the tolerant reader all of them. Measured with the OMG dds-xtypes suite on the Linux test host: CoreDX 6.15.3 as publisher, `union_primitives_mutable` and four other cases under XCDR1, refused before, read now.
 
 ### §7.4.1.2.1 Design rationale on PID_PAD
 
@@ -13518,14 +13521,19 @@ hexadecimal digits with lower case letters. There shall be no '0x' ahead of the
 hexadecimal digits."
 
 **Repo:** `crates/types/src/type_lookup.rs::service_instance_name` (l. 838);
-`crates/discovery/src/type_lookup/endpoints.rs::format_service_instance_name` (l. 31)
+`crates/discovery/src/type_lookup/endpoints.rs::format_service_instance_name` (l. 31);
+`crates/dcps/src/runtime.rs::request_names_this_service`
 
 **Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_4_the_service_instance_name_is_the_prefix_and_lowercase_hex`,
-`crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_service_instance_name_format_matches_spec`
+`crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_service_instance_name_format_matches_spec`,
+`crates/dcps/src/runtime.rs::tests::a_type_lookup_request_naming_this_service_no_service_or_its_sender_is_answered`
 
 **Status:** done — 32 hex digits: the GUID has 16 octets. The specification says
 16 characters, its example has 15 and the prefix a space before the dot (listed
-in the findings file).
+in the findings file). Whose GUID it is the sentence does not say: a request of
+ZeroDDS names the server; ZeroDDS reads a request as its own when it names this
+participant, none (all zeros) or its sender. Dust DDS 0.16.0 names the sender
+(measured, OMG dds-xtypes); `docs/omg-xtypes-issues.md` B10.
 
 ### §7.6.3.3.4 Reply to every announced TypeIdentifier
 
@@ -13539,7 +13547,13 @@ TypeInformation".
 **Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_server_handle_get_types_happy_path_one_type`,
 `crates/dcps/tests/typelookup_resolution_e2e.rs::xtypes_7_6_3_2_1_get_types_answers_the_complete_form_of_a_hash`
 
-**Status:** done — only what the server's registry holds is announced.
+**Status:** done — only what the server's registry holds is announced. As
+the client, a type missing under the identifier a peer announced is asked for
+under the COMPLETE identifier of the same TypeInformation as well, and decided
+by it once it is here (`crates/dcps/src/runtime.rs::type_lookup_identifiers`,
+`matched_identifier`; tests `a_missing_announced_type_is_asked_for_in_both_forms`,
+`a_type_obtained_only_in_its_complete_form_is_decided_by_it`): Dust DDS 0.16.0
+answers only for its COMPLETE identifiers (measured, OMG dds-xtypes).
 
 ### §7.6.3.3.4 RequestHeader by DDS-RPC
 
@@ -16063,7 +16077,7 @@ force_type_validation; };"
 `crates/types/src/qos.rs::tests::xtypes_7_6_3_4_1_type_consistency_kind_has_the_two_values_of_annex_d`,
 `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement`
 
-**Status:** done — `kind` has two octets, then the five Booleans follow in this order; `TypeConsistencyKind` has the two values of Annex D, an unknown value is refused.
+**Status:** done — `kind` has two octets, then the five Booleans follow in this order; `TypeConsistencyKind` has the two values of Annex D, an unknown value is refused by `try_from_bytes`. The decoder of the SEDP path (`from_bytes`) reads `2` as `ALLOW_TYPE_COERCION`, the value OpenDDS gives it (its `DdsDcpsCore.idl`: `DISALLOW_TYPE_COERCION = 1`, `ALLOW_TYPE_COERCION = 2`; measured: an OpenDDS 3.35.0-dev reader announces `02 00 01 01 01`), any other unknown value as `DISALLOW_TYPE_COERCION`, and keeps the Booleans after it.
 
 ### Annex D TopicBuiltinTopicData with type_information 0x0075 and representation 0x0073
 

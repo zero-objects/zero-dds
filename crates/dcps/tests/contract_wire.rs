@@ -360,15 +360,29 @@ fn the_six_wire_error_kinds_narrow_apart_and_only_discarded_stays_a_discard() {
 }
 
 #[test]
-fn xtypes_7_4_1_2_1_a_bare_pid_extended_is_read_only_when_tolerant() {
-    // PID_EXTENDED written without the must-understand flag (0x3f01 rather
-    // than 0x7f01), short length 8, member id 1, length 4, the value.
-    let bytes: [u8; 16] = [
-        0x01, 0x3F, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00,
-        0x00,
-    ];
+fn xtypes_7_4_1_2_1_a_pid_extended_with_another_impl_extension_flag_is_read_only_when_tolerant() {
+    // PID_EXTENDED, short length 8, member id 1, length 4, the value; the
+    // flags of the marker in the second octet.
+    let marker = |flags: u8| -> [u8; 16] {
+        [
+            0x01, flags, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x05, 0x00,
+            0x00, 0x00,
+        ]
+    };
+    // DDS-XTypes 1.3 §7.4.1.2.1: a reader "shall be robust to any setting of
+    // the FLAG_MUST_UNDERSTAND bit": the default reads the bare 0x3f01 as it
+    // reads its own 0x7f01.
+    for bare_or_flagged in [0x3F, 0x7F] {
+        let bytes = marker(bare_or_flagged);
+        let mut strict = Reader::new(&bytes, Endianness::Little);
+        assert_eq!(strict.pl_cdr1_reading(), PlCdr1Reading::Strict);
+        let header = strict.read_pid().unwrap();
+        assert_eq!((header.pid, header.length, header.end), (1, 4, false));
+    }
+    // FLAG_IMPL_EXTENSION the default framing does not set: reported by the
+    // default, read under the tolerant setting.
+    let bytes = marker(0xBF);
     let mut strict = Reader::new(&bytes, Endianness::Little);
-    assert_eq!(strict.pl_cdr1_reading(), PlCdr1Reading::Strict);
     assert!(matches!(
         strict.read_pid(),
         Err(WireError::WrongFraming { .. })

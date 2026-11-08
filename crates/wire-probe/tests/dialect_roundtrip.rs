@@ -197,6 +197,35 @@ fn the_flags_on_a_member_id_are_not_part_of_it(writer: Dialect, reader: Dialect)
         && reader.pid_flags() == PidFlagPolicy::ImplExtensionOnMembers
 }
 
+/// Whether the reader's own little-endian stream `own` and the writer's
+/// `wrote` differ in nothing but flags a reader takes either way: the
+/// must-understand bit (`0x4000`) of `PID_EXTENDED` (`3f01`) or
+/// `PID_LIST_END` (`3f02`), which DDS-XTypes 1.3 §7.4.1.2.1 has every reader
+/// accept (the default framing writes `7f01`/`7f02`, Fast DDS `3f01`/`3f02`,
+/// OpenDDS closes with `3f02`); and, for a reader whose framing sets both
+/// bits on a member id (OpenDDS, `c0`), a writer's bare member id, which
+/// that reader masks off ([`the_flags_on_a_member_id_are_not_part_of_it`]).
+fn differs_only_in_flags_a_reader_takes(own: &[u8], wrote: &[u8], reader: Dialect) -> bool {
+    if own.len() != wrote.len() || own == wrote {
+        return false;
+    }
+    let masks_member_flags = reader.pid_flags() == PidFlagPolicy::ImplExtensionOnMembers;
+    own.iter().zip(wrote).enumerate().all(|(i, (x, y))| {
+        if x == y {
+            return true;
+        }
+        if i % 2 == 0 || own[i - 1] != wrote[i - 1] || x & 0x3f != y & 0x3f {
+            return false;
+        }
+        let reserved = x & 0x3f == 0x3f && matches!(own[i - 1], 0x01 | 0x02);
+        if reserved {
+            x ^ y == 0x40
+        } else {
+            masks_member_flags && *x == 0xc0 | (y & 0x3f) && y & 0xc0 == 0
+        }
+    })
+}
+
 /// Either of the two reasons a `@mutable` XCDR1 stream reads under
 /// another framing.
 fn a_mutable_xcdr1_stream_reads_alike(writer: Dialect, reader: Dialect) -> bool {
@@ -384,6 +413,28 @@ fn a_stream_read_under_another_dialect_is_an_error_and_never_a_wrong_sample() {
                 let theirs = encode(&ast, &reads, &sample).expect("the probe");
                 if theirs == bytes {
                     identical += 1;
+                    continue;
+                }
+                // DDS-XTypes 1.3 §7.4.1.2.1, below Table 34: a reader "shall
+                // be robust to any setting of the FLAG_MUST_UNDERSTAND bit"
+                // on the reserved ids. Where that bit, or member flags the
+                // reader masks off, is all that differs, the read must come
+                // back right.
+                if differs_only_in_flags_a_reader_takes(&theirs, &bytes, reader) {
+                    match decode(&ast, &reads, &bytes) {
+                        Ok(read) if text(&read) == expected => self_describing += 1,
+                        Ok(read) => wrong.push(format!(
+                            "{}: {writer:?}'s bytes read as {reader:?} returned {} where \
+                             only flags a reader takes either way differ",
+                            case.what,
+                            text(&read)
+                        )),
+                        Err(error) => wrong.push(format!(
+                            "{}: {writer:?}'s bytes read as {reader:?} were refused, and \
+                             only flags a reader takes either way differ: {error}",
+                            case.what
+                        )),
+                    }
                     continue;
                 }
                 if (case.across == Detectable::FromTheStream

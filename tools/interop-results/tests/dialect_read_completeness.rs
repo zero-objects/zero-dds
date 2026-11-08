@@ -412,9 +412,14 @@ fn what_the_default_alone_reads_of_every_systems_rows() {
     // that wrote them or under `PlCdr1Reading::Tolerant`.
     // (5593, 180, 999) -> (5597, 180, 999): the four rows OpenDDS wrote for
     // `key-on-union-discriminator`, all read into the sample.
+    // (5597, 180, 999) -> (5655, 180, 941): the default reader takes either
+    // setting of the must-understand bit on PID_EXTENDED and PID_LIST_END
+    // (XTypes 1.3 §7.4.1.2.1, below Table 34); 58 rows refused for a bare or
+    // a flagged sentinel or marker read into the sample now, none into
+    // another value.
     assert_eq!(
         (same, different, refused),
-        (5597, 180, 999),
+        (5655, 180, 941),
         "what the default alone makes of the eleven systems' rows, as (into the sample, another \
          value, refused)"
     );
@@ -445,8 +450,12 @@ fn what_the_default_alone_reads_of_every_systems_rows() {
             // ros-fastrtps +4, rti +14, tao +3. Cyclone and ros-cyclone carry
             // no unannotated top-level @appendable XCDR1 row here and do not
             // move. Measured per case.
+            // 2026-11-08: the default reader takes either setting of the
+            // must-understand bit on PID_EXTENDED and PID_LIST_END (XTypes
+            // 1.3 §7.4.1.2.1): Fast DDS's bare `3f01`/`3f02` rows, 58 of
+            // them, read into the sample; no other system moves.
             ("cyclone", (15, 304)),
-            ("fastdds", (16, 182)),
+            ("fastdds", (16, 124)),
             // HDDS's rows under the clause: its packed elements and
             // headerless aggregates are read as the clause frames them,
             // which is not what HDDS wrote. All 326 read back under
@@ -550,7 +559,13 @@ fn what_the_default_alone_reads_of_every_systems_rows() {
         //
         // (5103, 161, 1418) -> (5107, 161, 1418): the four rows OpenDDS
         // wrote for `key-on-union-discriminator`, all read into the sample.
-        (5107, 161, 1418),
+        //
+        // (5107, 161, 1418) -> (5111, 161, 1414): every reader takes either
+        // setting of the must-understand bit on PID_EXTENDED and
+        // PID_LIST_END (XTypes 1.3 §7.4.1.2.1), this dialect's too; four
+        // rows refused for it read into the sample. Taken from the totals,
+        // not broken down per row here.
+        (5111, 161, 1414),
         "the previous default's reading reach moved; the sentence this test carries is these \
          three numbers against the three above"
     );

@@ -10,6 +10,8 @@
 //!   `PlCdr1`, `PlainCdr2`, `DelimitedCdr`, `PlCdr2`), then
 //!   `encode::<serde_json::Value>` for a published sample and
 //!   `decode::<serde_json::Value>` for a received one.
+//! - `ProbeRequest::with_pl_cdr1_reading` with the run's
+//!   `wire.pl_cdr1_reading`.
 //! - `ProbeError::Discarded` from `decode`: the sample is dropped
 //!   (`DecodeError::Discarded`), every other error keeps the octets.
 //! - `Emit::KeyHash` with `Endianness::Big`: the sixteen octets of the
@@ -31,7 +33,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use zerodds_ast_layout::{Encoding, Endianness};
+use zerodds_ast_layout::{Encoding, Endianness, PlCdr1Reading};
 use zerodds_wire_codec::{Emit, ProbeError, ProbeRequest, decode, default_of_type, encode};
 
 const IDL: &str = "\
@@ -44,6 +46,7 @@ module to {
   @final struct KeyedText { @key string color; long x; };
   @appendable struct ShortWriter { long x1; };
   @appendable struct LongReader { long x1; long x2; string x3; };
+  @mutable struct Tiny { @id(1) octet x; };
 };";
 
 fn model() -> zerodds_ast::Ast {
@@ -188,4 +191,44 @@ fn xtypes_7_2_4_4_4_4_a_member_the_writer_did_not_send_takes_its_default() {
         .unwrap();
     let default: Value = default_of_type(&ast, id, "to::LongReader").unwrap();
     assert_eq!(default, json!({ "x1": 0, "x2": 0, "x3": "" }));
+}
+
+/// DDS-XTypes 1.3 §7.4.1.2.1, below Table 34: a reader "shall be robust to
+/// any setting of the FLAG_MUST_UNDERSTAND bit". CoreDX 6.15.3 closes the
+/// list with a bare `3f02` (OMG dds-xtypes, `union_primitives_mutable` and
+/// four other cases, Linux test host); the default reading takes it.
+#[test]
+fn xtypes_7_4_1_2_1_a_list_closed_without_the_must_understand_bit_is_read() {
+    let ast = model();
+    let request = payload("to::Tiny", Encoding::PlCdr1, Endianness::Little);
+    let coredx = [
+        0x01, 0x00, 0x01, 0x00, 0x2a, 0x00, 0x00, 0x00, // id 1, length 1: x, padding
+        0x02, 0x3f, 0x00, 0x00, // PID_LIST_END without FLAG_MUST_UNDERSTAND
+    ];
+    let value: Value = decode(&ast, &request, &coredx).unwrap();
+    assert_eq!(value, json!({ "x": 42 }));
+}
+
+/// DDS-XTypes 1.3 §7.4.1.2: the parameter length "does not account for any
+/// padding bytes". Cyclone DDS 11.0.1 writes 4 for a one-octet member; the
+/// default reading refuses it and names the setting, and the run's
+/// `wire.pl_cdr1_reading = tolerant` reaches the request and takes it.
+#[test]
+fn xtypes_7_4_1_2_a_rounded_length_is_read_only_under_the_tolerant_setting() {
+    let ast = model();
+    let cyclone = [
+        0x01, 0x00, 0x04, 0x00, 0x2a, 0x00, 0x00, 0x00, // id 1, length 4: x
+        0x02, 0x7f, 0x00, 0x00, // PID_LIST_END
+    ];
+    let strict = payload("to::Tiny", Encoding::PlCdr1, Endianness::Little);
+    match decode::<Value>(&ast, &strict, &cyclone) {
+        Err(error) => assert!(
+            error.to_string().contains("--pl-cdr1-headers"),
+            "the refusal names the setting: {error}"
+        ),
+        Ok(value) => panic!("the default reading took a rounded length: {value}"),
+    }
+    let tolerant = strict.with_pl_cdr1_reading(PlCdr1Reading::Tolerant);
+    let value: Value = decode(&ast, &tolerant, &cyclone).unwrap();
+    assert_eq!(value, json!({ "x": 42 }));
 }

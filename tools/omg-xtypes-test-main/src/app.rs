@@ -312,7 +312,16 @@ pub fn subscribe(
                     None => line("Received sample is the same as loaded"),
                     Some(why) => line(&format!("Received sample is not the same as loaded: {why}")),
                 },
-                (_, None) => line("Received sample is not the same as loaded: it did not decode"),
+                (_, None) => line(&match s.data.decode_error.as_deref() {
+                    Some(why) => {
+                        format!(
+                            "Received sample is not the same as loaded: it did not decode: {why}"
+                        )
+                    }
+                    None => {
+                        String::from("Received sample is not the same as loaded: it did not decode")
+                    }
+                }),
                 (None, _) => {
                     line("Received sample is not the same as loaded: no data file was loaded");
                 }

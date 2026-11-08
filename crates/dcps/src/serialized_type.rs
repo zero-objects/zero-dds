@@ -1581,8 +1581,10 @@ mod tests {
     /// @mutable body in Fast DDS's PL_CDR1 framing: bare parameter ids, true
     /// lengths, a bare 0x3f02 sentinel. The octets are Fast DDS 3.6.1's own,
     /// `RichMPubSubType::serialize` from fastddsgen's output for this IDL.
-    /// The support reads them, and derives their key, only in that dialect;
-    /// it used to read in the specification's always.
+    /// The support reads them, and derives their key, in that dialect; the
+    /// specification's reads them too, since the sentinel's must-understand
+    /// bit is all that differs and DDS-XTypes 1.3 §7.4.1.2.1 has every reader
+    /// take either setting of it.
     #[test]
     fn a_support_in_the_fastdds_dialect_reads_the_body_fast_dds_writes() {
         const FAST_DDS: [u8; 36] = [
@@ -1608,12 +1610,14 @@ mod tests {
             support.dialect(),
             zerodds_ast_layout::Dialect::Specification
         );
-        assert!(support.read_body(&FAST_DDS, 0, false).is_err());
+        let in_the_specification = support.read_body(&FAST_DDS, 0, false).unwrap();
+        let key_in_the_specification = support.key_material(&in_the_specification).unwrap();
         let fastdds = support.in_dialect(zerodds_ast_layout::Dialect::FastDds);
         let sample = fastdds.read_body(&FAST_DDS, 0, false).unwrap();
         let (hash, holder) = fastdds.key_material(&sample).unwrap();
         assert_eq!(holder, 1u32.to_be_bytes());
         assert_eq!(hash[..4], [0, 0, 0, 1]);
+        assert_eq!(key_in_the_specification, (hash, holder));
     }
 
     /// `wire.codec_dialect: opensplice` gives the runtime OpenSplice's

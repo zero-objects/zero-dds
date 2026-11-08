@@ -351,8 +351,9 @@ fn xtypes_7_4_1_2_a_default_reader_refuses_the_rounded_length_and_names_the_sett
 /// XTypes 1.3 §7.4.1.2.1: a reader shall be "robust to any setting of the
 /// FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless", and
 /// Table 34: "Implementations shall be robust to receiving parameter ID
-/// 0x3F02 to indicate the end of a list as well." The strict reader
-/// reports the flags of another framing; the tolerant reader takes them.
+/// 0x3F02 to indicate the end of a list as well." The strict reader takes
+/// either setting of the must-understand bit and reports another
+/// `FLAG_IMPL_EXTENSION` than its framing's; the tolerant reader takes all.
 #[test]
 fn xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel() {
     for pid in [0x3f02u16, 0x7f02, 0xbf02, 0xff02] {
@@ -361,10 +362,11 @@ fn xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel() {
         let strict_expects = Reader::new(&bytes, Endianness::Little)
             .with_pl_cdr1_framing(PlCdr1Framing::DEFAULT)
             .read_pid();
-        // The default framing writes the sentinel with the bit set.
+        // The default framing writes the sentinel with the must-understand
+        // bit set and without FLAG_IMPL_EXTENSION.
         assert_eq!(
             strict_expects.is_ok(),
-            pid == 0x7f02,
+            pid & 0x8000 == 0,
             "the strict reader's verdict on {pid:#06x}: {strict_expects:?}"
         );
         let mut tolerant =
@@ -374,8 +376,28 @@ fn xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel() {
             "{pid:#06x} did not end the list"
         );
         let mut bare = Reader::new(&bytes, Endianness::Little).with_pl_cdr1_framing(SHORT_FORM);
-        assert_eq!(bare.read_pid().is_ok(), pid == 0x3f02, "{pid:#06x}");
+        assert_eq!(bare.read_pid().is_ok(), pid & 0x8000 == 0, "{pid:#06x}");
     }
+}
+
+/// XTypes 1.3 §7.4.1.2.1 under the default reading: CoreDX 6.15.3 closes a
+/// `@mutable` sample under XCDR1 with a bare `3f02` (the OMG dds-xtypes
+/// suite, `union_primitives_mutable` and four other cases, Linux test host);
+/// the default framing writes `7f02`, and the default reader takes both.
+#[test]
+fn xtypes_7_4_1_2_1_the_default_reader_takes_a_sentinel_without_the_must_understand_bit() {
+    let bare = [0x02, 0x3f, 0x00, 0x00];
+    let header = Reader::new(&bare, Endianness::Little)
+        .read_pid()
+        .expect("a bare PID_LIST_END under the default reading");
+    assert!(header.end);
+    let flagged = [0x02, 0x7f, 0x00, 0x00];
+    assert!(
+        Reader::new(&flagged, Endianness::Little)
+            .read_pid()
+            .expect("the default framing's own sentinel")
+            .end
+    );
 }
 
 #[test]
@@ -389,9 +411,10 @@ fn xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_extended_marker() {
             0x2a, 0x00, 0x00, 0x00, // the value
         ];
         let strict = Reader::new(&bytes, Endianness::Little).read_pid();
+        // §7.4.1.2.1: either setting of the must-understand bit.
         assert_eq!(
             strict.is_ok(),
-            marker == 0x7f01,
+            marker & 0x8000 == 0,
             "the strict reader's verdict on {marker:#06x}: {strict:?}"
         );
         let mut tolerant =

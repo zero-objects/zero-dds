@@ -73,6 +73,39 @@ fn run() -> i32 {
         );
     }
 
+    // The Table 19 axis is the runtime's, not a QoS: both sides of a
+    // pair decide under it, so it goes in through the runtime
+    // configuration rather than the reader's announced policy.
+    // On top of the standard configuration (files, environment), not the
+    // compiled defaults: `RuntimeConfig::default()` reads nothing, and a
+    // client that started from it would silently drop ZERODDS_OBSERVABILITY
+    // and every file-borne setting the plain `create_participant` honours.
+    let base = match &options.runtime_config {
+        Some(path) => zerodds_dcps::runtime::ConfigSource::from_path(path)
+            .and_then(|source| zerodds_dcps::runtime::RuntimeConfig::from_source(&source)),
+        None => zerodds_dcps::runtime::RuntimeConfig::from_standard_paths(),
+    };
+    let runtime = match base {
+        Ok(base) => zerodds_dcps::runtime::RuntimeConfig {
+            key_member_bounds: options.key_member_bounds,
+            // The suite's answer unless the flag or the environment names
+            // one (README "Where the suite expects another answer than the
+            // clause").
+            strong_assignability: options.strong_assignability.unwrap_or(
+                if std::env::var_os("ZERODDS_STRONG_ASSIGNABILITY").is_some() {
+                    base.strong_assignability
+                } else {
+                    zerodds_types::assignability::StrongAssignability::NamesIgnored
+                },
+            ),
+            ..base
+        },
+        Err(e) => {
+            eprintln!("ERROR reading the runtime configuration: {e}");
+            return EXIT_ERROR;
+        }
+    };
+
     // The leak is one `&'static str` per process. `DdsType::type_name`
     // hands out a `&'static str` because a compiled-in type's name is a
     // constant; this run's is not, and it lives as long as the run.
@@ -82,6 +115,7 @@ fn run() -> i32 {
         options.data_representation,
         loaded.extensibility,
         false,
+        runtime.pl_cdr1_reading,
     );
     request.defaulted_discriminator_member = options.defaulted_discriminator_member;
     if !carrier::install(carrier::Context {
@@ -100,31 +134,6 @@ fn run() -> i32 {
         let _ = ctrlc::set_handler(move || stop.store(true, Ordering::SeqCst));
     }
 
-    // The Table 19 axis is the runtime's, not a QoS: both sides of a
-    // pair decide under it, so it goes in through the runtime
-    // configuration rather than the reader's announced policy.
-    // On top of the standard configuration (files, environment), not the
-    // compiled defaults: `RuntimeConfig::default()` reads nothing, and a
-    // client that started from it would silently drop ZERODDS_OBSERVABILITY
-    // and every file-borne setting the plain `create_participant` honours.
-    let base = match &options.runtime_config {
-        Some(path) => zerodds_dcps::runtime::ConfigSource::from_path(path)
-            .and_then(|source| zerodds_dcps::runtime::RuntimeConfig::from_source(&source)),
-        None => zerodds_dcps::runtime::RuntimeConfig::from_standard_paths(),
-    };
-    let runtime = match base {
-        Ok(base) => zerodds_dcps::runtime::RuntimeConfig {
-            key_member_bounds: options.key_member_bounds,
-            strong_assignability: options
-                .strong_assignability
-                .unwrap_or(base.strong_assignability),
-            ..base
-        },
-        Err(e) => {
-            eprintln!("ERROR reading the runtime configuration: {e}");
-            return EXIT_ERROR;
-        }
-    };
     let participant = match DomainParticipantFactory::instance().create_participant_with_config(
         i32::try_from(options.domain_id).unwrap_or(0),
         DomainParticipantQos::default(),
@@ -192,4 +201,24 @@ fn print_typeid(loaded: &model::Model, version: u8, rti_camp: bool) -> i32 {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The defaults of the axes the suite answers otherwise than the
+    /// clause are the suite's; the flags give the clause's reading.
+    #[test]
+    fn the_axis_defaults_are_the_suites() {
+        let options = cli::Options::default();
+        assert_eq!(
+            options.key_member_bounds,
+            zerodds_types::assignability::KeyMemberBounds::Ignored
+        );
+        assert_eq!(
+            options.defaulted_discriminator_member,
+            zerodds_ast_layout::DefaultedDiscriminatorMember::StreamValue
+        );
+    }
 }

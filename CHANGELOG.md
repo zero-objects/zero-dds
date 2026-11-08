@@ -664,6 +664,93 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **A writer removes its expired samples before every send** (DDS 1.4
+  §2.2.3.16). The removal ran only on the housekeeping tick, which comes late
+  under load, and a repair sent on receipt of an ACKNACK did not look at the
+  lifespan at all; a repair of an expired sample delivered it after its
+  expiry. Measured on the Linux test host, OMG dds-rtps `Test_Lifespan_0`
+  ZeroDDS -> Connext 7.7.0: SN 13 and 14 sent again 300 ms after their source
+  timestamp with a lifespan of 250 ms. Removed, a repair of them is a GAP.
+  `Test_Lifespan_0`/`_1` ZeroDDS -> Connext under load: 19 of 20 green (1 of
+  9 red before); the one left is OPEN-ITEMS 109.
+
+- **An OpenDDS reader's `TypeConsistencyKind` 2 reads as
+  `ALLOW_TYPE_COERCION`.** OpenDDS numbers the kind one more than XTypes 1.3
+  Annex D (`dds/DdsDcpsCore.idl`: `DISALLOW_TYPE_COERCION = 1`,
+  `ALLOW_TYPE_COERCION = 2`), and its default reader announces `02 00 01 01
+  01`. ZeroDDS read the unknown 2 as DISALLOW and dropped the three
+  `ignore_*` flags after it, so a ZeroDDS writer called an OpenDDS reader of an
+  assignable type inconsistent. The lenient decoder of the SEDP path reads 2
+  as ALLOW, any other unknown value as DISALLOW, and keeps the flags; the strict
+  `try_from_bytes` still refuses both. Measured on the Linux test host,
+  dds-xtypes ZeroDDS -> OpenDDS 3.35.0-dev: 294 of 335 (234 before; CoreDX
+  6.15.3 -> OpenDDS 291 in the official base), no case red that is green for
+  CoreDX. OpenDDS -> ZeroDDS stays 231: OpenDDS reads the spec's 1 of a ZeroDDS
+  reader as its DISALLOW, as it does for Connext, CoreDX and Cyclone readers
+  in the base.
+
+- **A peer's type that answers only in its COMPLETE form is resolved and
+  decided.** A type missing under the identifier a peer announced is asked for
+  under the COMPLETE identifier of the same TypeInformation as well, and the
+  pair is decided by the complete identifier once that object and its closure
+  are here; the assignability walk projects the pair down itself. XTypes 1.3
+  §7.6.3.3.4 has a peer answer for any identifier it announced; Dust DDS
+  0.16.0 files only COMPLETE TypeObjects, leaves a request for its MINIMAL
+  identifier unanswered, and its minimal hash agrees with neither computation
+  of `docs/omg-xtypes-issues.md` C2. Measured on the Linux test host, every
+  dds-xtypes case with the client of the OMG pull request, no flags: Dust
+  0.16.0 335 of 335 in each direction (305 before); HDDS 1.3.0 335/335 both
+  ways; CoreDX 6.15.3 332 and 335; Cyclone 11.0.1 328 and 321 with 7 declared
+  deviations; Connext 7.7.0 307 both ways; OpenDDS 3.35.0-dev 231 and 234 —
+  every red case Connext's, Cyclone's or CoreDX's in the official base, the
+  OpenDDS pairs as in the GitHub run of 2026-11-07.
+
+- **A TypeLookup request that names its own sender as the service is
+  answered.** XTypes 1.3 §7.6.3.3.4 gives the `instanceName` as
+  "dds.builtin.TOS." and "the DomainParticipant GUID" without saying whose.
+  ZeroDDS names the server and answered only a request naming this
+  participant or none (all zeros); Dust DDS 0.16.0 names itself, and its
+  requests were refused, so Dust matched no ZeroDDS endpoint of a type it had
+  to look up. A request naming its own sender is for no other service and is
+  answered now. Measured: OMG dds-xtypes Dust -> ZeroDDS 258 cases red in the
+  fork run of 2026-11-07; on the Linux test host with the change 305 of 335
+  green in each direction, the 30 left a type ZeroDDS cannot obtain from
+  Dust 0.16.0 (it files only COMPLETE TypeObjects and leaves the request for
+  the MINIMAL identifier it announces unanswered). Filed as
+  `docs/omg-xtypes-issues.md` B10.
+
+- **A participant pinned to an interface names it as its SPDP multicast
+  device** (`IP_MULTICAST_IF`). It bound the sender to the pinned address
+  only; Linux picks the multicast device by the source address, macOS by
+  the route, so on macOS a participant pinned to 127.0.0.1
+  (`ZERODDS_INTERFACE`) sent its SPDP and the wake-up datagram of its
+  shutdown through the route's interface, and a receiver joined on
+  127.0.0.1 got neither. Closing a socket does not wake its receive thread
+  on macOS, so every shutdown waited out the SPDP multicast receiver's 1 s
+  read timeout: 0.74–0.84 s per process, measured on a MacBook Pro in a
+  ten-process chain. On macOS loopback a sender bound to 127.0.0.1 reached
+  a receiver joined there with 0 of 200 datagrams without the option and
+  200 of 200 with it. Where a platform refuses the option the sender binds
+  as before and the event `discovery.spdp_multicast.sender_refused` says
+  so.
+
+- **The default PL_CDR1 reader takes either setting of the must-understand
+  bit on `PID_EXTENDED` and `PID_LIST_END`**, as DDS-XTypes 1.3 §7.4.1.2.1
+  has every reader do ("shall be robust to any setting of the
+  FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless"). CoreDX
+  6.15.3 closes a `@mutable` sample under XCDR1 with a bare `3f02`; the
+  default reader refused it, and six OMG dds-xtypes cases with CoreDX as
+  publisher ended in `DATA_NOT_CORRECT`. They pass now (Linux test host).
+  Another `FLAG_IMPL_EXTENSION`, and a declared length rounded up to four,
+  still need `wire.pl_cdr1_reading = tolerant`.
+- **The OMG dds-xtypes client reads received samples under the run's
+  `wire.pl_cdr1_reading`** and reports why a sample does not decode. Its
+  codec took the specification's framing whatever the configuration said,
+  so the setting `run_configs.sh` gives never reached the samples. Cyclone
+  11.0.1's rounded PL_CDR1 length is a declared deviation under `-x 1` in
+  `tests/interop/omg/vendor-deviations.tsv`, which gains an optional column
+  for the harness arguments a row holds for.
+
 - **Samples of an RTI Connext writer whose type ends in a one- or two-octet
   member were refused**: the reader held the payload against the writer's
   `dataMaxSizeSerialized` (DDSI-RTPS 2.5 Table 8.72) with the padding octets
@@ -1154,6 +1241,19 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   dds-warehouse demo describe their mappings with it.
 
 ### Changed
+
+- **`tools/omg-xtypes-test-main`: the suite's answers are the client's
+  defaults.** On the four axes where the OMG dds-xtypes suite expects another
+  answer than the clause (README "Where the suite expects another answer than
+  the clause"), the client now takes the suite's without flags:
+  `--key-member-bounds ignored`, `--defaulted-discriminator-member
+  stream-value`, `--strong-assignability names_ignored` (unless
+  `ZERODDS_STRONG_ASSIGNABILITY` names one), `--key-on-union-discriminator
+  carried` as before. The official matrix starts the client with a case's
+  arguments only; the runtime's defaults stay the clause's, and the flags
+  give the clause's reading. Measured on the Linux test host, every case Dust
+  0.16.0 <-> ZeroDDS: without flags 305 of 335 in each direction, the same as
+  with the four flags.
 
 - **A generated type reads its key members alone** (`zerodds-lang-rules`
   `decode_keys…`, `zerodds-build`, `zerodds-dcps`

@@ -185,9 +185,11 @@ impl<'a> Reader<'a> {
     /// The same reader taking, or reporting, a PL_CDR1 stream in another
     /// framing than the one it was given.
     ///
-    /// [`PlCdr1Reading::Strict`] is the default. Under
-    /// [`PlCdr1Reading::Tolerant`] the reader accepts any flags on
-    /// `PID_EXTENDED` and `PID_LIST_END` (XTypes 1.3 §7.4.1.2.1), the
+    /// [`PlCdr1Reading::Strict`] is the default; it takes any setting of the
+    /// must-understand bit on `PID_EXTENDED` and `PID_LIST_END`, as XTypes
+    /// 1.3 §7.4.1.2.1 has every reader do, and the rest of the framing's
+    /// form only. Under [`PlCdr1Reading::Tolerant`] the reader also accepts
+    /// any `FLAG_IMPL_EXTENSION` on the two (§7.4.1.2.1), the
     /// short and the extended header of a parameter whichever form the
     /// framing names (§7.4.1.2.2), and a declared length that is the
     /// value's own length or that length rounded up to four (§7.4.1.2).
@@ -1527,7 +1529,7 @@ impl<'a> Reader<'a> {
                 .pid_flags
                 .flags_at(WirePosition::ExtendedMarker);
             let found = pid & !PID_ID_MASK;
-            if found != expected && !self.pl_cdr1_reading.is_tolerant() {
+            if !same_reserved_pid_flags(found, expected) && !self.pl_cdr1_reading.is_tolerant() {
                 return Err(self.wrong_framing(at, "PID_EXTENDED", expected, found));
             }
             if length != 8 {
@@ -1598,7 +1600,10 @@ impl<'a> Reader<'a> {
         // flags on every member id and closes with a bare `3f02`, while
         // Cyclone and RTI leave the member bare and close with `7f02`.
         let sentinel_flags = self.pl_cdr1.pid_flags.flags_at(WirePosition::Sentinel);
-        if end && pid & !PID_ID_MASK != sentinel_flags && !self.pl_cdr1_reading.is_tolerant() {
+        if end
+            && !same_reserved_pid_flags(pid & !PID_ID_MASK, sentinel_flags)
+            && !self.pl_cdr1_reading.is_tolerant()
+        {
             return Err(self.wrong_framing(at, "PID_LIST_END", sentinel_flags, pid & !PID_ID_MASK));
         }
         if !end && length > self.remaining() {
@@ -2272,6 +2277,18 @@ impl PidRead {
 
 /// The bit XTypes 1.3 §7.4.1.2 gives to must-understand.
 const PID_MUST_UNDERSTAND: u16 = 0x4000;
+
+/// Whether the flags `found` on `PID_EXTENDED` or `PID_LIST_END` are the
+/// framing's `expected` ones, the must-understand bit aside. DDS-XTypes 1.3
+/// §7.4.1.2.1, below Table 34: "When reading data, implementations of this
+/// specification shall be robust to any setting of the FLAG_MUST_UNDERSTAND
+/// bit and accept the parameter nevertheless." CoreDX 6.15.3 closes a list
+/// with a bare `3f02` where the table has the bit set. `FLAG_IMPL_EXTENSION`
+/// is still the framing's, and taken in another setting only under
+/// [`PlCdr1Reading::Tolerant`].
+const fn same_reserved_pid_flags(found: u16, expected: u16) -> bool {
+    found & !PID_MUST_UNDERSTAND == expected & !PID_MUST_UNDERSTAND
+}
 
 /// The low fourteen bits, which are the id itself.
 const PID_ID_MASK: u16 = 0x3FFF;

@@ -33,6 +33,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- `expire_lifespan_of` runs before each `writer.tick` of a user writer, on the housekeeping tick and on receipt of an ACKNACK, so a repair never carries a sample whose lifespan has run out (DDS 1.4 §2.2.3.16). Test: `dcps_2_2_3_16_an_expired_sample_is_gone_before_the_writer_next_sends`.
+
+- A remote endpoint's type missing under its announced identifier is asked for under the COMPLETE identifier of the same TypeInformation as well (`type_lookup_identifiers`), and the pair is decided by the complete one once it is resolved (`matched_identifier`); the TypeInformation is read in the byte order its DHEADER fits (`peer_type_information`). Dust DDS 0.16.0 answers only for COMPLETE identifiers. Tests: `a_peers_type_information_is_read_in_either_byte_order`, `a_missing_announced_type_is_asked_for_in_both_forms`, `a_type_obtained_only_in_its_complete_form_is_decided_by_it`.
+
+- A TypeLookup request whose `instanceName` names its own sender is answered (`request_names_this_service`): XTypes 1.3 §7.6.3.3.4 does not say whose GUID it is, Dust DDS 0.16.0 names itself. Before, only this participant's name and all zeros were taken. Test: `a_type_lookup_request_naming_this_service_no_service_or_its_sender_is_answered`.
+
+- `complete_key_revision` looks at the pending key revision and takes it under one lock (DDS-Security 1.2 §9.8.9.5 step 7): two callers that both found it due both called `activate_key_revision` (merge job 233999, the unit test calling it beside the runtime's tick). `security_guid_wiring_e2e` waits 20 s instead of 30 s for the handshake, under the merge lane's 25 s, so a handshake that does not complete ends in its assert with the discovery counts.
+- Pinned to an interface (`multicast_interface`, `ZERODDS_INTERFACE`), the SPDP multicast sender is bound with `IP_MULTICAST_IF` on it (`UdpTransport::bind_multicast_sender_v4_with_config`); macOS sent the group datagrams, the shutdown's wake-up among them, through the route's interface, and `zdds-recv-spdp-mc` waited out its 1 s read timeout on every shutdown. A refused option falls back to the plain bind with the event `discovery.spdp_multicast.sender_refused`. Test: `e2e_a_participant_pinned_to_loopback_shuts_down_with_idle_sockets_quickly`.
+
 - A payload refused against the writer's `dataMaxSizeSerialized` is reported: the event `reader.sample.oversize_refused` (Warn), once per reader and writer, with the reader, the writer, the announced bound and the setting `reader.honor_data_max_size_serialized`. Until now only `oversize_payload_count` rose, which nothing read; the refused sample now counts as SAMPLE_LOST (DDS 1.4 §2.2.4.1). The padding octets the encapsulation options count no longer go against the bound (`zerodds-rtps`). Test: `declared_padding_passes_the_announced_maximum_and_a_refusal_is_reported_once`.
 
 - The SHM user transport (`transport.user_transport = SHM`) receives from a

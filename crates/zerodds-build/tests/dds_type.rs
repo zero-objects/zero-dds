@@ -1346,8 +1346,9 @@ fn an_inherited_type_carries_its_closure_beside_its_object() {
 /// | 02 00 08 00 04 00 00 00 00 01 02 03 | 02 3f 00 00` — PL_CDR_LE, bare
 /// parameter ids, true lengths and a bare sentinel. A module built with
 /// `Config::dialect(FastDds)` used to decode it with the specification's
-/// framing and refused the sentinel; the specification-dialect module still
-/// refuses it, and should.
+/// framing and refused the sentinel. The specification-dialect module reads
+/// it as well now: the sentinel's must-understand bit is all that differs,
+/// and DDS-XTypes 1.3 §7.4.1.2.1 has every reader take either setting.
 #[test]
 #[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_fastdds_dialect_module_reads_and_writes_what_fast_dds_writes() {

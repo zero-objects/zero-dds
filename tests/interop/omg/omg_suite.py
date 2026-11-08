@@ -67,6 +67,14 @@ REPO = HERE.parents[2]
 OURS = "zerodds"
 
 
+def is_ours(name):
+    """Whether a product name is ZeroDDS': `zerodds`, or `zerodds-<version>`,
+    the form the OMG releases name an executable in. Compared with `OURS`
+    alone, a versioned ZeroDDS executable was taken for another vendor: no
+    `--ours-args`, and the dds-security profiles of the two sides swapped."""
+    return name == OURS or name.startswith(OURS + "-")
+
+
 WRAPPER = """#!/bin/bash
 # omg_suite.py: every -d of the suite shifted by {base}, -d {base} where none.
 args=(); have=0; prev=""
@@ -130,6 +138,16 @@ def chunk_tests(suite, chunk):
     raise SystemExit(f"omg_suite.py: no chunk `{chunk}` of {suite} in chunks.tsv")
 
 
+def lease_order(spans):
+    """The order the workers lease their domains in: the most neighbouring
+    domains first. Leased in the order of the workers, the one-domain workers
+    took the band from the top down and left no two neighbours for a worker
+    with a `Test_Domain_*` case on a host whose share has few of them
+    (measured on the Linux test host, whose share is 90, 92 and 215-218: four
+    workers, "No 2 neighbouring DDS domains left ... after 180 s")."""
+    return sorted(range(len(spans)), key=lambda index: -spans[index])
+
+
 def domains_needed(suite, harness, tests):
     """How many neighbouring domains, from the leased base up, these cases
     use: one more than the highest `-d` a case of test_suite.py passes (the
@@ -177,13 +195,18 @@ def suite_dictionaries(harness):
     return {case: full[: -len(case) - 1] for full, case in suite_names(harness).items()}
 
 
-def vendor_deviations(suite):
+def vendor_deviations(suite, extra=""):
     """(vendor, test, direction) -> the row of vendor-deviations.tsv: the
     clause, the codes the case must produce, the evidence, the OPEN-ITEMS
-    entry."""
+    entry. A row whose ninth column names harness arguments (`-x 1`) holds
+    only for a run whose `--extra` carries them: the dds-xtypes harness runs
+    XCDR2 unless told otherwise, and a deviation under XCDR1 alone would read
+    as a stale row there."""
     found = {}
+    given = " ".join(extra.split())
     for row in read_tsv(HERE / "vendor-deviations.tsv"):
-        if row[0] == suite:
+        harness = " ".join(row[8].split()) if len(row) > 8 else ""
+        if row[0] == suite and (not harness or f" {harness} " in f" {given} "):
             found[(row[3], row[1], row[2])] = {"clause": row[4], "codes": set(row[5].split()),
                                                "evidence": row[6], "item": row[7]}
     return found
@@ -194,13 +217,26 @@ PRODUCED = re.compile(r"<th>\s*((?:Publisher|Subscriber)_\d+)\s*</th>\s*<th>[^<]
                       r"\s*<th>\s*([A-Z_]+)\s*</th>")
 
 
+# What XML 1.0 does not allow in a document (§2.2 Char).
+NOT_XML = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def read_report(path):
+    """The root of a JUnit report, with the octets XML 1.0 does not allow
+    taken out first. The harness copies what the executables print into its
+    failure messages, and zzdds 0.3.2 prints an interface name followed by NUL
+    octets ("multicast join on eth0\\0\\0...: error.SetsockoptFailed");
+    the report it wrote did not parse, and the run ended without a verdict."""
+    return ET.fromstring(NOT_XML.sub(b"", path.read_bytes()))
+
+
 def junit_cases(path, names):
     """case -> (verdict, the first line of the message, seconds, the codes
     produced as `Publisher_1=CODE`)."""
     cases = {}
     if not path.is_file() or path.stat().st_size == 0:
         return cases
-    for case in ET.parse(path).getroot().iter("testcase"):
+    for case in read_report(path).iter("testcase"):
         verdict, detail, codes = "passed", "", set()
         for tag in ("failure", "error", "skipped"):
             node = case.find(tag)
@@ -260,13 +296,13 @@ def worker_commands(args, tests, base, tag, pub, sub):
     junit.unlink(missing_ok=True)
     if args.suite == "dds-security":
         import security_setup
-        vendor_exe = args.sub if pub == OURS else args.pub
-        ours_exe = args.pub if pub == OURS else args.sub
+        vendor_exe = args.sub if is_ours(pub) else args.pub
+        ours_exe = args.pub if is_ours(pub) else args.sub
         ours_profile, vendor_profile = security_setup.setup(
             args.harness, args.out / f"pki-{base}", base, ours_exe, vendor_exe)
         command = [args.python, str(REPO / "tools/omg-security-main/run_matrix.py"),
-                   pub_flag, str(ours_profile if pub == OURS else vendor_profile),
-                   sub_flag, str(ours_profile if sub == OURS else vendor_profile),
+                   pub_flag, str(ours_profile if is_ours(pub) else vendor_profile),
+                   sub_flag, str(ours_profile if is_ours(sub) else vendor_profile),
                    *args.extra.split(), "--cells",
                    *[test.replace("__R-", ":").replace("__W-", ":") for test in tests],
                    "-o", str(junit), "--outdir", str(args.out / f"logs-{base}")]
@@ -278,8 +314,8 @@ def worker_commands(args, tests, base, tag, pub, sub):
     for test in tests:
         groups.setdefault(dictionary.get(test, ""), []).append(test)
     commands = [[args.python, "interoperability_report.py",
-                 pub_flag, wrap(args.out, args.pub, base, args.ours_args if pub == OURS else ""),
-                 sub_flag, wrap(args.out, args.sub, base, args.ours_args if sub == OURS else ""),
+                 pub_flag, wrap(args.out, args.pub, base, args.ours_args if is_ours(pub) else ""),
+                 sub_flag, wrap(args.out, args.sub, base, args.ours_args if is_ours(sub) else ""),
                  *args.extra.split(), "-t", *group, "-o", str(junit)]
                 for group in groups.values()]
     return commands, junit, args.harness
@@ -314,9 +350,9 @@ def main():
     workers = chunk_tests(args.suite, args.chunk) if args.chunk else workers_of(args.tests)
     label = args.chunk or "tests"
     pub, sub = product(args.pub), product(args.sub)
-    other = {pub, sub} - {OURS}
+    other = {name for name in (pub, sub) if not is_ours(name)}
     known = vendor_failures(args.suite)
-    roles = {vendor: role for vendor, role in ((pub, "pub"), (sub, "sub")) if vendor != OURS}
+    roles = {vendor: role for vendor, role in ((pub, "pub"), (sub, "sub")) if not is_ours(vendor)}
     # A case the other vendor fails against itself, in the role it has here,
     # is not run: its result says nothing about this pair, and its timeouts
     # are most of a run.
@@ -354,7 +390,8 @@ def main():
     started = time.monotonic()
     threads = []
     base = None if args.domain == "auto" else int(args.domain)
-    for index, span in enumerate(spans):
+    for index in lease_order(spans):
+        span = spans[index]
         if base is None:
             import test_domains
             bases[index] = test_domains.lease_run(span)
@@ -382,8 +419,8 @@ def main():
         domains = f"{bases[index]}" if span == 1 else f"{bases[index]}-{bases[index] + span - 1}"
         print(f"worker {index + 1}: domain {domains}, {len(workers[index])} cases, "
               f"{seconds:.0f} s, harness exit {code}")
-    deviations = vendor_deviations(args.suite)
-    direction = "zerodds->vendor" if pub == OURS else "vendor->zerodds"
+    deviations = vendor_deviations(args.suite, args.extra)
+    direction = "zerodds->vendor" if is_ours(pub) else "vendor->zerodds"
     unexpected, declared, deviating = [], [], []
     for test in tests:
         verdict, detail, seconds, codes = cases.get(

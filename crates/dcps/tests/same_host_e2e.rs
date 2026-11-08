@@ -428,6 +428,35 @@ fn e2e_shutdown_with_idle_sockets_returns_quickly() {
     );
 }
 
+/// A participant pinned to 127.0.0.1 (`ZERODDS_INTERFACE`, as a chain of
+/// processes on one Mac runs) wakes its SPDP multicast receive thread on
+/// shutdown with a datagram to the group. macOS sends multicast through the
+/// interface its route names unless the sender names the device
+/// (`IP_MULTICAST_IF`), and closing the socket wakes nothing there: the
+/// datagram missed the receiver joined on 127.0.0.1 and every shutdown
+/// waited out the 1 s read timeout, 0.74-0.84 s per process (measured on a
+/// MacBook Pro in a ten-process chain). Linux woke the thread by the close.
+#[test]
+fn e2e_a_participant_pinned_to_loopback_shuts_down_with_idle_sockets_quickly() {
+    let domain = common::unique_domain();
+    let config = RuntimeConfig {
+        multicast_interface: std::net::Ipv4Addr::LOCALHOST,
+        ..RuntimeConfig::default()
+    };
+    let rt = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0xE9; 12]), config)
+        .expect("start pinned to 127.0.0.1");
+    // Past the first receive timeouts, so each thread waits somewhere in
+    // its next second.
+    std::thread::sleep(Duration::from_millis(1500));
+    let started = Instant::now();
+    rt.shutdown();
+    let took = started.elapsed();
+    assert!(
+        took < Duration::from_millis(300),
+        "shutdown pinned to 127.0.0.1 took {took:?} with idle sockets"
+    );
+}
+
 /// SPDP restart test: start and drop the first DcpsRuntime, then the
 /// second one. If DcpsRuntime::shutdown does not clean up the multicast
 /// memberships properly, the second runtime cannot receive SPDP

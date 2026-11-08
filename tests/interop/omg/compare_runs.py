@@ -19,10 +19,9 @@ Prints the cases that are not `same` and a count per class.
 import argparse
 import collections
 import re
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
-OURS = "zerodds"
+from omg_suite import is_ours, read_report
 PRODUCED = re.compile(r"<th>\s*((?:Publisher|Subscriber)_\d+)\s*</th>\s*<th>[^<]*</th>"
                       r"\s*<th>\s*([A-Z_]+)\s*</th>")
 NAME = re.compile(r"^(?P<suite>dds-[a-z]+)-(?P<pub>.+?)--(?P<sub>.+?)-(?P<chunk>[a-z0-9\-]+?)-w\d+\.xml$")
@@ -35,8 +34,8 @@ def verdicts(paths):
         m = NAME.match(path.name)
         if not m:
             raise SystemExit(f"compare_runs.py: {path.name} is not a report of omg_suite.py")
-        direction = "zerodds->vendor" if m.group("pub") == OURS else "vendor->zerodds"
-        for case in ET.parse(path).getroot().iter("testcase"):
+        direction = "zerodds->vendor" if is_ours(m.group("pub")) else "vendor->zerodds"
+        for case in read_report(path).iter("testcase"):
             node = case.find("failure")
             if node is None:
                 node = case.find("error")

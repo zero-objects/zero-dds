@@ -187,18 +187,37 @@ impl TypeConsistencyEnforcement {
     /// short to carry keeps its §7.6.3.4.1 default, which is what
     /// §9.6.3.1 says an absent policy means.
     ///
-    /// A `kind` that Annex D does not define reads as
-    /// `DISALLOW_TYPE_COERCION`, the stricter of the two values. A caller
-    /// that has to tell the two cases apart uses
+    /// A `kind` that Annex D does not define: `2` reads as
+    /// `ALLOW_TYPE_COERCION`, the value OpenDDS gives it (its
+    /// `dds/DdsDcpsCore.idl` numbers `DISALLOW_TYPE_COERCION = 1` and
+    /// `ALLOW_TYPE_COERCION = 2`, one more than Annex D; measured: an
+    /// OpenDDS 3.35.0-dev reader with its default policy announces
+    /// `02 00 01 01 01 00 00 00`); any other as `DISALLOW_TYPE_COERCION`,
+    /// the stricter of the two. The booleans after it are read either
+    /// way. A caller that has to tell the cases apart uses
     /// [`Self::try_from_bytes`].
     #[must_use]
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Self {
         match Self::try_from_bytes(bytes, little_endian) {
             Ok(v) => v,
-            Err(_) => Self {
-                kind: TypeConsistencyKind::DisallowTypeCoercion,
-                ..Self::default()
-            },
+            Err(UnknownTypeConsistencyKind(2)) => {
+                Self::with_flags_of(bytes, TypeConsistencyKind::AllowTypeCoercion)
+            }
+            Err(_) => Self::with_flags_of(bytes, TypeConsistencyKind::DisallowTypeCoercion),
+        }
+    }
+
+    /// `kind`, and the five booleans the parameter carries after its first
+    /// two octets; one it is too short to carry keeps its §7.6.3.4.1 default.
+    fn with_flags_of(bytes: &[u8], kind: TypeConsistencyKind) -> Self {
+        let d = Self::default();
+        Self {
+            kind,
+            ignore_sequence_bounds: bytes.get(2).map_or(d.ignore_sequence_bounds, |b| *b != 0),
+            ignore_string_bounds: bytes.get(3).map_or(d.ignore_string_bounds, |b| *b != 0),
+            ignore_member_names: bytes.get(4).map_or(d.ignore_member_names, |b| *b != 0),
+            prevent_type_widening: bytes.get(5).map_or(d.prevent_type_widening, |b| *b != 0),
+            force_type_validation: bytes.get(6).map_or(d.force_type_validation, |b| *b != 0),
         }
     }
 
@@ -222,15 +241,7 @@ impl TypeConsistencyEnforcement {
         } else {
             u16::from_be_bytes(k)
         }))?;
-        let d = Self::default();
-        Ok(Self {
-            kind,
-            ignore_sequence_bounds: bytes.get(2).map_or(d.ignore_sequence_bounds, |b| *b != 0),
-            ignore_string_bounds: bytes.get(3).map_or(d.ignore_string_bounds, |b| *b != 0),
-            ignore_member_names: bytes.get(4).map_or(d.ignore_member_names, |b| *b != 0),
-            prevent_type_widening: bytes.get(5).map_or(d.prevent_type_widening, |b| *b != 0),
-            force_type_validation: bytes.get(6).map_or(d.force_type_validation, |b| *b != 0),
-        })
+        Ok(Self::with_flags_of(bytes, kind))
     }
 }
 
@@ -532,10 +543,19 @@ mod tests {
             TypeConsistencyEnforcement::try_from_bytes(&body, true),
             Err(UnknownTypeConsistencyKind(2))
         );
-        // The lenient decoder reads the stricter value.
-        assert_eq!(
-            TypeConsistencyEnforcement::from_bytes(&body, true).kind,
-            TypeConsistencyKind::DisallowTypeCoercion
-        );
+        // The lenient decoder reads 2 as OpenDDS numbers it, ALLOW, with the
+        // booleans the parameter carries; any other value as the stricter.
+        let read = TypeConsistencyEnforcement::from_bytes(&body, true);
+        assert_eq!(read.kind, TypeConsistencyKind::AllowTypeCoercion);
+        assert!(read.ignore_sequence_bounds && read.ignore_string_bounds);
+        let opendds = [0x02, 0x00, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00];
+        let read = TypeConsistencyEnforcement::from_bytes(&opendds, true);
+        assert_eq!(read.kind, TypeConsistencyKind::AllowTypeCoercion);
+        assert!(read.ignore_member_names);
+        assert!(!read.prevent_type_widening);
+        let seven = [0x07, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00];
+        let read = TypeConsistencyEnforcement::from_bytes(&seven, true);
+        assert_eq!(read.kind, TypeConsistencyKind::DisallowTypeCoercion);
+        assert!(read.ignore_sequence_bounds && read.ignore_string_bounds);
     }
 }

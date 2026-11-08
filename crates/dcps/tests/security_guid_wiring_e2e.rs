@@ -344,7 +344,10 @@ fn security_9_1_2_secured_participants_on_public_rust_api_use_identity_adjusted_
         profile_b.identity_handle,
     );
 
-    let deadline = Instant::now() + Duration::from_secs(30);
+    // Under the merge lane's 25 s, so a handshake that does not complete
+    // ends in the assert below with the discovery counts, not in a bare
+    // TIMEOUT (merge job 233986). Green it takes 0.2 s there.
+    let deadline = Instant::now() + Duration::from_secs(20);
     let mut ok = false;
     while Instant::now() < deadline {
         if profile_a

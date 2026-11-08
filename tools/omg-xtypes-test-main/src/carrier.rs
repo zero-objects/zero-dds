@@ -106,6 +106,7 @@ pub fn request_for(
     data_representation: u8,
     extensibility: zerodds_ast::Extensibility,
     big_endian: bool,
+    pl_cdr1_reading: zerodds_ast_layout::PlCdr1Reading,
 ) -> ProbeRequest {
     ProbeRequest::new(
         type_name,
@@ -117,6 +118,10 @@ pub fn request_for(
         },
     )
     .emitting(Emit::Payload)
+    // `wire.pl_cdr1_reading` of the run's configuration: the codec that
+    // reads a sample here is the client's, not the runtime's, and took
+    // only the specification's framing until it was handed the setting.
+    .with_pl_cdr1_reading(pl_cdr1_reading)
 }
 
 /// One sample, as the octets its type's layout plan produced.
@@ -133,6 +138,9 @@ pub struct Sample {
     /// subscriber compares this against the sample it loaded from
     /// `--data-file`; the publisher fills it from that file.
     pub value: Option<serde_json::Value>,
+    /// Why the octets could not be read, when `value` is `None` on the
+    /// subscribing side; the run prints it after its verdict line.
+    pub decode_error: Option<String>,
 }
 
 impl Sample {
@@ -148,6 +156,7 @@ impl Sample {
             key_hash: key_hash_of(value),
             bytes,
             value: Some(value.clone()),
+            decode_error: None,
         })
     }
 }
@@ -291,6 +300,7 @@ impl DdsType for Sample {
                     bytes: bytes.to_vec(),
                     key_hash,
                     value: Some(value),
+                    decode_error: None,
                 })
             }
             Err(zerodds_wire_codec::ProbeError::Discarded { .. }) => {
@@ -304,11 +314,35 @@ impl DdsType for Sample {
                     what: "the value does not fit this member and @try_construct there is DISCARD",
                 })
             }
-            Err(_) => Ok(Self {
+            Err(error) => Ok(Self {
                 bytes: bytes.to_vec(),
                 key_hash: [0u8; 16],
                 value: None,
+                decode_error: Some(error.to_string()),
             }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerodds_ast_layout::PlCdr1Reading;
+
+    /// The run's `wire.pl_cdr1_reading` reaches the request the received
+    /// samples are read under; before, the request kept the default and
+    /// the setting `run_configs.sh` gives had no effect on them.
+    #[test]
+    fn the_request_carries_the_runs_pl_cdr1_reading() {
+        for reading in [PlCdr1Reading::Strict, PlCdr1Reading::Tolerant] {
+            let request = request_for(
+                "Test::struct_primitives_mutable",
+                1,
+                zerodds_ast::Extensibility::Mutable,
+                false,
+                reading,
+            );
+            assert_eq!(request.pl_cdr1_reading, reading);
         }
     }
 }

@@ -220,6 +220,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- `TypeConsistencyEnforcement::from_bytes` reads `kind` 2 as `ALLOW_TYPE_COERCION` (OpenDDS numbers DISALLOW 1, ALLOW 2), any other value Annex D does not define as `DISALLOW_TYPE_COERCION`, and keeps the five booleans after an unknown kind; `try_from_bytes` refuses both as before. Test: `xtypes_7_6_3_4_1_type_consistency_kind_has_the_two_values_of_annex_d`.
+
 - The bitmask, bitset and minimal alias TypeObjects are framed as DDS-XTypes 1.3 Annex B has them
   (unchanged in 1.4 Beta 1): `MinimalBitmaskType`, `CompleteBitmaskType`, `MinimalBitsetType`,
   `CompleteBitsetType`, their headers, their flags and bitfields, `MinimalAliasHeader` and

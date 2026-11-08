@@ -295,8 +295,10 @@ fn xtypes_7_4_1_2_the_three_measured_parameter_list_flag_conventions() {
     open.extend(tail([0x01, 0xff], [0x02, 0x3f]));
     assert_eq!(list(framing(PidFlagPolicy::ImplExtensionOnMembers)), open);
 
-    // A strict reader of one convention reports another; a tolerant one
-    // reads it.
+    // A strict reader takes either setting of the must-understand bit on
+    // the marker and the sentinel (§7.4.1.2.1, below Table 34), so the
+    // default reads Fast DDS's bare convention; another FLAG_IMPL_EXTENSION
+    // (OpenDDS's ff01) it reports, and a tolerant reader reads that too.
     let read_all = |reader: &mut Reader<'_>| -> Result<Vec<u32>, WireError> {
         let mut ids = Vec::new();
         loop {
@@ -309,11 +311,13 @@ fn xtypes_7_4_1_2_the_three_measured_parameter_list_flag_conventions() {
         }
     };
     let mut strict = Reader::with_max_align(&fast, Endianness::Little, 8);
+    assert_eq!(read_all(&mut strict).unwrap(), [1, 0x3f05]);
+    let mut strict = Reader::with_max_align(&open, Endianness::Little, 8);
     assert!(matches!(
         read_all(&mut strict),
         Err(WireError::WrongFraming { .. })
     ));
-    let mut tolerant = Reader::with_max_align(&fast, Endianness::Little, 8)
+    let mut tolerant = Reader::with_max_align(&open, Endianness::Little, 8)
         .with_pl_cdr1_reading(PlCdr1Reading::Tolerant);
     assert_eq!(read_all(&mut tolerant).unwrap(), [1, 0x3f05]);
     let mut matching = Reader::with_max_align(&fast, Endianness::Little, 8)
