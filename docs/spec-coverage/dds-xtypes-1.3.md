@@ -6001,6 +6001,15 @@ Der OMG-`dds-xtypes`-Fall `ext_autoid_1` (`@autoid`, `@hashid`) bestand gegen
 Cyclone 11.0.1 in beiden Richtungen (Pipeline 9021, Jobs 230116 bis 230121);
 ein `@nested`-Typ ist unter den Fällen der Suite nicht dabei und nicht
 gemessen. Die Maske bleibt Default.
+Die typeid-Fälle `struct_hashid_1` und `struct_hashid_2` der Suite
+(offizieller Workflow im ZeroDDS-Fork, Läufe 42504601421 und 42504609519)
+zeigen, dass RTI Connext 7.7.0, CoreDX 6.15.3, Cyclone 11.0.1 und HDDS 1.4.8
+`IS_AUTOID_HASH` (Flags `0x11`) im MINIMAL-Objekt behalten: jeder gedruckte
+Hash ergibt sich aus der Serialisierung des Objekts mit `0x11`, die beiden
+Lager unterscheiden sich nur im Oktett aus `docs/omg-xtypes-issues.md` §C2;
+dieser Baum druckt den Hash zu `0x01`. Die drei MINIMAL-Fälle sind im
+typeid-Bericht gegen jeden Hersteller rot; die Datenfälle beider Typen
+bestehen.
 
 ### §7.3.4.6.6 Complete Hash TypeIdentifiers
 
@@ -15705,7 +15714,15 @@ AnnotationParameterValue max; @optional string hash_id; };"
 **Tests:** `crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`,
 `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`
 
-**Status:** done
+**Status:** done — `hash_id` trägt den Namen, den das `@hashid` eines
+Members hasht (der Kommentar neben dem Feld nennt die Annotation;
+DDSXTY13-1 hat ihn von `@hash_id` auf `@hashid` korrigiert). RTI Connext
+7.7.0, CoreDX 6.15.3, Cyclone 11.0.1 und HDDS 1.4.8 lassen `ann_builtin`
+für den Member `x2` mit `hashid="x1"` aus `struct_hashid_2` der Suite weg:
+ihr COMPLETE-Hash ergibt sich aus der Serialisierung ohne das Feld, der
+dieses Baums mit `hash_id = "x1"` (offizieller Workflow im ZeroDDS-Fork,
+Läufe 42504601421 und 42504609519). Die Member-ID ist bei allen fünf
+`hash("x1")`. Das Feld wird weiter geschrieben.
 
 ### Annex B CommonStructMember, CompleteMemberDetail, MinimalMemberDetail, Complete/MinimalStructMember
 

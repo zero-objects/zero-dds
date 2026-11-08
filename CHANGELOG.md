@@ -664,6 +664,20 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **`begin_access` presents one cut of the group** (DDS 1.4 §2.2.2.5.2.8;
+  `zerodds-dcps` `Subscriber`, `zerodds-c-api` `zerodds_sub_begin_access`).
+  Under GROUP access scope with ordered or coherent access, a coherent set
+  that became complete while the application read its readers one after the
+  other inside one `begin_access`/`end_access` bracket reached the readers
+  read after that moment and not those read before. Measured in the official
+  dds-rtps workflow of the ZeroDDS fork, `Test_CoherentSets_12` and `_21`
+  ZeroDDS -> ZeroDDS: `DATA_NOT_CORRECT`, topic `Square` with the first set,
+  `Square1` and `Square2` with the first two, in one read. `begin_access` now
+  releases what is complete and opens the access; nothing more is released
+  until the last `end_access`. On the Linux test host the 40
+  `Test_CoherentSets_*` and `Test_OrderedAccess_*` cases ZeroDDS -> ZeroDDS
+  passed five times in a row, 200 of 200.
+
 - **A writer removes its expired samples before every send** (DDS 1.4
   §2.2.3.16). The removal ran only on the housekeeping tick, which comes late
   under load, and a repair sent on receipt of an ACKNACK did not look at the

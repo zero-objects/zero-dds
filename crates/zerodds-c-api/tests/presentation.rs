@@ -375,6 +375,40 @@ fn a_group_coherent_set_spans_the_writers_and_holds_them() {
     assert_eq!(fx.take_until(1, 1, ARRIVAL, true), vec![vec![2u8]]);
 }
 
+/// DDS 1.4 §2.2.2.5.2.8: the readers read inside one `begin_access` /
+/// `end_access` bracket present one cut of the group. A set completed while
+/// the bracket is open reaches no reader inside it, and each reader after
+/// it (OMG dds-rtps `Test_CoherentSets_12`).
+#[test]
+fn a_group_coherent_set_completed_inside_an_access_waits_for_its_end() {
+    let fx = Fixture::new(GROUP_SCOPE, &["GroupCutA", "GroupCutB"]);
+    // SAFETY: the subscriber and the publisher are live.
+    unsafe {
+        assert_eq!(zerodds_sub_begin_access(fx.subscriber), OK);
+        assert_eq!(zerodds_pub_begin_coherent_changes(fx.publisher), OK);
+    }
+    fx.write(0, &[1]);
+    fx.write(1, &[2]);
+    // SAFETY: the publisher is live.
+    assert_eq!(
+        unsafe { zerodds_pub_end_coherent_changes(fx.publisher) },
+        OK
+    );
+    // Long enough for the set to arrive and be complete.
+    std::thread::sleep(HELD);
+    let (rc_a, inside_a) = fx.take(0);
+    let (rc_b, inside_b) = fx.take(1);
+    // SAFETY: the subscriber is live.
+    assert_eq!(unsafe { zerodds_sub_end_access(fx.subscriber) }, OK);
+    assert!(
+        inside_a.is_empty() && inside_b.is_empty(),
+        "a set completed inside the access reached a reader in it \
+         (A {inside_a:?} rc {rc_a}, B {inside_b:?} rc {rc_b})"
+    );
+    assert_eq!(fx.take_until(0, 1, ARRIVAL, true), vec![vec![1u8]]);
+    assert_eq!(fx.take_until(1, 1, ARRIVAL, true), vec![vec![2u8]]);
+}
+
 /// Samples of the instances `[1]` and `[2]`, written 1, 2, 1, 2, 1, and
 /// taken in one take of `fx`'s reader after all of them arrived.
 fn write_two_instances_and_take(fx: &Fixture) -> Vec<Vec<u8>> {

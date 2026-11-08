@@ -337,9 +337,6 @@ pub struct ZeroDdsSubscriber {
     /// The hook the runtime runs on group progress (a HEARTBEAT, a GAP, the
     /// tick), held here; the runtime holds it weakly.
     pub group_hook: Mutex<Option<zerodds_dcps::runtime::StatusHook>>,
-    /// `begin_access` calls not yet matched by an `end_access` (DDS 1.4
-    /// §2.2.2.5.2.8, §2.2.2.5.2.9).
-    pub access: zerodds_dcps::coherent_set::GroupAccessScope,
     /// Enabled state (DDS 1.4 §2.2.2.1.1.7); see `entity_ffi`.
     pub lifecycle: crate::entity_ffi::Lifecycle,
 }
@@ -357,11 +354,23 @@ pub struct SubscriberGroup {
     pub order: zerodds_dcps::presentation::GroupOrdering<EntityId>,
     /// The readers, each with its inbox; a deleted reader's inbox is gone.
     pub inboxes: Mutex<Vec<(EntityId, alloc::sync::Weak<GroupInbox>)>>,
+    /// `begin_access` calls of the Subscriber not yet matched by an
+    /// `end_access` (DDS 1.4 §2.2.2.5.2.8, §2.2.2.5.2.9). Here and not on
+    /// the Subscriber, so that the runtime's group hook sees it.
+    pub access: zerodds_dcps::coherent_set::GroupAccessScope,
 }
 
 impl SubscriberGroup {
     /// Commits what the order allows into the inboxes of the readers.
+    ///
+    /// Nothing while a `begin_access` is open (DDS 1.4 §2.2.2.5.2.8): the
+    /// readers read in that bracket present one cut of the group, the one
+    /// `zerodds_sub_begin_access` released; `zerodds_sub_end_access`
+    /// releases what waited. As the typed `Subscriber`.
     pub fn release(&self, rt: &Arc<DcpsRuntime>) {
+        if self.access.is_active() {
+            return;
+        }
         let inboxes: Vec<(EntityId, Arc<GroupInbox>)> = match self.inboxes.lock() {
             Ok(mut list) => {
                 list.retain(|(_, inbox)| inbox.strong_count() > 0);
@@ -372,18 +381,23 @@ impl SubscriberGroup {
             Err(_) => return,
         };
         let readers: Vec<(EntityId, EntityId)> = inboxes.iter().map(|(e, _)| (*e, *e)).collect();
-        self.order.release(rt, &readers, |reader, item| {
-            inboxes
-                .iter()
-                .find(|(eid, _)| eid == reader)
-                .is_some_and(|(_, inbox)| match inbox.lock() {
-                    Ok(mut inbox) => {
-                        inbox.push(item);
-                        true
-                    }
-                    Err(_) => false,
-                })
-        });
+        self.order.release_if(
+            rt,
+            &readers,
+            || !self.access.is_active(),
+            |reader, item| {
+                inboxes
+                    .iter()
+                    .find(|(eid, _)| eid == reader)
+                    .is_some_and(|(_, inbox)| match inbox.lock() {
+                        Ok(mut inbox) => {
+                            inbox.push(item);
+                            true
+                        }
+                        Err(_) => false,
+                    })
+            },
+        );
     }
 }
 

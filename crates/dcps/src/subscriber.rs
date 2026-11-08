@@ -364,7 +364,19 @@ impl SubscriberInner {
     /// drained its inbox before a hook released its earlier sample staged
     /// its later one first: measured `[22, 21, 23]` and `[3, 4, 1, 2]` in
     /// the GROUP tests under load. Every release goes to the inbox now.
+    ///
+    /// Nothing is released while a `begin_access` is open (DDS 1.4
+    /// §2.2.2.5.2.8): the readers read in that bracket present one cut of the
+    /// group, and a set completed while the application went from one
+    /// reader to the next reached only the readers after it (measured, OMG
+    /// dds-rtps `Test_CoherentSets_12` ZeroDDS -> ZeroDDS on GitHub: topic
+    /// `Square` with the first set, `Square1` and `Square2` with the first
+    /// two, in one read). The cut is the one `begin_access` releases
+    /// ([`Self::open_group_cut`]); `end_access` releases what waited.
     pub(crate) fn release_group(&self) {
+        if self.access_scope.is_active() {
+            return;
+        }
         let Some(rt) = self.runtime.as_ref() else {
             return;
         };
@@ -373,15 +385,33 @@ impl SubscriberInner {
             .iter()
             .filter_map(|r| Some((r.entity_id()?, r.handle())))
             .collect();
-        self.group_order.release(rt, &readers, |reader, item| {
-            match live.iter().find(|r| r.handle() == *reader) {
-                Some(r) => {
-                    r.accept_group_released(item);
-                    true
+        let may_release = || !self.access_scope.is_active();
+        self.group_order
+            .release_if(rt, &readers, may_release, |reader, item| {
+                match live.iter().find(|r| r.handle() == *reader) {
+                    Some(r) => {
+                        r.accept_group_released(item);
+                        true
+                    }
+                    None => false,
                 }
-                None => false,
-            }
-        });
+            });
+    }
+}
+
+#[cfg(feature = "std")]
+impl SubscriberInner {
+    /// The first `begin_access` of a bracket: every reader's channel goes
+    /// to the group order and what is complete is released, then the
+    /// access opens, and a release under way when it opened ends before
+    /// this returns. A set that was complete when the application asked
+    /// for the access is in it (DDS 1.4 §2.2.2.5.2.8); one that completes
+    /// later waits for `end_access`.
+    fn open_group_cut(&self) {
+        self.pump_group(InstanceHandle::NIL);
+        self.release_group();
+        self.access_scope.begin();
+        self.group_order.fence();
     }
 }
 
@@ -874,6 +904,11 @@ impl Subscriber {
     /// after its deletion. It returned nothing.
     pub fn begin_access(&self) -> Result<()> {
         self.inner.entity_state.check_enabled()?;
+        #[cfg(feature = "std")]
+        if !self.inner.access_scope.is_active() && self.inner.group_order_active() {
+            self.inner.open_group_cut();
+            return Ok(());
+        }
         self.inner.access_scope.begin();
         Ok(())
     }
@@ -885,7 +920,14 @@ impl Subscriber {
     /// preceding `begin_access`; `NotEnabled` as for `begin_access`.
     pub fn end_access(&self) -> Result<()> {
         self.inner.entity_state.check_enabled()?;
-        self.inner.access_scope.end()
+        self.inner.access_scope.end()?;
+        // What the group order completed while the access was open
+        // ([`SubscriberInner::release_group`]).
+        #[cfg(feature = "std")]
+        if !self.inner.access_scope.is_active() && self.inner.group_order_active() {
+            self.inner.release_group();
+        }
+        Ok(())
     }
 
     /// `true` if a group access is currently open.

@@ -7,6 +7,8 @@ SemVer.
 
 ### Fixed
 
+- `zerodds_sub_begin_access` under GROUP access scope with ordered or coherent access releases what the group order holds complete, then opens the access; nothing more is released until the last `zerodds_sub_end_access`, which releases what waited (DDS 1.4 §2.2.2.5.2.8), as the typed `Subscriber`. The access count moved from `ZeroDdsSubscriber` to `SubscriberGroup`, where the runtime's group hook sees it. Test: `a_group_coherent_set_completed_inside_an_access_waits_for_its_end`.
+
 - `zerodds.h` declares the callbacks of the four `zerodds_runtime_for_each_*`
   (`zerodds_Option_ZeroDdsTopicCallback`,
   `zerodds_Option_ZeroDdsEndpointCallback`) as function pointers and

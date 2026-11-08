@@ -476,7 +476,6 @@ pub unsafe extern "C" fn zerodds_dp_create_subscriber(
             }),
             group,
             group_hook: Mutex::new(group_hook),
-            access: Default::default(),
             lifecycle: crate::entity_ffi::Lifecycle::new(
                 crate::entity_ffi::participant_autoenables(pp),
             ),

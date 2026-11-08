@@ -361,6 +361,48 @@ fn rtps_8_7_6_a_group_coherent_set_across_two_topics_appears_after_its_end_over_
 
 /// The value of each valid sample `reader` takes until it has `n` changes
 /// or `within` passed, a dispose as `None`.
+/// DDS 1.4 §2.2.2.5.2.8: the readers read inside one `begin_access` /
+/// `end_access` bracket present one cut of the group. A set completed while
+/// the bracket is open reaches no reader inside it, and each reader after
+/// it (OMG dds-rtps `Test_CoherentSets_12`: in one read, the first topic
+/// with the first set, the later two with the first two).
+fn a_set_completed_inside_an_access(two: bool, label: &str) {
+    let sides = Sides::new(two);
+    let a = format!("GroupCutA{label}");
+    let b = format!("GroupCutB{label}");
+    let (publisher, writers, subscriber, readers) =
+        group_pair(&sides, group(false, true), &[&a, &b], &[&a, &b]);
+    subscriber.begin_access().expect("begin_access");
+    publisher.begin_coherent_changes().expect("begin");
+    writers[0].write(&sample(1)).expect("write A");
+    writers[1].write(&sample(2)).expect("write B");
+    publisher.end_coherent_changes().expect("end");
+    // Long enough for the set to arrive and be complete.
+    std::thread::sleep(Duration::from_millis(300));
+    let inside_a = readers[0].take().expect("take A");
+    let inside_b = readers[1].take().expect("take B");
+    subscriber.end_access().expect("end_access");
+    assert!(
+        inside_a.is_empty() && inside_b.is_empty(),
+        "{label}: a set completed inside the access reached a reader in it \
+         (A {}, B {})",
+        inside_a.len(),
+        inside_b.len()
+    );
+    assert_eq!(take_until(&readers[0], 1, Duration::from_secs(5)), [1]);
+    assert_eq!(take_until(&readers[1], 1, Duration::from_secs(5)), [2]);
+}
+
+#[test]
+fn dcps_2_2_2_5_2_8_a_set_completed_inside_an_access_waits_for_its_end_same_runtime() {
+    a_set_completed_inside_an_access(false, "Local");
+}
+
+#[test]
+fn dcps_2_2_2_5_2_8_a_set_completed_inside_an_access_waits_for_its_end_over_udp() {
+    a_set_completed_inside_an_access(true, "Udp");
+}
+
 fn take_changes(reader: &DataReader<Keyed>, n: usize, within: Duration) -> Vec<Option<u32>> {
     let deadline = Instant::now() + within;
     let mut got = Vec::new();

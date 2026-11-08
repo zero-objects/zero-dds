@@ -66,8 +66,32 @@ pub unsafe extern "C" fn zerodds_sub_begin_access(sub: *mut ZeroDdsSubscriber) -
         return ZeroDdsStatus::BadHandle as c_int;
     }
     // SAFETY: see fn # Safety doc — sub NULL-checked above.
-    unsafe { (*sub).access.begin() };
+    let sb = unsafe { &*sub };
+    let presentation = ReaderPresentation::of(Some(sb));
+    if presentation.group && !sb.group.access.is_active() {
+        // The cut: every reader's channel goes to the group order and what
+        // is complete is released, then the access opens, and a release
+        // under way when it opened ends before this returns. A set that
+        // completes later waits for `end_access` (DDS 1.4 §2.2.2.5.2.8).
+        pump_group_siblings(ptr::null(), sb, presentation);
+        if let Some(rt) = sb_runtime(sb) {
+            sb.group.release(&rt);
+        }
+        sb.group.access.begin();
+        sb.group.order.fence();
+    } else {
+        sb.group.access.begin();
+    }
     ZeroDdsStatus::Ok as c_int
+}
+
+/// The runtime of `sb`'s participant; `None` without one.
+fn sb_runtime(
+    sb: &ZeroDdsSubscriber,
+) -> Option<alloc::sync::Arc<zerodds_dcps::runtime::DcpsRuntime>> {
+    // SAFETY: a subscriber's participant outlives it (`delete_participant`
+    // refuses a participant with subscribers); NULL for none.
+    unsafe { sb.participant.as_ref() }.and_then(|dp| dp.rt.clone())
 }
 
 /// `end_access` (DDS 1.4 §2.2.2.5.2.9): "Calls to begin_access and
@@ -86,10 +110,18 @@ pub unsafe extern "C" fn zerodds_sub_end_access(sub: *mut ZeroDdsSubscriber) -> 
         return ZeroDdsStatus::BadHandle as c_int;
     }
     // SAFETY: see fn # Safety doc — sub NULL-checked above.
-    match unsafe { (*sub).access.end() } {
-        Ok(()) => ZeroDdsStatus::Ok as c_int,
-        Err(_) => ZeroDdsStatus::PreconditionNotMet as c_int,
+    let sb = unsafe { &*sub };
+    if sb.group.access.end().is_err() {
+        return ZeroDdsStatus::PreconditionNotMet as c_int;
     }
+    // What the group order completed while the access was open.
+    if !sb.group.access.is_active()
+        && ReaderPresentation::of(Some(sb)).group
+        && let Some(rt) = sb_runtime(sb)
+    {
+        sb.group.release(&rt);
+    }
+    ZeroDdsStatus::Ok as c_int
 }
 
 /// DDS 1.4 §2.2.2.5.2.8: under PRESENTATION `access_scope` GROUP "the
@@ -106,7 +138,7 @@ pub(crate) fn group_access_allowed(sb: Option<&ZeroDdsSubscriber>) -> bool {
         .qos
         .lock()
         .is_ok_and(|q| q.presentation.access_scope == zerodds_qos::PresentationAccessScope::Group);
-    !group || sb.access.is_active() || crate::listener_ffi::in_data_listener()
+    !group || sb.group.access.is_active() || crate::listener_ffi::in_data_listener()
 }
 
 /// `get_datareaders` (DDS 1.4 §2.2.2.5.2.10): the DataReaders of the
@@ -1576,10 +1608,10 @@ fn admit(
 }
 
 /// Hands what waits on the channels of the Subscriber's readers other than
-/// `me` to the group order, the rest to their inboxes, as the typed
-/// `Subscriber` pumps its readers.
+/// `me` (NULL: every reader) to the group order, the rest to their inboxes,
+/// as the typed `Subscriber` pumps its readers.
 fn pump_group_siblings(
-    me: &ZeroDdsDataReader,
+    me: *const ZeroDdsDataReader,
     sb: &ZeroDdsSubscriber,
     presentation: ReaderPresentation,
 ) {
@@ -1589,7 +1621,7 @@ fn pump_group_siblings(
         .map(|list| list.clone())
         .unwrap_or_default();
     for other in readers {
-        if ptr::eq(other, me) || other.is_null() {
+        if ptr::eq(other.cast_const(), me) || other.is_null() {
             continue;
         }
         // SAFETY: the subscriber's readers are valid while it lists them.

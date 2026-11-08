@@ -5942,6 +5942,14 @@ Cyclone 11.0.1 keeps them, so the MINIMAL identifier of a `@nested` or
 `ext_autoid_1` (`@autoid`, `@hashid`) passed against Cyclone 11.0.1 in both
 directions (pipeline 9021, jobs 230116 to 230121); a `@nested` type is not
 among the suite's cases and is not measured. The mask stays the default.
+The suite's typeid cases `struct_hashid_1` and `struct_hashid_2` (official
+workflow in the ZeroDDS fork, runs 42504601421 and 42504609519) show that
+RTI Connext 7.7.0, CoreDX 6.15.3, Cyclone 11.0.1 and HDDS 1.4.8 all keep
+`IS_AUTOID_HASH` (flags `0x11`) in the MINIMAL object: each printed hash is
+reproduced by serializing the object with `0x11`, and the two camps differ
+only in the octet of `docs/omg-xtypes-issues.md` §C2; this tree prints the
+hash of `0x01`. The three MINIMAL cases are red against every vendor in the
+typeid report; the data cases of both types pass.
 
 ### §7.3.4.6.6 Complete Hash TypeIdentifiers
 
@@ -15628,7 +15636,15 @@ AnnotationParameterValue max; @optional string hash_id; };"
 **Tests:** `crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`,
 `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`
 
-**Status:** done
+**Status:** done — `hash_id` carries the name a member's `@hashid` hashes
+(the comment beside the field names the annotation; DDSXTY13-1 corrected
+it from `@hash_id` to `@hashid`). RTI Connext 7.7.0, CoreDX 6.15.3,
+Cyclone 11.0.1 and HDDS 1.4.8 leave `ann_builtin` out for the member
+`x2` with `hashid="x1"` of the suite's `struct_hashid_2`: their COMPLETE
+hash is reproduced by serializing the object without it, this tree's with
+`hash_id = "x1"` (official workflow in the ZeroDDS fork, runs 42504601421
+and 42504609519). The member id is `hash("x1")` in all five. The field
+stays written.
 
 ### Annex B CommonStructMember, CompleteMemberDetail, MinimalMemberDetail, Complete/MinimalStructMember
 

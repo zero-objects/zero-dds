@@ -235,6 +235,12 @@ impl<R: Clone + Ord> GroupOrdering<R> {
         None
     }
 
+    /// Returns once no release is under way: one that began before ends
+    /// first, one that begins after asks its `may_release` afterwards.
+    pub fn fence(&self) {
+        drop(self.order.lock());
+    }
+
     /// How many samples for `reader` the order holds back.
     pub fn held_for(&self, reader: &R) -> usize {
         self.order.lock().map(|o| o.held_for(reader)).unwrap_or(0)
@@ -255,13 +261,26 @@ impl<R: Clone + Ord> GroupOrdering<R> {
         &self,
         rt: &Arc<DcpsRuntime>,
         readers: &[(EntityId, R)],
+        deliver: impl FnMut(&R, UserSample) -> bool,
+    ) {
+        self.release_if(rt, readers, || true, deliver);
+    }
+
+    /// [`Self::release`] when `may_release` says so. It is asked under the
+    /// order's lock, so that a release either ends before a caller of
+    /// [`Self::fence`] returns or sees what that caller set before it.
+    pub fn release_if(
+        &self,
+        rt: &Arc<DcpsRuntime>,
+        readers: &[(EntityId, R)],
+        may_release: impl FnOnce() -> bool,
         mut deliver: impl FnMut(&R, UserSample) -> bool,
     ) {
         let (handed_on, before, after) = {
             let Ok(mut order) = self.order.lock() else {
                 return;
             };
-            if order.is_empty() {
+            if order.is_empty() || !may_release() {
                 return;
             }
             for (group, writer) in order.writers() {

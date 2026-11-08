@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- `Subscriber::begin_access` under GROUP access scope with ordered or coherent access releases what the group order holds complete, then opens the access; nothing more is released until the last `end_access`, which releases what waited (DDS 1.4 §2.2.2.5.2.8). Before, a set completed inside the bracket reached the readers read after it and not those read before. `GroupOrdering::release_if` asks its condition under the order's lock, `GroupOrdering::fence` waits out a release under way; `release` is unchanged. Tests: `dcps_2_2_2_5_2_8_a_set_completed_inside_an_access_waits_for_its_end_same_runtime`, `..._over_udp`.
+
 - `expire_lifespan_of` runs before each `writer.tick` of a user writer, on the housekeeping tick and on receipt of an ACKNACK, so a repair never carries a sample whose lifespan has run out (DDS 1.4 §2.2.3.16). Test: `dcps_2_2_3_16_an_expired_sample_is_gone_before_the_writer_next_sends`.
 
 - A remote endpoint's type missing under its announced identifier is asked for under the COMPLETE identifier of the same TypeInformation as well (`type_lookup_identifiers`), and the pair is decided by the complete one once it is resolved (`matched_identifier`); the TypeInformation is read in the byte order its DHEADER fits (`peer_type_information`). Dust DDS 0.16.0 answers only for COMPLETE identifiers. Tests: `a_peers_type_information_is_read_in_either_byte_order`, `a_missing_announced_type_is_asked_for_in_both_forms`, `a_type_obtained_only_in_its_complete_form_is_decided_by_it`.
