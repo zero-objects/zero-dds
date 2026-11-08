@@ -15,6 +15,12 @@ What the precedents put into the repository is what this writes
 (`internal/release/rc8-plan.md` F3): int2DDS (dds-rtps #111, dds-xtypes #21),
 Dust DDS (dds-xtypes #13), HDDS (dds-rtps #83, dds-xtypes #18).
 
+Each ZeroDDS crate the client uses is required at the version its manifest
+in this checkout names. A point release republishes the crates that changed
+at its own version and leaves the others at the workspace's, whose `^`
+takes the newest one published; `--version` is the version of
+`zerodds-dcps` and names the product.
+
 `--patch-root` is the pre-test: the dependencies are taken from that checkout
 (`[patch.crates-io]`) instead of crates.io, so the submission builds and runs
 against `main` before the version it names is released. A crate written with
@@ -92,6 +98,15 @@ def crate_dirs():
     return dirs
 
 
+def crate_version(name):
+    """The version the manifest of the ZeroDDS crate `name` names here,
+    `version.workspace = true` read from the workspace."""
+    version = tomllib.loads((crate_dirs()[name] / "Cargo.toml").read_text())["package"]["version"]
+    if isinstance(version, dict):
+        version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+    return version
+
+
 def toml_value(value):
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -104,16 +119,16 @@ def toml_value(value):
     raise TypeError(value)
 
 
-def dependencies(table, version):
+def dependencies(table):
     """The tool's dependencies with every ZeroDDS crate taken from crates.io
-    at `version` and every workspace one written out."""
+    at the version its manifest names and every workspace one written out."""
     out = {}
     for name, spec in table.items():
         if isinstance(spec, dict) and spec.get("workspace"):
             spec = {**workspace_dependency(name), **{k: v for k, v in spec.items() if k != "workspace"}}
         elif isinstance(spec, dict) and "path" in spec:
             spec = {k: v for k, v in spec.items() if k != "path"}
-            spec["version"] = version
+            spec["version"] = crate_version(spec.get("package", name))
         out[name] = spec
     return out
 
@@ -146,7 +161,7 @@ def manifest(suite, tool, version, patch_root):
     for section in ("build-dependencies", "dependencies"):
         if section not in source:
             continue
-        table = dependencies(source[section], version)
+        table = dependencies(source[section])
         lines.append(f"[{section}]")
         for name, spec in table.items():
             lines.append(f"{name} = {toml_value(spec)}")
@@ -273,10 +288,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--suite", required=True, choices=sorted(SUITES))
     parser.add_argument("--repo", required=True, type=Path, help="checkout of the OMG repository")
-    parser.add_argument("--version", required=True, help="the ZeroDDS version the client builds against")
+    parser.add_argument("--version", required=True, help="the version of zerodds-dcps here, which names the product")
     parser.add_argument("--patch-root", type=Path, help="pre-test: take the crates from this ZeroDDS checkout")
     args = parser.parse_args()
     config = SUITES[args.suite]
+    if crate_version("zerodds-dcps") != args.version:
+        sys.exit(f"--version {args.version}: zerodds-dcps here is {crate_version('zerodds-dcps')}")
     repo = args.repo.resolve()
     if not (repo / "CONTRIBUTING.md").is_file():
         sys.exit(f"{repo}: not a checkout of an OMG interoperability repository")
