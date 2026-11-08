@@ -33,6 +33,7 @@ Needs Python 3.11 or newer (`tomllib`).
 import argparse
 import re
 import shutil
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -63,6 +64,13 @@ SUITES = {
         "idl": None,
         "workflow_lists": ".github/workflows/1_run_interoperability_tests.yml",
         "report": "generate_xlsx_report.py",
+        # `interoperability_report.py` reads the tests a product does not
+        # support from `unsupported_test_manifest/<product>.txt`. The
+        # client runs every data case of the suite (the official workflow
+        # in the ZeroDDS fork, runs 42504601421 and 42504609519: no
+        # UNSUPPORTED_FEATURE on its side), so the list is empty, as Dust
+        # DDS's is.
+        "unsupported_manifest": True,
     },
     "dds-security": {
         "tool": "tools/omg-security-main",
@@ -74,6 +82,10 @@ SUITES = {
         # `compatibility_matrix.xlsx`, kept by hand.
         "workflow_lists": None,
         "report": None,
+        # The identity and permissions the other vendors test ZeroDDS with,
+        # signed by the repository's TESTONLY CAs as each vendor's are
+        # (ADLINK, dds-security #6 to #8).
+        "certificates": True,
     },
 }
 
@@ -177,6 +189,79 @@ def manifest(suite, tool, version, patch_root):
                 lines.append(f"{name} = {toml_value({'path': str(path)})}")
         lines.append("")
     return "\n".join(lines)
+
+
+# ZeroDDS's identity in dds-security, as `tests/interop/omg/security_setup.py`
+# makes it for a run here.
+CERT_DIR = "zerodds_certs"
+CERT_STEM = "TESTONLY_zerodds"
+CERT_SUBJECT = (("countryName", "DE"), ("stateOrProvinceName", "HE"),
+                ("organizationName", COMPANY), ("commonName", "CN_TEST_DDS-SECURITY_ZERODDS"))
+SUBJECT_NAME = "/C=DE/ST=HE/O=ZeroDDS/CN=CN_TEST_DDS-SECURITY_ZERODDS"
+PERMISSIONS = ("join", "read", "write", "readwrite", "allowall")
+
+
+def certificates(repo):
+    """`zerodds_certs/` the way each vendor's directory is: a key, a request
+    signed by the identity CA with `openssl ca` (which enters it in
+    `identity_ca_files/`), the five permissions documents of RTI's with
+    ZeroDDS's subject, signed by the permissions CA with `openssl smime`,
+    and the commands in the READMEs. Made once: an identity that exists is
+    kept, so that a second run does not sign a second one."""
+    certs = repo / CERT_DIR
+    if certs.exists():
+        return False
+    (certs / "private").mkdir(parents=True)
+    run = lambda *cmd: subprocess.run(cmd, cwd=repo, check=True, capture_output=True)
+    key = f"{CERT_DIR}/private/{CERT_STEM}_identity_private_key.pem"
+    cnf = f"{CERT_DIR}/zerodds_openssl.cnf"
+    csr = f"{CERT_DIR}/identity_zerodds.csr"
+    cert = f"{CERT_DIR}/{CERT_STEM}_identity_cert.pem"
+    (repo / cnf).write_text(
+        "prompt=no\ndistinguished_name\t= DN_TEST_DDS-SECURITY_ZERODDS\n\n"
+        "[ DN_TEST_DDS-SECURITY_ZERODDS ]\n"
+        + "".join(f"{k}={v}\n" for k, v in CERT_SUBJECT))
+    run("openssl", "genrsa", "-out", key, "2048")
+    run("openssl", "req", "-config", cnf, "-new", "-key", key, "-out", csr)
+    run("openssl", "ca", "-batch", "-config", "identity_ca_files/identity_ca_openssl.cnf",
+        "-days", "3650", "-in", csr, "-out", cert)
+    for old in (repo / "identity_ca_files").glob("*.old"):
+        old.unlink()
+    signed = []
+    for perm in PERMISSIONS:
+        text = (repo / f"rti_connext_dds_certs/TESTONLY_rti_connext_dds_permissions_{perm}.xml").read_text()
+        text = re.sub(r"<subject_name>[^<]*</subject_name>",
+                      f"<subject_name>{SUBJECT_NAME}</subject_name>", text)
+        text = text.replace("RTI_grant", "ZeroDDS_grant")
+        xml = f"{CERT_DIR}/{CERT_STEM}_permissions_{perm}.xml"
+        (repo / xml).write_text(text)
+        out = xml.replace(".xml", "_signed.p7s")
+        run("openssl", "smime", "-sign", "-in", xml, "-text", "-out", out,
+            "-signer", "TESTONLY_permissions_ca_cert.pem",
+            "-inkey", "permissions_ca_files/private/TESTONLY_permissions_ca_private_key.pem")
+        signed.append((xml, out))
+    (certs / "README.md").write_text(
+        "These commands assume the CWD is the repository root (dds-security).\n\n"
+        "Generation of ZeroDDS Identity private key:\n\n"
+        f"    openssl genrsa -out {key} 2048\n\n"
+        "Generation of certificate request to be signed by the Identity CA:\n\n"
+        f"    openssl req -config {cnf} \\\n      -new -key {key} \\\n      -out {csr}\n\n"
+        "See identity_ca_files/README.md for the generation of ZeroDDS Identity Certificate "
+        "by the Identity CA (signing of certificate request).\n\n"
+        "See permissions_ca_files/README.md for the generation of ZeroDDS Permission Signed "
+        "documents by the Permissions CA (signing of Permissions XML documents).\n")
+    with open(repo / "identity_ca_files/README.md", "a") as f:
+        f.write("\nGeneration of ZeroDDS Identity Certificate by the Identity CA "
+                "(signing of certificate request)\n\n"
+                f"    openssl ca -config identity_ca_files/identity_ca_openssl.cnf -days 3650 "
+                f"-in {csr} -out {cert}\n")
+    with open(repo / "permissions_ca_files/README.md", "a") as f:
+        f.write("\nSigning the permissions documents for ZeroDDS\n")
+        for xml, out in signed:
+            f.write(f"\n    openssl smime -sign -in {xml} -text -out {out} "
+                    "-signer TESTONLY_permissions_ca_cert.pem "
+                    "-inkey permissions_ca_files/private/TESTONLY_permissions_ca_private_key.pem\n")
+    return True
 
 
 def build_script(suite):
@@ -311,6 +396,14 @@ def main():
         add_to_lists(repo / config["workflow_lists"])
     if config["report"]:
         add_to_report(repo / config["report"])
+    if config.get("certificates") and certificates(repo):
+        print(f"{args.suite}: {CERT_DIR}/ signed by the repository's TESTONLY CAs")
+    if config.get("unsupported_manifest"):
+        product = f"{PRODUCT}-{args.version}"
+        (repo / "unsupported_test_manifest" / f"{product}.txt").write_text(
+            f"# Unsupported tests for {product}\n#\n"
+            "# Format: one full test ID per line.\n"
+            "# Test ID = <dict_name>_<test_case_name>\n\n# empty\n")
     print(f"{args.suite}: {dest.relative_to(repo)} against ZeroDDS {args.version}"
           + (f", patched from {args.patch_root}" if args.patch_root else ""))
 
