@@ -755,3 +755,28 @@ fn idl_7_2_5_the_preprocessor_tokens_of_table_7_8_take_effect() {
     assert!(!expanded.contains("hidden"), "{expanded}");
     assert!(!expanded.contains("CAT"), "{expanded}");
 }
+
+/// IDL 4.2 rules (4) and (218) through the preprocessor: `@key ::m::T id;`
+/// is `@key` before the member type `::m::T`, and `@ann::mark(7)` one
+/// scoped annotation name. The expanded text keeps the source's white
+/// space between the two, which the parser reads the name by
+/// (zero-objects/zero-dds#62).
+#[test]
+fn an_annotation_before_a_root_anchored_type_survives_preprocessing() {
+    for source in [
+        "module shapes { struct ShapeId { unsigned long value; }; \
+         struct Shape { @key\n ::shapes::ShapeId id; }; };",
+        "module shapes { struct ShapeId { unsigned long value; }; \
+         struct Shape { @optional ::shapes::ShapeId id; }; };",
+        "@ann::mark(7) struct S { long x; };",
+    ] {
+        let pre = preprocess("main.idl", source, &MemoryLoader::new());
+        let parsed = zerodds_idl_parse::parse_preprocessed(&pre);
+        assert!(
+            !parsed.has_errors(),
+            "{source}: {:?} — {}",
+            parsed.diagnostics(),
+            pre.text
+        );
+    }
+}

@@ -1832,6 +1832,19 @@ fn skip_statements(name: &str, kind: &MemberWrite) -> Result<Vec<rust::Statement
                     ],
                 ));
             }
+            // Read and dropped with every count written out: no field
+            // receives it to give `read_array_n` its `N`.
+            let (Some(count), Some(below)) = (dims.first(), dims.get(1..)) else {
+                return Err(EncodeError::NoWriter {
+                    member: name.to_owned(),
+                    kind: "an array without dimensions",
+                });
+            };
+            let cell = array_level_reader(name, element, below.len(), *packed, Some(below))?;
+            return Ok(vec![let_statement(
+                "_",
+                rust::Expr::Try(Box::new(call("read_array", vec![cell, int(*count)]))),
+            )]);
         }
         _ => {}
     }
@@ -5653,25 +5666,54 @@ fn narrow_from_u64(read: rust::Expr, bits: u16) -> rust::Expr {
 /// `Reader::begin_packed_element` / `finish_packed_element` pair, the
 /// read side of `array_element_writer`'s: the row and every cell inside
 /// it each begin their own alignment block.
-///
-/// zerodds-lint: recursion-depth 8 (as `array_element_writer`: one level
-/// per dimension of the array declarator)
 fn array_element_reader(
     at: &str,
     element: &MemberWrite,
     remaining: usize,
     packed: bool,
 ) -> Result<rust::Expr, EncodeError> {
+    array_level_reader(at, element, remaining, packed, None)
+}
+
+/// [`array_element_reader`], and with `counts` (the dimensions of the
+/// levels below this one, outermost first) the same reads with each
+/// level's count written out: `read_array` and its `Vec` instead of
+/// `read_array_n`, whose `N` comes from a destination. A read
+/// [`skip_statements`] discards has none, and `let _ =
+/// r.read_array_n(...)` does not compile (zero-objects/zero-dds#63).
+///
+/// zerodds-lint: recursion-depth 8 (as `array_element_writer`: one level
+/// per dimension of the array declarator)
+fn array_level_reader(
+    at: &str,
+    element: &MemberWrite,
+    remaining: usize,
+    packed: bool,
+    counts: Option<&[i128]>,
+) -> Result<rust::Expr, EncodeError> {
     if remaining == 0 {
         // A cell: the element position and the packed block, and never an
         // element length.
         return sequence_element_reader(at, element, packed, false);
     }
-    let inner = array_element_reader(at, element, remaining - 1, packed)?;
-    let call = rust::Expr::MethodCall {
-        receiver: Box::new(rust::Expr::Path(Path::single("r"))),
-        method: Ident::new("read_array_n"),
-        args: vec![inner],
+    // With `counts`, this level's count and the ones below it.
+    let (count, below) = match counts.map(<[i128]>::split_first) {
+        None => (None, None),
+        Some(Some((count, below))) => (Some(*count), Some(below)),
+        Some(None) => {
+            return Err(EncodeError::NoWriter {
+                member: at.to_owned(),
+                kind: "an array with fewer dimensions than levels",
+            });
+        }
+    };
+    let inner = array_level_reader(at, element, remaining - 1, packed, below)?;
+    let call = match count {
+        Some(count) => self::call(
+            "read_array",
+            vec![inner, rust::Expr::Literal(Literal::int(count))],
+        ),
+        None => self::call("read_array_n", vec![inner]),
     };
     if !packed {
         return Ok(rust::Expr::Closure {

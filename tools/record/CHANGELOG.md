@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- The history a TRANSIENT_LOCAL writer keeps is recorded. The readers were
+  VOLATILE, and a VOLATILE reader is sent nothing written before it matched
+  (DDS 1.4 §2.2.3.4; OPEN-ITEMS 113). A third reader, RELIABLE and
+  TRANSIENT_LOCAL, matches the writers that offer TRANSIENT_LOCAL or more
+  (`zerodds_cli_common::monitor_reader_configs`); a sample several readers
+  take is recorded once.
 - A run that records no sample leaves a capture that `info` and
   `zerodds-replay` read: the header (`RecordingSession::finish`). The file
   was empty.

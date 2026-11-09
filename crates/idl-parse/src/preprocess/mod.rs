@@ -1041,7 +1041,13 @@ impl Preprocessor<'_> {
     fn emit(&mut self, token: PpToken) {
         if let Some(written) = &token.written {
             let written = written.clone();
-            self.push_text(written.kind, &token.text, &written, token.origin);
+            self.push_text(
+                written.kind,
+                &token.text,
+                &written,
+                token.origin,
+                token.space_before,
+            );
             return;
         }
         let lexed = lex(&token.text);
@@ -1051,7 +1057,13 @@ impl Preprocessor<'_> {
         match (significant.next(), significant.next()) {
             (Some(only), None) if only.leading.is_empty() => {
                 let only = only.clone();
-                self.push_text(only.kind, &token.text, &only, token.origin);
+                self.push_text(
+                    only.kind,
+                    &token.text,
+                    &only,
+                    token.origin,
+                    token.space_before,
+                );
             }
             _ => {
                 self.preprocessing_error(
@@ -1068,7 +1080,13 @@ impl Preprocessor<'_> {
                     leading: Vec::new(),
                     value: zerodds_idl_cst::TokenValue::None,
                 };
-                self.push_text(error.kind, &token.text, &error, token.origin);
+                self.push_text(
+                    error.kind,
+                    &token.text,
+                    &error,
+                    token.origin,
+                    token.space_before,
+                );
             }
         }
     }
@@ -1099,12 +1117,21 @@ impl Preprocessor<'_> {
         text: &str,
         original: &Token,
         origin: Origin,
+        space_before: bool,
     ) {
-        // A separator between tokens, so the expanded text is itself
-        // lexable: without it `struct S` becomes `structS`, and a
+        // A separator where the source had white space, and where the two
+        // tokens would otherwise lex as one, so the expanded text is
+        // itself lexable: without it `struct S` becomes `structS`, and a
         // consumer reading the text rather than the token stream reads
-        // one identifier where there were two.
-        if !self.text.is_empty() {
+        // one identifier where there were two. Tokens the source wrote
+        // together stay together, and the parser can tell `@key ::m::T`
+        // from `@key::m::T` by the gap between them (IDL 4.2 rules (4)
+        // and (218), zero-objects/zero-dds#62).
+        let after_pragma = self
+            .tokens
+            .last()
+            .is_some_and(|last| !last.leading.is_empty());
+        if !self.text.is_empty() && (space_before || after_pragma || would_join(&self.text, text)) {
             self.text.push(' ');
         }
         #[allow(clippy::cast_possible_truncation)]
@@ -1755,4 +1782,20 @@ fn include_target(rest: &str) -> Option<String> {
         .and_then(|s| s.strip_suffix('"'))
         .or_else(|| text.strip_prefix('<').and_then(|s| s.strip_suffix('>')))?;
     Some(inner.to_owned())
+}
+
+/// Whether `next` written right after `before` would lex into another
+/// token than the two: two words, two punctuators (`:` `:`, `>` `>`), a
+/// number and a dot, or a word and a quote (`L` `"x"`).
+fn would_join(before: &str, next: &str) -> bool {
+    let (Some(a), Some(b)) = (before.chars().last(), next.chars().next()) else {
+        return false;
+    };
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let quote = |c: char| c == '"' || c == '\'';
+    (word(a) && (word(b) || quote(b)))
+        || (a.is_ascii_punctuation() && b.is_ascii_punctuation() && !quote(a) && !quote(b))
+        || (quote(a) && quote(b))
+        || (a.is_ascii_digit() && b == '.')
+        || (a == '.' && b.is_ascii_digit())
 }

@@ -185,39 +185,69 @@ pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig
     }
 }
 
-/// The two readers a monitoring tool attaches per `(topic, type_name)` so
-/// that it sees every writer: by the RxO rule of RELIABILITY (DDS 1.4
-/// §2.2.3.14, offered ≥ requested) a RELIABLE reader matches only RELIABLE
-/// writers, whose repairs it takes, and a BEST_EFFORT reader matches every
-/// writer. `(config, reliable)` pairs, the RELIABLE one first. Both take
-/// the samples of a RELIABLE writer they match; [`WriterReliability::keep`]
-/// keeps the first copy of each.
+/// The readers a monitoring tool attaches per `(topic, type_name)` so that
+/// it sees every writer and the history a writer keeps for late joiners.
+///
+/// By the RxO rule of RELIABILITY (DDS 1.4 §2.2.3.14, offered ≥ requested)
+/// a RELIABLE reader matches only RELIABLE writers, whose repairs it takes,
+/// and a BEST_EFFORT reader matches every writer. By the rule of DURABILITY
+/// (§2.2.3.4) a TRANSIENT_LOCAL reader matches only writers that offer
+/// TRANSIENT_LOCAL or more, and only such a reader is sent the samples a
+/// writer wrote before the match; a VOLATILE reader takes what is written
+/// after it. Hence three: [`MonitorReader::History`] (RELIABLE,
+/// TRANSIENT_LOCAL), [`MonitorReader::Reliable`] and
+/// [`MonitorReader::BestEffort`] (both VOLATILE), in that order. A sample
+/// reaches every one of them that matches its writer;
+/// [`WriterReliability::keep`] keeps the first copy of each.
 #[must_use]
-pub fn monitor_reader_configs(topic: &str, type_name: &str) -> [(UserReaderConfig, bool); 2] {
+pub fn monitor_reader_configs(
+    topic: &str,
+    type_name: &str,
+) -> [(UserReaderConfig, MonitorReader); 3] {
+    let history = UserReaderConfig {
+        durability: zerodds_qos::DurabilityKind::TransientLocal,
+        ..raw_reader_config_typed(topic, type_name)
+    };
     let reliable = raw_reader_config_typed(topic, type_name);
     let best_effort = UserReaderConfig {
         reliable: false,
         ..raw_reader_config_typed(topic, type_name)
     };
-    [(reliable, true), (best_effort, false)]
+    [
+        (history, MonitorReader::History),
+        (reliable, MonitorReader::Reliable),
+        (best_effort, MonitorReader::BestEffort),
+    ]
 }
 
-/// What a monitoring tool keeps of the samples its two readers
+/// Which of the readers of [`monitor_reader_configs`] took a sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MonitorReader {
+    /// RELIABLE and TRANSIENT_LOCAL: the RELIABLE writers that offer
+    /// TRANSIENT_LOCAL or more, with the history they keep.
+    History,
+    /// RELIABLE and VOLATILE: every RELIABLE writer, from the match on.
+    Reliable,
+    /// BEST_EFFORT and VOLATILE: every writer, from the match on.
+    BestEffort,
+}
+
+/// What a monitoring tool keeps of the samples its readers
 /// ([`monitor_reader_configs`]) take: the first copy of each sample, by its
-/// source identity, and for a sample without one the reliability of its
-/// writer, as discovery reports it
+/// source identity, and for a sample without one the reliability and
+/// durability its writer offers, as discovery reports them
 /// (`DcpsRuntime::discovered_publication_endpoints`).
 #[derive(Debug, Default)]
 pub struct WriterReliability {
-    known: std::collections::HashMap<[u8; 16], bool>,
+    known: std::collections::HashMap<[u8; 16], (bool, bool)>,
     copies: SourceCopies,
 }
 
 /// The samples a monitoring tool has kept, by their source identity: the
 /// writer's GUID and the sample's sequence number in that writer
-/// (DDSI-RTPS 2.5 §8.3.5.4, `UserSample::source_sequence_number`). Both
-/// readers of [`monitor_reader_configs`] take a sample of a RELIABLE writer
-/// they match; the first copy, from either, is new and a second one is not.
+/// (DDSI-RTPS 2.5 §8.3.5.4, `UserSample::source_sequence_number`). Every
+/// reader of [`monitor_reader_configs`] that matches a writer takes its
+/// samples; the first copy, from any of them, is new and a later one is not.
 ///
 /// The RELIABLE reader alone does not have every sample: one written after
 /// the writer matched the BEST_EFFORT reader and before it matched the
@@ -286,25 +316,41 @@ impl WriterReliability {
         runtime: &zerodds_dcps::runtime::DcpsRuntime,
         writer: [u8; 16],
     ) -> bool {
-        if let Some(reliable) = self.known.get(&writer) {
-            return *reliable;
-        }
-        for endpoint in runtime.discovered_publication_endpoints() {
-            self.known.insert(endpoint.endpoint_guid, endpoint.reliable);
-        }
-        self.known.get(&writer).copied().unwrap_or(false)
+        self.offer(runtime, writer).0
     }
 
-    /// Whether to keep `sample`, taken by a reader that is RELIABLE or not
-    /// ([`monitor_reader_configs`]). A sample with a sequence number is kept
-    /// when it is the first copy of it ([`SourceCopies`]). Of a sample
-    /// without one, a RELIABLE reader keeps everything; the BEST_EFFORT
-    /// reader keeps what a BEST_EFFORT writer wrote, and drops what a
-    /// RELIABLE writer wrote, which the RELIABLE reader keeps.
+    /// What `writer` offers: RELIABLE, and TRANSIENT_LOCAL or more. Looked
+    /// up as [`Self::is_reliable`]; a writer discovery does not know offers
+    /// neither.
+    fn offer(
+        &mut self,
+        runtime: &zerodds_dcps::runtime::DcpsRuntime,
+        writer: [u8; 16],
+    ) -> (bool, bool) {
+        if let Some(offer) = self.known.get(&writer) {
+            return *offer;
+        }
+        for endpoint in runtime.discovered_publication_endpoints() {
+            self.known.insert(
+                endpoint.endpoint_guid,
+                (endpoint.reliable, endpoint.transient_local),
+            );
+        }
+        self.known.get(&writer).copied().unwrap_or((false, false))
+    }
+
+    /// Whether to keep `sample`, taken by `reader` ([`monitor_reader_configs`]).
+    /// A sample with a sequence number is kept when it is the first copy of
+    /// it ([`SourceCopies`]). A sample without one is kept by the one reader
+    /// that matches its writer and no other reader keeps: the
+    /// [`MonitorReader::History`] reader keeps everything it takes, the
+    /// [`MonitorReader::Reliable`] reader what a writer wrote that does not
+    /// offer both RELIABLE and TRANSIENT_LOCAL, and the
+    /// [`MonitorReader::BestEffort`] reader what a BEST_EFFORT writer wrote.
     pub fn keep(
         &mut self,
         runtime: &zerodds_dcps::runtime::DcpsRuntime,
-        reader_reliable: bool,
+        reader: MonitorReader,
         sample: &zerodds_dcps::runtime::UserSample,
     ) -> bool {
         use zerodds_dcps::runtime::UserSample;
@@ -323,12 +369,13 @@ impl WriterReliability {
                 *source_sequence_number,
                 std::time::Instant::now(),
             ),
-            _ if reader_reliable => true,
             UserSample::Alive { writer_guid, .. }
             | UserSample::Lifecycle { writer_guid, .. }
-            | UserSample::CoherentSetEnd { writer_guid, .. } => {
-                !self.is_reliable(runtime, *writer_guid)
-            }
+            | UserSample::CoherentSetEnd { writer_guid, .. } => match reader {
+                MonitorReader::History => true,
+                MonitorReader::Reliable => self.offer(runtime, *writer_guid) != (true, true),
+                MonitorReader::BestEffort => !self.is_reliable(runtime, *writer_guid),
+            },
         }
     }
 }

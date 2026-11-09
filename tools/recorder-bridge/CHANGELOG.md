@@ -7,6 +7,12 @@ versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- The history a TRANSIENT_LOCAL writer keeps is recorded. The readers were
+  VOLATILE, and a VOLATILE reader is sent nothing written before it matched
+  (DDS 1.4 §2.2.3.4; OPEN-ITEMS 113). A third reader, RELIABLE and
+  TRANSIENT_LOCAL, matches the writers that offer TRANSIENT_LOCAL or more
+  (`zerodds_cli_common::monitor_reader_configs`); a sample several readers
+  take is recorded once.
 - A BEST_EFFORT writer is recorded. The recorder read RELIABLE only, and
   by the RxO rule of RELIABILITY (DDS 1.4 §2.2.3.14) such a reader matches
   no BEST_EFFORT writer (OPEN-ITEMS 90). It attaches a RELIABLE and a

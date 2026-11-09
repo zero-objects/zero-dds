@@ -27,7 +27,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use zerodds_ast_layout::key::Endianness;
 use zerodds_cli_common::{
-    WriterReliability, monitor_reader_configs, participant_guid, stable_prefix,
+    MonitorReader, WriterReliability, monitor_reader_configs, participant_guid, stable_prefix,
 };
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserSample};
 use zerodds_record::{
@@ -147,15 +147,16 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     let session = Arc::new(RecordingSession::new(BufWriter::new(file), opts));
     let _ = r.max_sample_bytes; // DoS cap will be enforced in a future iteration via a config hook.
 
-    // Two type-following readers per resolved (topic, type) — each announces
-    // the real type so it matches the typed writer on both ends; one
-    // RELIABLE, one BEST_EFFORT, so that every writer is recorded
+    // Three type-following readers per resolved (topic, type) — each
+    // announces the real type so it matches the typed writer on both ends;
+    // RELIABLE and TRANSIENT_LOCAL, RELIABLE, BEST_EFFORT, so that every
+    // writer and the history a writer keeps are recorded
     // (`monitor_reader_configs`).
-    let mut readers = Vec::with_capacity(2 * topics.len());
+    let mut readers = Vec::with_capacity(3 * topics.len());
     for (idx, t) in topics.iter().enumerate() {
-        for (cfg, reliable) in monitor_reader_configs(&t.topic, &t.type_name) {
+        for (cfg, role) in monitor_reader_configs(&t.topic, &t.type_name) {
             match runtime.register_user_reader(cfg) {
-                Ok((eid, rx)) => readers.push((idx, eid, rx, reliable)),
+                Ok((eid, rx)) => readers.push((idx, eid, rx, role)),
                 Err(e) => {
                     eprintln!(
                         "error: register_user_reader({}, {}): {e:?}",
@@ -170,8 +171,8 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
             t.topic, t.type_name
         );
     }
-    // What a RELIABLE writer wrote reaches both readers; the RELIABLE one
-    // records it.
+    // What a writer wrote reaches every reader that matches it; the first
+    // copy is recorded.
     let mut reliability = WriterReliability::new();
 
     // Optional decode-sinks (typed JSON / SQLite) on top of the opaque capture.
@@ -217,10 +218,10 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
             break;
         }
         let mut got_any = false;
-        'sweep: for (topic_idx, _eid, rx, reliable) in &readers {
+        'sweep: for (topic_idx, _eid, rx, role) in &readers {
             while let Ok(sample) = rx.try_recv() {
                 got_any = true;
-                if !reliability.keep(&runtime, *reliable, &sample) {
+                if !reliability.keep(&runtime, *role, &sample) {
                     continue;
                 }
                 let topic = &topics[*topic_idx];
@@ -276,7 +277,7 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     let flush_until = Instant::now() + Duration::from_millis(500);
     let mut flushed: u64 = 0;
     let mut left_behind: u64 = 0;
-    'flush: for (topic_idx, _eid, rx, reliable) in &readers {
+    'flush: for (topic_idx, _eid, rx, role) in &readers {
         loop {
             // The deadline before the receive, so a sample is either
             // written or counted as left behind — checking it after the
@@ -287,7 +288,7 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
                 break 'flush;
             }
             match rx.try_recv() {
-                Ok(sample) if !reliability.keep(&runtime, *reliable, &sample) => {}
+                Ok(sample) if !reliability.keep(&runtime, *role, &sample) => {}
                 Ok(sample) => {
                     let topic = &topics[*topic_idx];
                     write_sample(&mut decode, &session_for_loop, part_guid, topic, sample);
@@ -304,7 +305,7 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     // samples are discarded — the capture ends here — so the count is
     // the one number that says how much of the traffic the file does
     // not hold.
-    for (_topic_idx, _eid, rx, _reliable) in &readers {
+    for (_topic_idx, _eid, rx, _role) in &readers {
         while rx.try_recv().is_ok() {
             left_behind += 1;
         }
@@ -748,7 +749,7 @@ fn attach_late_topics(
     session: &RecordingSession<BufWriter<File>>,
     wanted: &[String],
     topics: &mut Vec<TopicKey>,
-    readers: &mut Vec<(usize, EntityId, Receiver<UserSample>, bool)>,
+    readers: &mut Vec<(usize, EntityId, Receiver<UserSample>, MonitorReader)>,
     per_topic: &mut Vec<u64>,
 ) {
     for (topic, type_name) in rt.discovered_publication_topics() {
@@ -773,9 +774,9 @@ fn attach_late_topics(
             }
         };
         let mut attached = Vec::new();
-        for (cfg, reliable) in monitor_reader_configs(&topic, &type_name) {
+        for (cfg, role) in monitor_reader_configs(&topic, &type_name) {
             match rt.register_user_reader(cfg) {
-                Ok((eid, rx)) => attached.push((index, eid, rx, reliable)),
+                Ok((eid, rx)) => attached.push((index, eid, rx, role)),
                 Err(e) => {
                     eprintln!("warn: register_user_reader({topic}, {type_name}): {e:?}");
                 }

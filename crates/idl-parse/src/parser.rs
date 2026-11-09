@@ -279,6 +279,24 @@ impl<'a> Parser<'a> {
             .map_or(TokenKind::Eof, |t| t.kind)
     }
 
+    /// Whether white space or a comment stands before the token `ahead`
+    /// positions on: its leading trivia, or a gap between it and the
+    /// token before. A preprocessed stream carries no white space as
+    /// trivia and keeps the source's in its text
+    /// (`preprocess::Preprocessor::push_text`).
+    #[must_use]
+    pub fn follows_trivia(&self, ahead: usize) -> bool {
+        let index = self.at + ahead;
+        let Some(token) = self.tokens.get(index) else {
+            return false;
+        };
+        !token.leading.is_empty()
+            || index
+                .checked_sub(1)
+                .and_then(|before| self.tokens.get(before))
+                .is_some_and(|before| before.span.end < token.span.start)
+    }
+
     /// Whether the cursor is at the end.
     #[must_use]
     pub fn at_eof(&self) -> bool {

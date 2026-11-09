@@ -225,6 +225,44 @@ fn an_annotation_takes_arguments_in_both_forms() {
     }
 }
 
+/// IDL 4.2 rules (4) and (218): `@key ::m::T id;` is `@key` before the
+/// root-anchored member type `::m::T`, as Cyclone DDS's `idlc` reads it;
+/// the annotation name ends at the `::` white space stands before
+/// (zero-objects/zero-dds#62). A scoped annotation name written without
+/// white space stays one name.
+#[test]
+fn a_member_annotation_ends_before_a_root_anchored_member_type() {
+    for annotation in ["@key", "@optional", "@external"] {
+        let source = format!(
+            "module shapes {{ @final struct ShapeId {{ unsigned long value; }}; \
+             @final struct Shape {{ {annotation}\n ::shapes::ShapeId id; }}; }};"
+        );
+        let result = parse(&source);
+        assert!(!result.has_errors(), "{source}: {:?}", result.diagnostics());
+        let annotations: Vec<String> = result
+            .syntax()
+            .descendants()
+            .into_iter()
+            .filter(|node| node.kind() == CstKind::Annotation)
+            .map(|node| node.text().trim().to_owned())
+            .collect();
+        assert!(
+            annotations.contains(&annotation.to_owned()),
+            "{annotations:?}"
+        );
+    }
+    let source = "@ann::mark(7) struct S { long x; };";
+    let result = parse(source);
+    assert!(!result.has_errors(), "{:?}", result.diagnostics());
+    assert!(
+        result
+            .syntax()
+            .descendants()
+            .into_iter()
+            .any(|node| node.kind() == CstKind::Annotation && node.text().trim() == "@ann::mark(7)")
+    );
+}
+
 #[test]
 fn several_declarators_share_one_type() {
     let source = "struct S { double x, y, z; };";

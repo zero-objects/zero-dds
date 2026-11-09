@@ -572,6 +572,7 @@
 1	let_else	crates/idl-lower/src/validate.rs	let Some(target) = target else {	an unresolved element type has no kind to check TRIM against, and the resolve pass reports it
 1	let_else	crates/idl-lower/src/validate.rs	let Some(xtypes) = self.ast.facets(member_any).and_then(|f| f.xtypes.clone()) else {	a stale-handle guard inside a walk over handles the model just supplied, or a map lookup whose absence is the answer
 1	let_else	crates/idl-lower/src/validate.rs	let TypeKind::Primitive(kind) = self.ast.type_(target).ok()?.kind.clone() else {	only a primitive element has a range of Table 7-26; the other kinds are held to their form by value_disagrees_with above
+1	let_else	crates/idl-parse/src/parser.rs	let Some(token) = self.tokens.get(index) else {	follows_trivia: past the last token there is no token and no white space before one; a question, nothing is read or dropped
 1	let_else	crates/idl-parse/src/parser.rs	let Some(token) = self.tokens.get(self.at).cloned() else {	a stale-handle guard inside a walk over handles the model just supplied, or a map lookup whose absence is the answer
 1	let_else	crates/idl-parse/src/preprocess/condition.rs	let Some(operators) = LEVELS.get(level) else {	the base of the precedence climb: past the last binary level the operand is a unary expression, which is where it goes
 1	let_else	crates/idl-parse/src/preprocess/condition.rs	let Some(token) = self.peek() else {	an #if line that ends where an operand belongs returns an Err naming that, which the caller reports as IDL0022

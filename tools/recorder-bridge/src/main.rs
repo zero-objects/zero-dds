@@ -35,8 +35,8 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use zerodds_cli_common::{
-    WriterReliability, install_signal_handler, monitor_reader_configs, participant_guid,
-    stable_prefix, unix_ns_now,
+    MonitorReader, WriterReliability, install_signal_handler, monitor_reader_configs,
+    participant_guid, stable_prefix, unix_ns_now,
 };
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserSample};
 use zerodds_recorder::{ParticipantEntry, RecordingSession, SampleKind, SessionOptions, TopicKey};
@@ -198,14 +198,15 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    // Two readers per topic, RELIABLE and BEST_EFFORT, so that every writer
-    // is recorded (`monitor_reader_configs`). A failure leaves nothing
-    // behind: the runtime owns the readers and is shut down on every way out.
-    let mut readers: Vec<(Receiver<UserSample>, TopicKey, bool)> = Vec::new();
+    // Three readers per topic, RELIABLE and TRANSIENT_LOCAL, RELIABLE,
+    // BEST_EFFORT, so that every writer and the history a writer keeps are
+    // recorded (`monitor_reader_configs`). A failure leaves nothing behind:
+    // the runtime owns the readers and is shut down on every way out.
+    let mut readers: Vec<(Receiver<UserSample>, TopicKey, MonitorReader)> = Vec::new();
     for tk in &args.topics {
-        for (cfg, reliable) in monitor_reader_configs(&tk.topic, &tk.type_name) {
+        for (cfg, role) in monitor_reader_configs(&tk.topic, &tk.type_name) {
             match runtime.register_user_reader(cfg) {
-                Ok((_eid, rx)) => readers.push((rx, tk.clone(), reliable)),
+                Ok((_eid, rx)) => readers.push((rx, tk.clone(), role)),
                 Err(e) => {
                     eprintln!("reader for {} failed: {e:?}", tk.topic);
                     runtime.shutdown();
@@ -214,8 +215,8 @@ fn main() -> ExitCode {
             }
         }
     }
-    // What a RELIABLE writer wrote reaches both readers; the RELIABLE one
-    // records it.
+    // What a writer wrote reaches every reader that matches it; the first
+    // copy is recorded.
     let mut reliability = WriterReliability::new();
     println!("recording... (Ctrl-C to stop)");
     let start = Instant::now();
@@ -233,16 +234,16 @@ fn main() -> ExitCode {
         }
         // Every reader in turn: one wait for a sample, then at most
         // `DRAIN` of those already queued, so a busy topic holds up neither
-        // the other readers nor the stop. With one topic (its two readers)
-        // the waits are the channels'.
-        let wait = Duration::from_millis(if readers.len() == 2 { 25 } else { 5 });
-        for (rx, tk, reliable) in &readers {
+        // the other readers nor the stop. With one topic (its three
+        // readers) the waits are the channels'.
+        let wait = Duration::from_millis(if args.topics.len() == 1 { 25 } else { 5 });
+        for (rx, tk, role) in &readers {
             if let Ok(sample) = rx.recv_timeout(wait) {
-                if reliability.keep(&runtime, *reliable, &sample) {
+                if reliability.keep(&runtime, *role, &sample) {
                     record(&session, part_guid, tk, sample);
                 }
                 for sample in rx.try_iter().take(DRAIN) {
-                    if reliability.keep(&runtime, *reliable, &sample) {
+                    if reliability.keep(&runtime, *role, &sample) {
                         record(&session, part_guid, tk, sample);
                     }
                 }
@@ -259,9 +260,9 @@ fn main() -> ExitCode {
         }
     }
     // What arrived before the stop is recorded too.
-    for (rx, tk, reliable) in &readers {
+    for (rx, tk, role) in &readers {
         while let Ok(sample) = rx.try_recv() {
-            if reliability.keep(&runtime, *reliable, &sample) {
+            if reliability.keep(&runtime, *role, &sample) {
                 record(&session, part_guid, tk, sample);
             }
         }

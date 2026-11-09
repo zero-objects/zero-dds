@@ -216,6 +216,13 @@ impl Parser<'_> {
     /// name no exception from rule (4) for being written after an `@`.
     /// The loop is `parse_scoped_name`'s with that one widening, which
     /// is why it is written here rather than shared.
+    ///
+    /// A `::` continues the name only where no white space stands on
+    /// either side of it. Rules (4) and (218) make `@key ::m::T id;`
+    /// ambiguous, an annotation `key::m::T` or `@key` before the member
+    /// type `::m::T`, and the white space §7.2 otherwise ignores decides
+    /// it as Cyclone DDS's `idlc` does (`scan_scope` in
+    /// `src/tools/idlc/libidl/src/scanner.c`): `@key ::m::T` is `@key`.
     fn parse_annotation_name(&mut self) {
         // A leading `::` anchors the name at the global scope.
         let _ = self.eat(TokenKind::ColonColon);
@@ -227,7 +234,10 @@ impl Parser<'_> {
             );
             return;
         }
-        while self.current() == TokenKind::ColonColon {
+        while self.current() == TokenKind::ColonColon
+            && !self.follows_trivia(0)
+            && !self.follows_trivia(1)
+        {
             self.bump();
             if !self.eat_annotation_segment() {
                 self.diagnose(

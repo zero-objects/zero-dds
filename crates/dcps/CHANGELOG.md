@@ -38,6 +38,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- Discovery asks the routing table once per destination and keeps the answer
+  5 s (`RouteAnswers`), instead of opening a UDP socket per announced UDPv4
+  locator for every pair of endpoints it matches (OPEN-ITEMS 114). In a ring
+  of 20 processes with 40 writers and 40 readers each: 19.7–26.8 CPU seconds
+  until matched before, 8.8–11.3 after.
+
 - A TypeLookup reply writes its minimal objects in the camp the participant
   announces (`DomainParticipant::set_minimal_type_object_camp`); in the
   RTI/CoreDX camp they were written in the default one.

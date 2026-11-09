@@ -513,7 +513,18 @@ fn explicit(
             let value = ast
                 .eval_integral(expr)
                 .map_err(|_| refuse("a `@default` this frontend cannot evaluate"))?;
-            rust::Expr::Literal(Literal::int(value))
+            // On a `float` or `double` the integer is that value as a
+            // floating-point literal: `f32_value: 1` does not compile
+            // (zero-objects/zero-dds#64).
+            match ast.type_(resolved).map(|node| &node.kind) {
+                Ok(TypeKind::Primitive(PrimitiveKind::Float32)) => {
+                    rust::Expr::Literal(Literal::Float(format!("{value}.0f32")))
+                }
+                Ok(TypeKind::Primitive(PrimitiveKind::Float64)) => {
+                    rust::Expr::Literal(Literal::Float(format!("{value}.0f64")))
+                }
+                _ => rust::Expr::Literal(Literal::int(value)),
+            }
         }
     })
 }

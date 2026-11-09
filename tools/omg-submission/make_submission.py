@@ -389,6 +389,10 @@ def main():
     shutil.copytree(ROOT / tool / "src", dest / "src")
     (dest / "Cargo.toml").write_text(manifest(args.suite, tool, args.version, args.patch_root))
     (dest / ".gitignore").write_text("target/\n")
+    # `ci_zerodds.yml` builds with `--locked`, which refuses a crate without
+    # a lock file; the resolution keeps to the manifest's `rust-version`.
+    subprocess.run(["cargo", "generate-lockfile", "--manifest-path", str(dest / "Cargo.toml")],
+                   check=True)
     if config["idl"]:
         (dest / "build.rs").write_text(build_script(args.suite))
     if config["workflow_lists"]:

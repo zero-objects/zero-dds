@@ -25843,10 +25843,76 @@ enum LocatorRank {
 }
 
 /// The source address the OS routing table would use for `dest`, or `None`
-/// when there is no route. `connect` on a UDP socket only consults the
-/// routing table — no packet leaves the host.
+/// when there is no route, as [`RouteAnswers`] holds it.
 #[cfg(feature = "std")]
 fn route_source_for(dest: Ipv4Addr, port: u16) -> Option<Ipv4Addr> {
+    static ANSWERS: RouteAnswers = RouteAnswers::new();
+    ANSWERS.answer(dest, port, Instant::now(), probe_route_source)
+}
+
+/// What the routing table answered per destination, for
+/// [`RouteAnswers::KEPT`].
+///
+/// [`select_transmit_locators`] asks once per UDPv4 locator of every pair of
+/// a local and a remote endpoint it matches, and each question costs a
+/// socket, a `bind`, a `connect` and a `getsockname`. In a ring of 20
+/// processes with 40 writers and 40 readers each, `route_source_for` held
+/// 43 % of all CPU samples (OPEN-ITEMS 114, perf on the Linux test host).
+/// The answer depends on the destination and the routing table, not on the
+/// endpoint, so it is asked once per destination and kept for a while: a
+/// route that changes is seen by the matches made after `KEPT`.
+#[cfg(feature = "std")]
+struct RouteAnswers {
+    answers: Mutex<BTreeMap<(Ipv4Addr, u16), RouteAnswer>>,
+}
+
+/// The source address the routing table named, and when it was asked.
+#[cfg(feature = "std")]
+type RouteAnswer = (Option<Ipv4Addr>, Instant);
+
+#[cfg(feature = "std")]
+impl RouteAnswers {
+    /// How long an answer is used.
+    const KEPT: Duration = Duration::from_secs(5);
+    /// Above this many destinations the expired answers are dropped.
+    const PRUNE_ABOVE: usize = 1024;
+
+    const fn new() -> Self {
+        Self {
+            answers: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    /// The answer for `(dest, port)` at `now`: the one kept, if younger than
+    /// [`Self::KEPT`], otherwise what `probe` says, which is kept.
+    fn answer(
+        &self,
+        dest: Ipv4Addr,
+        port: u16,
+        now: Instant,
+        probe: impl FnOnce(Ipv4Addr, u16) -> Option<Ipv4Addr>,
+    ) -> Option<Ipv4Addr> {
+        if let Ok(answers) = self.answers.lock()
+            && let Some((source, at)) = answers.get(&(dest, port))
+            && now.saturating_duration_since(*at) < Self::KEPT
+        {
+            return *source;
+        }
+        let source = probe(dest, port);
+        if let Ok(mut answers) = self.answers.lock() {
+            if answers.len() > Self::PRUNE_ABOVE {
+                answers.retain(|_, (_, at)| now.saturating_duration_since(*at) < Self::KEPT);
+            }
+            answers.insert((dest, port), (source, now));
+        }
+        source
+    }
+}
+
+/// What the routing table answers for `dest` now. `connect` on a UDP socket
+/// only consults the routing table — no packet leaves the host.
+#[cfg(feature = "std")]
+fn probe_route_source(dest: Ipv4Addr, port: u16) -> Option<Ipv4Addr> {
     let probe =
         std::net::UdpSocket::bind(std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).ok()?;
     probe
@@ -37056,6 +37122,39 @@ mod tests {
             picked,
             alloc::vec![eth0],
             "the locator reachable over the announced interface is the one transmitted to"
+        );
+    }
+
+    #[test]
+    fn a_route_answer_is_kept_for_a_while_and_asked_again_after() {
+        // OPEN-ITEMS 114: one question to the routing table per destination,
+        // not one per pair of endpoints.
+        let answers = super::RouteAnswers::new();
+        let asked = core::cell::Cell::new(0u32);
+        let dest = Ipv4Addr::new(192, 0, 2, 7);
+        let probe = |_, _| {
+            asked.set(asked.get() + 1);
+            Some(Ipv4Addr::new(192, 0, 2, 1))
+        };
+        let start = Instant::now();
+        for _ in 0..3 {
+            assert_eq!(
+                answers.answer(dest, 7410, start, probe),
+                Some(Ipv4Addr::new(192, 0, 2, 1))
+            );
+        }
+        assert_eq!(asked.get(), 1, "the kept answer was used");
+        answers.answer(dest, 7411, start, probe);
+        assert_eq!(asked.get(), 2, "another port is another destination");
+        let later = start + super::RouteAnswers::KEPT;
+        answers.answer(dest, 7410, later, probe);
+        assert_eq!(asked.get(), 3, "an answer as old as KEPT is asked again");
+        // No route is an answer too, and it is kept like one.
+        let unroutable = Ipv4Addr::new(203, 0, 113, 9);
+        assert_eq!(answers.answer(unroutable, 7410, start, |_, _| None), None);
+        assert_eq!(
+            answers.answer(unroutable, 7410, start, |_, _| panic!("asked again")),
+            None
         );
     }
 

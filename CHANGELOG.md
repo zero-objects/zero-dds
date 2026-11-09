@@ -681,6 +681,47 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **Discovery asks the routing table once per destination, not once per pair
+  of endpoints** (`zerodds-dcps`, OPEN-ITEMS 114). Choosing among the UDPv4
+  locators a peer announced cost a socket, `bind`, `connect` and
+  `getsockname` per locator for every pair of a local and a remote endpoint
+  matched; in a ring of 20 processes with 40 writers and 40 readers each,
+  that was 43 % of all CPU samples. The answer is kept 5 s per destination.
+  Measured on the Linux test host in that ring, CPU seconds of all
+  processes until every endpoint matched: 19.7–26.8 before, 8.8–11.3 after;
+  time until matched 2.2–2.7 s before, 1.28–1.39 s after (4 runs each).
+
+- **`zerodds-record`, `zerodds-spy` and `zerodds-recorder-bridge` take the
+  history a TRANSIENT_LOCAL writer keeps** (`zerodds-cli-common`
+  `monitor_reader_configs`, `MonitorReader`). Their readers were VOLATILE,
+  and a VOLATILE reader is sent nothing written before it matched (DDS 1.4
+  §2.2.3.4); since `9351ab2d37c` the runtime holds to that, and a recording
+  started after its writers lacked the samples written before (OPEN-ITEMS
+  113; a measured topic went from 14 samples per recording to 0). A third
+  reader, RELIABLE and TRANSIENT_LOCAL, matches the writers that offer
+  TRANSIENT_LOCAL or more; a sample that reaches several readers is kept
+  once, by writer GUID and sequence number. Test:
+  `dcps_2_2_3_4_the_recorder_records_the_history_of_a_transient_local_writer`.
+
+- **`@key ::m::T id;` parses: an annotation name ends at a `::` with white
+  space before it** (`zerodds-idl-parse`; zero-objects/zero-dds#62). IDL 4.2
+  rules (4) and (218) make the line ambiguous; it read as the annotation
+  `key::m::T` and failed with "expected a declarator name". White space
+  decides it, as in Cyclone DDS's `idlc` (`scan_scope`); `@ann::mark(7)`
+  stays one name. The preprocessor keeps the source's white space between
+  tokens in its expanded text, so the composed path decides the same way.
+
+- **Generated Rust compiles for a keyed type with a non-key `char` array**
+  (`zerodds-lang-rules`; zero-objects/zero-dds#63). The key-only read
+  dropped the array as `let _ = r.read_array_n(...)?`, and with no field to
+  give `N` rustc stopped at `E0284`. The dropped read now writes each
+  dimension out (`read_array`).
+
+- **An integer `@default` on a `float` or `double` member is a
+  floating-point literal in generated Rust** (`zerodds-lang-rules`;
+  zero-objects/zero-dds#64). `@default(1)` gave `f32_value: 1`, which does
+  not compile (`E0308`); it gives `1.0f32`.
+
 - **The skeleton `zerodds-corba-rust` generates for an operation that raises
   every user exception of its interface has no unreachable `_` arm.** The
   shared `{Interface}Error` match took a wildcard for the variants other
