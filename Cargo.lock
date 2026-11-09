@@ -7295,7 +7295,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-build"
-version = "1.0.0-rc.7.3"
+version = "1.0.0-rc.7"
 dependencies = [
  "tempfile",
  "zerodds-ast",
@@ -7366,7 +7366,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-cli-common"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "zerodds-dcps",
@@ -7665,7 +7665,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-dcps"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "metrics",
@@ -7782,7 +7782,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-service"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-dcps",
  "zerodds-durability-store",
@@ -7813,14 +7813,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-store"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-qos",
 ]
 
 [[package]]
 name = "zerodds-durability-store-file"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-durability-store",
  "zerodds-qos",
@@ -7837,7 +7837,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-store-postgres"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "postgres",
  "zerodds-durability-store",
@@ -7846,7 +7846,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-store-sqlite"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "rusqlite",
  "zerodds-durability-store",
@@ -8005,7 +8005,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-parse"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "proptest",
@@ -8096,7 +8096,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-lang-rules"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "seesaw-tgg",
  "serde_json",
@@ -8372,7 +8372,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-record"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "libc",
  "rusqlite",
@@ -8392,11 +8392,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-recorder"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-recorder-bridge"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -8406,7 +8406,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-recorder-decode"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "rusqlite",
  "serde_json",
@@ -8519,7 +8519,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-rtps"
-version = "1.0.0-rc.7.3"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "portable-atomic",
@@ -8718,7 +8718,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-spy"
-version = "1.0.0-rc.7.5"
+version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-ast-layout",
  "zerodds-cli-common",
@@ -8831,7 +8831,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-types"
-version = "1.0.0-rc.7.4"
+version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
  "serde_json",
@@ -8904,7 +8904,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-wire"
-version = "1.0.0-rc.7.3"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "zerodds-float128",
@@ -8912,7 +8912,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-wire-codec"
-version = "1.0.0-rc.7.3"
+version = "1.0.0-rc.7"
 dependencies = [
  "serde_json",
  "zerodds-ast",

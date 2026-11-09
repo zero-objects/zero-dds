@@ -1716,6 +1716,38 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   and `zerodds-record` take `rusqlite` 0.41.1 with `libsqlite3-sys` 0.39.1
   (SQLite 3.54.1); the API they use did not change.
 
+## [1.0.0-rc.7.5] — 2026-11-09
+
+Fourteen crates on crates.io only; no other channel.
+
+### Fixed
+
+- `zerodds-idl-parse` and `zerodds-lang-rules`: GitHub #62, #63 and #64 (the
+  Unreleased section above). `zerodds-build` 1.0.0-rc.7.3 takes them on a
+  `cargo update`.
+- `zerodds-dcps`: discovery asks the routing table once per destination
+  (OPEN-ITEMS 114).
+- `zerodds-record`, `zerodds-spy`, `zerodds-recorder-bridge` and
+  `zerodds-cli-common` record the history a TRANSIENT_LOCAL writer keeps
+  (OPEN-ITEMS 113). Their last release was 1.0.0-rc.7, so they carry
+  everything since, and so do `zerodds-recorder` and
+  `zerodds-recorder-decode`, which they build on (capture format 3).
+- `zerodds-recorder-decode` links SQLite through rusqlite 0.41
+  (RUSTSEC-2026-0459). `zerodds-durability-store-sqlite` 1.0.0-rc.7 links it
+  through rusqlite 0.32, and the two cannot share a graph, so the durability
+  crates are released with it: `zerodds-durability-store`, `-store-file`,
+  `-store-postgres`, `-store-sqlite` and `zerodds-durability-service`.
+
+Requirements on `zerodds-wire`, `-wire-codec` and `-rtps` are
+`^1.0.0-rc.7.3`, on `zerodds-types` `^1.0.0-rc.7.4`. Checked on the Linux
+test host before the upload, with the fourteen packaged crates patched in:
+every published zerodds crate checks as without them (133 of 146, the 13
+others stop with "no longer part of ZeroDDS" either way), the binaries of
+`zerodds-record`, `-spy` and `-recorder-bridge` build, and the
+reproductions of #62 to #64 build and pass with `zerodds-build`
+1.0.0-rc.7.3. With the next release the fourteen return to the workspace
+version.
+
 ## [1.0.0-rc.7.4] — 2026-11-09
 
 Two crates on crates.io only; no other channel.
