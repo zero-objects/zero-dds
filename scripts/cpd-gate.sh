@@ -85,6 +85,18 @@ EXCLUDE_RE='(^|/)target/|(^|/)node_modules/|(^|/)dist/|(^|/)build/|endpoints/[^/
 # `skipped` is the number of files PMD's lexer may leave out of the count; a
 # file it cannot read is a file whose copies go unseen.
 #
+# RUST 1065 -> 1154, CPP 60 -> 67, CS 27 -> 23: raised, not de-duplicated
+# (Sandra's decision). Measured with PMD 7.27.0 on the GitHub mirror's tree
+# against the tree of the last weekly run that passed (9b8e3330e: rust 1057,
+# cpp 60). Of rust's +97: +88 in or beside the consumer contract tests
+# (tests/contract_<x>.rs, 344 files): consumers that use the same part of a
+# core crate's API carry the same tests, each in its own crate, by design.
+# +30 in sources: the per-language wireprobe generators (about +10),
+# crates/lang-rules (+8), dcps, discovery and rtps (+8), tests/perf (+5), a
+# few between the bridges. -21 in other tests. Cpp's +7: the vendor
+# harnesses under tests/perf (+4) and crates/rpc (+3). C# came down to 23
+# unrecorded and is ratcheted.
+#
 # RUST 847 -> 1130, AND THE SKIP COUNT. The CI run of the Rust CPD had been
 # failing for weekly pipelines before this change, and this script,
 # which discarded PMD's exit code and messages, counted 0 blocks and passed:
@@ -232,9 +244,9 @@ EXCLUDE_RE='(^|/)target/|(^|/)node_modules/|(^|/)dist/|(^|/)build/|endpoints/[^/
 # crate::fixed_literal), and the generator tests their parse-lower-resolve
 # front (tests/support/resolved.rs).
 LANGS=(
-  "rust|*.rs|150|1065|0"
-  "cs|*.cs|50|27|0"
-  "cpp|*.cpp *.cc *.hpp *.h *.c|100|60|0"
+  "rust|*.rs|150|1154|0"
+  "cs|*.cs|50|23|0"
+  "cpp|*.cpp *.cc *.hpp *.h *.c|100|67|0"
   "go|*.go|75|5|0"
   "python|*.py|75|11|0"
   "typescript|*.ts|75|5|0"

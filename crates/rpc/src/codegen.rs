@@ -1136,7 +1136,7 @@ mod tests {
     /// did not.
     #[test]
     fn rpc_7_5_1_1_4_an_empty_in_or_out_carries_the_dummy_member() {
-        let svc = service_of("interface Ping { void ping(); };");
+        let svc = service_of("interface Pinger { void ping(); };");
         let (req, rep) = build_basic_pair(&svc).unwrap();
         let call_union = match &req.members[1].type_ref {
             MemberType::CallUnion(u) => u,
@@ -1484,7 +1484,7 @@ mod tests {
     /// structure (§7.5.1.1.4, §7.5.1.1.5).
     #[test]
     fn rpc_7_5_1_1_4_enhanced_inout_param_is_in_both_structures() {
-        let svc = service_of("interface Swap { void swap(inout long v); };");
+        let svc = service_of("interface Swapper { void swap(inout long v); };");
         let service = build_enhanced_service(&svc).unwrap();
         let op = &service.operations[0];
         assert!(op.in_struct.members.iter().any(|m| m.name == "v"));

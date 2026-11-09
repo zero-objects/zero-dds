@@ -90,6 +90,16 @@ fn raises_of(ctx: &Ctx<'_>, op: &OperationNode) -> Vec<String> {
         .collect()
 }
 
+/// The user exceptions of an interface's `{name}Error`: every `raises`
+/// list of its operations. Spec §3.5.
+fn interface_raises(ctx: &Ctx<'_>, node: &InterfaceNode) -> Result<BTreeSet<String>> {
+    let mut all = BTreeSet::new();
+    for op in &node.operations {
+        all.extend(raises_of(ctx, operation_of(ctx, *op)?));
+    }
+    Ok(all)
+}
+
 /// The members of an exception, by simple name, in declaration order.
 ///
 /// A user exception's body is `string repository_id` followed by its
@@ -177,10 +187,7 @@ fn emit_interface_exceptions_enum(
 ) -> Result<()> {
     let node = interface_of(ctx, id)?;
     let name = &node.name;
-    let mut all: BTreeSet<String> = BTreeSet::new();
-    for op in &node.operations {
-        all.extend(raises_of(ctx, operation_of(ctx, *op)?));
-    }
+    let all = interface_raises(ctx, node)?;
     if all.is_empty() {
         return Ok(());
     }
@@ -644,8 +651,9 @@ fn emit_interface_skeleton(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode
         "    if let Some(__r) = zerodds_corba_rust::runtime::dispatch_object_operation(operation, __payload, __endianness, \"{repo_id}\", &[{base_ids_literal}]) {{\n        return __r;\n    }}\n"
     ));
     out.push_str("    match operation {\n");
+    let owner_raises = interface_raises(ctx, node)?;
     for op in &node.operations {
-        emit_op_skeleton_arm(out, ctx, name, *op)?;
+        emit_op_skeleton_arm(out, ctx, name, &owner_raises, *op)?;
     }
     for attr in &node.attributes {
         emit_attr_skeleton_arm(out, ctx, *attr)?;
@@ -665,6 +673,7 @@ fn emit_op_skeleton_arm(
     out: &mut String,
     ctx: &Ctx<'_>,
     owner: &str,
+    owner_raises: &BTreeSet<String>,
     id: Id<OperationNode>,
 ) -> Result<()> {
     let op = operation_of(ctx, id)?;
@@ -782,8 +791,11 @@ fn emit_op_skeleton_arm(
         }
         // The shared `{owner}Error` enum carries every operation's
         // variants; this one cannot produce the others, and the match
-        // still has to be total.
-        out.push_str(&format!("                    _ => {failure},\n"));
+        // still has to be total. An operation that raises them all
+        // leaves the wildcard nothing, and rustc reports it unreachable.
+        if owner_raises.iter().any(|raise| !raises.contains(raise)) {
+            out.push_str(&format!("                    _ => {failure},\n"));
+        }
         out.push_str("                },\n");
     }
     out.push_str("            }\n        }\n");

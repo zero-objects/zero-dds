@@ -1113,8 +1113,9 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
      * §7.1.3.4). TRANSIENT_LOCAL stays in this writer and is replayed from
      * {@link #replayTo}; TRANSIENT and PERSISTENT go to the
      * {@link DurabilityService}, which survives this writer.
+     *
+     * @return the sample if this writer keeps it itself, else null
      */
-    /** Keeps the sample as DURABILITY says; returns it if this writer keeps it itself, else null. */
     private Retained retainForDurability(InstanceKey key, byte[] payload, long ts) {
         Durability.Kind d = qos.getDurability().getKind();
         if (d == Durability.Kind.TRANSIENT_LOCAL) {

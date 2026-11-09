@@ -42,6 +42,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use zerodds_ast_layout::{Encoding, Endianness};
 use zerodds_wire_probe::canonical::text;
 use zerodds_wire_probe::decode::decode;
@@ -283,6 +284,7 @@ fn python_evolution(
     flag: &str,
     directory: &Path,
 ) -> Result<String, String> {
+    let generator = python_generator(root)?;
     let probe = root
         .join("tools")
         .join("wireprobe")
@@ -296,6 +298,7 @@ fn python_evolution(
     };
     let bytes = directory.join(format!("old-python-{encoding}-{endian}.bin"));
     let written = std::process::Command::new(&probe)
+        .env("WIREPROBE_PYTHON_WALK_GEN", &generator)
         .args(["--idl".as_ref(), dir.join("old.idl").as_os_str()])
         .args(["--type", type_name])
         .args(["--values".as_ref(), dir.join("old.json").as_os_str()])
@@ -311,6 +314,7 @@ fn python_evolution(
     }
     let values = directory.join(format!("new-python-{encoding}-{endian}.json"));
     let read = std::process::Command::new(&probe)
+        .env("WIREPROBE_PYTHON_WALK_GEN", &generator)
         .args(["--idl".as_ref(), dir.join("type.idl").as_os_str()])
         .args(["--type", type_name])
         .args(["--in".as_ref(), bytes.as_os_str()])
@@ -431,6 +435,42 @@ fn c_evolution(
     let value = zerodds_wire_probe::canonicalise(&new, type_, &found, "sample")
         .map_err(|error| format!("what came back is not a value of this type: {error}"))?;
     Ok(format!("`{}`", text(&value)))
+}
+
+/// The Python generator, built once for every case of this binary.
+///
+/// The walk builds its generator when it is missing or older than its
+/// sources (`tools/wireprobe/generator.sh`). The cases run side by side,
+/// and with no generator in `target/debug` each walk ran `cargo build`:
+/// while one build linked the binary there anew, another walk found no
+/// file (GitHub, a workspace built with `--target` and nothing in
+/// `target/debug`). Built here, the walk is handed the binary
+/// (`WIREPROBE_PYTHON_WALK_GEN`) and builds nothing, as in
+/// `wireprobe-python-walk-corpus`.
+fn python_generator(root: &Path) -> Result<PathBuf, String> {
+    static GENERATOR: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    GENERATOR
+        .get_or_init(|| {
+            let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+            let output = std::process::Command::new(cargo)
+                .args(["build", "-q", "--message-format=json-render-diagnostics"])
+                .args(["-p", "zerodds-wireprobe-python-gen", "--manifest-path"])
+                .arg(root.join("Cargo.toml"))
+                .output()
+                .map_err(|error| format!("cargo could not be started: {error}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "the Python generator did not build: {}",
+                    first_line(&output.stderr)
+                ));
+            }
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .find_map(|message| message.get("executable")?.as_str().map(PathBuf::from))
+                .ok_or_else(|| "cargo named no executable for the Python generator".to_owned())
+        })
+        .clone()
 }
 
 fn first_line(stderr: &[u8]) -> String {

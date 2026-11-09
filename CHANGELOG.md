@@ -681,6 +681,16 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **The skeleton `zerodds-corba-rust` generates for an operation that raises
+  every user exception of its interface has no unreachable `_` arm.** The
+  shared `{Interface}Error` match took a wildcard for the variants other
+  operations raise even when there were none, and rustc's
+  `unreachable_patterns` stopped the generated crate under `-D warnings`.
+
+- **`DataWriterImpl.retainForDurability` of the Java binding has one doc
+  comment.** A second `/**` above it was attached to nothing, and javac 23
+  and later refuse that under `-Xlint` with `-Werror` (`dangling-doc-comments`).
+
 - **In the RTI/CoreDX minimal camp, the announced and served minimal hashes
   agree with the registry** (`zerodds-types` `TypeInformation::from_registry`,
   `from_component`; `zerodds-dcps` TypeLookup replies). They were taken in

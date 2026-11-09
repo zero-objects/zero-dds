@@ -277,6 +277,9 @@ jobs:
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --locked
+      - name: Install cargo-nextest
+        if: ${{ !matrix.cross }}
+        run: cargo install cargo-nextest --version 0.9.114 --locked
       - name: Build
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
@@ -306,9 +309,20 @@ jobs:
           -- --skip every_language_has_a_cell_generator
           --skip the_matrix_cells_are_the_recorded_rows
           --skip the_shape_with_no_storage_is_left_to_the_clause
-      - name: Test (DCPS, serial — UDP multicast tests share one multicast group per binary)
-        if: ${{ !matrix.cross }}
-        run: cargo test --no-fail-fast -p zerodds-dcps --target ${{ matrix.target }} -- --test-threads=1
+      # `cargo nextest`: every test in a process of its own, one at a time
+      # (UDP multicast tests share one multicast group), as the GitLab jobs
+      # run them. A DDS domain stays leased until its process ends
+      # (crates/test-domains); in one process for the binary,
+      # group_access_e2e's 18 tests ran out of the band's 11 domains.
+      # `!cancelled()`: this step runs after a failed step above too.
+      - name: Test (DCPS, a process per test, one at a time)
+        if: ${{ !matrix.cross && !cancelled() }}
+        run: >-
+          cargo nextest run --no-fail-fast -p zerodds-dcps --target ${{ matrix.target }}
+          --test-threads 1
+      - name: Doctests (DCPS)
+        if: ${{ !matrix.cross && !cancelled() }}
+        run: cargo test --doc -p zerodds-dcps --target ${{ matrix.target }}
 
   # ---------------------------------------------------------------------------
   # tsn-live — live AF_PACKET transport (DDS-TSN 1.0 Annex A, EtherType
@@ -412,6 +426,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.21 --locked
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --version 0.9.114 --locked
       - name: Run coverage
         # `--include-build-script`: without it the report says 0 of 693
         # regions for `crates/lang-rules/src/encode.rs` under
@@ -425,20 +441,29 @@ jobs:
         # alone moves `fill_cpp.rs` from 0 to 73.5% — and excluding them
         # measured the harness rather than the code under it.
         #
-        # `--test-threads=1`, as the GitLab test job and the DCPS step of
-        # `build-test`: the DCPS integration tests of one binary share a
-        # domain and its lease, and run in parallel they take each other's
-        # (type_lookup_e2e failed here that way).
+        # `--test-threads=1`, as the GitLab test job: the integration tests
+        # of one binary share a domain and its lease, and run in parallel
+        # they take each other's (zerodds-dcps' type_lookup_e2e failed here
+        # that way).
         #
         # `--skip`: the three test functions `build-test` skips, for its
         # reason — they read the zerodds-matrix repository, which this
         # job does not check out.
-        run: >-
-          cargo llvm-cov --no-fail-fast --workspace --include-build-script --lcov --output-path lcov.info
-          -- --test-threads=1
-          --skip every_language_has_a_cell_generator
-          --skip the_matrix_cells_are_the_recorded_rows
-          --skip the_shape_with_no_storage_is_left_to_the_clause
+        #
+        # zerodds-dcps under `cargo nextest`, as in `build-test`: a process
+        # per test, one at a time. The two runs keep their profiles
+        # (`--no-report`), `report` joins them; the first run's failure
+        # does not stop the second.
+        run: |
+          status=0
+          cargo llvm-cov --no-report --no-fail-fast --workspace --exclude zerodds-dcps --include-build-script \
+            -- --test-threads=1 \
+            --skip every_language_has_a_cell_generator \
+            --skip the_matrix_cells_are_the_recorded_rows \
+            --skip the_shape_with_no_storage_is_left_to_the_clause || status=1
+          cargo llvm-cov nextest --no-report --include-build-script --no-fail-fast -p zerodds-dcps --test-threads 1 || status=1
+          cargo llvm-cov report --include-build-script --lcov --output-path lcov.info
+          exit "$status"
       # The report of the run above; `cargo llvm-cov` without `report` would
       # run every test a second time.
       - name: Coverage summary
@@ -459,20 +484,23 @@ jobs:
       # firing under the workflow's `-D warnings` must not turn the mirror
       # red, and the number is a diagnostic rather than a threshold. The
       # test arguments are those of the run above, for its reasons: without
-      # them the matrix tests fail and no number is printed.
+      # them the matrix tests fail and no number is printed. zerodds-dcps
+      # runs under `cargo nextest` there too.
       - name: Branch coverage (nightly, non-gating)
         continue-on-error: true
         env:
           RUSTFLAGS: ""
-        run: >-
-          rustup toolchain install nightly --profile minimal
-          --component llvm-tools-preview
-          && cargo +nightly llvm-cov --workspace --branch --include-build-script
-          --summary-only
-          -- --test-threads=1
-          --skip every_language_has_a_cell_generator
-          --skip the_matrix_cells_are_the_recorded_rows
-          --skip the_shape_with_no_storage_is_left_to_the_clause
+        run: |
+          rustup toolchain install nightly --profile minimal --component llvm-tools-preview
+          cargo +nightly llvm-cov --no-report --branch --no-fail-fast --workspace --exclude zerodds-dcps \
+            --include-build-script \
+            -- --test-threads=1 \
+            --skip every_language_has_a_cell_generator \
+            --skip the_matrix_cells_are_the_recorded_rows \
+            --skip the_shape_with_no_storage_is_left_to_the_clause || true
+          cargo +nightly llvm-cov nextest --no-report --branch --include-build-script --no-fail-fast \
+            -p zerodds-dcps --test-threads 1 || true
+          cargo +nightly llvm-cov report --include-build-script --summary-only
       - name: Upload lcov artifact
         uses: actions/upload-artifact@v7
         with:
