@@ -1656,6 +1656,26 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   `corba-rt`, `corba-rust`, `corba-cos-notify`, `opcua-pubsub`,
   `recorder-decode` and `opcua-server` (`e398c0db084`).
 
+## [1.0.0-rc.7.4] — 2026-11-09
+
+Two crates on crates.io only; no other channel.
+
+### Added
+
+- `zerodds-types` and `zerodds-dcps`, the two that changed since rc.7.3: the
+  forms in which the implementations write XTypes TypeObjects, as options
+  (`from_ast::TypeObjectForm`, `DomainParticipant::set_minimal_type_flags_kept`),
+  and the RTI/CoreDX minimal camp in the announced TypeInformation and the
+  TypeLookup replies (`eb2a0597371`; the Unreleased section above). The OMG
+  dds-xtypes client builds against them. Their requirements on
+  `zerodds-wire`, `-wire-codec` and `-rtps` are `^1.0.0-rc.7.3`. Checked on
+  the Linux test host before the upload (the clients with the two packaged
+  crates patched in) and after it: the three OMG clients built from
+  crates.io, every zerodds package from the registry; every published
+  zerodds crate checks with them as with rc.7.3 (133 of 146, the 13 others
+  stop with "no longer part of ZeroDDS" either way). With the next release
+  the two return to the workspace version.
+
 ## [1.0.0-rc.7.3] — 2026-11-08
 
 Six crates on crates.io only; no other channel.
