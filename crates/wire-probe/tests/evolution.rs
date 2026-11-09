@@ -454,7 +454,10 @@ fn python_generator(root: &Path) -> Result<PathBuf, String> {
             let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
             let output = std::process::Command::new(cargo)
                 .args(["build", "-q", "--message-format=json-render-diagnostics"])
-                .args(["-p", "zerodds-wireprobe-python-gen", "--manifest-path"])
+                .args(["-p", "zerodds-wireprobe-python-gen"])
+                // The package has a second binary, `wireprobe-python-matrix`,
+                // and cargo names the executables in no fixed order.
+                .args(["--bin", "wireprobe-zerodds-python-gen", "--manifest-path"])
                 .arg(root.join("Cargo.toml"))
                 .output()
                 .map_err(|error| format!("cargo could not be started: {error}"))?;
