@@ -1237,6 +1237,27 @@ impl DomainParticipant {
         rt.set_minimal_type_object_camp(rti_coredx)
     }
 
+    /// Whether the minimal `TypeObject`s this participant announces and
+    /// serves keep every type flag of a structure or union (`IS_NESTED`,
+    /// `IS_AUTOID_HASH`), as RTI Connext 7.7.0, CoreDX 6.15.3, Cyclone DDS
+    /// 11.0.1 and HDDS 1.4.8 write them. `false` (default) applies Annex
+    /// B's `TypeFlagMinimalMask`. Call before registering the topic's
+    /// `TypeObject`.
+    ///
+    /// # Errors
+    /// `PreconditionNotMet` if this participant has no runtime.
+    #[cfg(feature = "std")]
+    pub fn set_minimal_type_flags_kept(&self, kept: bool) -> crate::error::Result<()> {
+        let rt = self
+            .inner
+            .runtime
+            .as_ref()
+            .ok_or(DdsError::PreconditionNotMet {
+                reason: "participant has no runtime",
+            })?;
+        rt.set_minimal_type_flags_kept(kept)
+    }
+
     /// Number of registered built-in types. After `new()` == 4.
     #[cfg(feature = "std")]
     #[must_use]

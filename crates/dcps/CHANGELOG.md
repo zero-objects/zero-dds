@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Added
 
+- `DomainParticipant::set_minimal_type_flags_kept` (and the runtime's): the
+  minimal `TypeObject`s the participant announces and serves keep every type
+  flag of a structure or union, as RTI Connext, CoreDX, Cyclone DDS and HDDS
+  write them; the default stays Annex B's `TypeFlagMinimalMask`.
+
 - `RuntimeConfig::key_must_understand`, the setting
   `xtypes.key_must_understand` (`flagged` or `implied`, environment
   `ZERODDS_KEY_MUST_UNDERSTAND`), passed to the type-consistency decision
@@ -32,6 +37,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
   forwards the body unchanged needs for its own header.
 
 ### Fixed
+
+- A TypeLookup reply writes its minimal objects in the camp the participant
+  announces (`DomainParticipant::set_minimal_type_object_camp`); in the
+  RTI/CoreDX camp they were written in the default one.
 
 - The end of a group coherent set that carries no `PID_COHERENT_SET` is checked against its members' (`GroupOrder::offer_with_set_first_sn`, `finish_set`): DDSI-RTPS 2.5 §8.7.6 gives the end `PID_GROUP_SEQ_NUM`, `PID_GROUP_COHERENT_SET` and `PID_WRITER_GROUP_INFO` and puts `PID_COHERENT_SET` on every member. Before, such an end meant "the writer wrote nothing into the set", and every set of Dust DDS 0.17.0 was discarded as incomplete. An end with `SEQUENCENUMBER_UNKNOWN` and no members keeps that meaning. Test: `rtps_8_7_6_an_end_without_its_first_sn_is_checked_against_the_members`.
 

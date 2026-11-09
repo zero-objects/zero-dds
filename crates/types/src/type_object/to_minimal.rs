@@ -502,12 +502,23 @@ fn structure(
         });
     }
     Ok(MinimalStructType {
-        struct_flags: StructTypeFlag(minimal_type_flags(s.struct_flags.0)),
+        struct_flags: StructTypeFlag(projected_type_flags(s.struct_flags.0, registry)),
         header: MinimalStructHeader {
             base_type: minimal_identifier(&s.header.base_type, registry, depth + 1)?,
         },
         member_seq,
     })
+}
+
+/// The type flags of a minimal structure or union: Annex B's
+/// `TypeFlagMinimalMask`, or every flag where the registry keeps them
+/// ([`TypeRegistry::minimal_type_flags_kept`]).
+fn projected_type_flags(bits: u16, registry: &TypeRegistry) -> u16 {
+    if registry.minimal_type_flags_kept() {
+        bits
+    } else {
+        minimal_type_flags(bits)
+    }
 }
 
 fn union(
@@ -530,7 +541,7 @@ fn union(
         });
     }
     Ok(MinimalUnionType {
-        union_flags: UnionTypeFlag(minimal_type_flags(u.union_flags.0)),
+        union_flags: UnionTypeFlag(projected_type_flags(u.union_flags.0, registry)),
         discriminator: crate::type_object::minimal::MinimalDiscriminatorMember {
             common: discriminator,
         },

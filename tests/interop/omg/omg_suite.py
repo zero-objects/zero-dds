@@ -195,16 +195,17 @@ def suite_dictionaries(harness):
     return {case: full[: -len(case) - 1] for full, case in suite_names(harness).items()}
 
 
-def vendor_deviations(suite, extra=""):
+def vendor_deviations(suite, extra="", path=None):
     """(vendor, test, direction) -> the row of vendor-deviations.tsv: the
     clause, the codes the case must produce, the evidence, the OPEN-ITEMS
     entry. A row whose ninth column names harness arguments (`-x 1`) holds
     only for a run whose `--extra` carries them: the dds-xtypes harness runs
     XCDR2 unless told otherwise, and a deviation under XCDR1 alone would read
-    as a stale row there."""
+    as a stale row there. `path` is the list to read, the one beside this
+    script by default."""
     found = {}
     given = " ".join(extra.split())
-    for row in read_tsv(HERE / "vendor-deviations.tsv"):
+    for row in read_tsv(path or HERE / "vendor-deviations.tsv"):
         harness = " ".join(row[8].split()) if len(row) > 8 else ""
         if row[0] == suite and (not harness or f" {harness} " in f" {given} "):
             found[(row[3], row[1], row[2])] = {"clause": row[4], "codes": set(row[5].split()),

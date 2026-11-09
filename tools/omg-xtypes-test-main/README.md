@@ -152,10 +152,11 @@ holds nothing with `bitmapBase` 0 and `numBits` 0, which DDSI-RTPS 2.5 §8.3.5.5
 invalid. ZeroDDS by default drops the rest of such a datagram (§8.3.4.1 rule 6), and with
 it the SEDP data that follows in it (measured on the Linux test host, sec-diag16/17: every red
 zerodds->fastdds cell had rejections with `left_out` > 0, every green cell none; with the
-setting all 24 cells green and no rejection). `run_configs.sh` sets
-`ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO=1` (setting
-`wire.accept_empty_acknack_base_zero`) for the ZeroDDS processes of the vendor pairs, in
-one place (the block at the top). The default of ZeroDDS stays the reading of the spec.
+setting all 24 cells green and no rejection). The client sets
+`wire.accept_empty_acknack_base_zero` itself unless `ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO`
+names it (`suite_settings` in `src/main.rs`, as `omg-shape-main` does for dds-rtps): the
+official matrix starts the binary without an environment. `run_configs.sh` sets the variable
+as well. The default of ZeroDDS stays the reading of the spec.
 
 ## PL_CDR1 parameters with the rounded length
 
@@ -163,17 +164,53 @@ Cyclone DDS (extended header) and RTI Connext (short header) write the length of
 parameter rounded up to four, the form of DDSI-RTPS 2.5 §9.4.2.11 (recorded rows;
 `ast-layout` `Dialect::Cyclone` and `Dialect::Rti`, `pads_declared_length`). XTypes 1.3
 §7.4.1.2.2 has the exact length, and the default reader of ZeroDDS refuses the other form.
-`run_configs.sh` sets `ZERODDS_WIRE_PL_CDR1_READING=tolerant` (setting `wire.pl_cdr1_reading`) for every run (it meets both vendors),
-in the same place as the empty-ACKNACK setting. Fast DDS and OpenDDS write the exact
-length. The default of ZeroDDS stays the reading of the spec. The client reads a received
+The client sets `wire.pl_cdr1_reading=tolerant` itself unless `ZERODDS_WIRE_PL_CDR1_READING`
+names it (`suite_settings`); `run_configs.sh` sets the variable as well. Fast DDS and
+OpenDDS write the exact length. The default of ZeroDDS stays the reading of the spec. The client reads a received
 sample with its own codec and hands that codec the setting of the run's configuration
 (`carrier::request_for`); before, the setting reached the runtime and not the samples. A
 sample that does not decode is reported with the codec's reason after the verdict line.
 
 The must-understand bit on `PID_EXTENDED` and `PID_LIST_END` needs no setting: XTypes 1.3
 §7.4.1.2.1 has every reader take either setting, and the default reader does (CoreDX 6.15.3
-closes a list with a bare `3f02`). A suite run without the setting meets Cyclone's rounded
-length as the declared deviation in `tests/interop/omg/vendor-deviations.tsv` (under `-x 1`).
+closes a list with a bare `3f02`). Measured on the Linux test host: Cyclone 11.0.1 ->
+ZeroDDS `primitives_struct_mutable` passes under `-x 1` and `-x 2` with the setting.
+
+## A reader that announces no TypeConsistencyEnforcement
+
+Cyclone DDS 11.0.1's reader leaves PID `0x0074` out when its TypeConsistencyEnforcement is
+the default, and XTypes 1.3 §7.6.3.4.1 makes such a reader DISALLOW_TYPE_COERCION; the suite
+expects the pairs ZeroDDS -> Cyclone of `ext_appendable_struct_2`, `_3`,
+`ext_mutable_struct_2` to `_5` and `union_different_order_2` to match. The client sets
+`xtypes.type_consistency_absent=allow` itself unless `ZERODDS_TYPE_CONSISTENCY_ABSENT` names it
+(`suite_settings`). Measured on the Linux test host: the seven pass under `-x 1` and `-x 2`.
+
+## The typeid hashes
+
+The typeid cases compare the equivalence hash each product prints for a type
+(`--print-typeid`). The client prints the one its runtime announces, and forms it as RTI
+Connext 7.7.0, CoreDX 6.15.3, Cyclone DDS 11.0.1 and HDDS 1.4.8 do where they read Annex B
+otherwise than this tree's default (`zerodds_types::from_ast::TypeObjectForm`):
+
+| flag | default (the suite's answer) | Annex B's reading |
+|---|---|---|
+| `--minimal-type-flags` | `kept`: the MINIMAL object keeps `IS_AUTOID_HASH` and `IS_NESTED` (`DomainParticipant::set_minimal_type_flags_kept`) | `masked`: `TypeFlagMinimalMask` |
+| `--hash-id` | `omitted`: the COMPLETE object has no `hash_id` for a member with `@hashid` | `written` |
+| `--minimal-hash-camp` | `cyclone`: no trailing octet per minimal member | `rti`: one (`docs/omg-xtypes-issues.md` §C2) |
+
+The first two decide `struct_hashid_1` and `struct_hashid_2`, red against every vendor with
+Annex B's reading in the fork runs 42504601421 and 42504609519
+(`crates/types/tests/typeobject_vendor_forms.rs` holds the vendors' hashes). The third has
+no setting that meets both camps: the harness starts each executable alone
+(`print_ids.py`) and reads one hash, and Connext and CoreDX print the octet, Cyclone and
+HDDS do not. In the data cases ZeroDDS meets both camps.
+
+With `--type-object-version 1` the client prints the `_TypeId` of DDS-XTypes 1.1 (XTypes 1.3
+Annex D `TypeIdV1`, `zerodds_types::type_object_v1`) as `Type ID: <number>`. No two
+products print the same number for a type of the suite (ZeroDDS, Connext, CoreDX, Cyclone,
+HDDS, 153 types, measured on the Linux test host); the client prints its own so that its
+runs against itself pass, as every other product's do. Seven types with `int8`, `uint8` or
+`char` members have no form in 1.1 and print nothing.
 
 The TypeLookup samples of ZeroDDS are CDR2_LE (XCDR2) by default (XTypes 1.4 Beta 1
 §7.6.3.3.3), the form Cyclone DDS 11.0.1, OpenDDS 3.34.0 and RTI Connext 7.7.0 write and the

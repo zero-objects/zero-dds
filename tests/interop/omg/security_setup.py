@@ -5,7 +5,9 @@ The suite ships its identity and permissions CAs with their private keys
 (`identity_ca_files/`, `permissions_ca_files/`), the vendors' permissions
 documents for domain 0 and a governance document for domain 0. A job here runs
 on a leased domain, so every signed document it uses is signed again for that
-domain, and ZeroDDS gets an identity and permissions of its own:
+domain, and ZeroDDS gets an identity and permissions of its own, from the
+suite's `zerodds_certs/` where the checkout has it (the pull request's), else
+made here:
 
 - identity: a new key, a request with ZeroDDS' subject, signed by the
   identity CA with `openssl ca` (a v1 certificate, as the suite's own are,
@@ -72,14 +74,24 @@ def setup(suite, work, domain, ours, vendor):
     shutil.copytree(suite / "permissions_ca_files", ca / "permissions_ca_files")
     for name in ("TESTONLY_identity_ca_cert.pem", "TESTONLY_permissions_ca_cert.pem"):
         shutil.copy(suite / name, ca / name)
-    (ca / "zerodds.cnf").write_text(OPENSSL_CNF)
-    run(["openssl", "genrsa", "-out", "zerodds_key.pem", "2048"], ca)
-    run(["openssl", "pkcs8", "-topk8", "-nocrypt", "-in", "zerodds_key.pem",
-         "-out", "zerodds_key_pkcs8.pem"], ca)
-    run(["openssl", "req", "-config", "zerodds.cnf", "-new", "-key", "zerodds_key.pem",
-         "-out", "zerodds.csr"], ca)
-    run(["openssl", "ca", "-batch", "-config", "identity_ca_files/identity_ca_openssl.cnf",
-         "-days", "3650", "-in", "zerodds.csr", "-out", "zerodds_cert.pem"], ca)
+    # A suite checkout with ZeroDDS's own directory (the state of the pull
+    # request, `make_submission.py`) gives the identity and the permissions
+    # documents; a checkout without it gets a new identity here.
+    submitted = suite / "zerodds_certs"
+    if submitted.is_dir():
+        shutil.copy(submitted / "TESTONLY_zerodds_identity_cert.pem", ca / "zerodds_cert.pem")
+        run(["openssl", "pkcs8", "-topk8", "-nocrypt", "-in",
+             str(submitted / "private/TESTONLY_zerodds_identity_private_key.pem"),
+             "-out", "zerodds_key_pkcs8.pem"], ca)
+    else:
+        (ca / "zerodds.cnf").write_text(OPENSSL_CNF)
+        run(["openssl", "genrsa", "-out", "zerodds_key.pem", "2048"], ca)
+        run(["openssl", "pkcs8", "-topk8", "-nocrypt", "-in", "zerodds_key.pem",
+             "-out", "zerodds_key_pkcs8.pem"], ca)
+        run(["openssl", "req", "-config", "zerodds.cnf", "-new", "-key", "zerodds_key.pem",
+             "-out", "zerodds.csr"], ca)
+        run(["openssl", "ca", "-batch", "-config", "identity_ca_files/identity_ca_openssl.cnf",
+             "-days", "3650", "-in", "zerodds.csr", "-out", "zerodds_cert.pem"], ca)
 
     governance = ca / "governance_signed.p7s"
     sign(ca, with_domain((suite / "TESTONLY_governance.xml").read_text(), domain), governance)
@@ -87,9 +99,12 @@ def setup(suite, work, domain, ours, vendor):
     rti_dir, rti_stem = VENDOR_DOCUMENTS["rti_connext_dds"]
     ours_permissions = {}
     for perm in PERMISSIONS:
-        text = (suite / rti_dir / f"{rti_stem}_{perm.lower()}.xml").read_text()
-        text = re.sub(r"<subject_name>[^<]*</subject_name>",
-                      f"<subject_name>{SUBJECT}</subject_name>", text)
+        if submitted.is_dir():
+            text = (submitted / f"TESTONLY_zerodds_permissions_{perm.lower()}.xml").read_text()
+        else:
+            text = (suite / rti_dir / f"{rti_stem}_{perm.lower()}.xml").read_text()
+            text = re.sub(r"<subject_name>[^<]*</subject_name>",
+                          f"<subject_name>{SUBJECT}</subject_name>", text)
         target = ca / f"zerodds_permissions_{perm.lower()}_signed.p7s"
         sign(ca, with_domain(text, domain), target)
         ours_permissions[perm] = str(target)

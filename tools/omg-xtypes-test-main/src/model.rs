@@ -241,6 +241,7 @@ pub fn load(
     file: Option<&str>,
     type_name: &str,
     key_on_union_discriminator: KeyOnUnionDiscriminator,
+    object_form: zerodds_types::from_ast::TypeObjectForm,
 ) -> Result<Model, ModelError> {
     let tried = candidate_paths(folder, file);
     let path =
@@ -264,17 +265,17 @@ pub fn load(
         path: path.clone(),
     })?;
 
-    let complete = zerodds_types::from_ast::complete_type_object(&ast, type_).map_err(|e| {
-        ModelError::NoTypeObject {
+    let complete = zerodds_types::from_ast::complete_type_object_in(&ast, type_, object_form)
+        .map_err(|e| ModelError::NoTypeObject {
             name: type_name.to_owned(),
             detail: format!("{e:?}"),
-        }
-    })?;
+        })?;
     let type_object = TypeObject::Complete(complete);
-    let type_identifier = zerodds_types::from_ast::type_identifier(
+    let type_identifier = zerodds_types::from_ast::type_identifier_in(
         &ast,
         type_,
         zerodds_types::from_ast::Form::Complete,
+        object_form,
     )
     .map_err(|e| ModelError::NoTypeObject {
         name: type_name.to_owned(),
@@ -294,7 +295,8 @@ pub fn load(
         .collect();
     let mut dependencies = Vec::new();
     for other in others {
-        if let Ok(obj) = zerodds_types::from_ast::complete_type_object(&ast, other) {
+        if let Ok(obj) = zerodds_types::from_ast::complete_type_object_in(&ast, other, object_form)
+        {
             dependencies.push(TypeObject::Complete(obj));
         }
     }
@@ -365,6 +367,7 @@ mod tests {
             Some("nothing"),
             "Test::x",
             KeyOnUnionDiscriminator::default(),
+            zerodds_types::from_ast::TypeObjectForm::default(),
         ) {
             Err(ModelError::NoSuchFile { tried }) => assert_eq!(tried.len(), 4),
             Err(other) => panic!("expected NoSuchFile, got {other}"),

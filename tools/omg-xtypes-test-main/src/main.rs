@@ -45,6 +45,7 @@ fn run() -> i32 {
         options.type_file.as_deref(),
         &type_name,
         options.key_on_union_discriminator,
+        options.object_form(),
     ) {
         Ok(m) => m,
         Err(e) => {
@@ -66,11 +67,7 @@ fn run() -> i32 {
     // COMPLETE form, and the suite's typeid tests compare them across
     // two products.
     if options.print_typeid {
-        return print_typeid(
-            &loaded,
-            options.type_object_version,
-            options.minimal_hash_camp,
-        );
+        return print_typeid(&loaded, options.type_object_version, options.object_form());
     }
 
     // The Table 19 axis is the runtime's, not a QoS: both sides of a
@@ -85,7 +82,7 @@ fn run() -> i32 {
             .and_then(|source| zerodds_dcps::runtime::RuntimeConfig::from_source(&source)),
         None => zerodds_dcps::runtime::RuntimeConfig::from_standard_paths(),
     };
-    let runtime = match base {
+    let mut runtime = match base {
         Ok(base) => zerodds_dcps::runtime::RuntimeConfig {
             key_member_bounds: options.key_member_bounds,
             // The suite's answer unless the flag or the environment names
@@ -105,6 +102,7 @@ fn run() -> i32 {
             return EXIT_ERROR;
         }
     };
+    suite_settings(&mut runtime, |name| std::env::var_os(name).is_some());
 
     // The leak is one `&'static str` per process. `DdsType::type_name`
     // hands out a `&'static str` because a compiled-in type's name is a
@@ -150,6 +148,10 @@ fn run() -> i32 {
         eprintln!("ERROR selecting minimal-hash camp: {e}");
         return EXIT_ERROR;
     }
+    if let Err(e) = participant.set_minimal_type_flags_kept(options.minimal_type_flags_kept) {
+        eprintln!("ERROR selecting the minimal type flags: {e}");
+        return EXIT_ERROR;
+    }
 
     let result = if options.publish {
         app::publish(&participant, &options, &stop)
@@ -165,21 +167,61 @@ fn run() -> i32 {
     }
 }
 
+/// The settings the OMG dds-xtypes suite needs of a ZeroDDS process that
+/// meets the other vendors' `test_main`, each unless the environment names
+/// it (`named`). The runtime's defaults stay the readings of the
+/// specifications; this client sets them so that a run without
+/// `run_configs.sh` (the official matrix starts the binary without an
+/// environment) gets them as well, as `omg-shape-main` does for dds-rtps
+/// (README "Where the suite expects another answer than the clause").
+fn suite_settings(config: &mut zerodds_dcps::runtime::RuntimeConfig, named: impl Fn(&str) -> bool) {
+    // OpenDDS and RTI Connext (as recorded) send the ACKNACK of a reader
+    // that holds nothing with bitmapBase 0 and numBits 0, which DDSI-RTPS
+    // 2.5 section 8.3.5.5 makes invalid; by default the rest of such a
+    // datagram is dropped (section 8.3.4.1 rule 6), and with it the SEDP
+    // data that follows in it.
+    if !named("ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO") {
+        config.accept_empty_acknack_base_zero = true;
+    }
+    // Cyclone DDS and RTI Connext write the length of a PL_CDR1 parameter
+    // rounded up to four (DDSI-RTPS 2.5 section 9.4.2.11); XTypes 1.3
+    // section 7.4.1.2.2 has the exact length, which the default reader
+    // holds a parameter to (official workflow, Cyclone 11.0.1 -> ZeroDDS
+    // `primitives_struct_mutable` under `-x 1`).
+    if !named("ZERODDS_WIRE_PL_CDR1_READING") {
+        config.pl_cdr1_reading = zerodds_ast_layout::PlCdr1Reading::Tolerant;
+    }
+    // Cyclone DDS 11.0.1's reader announces no TypeConsistencyEnforcement
+    // (PID 0x0074) with its default policy; XTypes 1.3 section 7.6.3.4.1
+    // makes such a reader DISALLOW_TYPE_COERCION, and the suite expects
+    // the pair to match (ZeroDDS -> Cyclone `ext_appendable_struct_2`,
+    // `_3`, `ext_mutable_struct_2` to `_5`, `union_different_order_2`).
+    if !named("ZERODDS_TYPE_CONSISTENCY_ABSENT") {
+        config.absent_type_consistency = zerodds_dcps::runtime::AbsentTypeConsistency::Allow;
+    }
+}
+
 /// `--print-typeid`. The suite compares the printed hash between two
 /// products for the same type file, so the two lines name which form
 /// they carry.
-fn print_typeid(loaded: &model::Model, version: u8, rti_camp: bool) -> i32 {
+fn print_typeid(
+    loaded: &model::Model,
+    version: u8,
+    form: zerodds_types::from_ast::TypeObjectForm,
+) -> i32 {
     if version == 1 {
-        // XTypes 1.3 §7.3.4.2: TypeObject V1 is the pre-1.2 form. This
-        // client does not emit it, and says so rather than printing a V2
-        // hash under a V1 label.
-        eprintln!("ERROR: --type-object-version 1 is not implemented");
-        return EXIT_ERROR;
+        return print_type_id_v1(loaded);
     }
-    let minimal =
-        zerodds_types::from_ast::minimal_type_object_with(&loaded.ast, loaded.type_, rti_camp)
-            .ok()
-            .and_then(|m| zerodds_types::hash::compute_minimal_hash_with(&m, rti_camp).ok());
+    // The minimal object in the form the runtime projects it to
+    // (`DomainParticipant::set_minimal_type_object_camp`,
+    // `set_minimal_type_flags_kept`), so the printed hash is the announced
+    // one.
+    let minimal = zerodds_types::from_ast::minimal_type_object_in(&loaded.ast, loaded.type_, form)
+        .ok()
+        .and_then(|m| {
+            zerodds_types::hash::compute_minimal_hash_with(&m, form.minimal_member_trailing_octet)
+                .ok()
+        });
     let complete = match &loaded.type_object {
         zerodds_types::type_object::TypeObject::Complete(c) => {
             zerodds_types::hash::compute_complete_hash(c).ok()
@@ -199,6 +241,43 @@ fn print_typeid(loaded: &model::Model, version: u8, rti_camp: bool) -> i32 {
     }
 }
 
+/// `--print-typeid --type-object-version 1`: the `_TypeId` of DDS-XTypes
+/// 1.1 (XTypes 1.3 Annex D keeps it as `TypeIdV1`), from the type's
+/// TypeObject of 1.1 (`zerodds_types::type_object_v1`, §7.3.4.1.2 of 1.1),
+/// printed as the suite reads it (`print_ids.py`: "Type ID: <number>").
+fn print_type_id_v1(loaded: &model::Model) -> i32 {
+    use zerodds_types::type_object_v1::TypeId;
+    let mut registry = zerodds_types::resolve::TypeRegistry::new();
+    if let Err(e) = zerodds_types::from_ast::register_all(&loaded.ast, &mut registry) {
+        eprintln!("ERROR: cannot register the types: {e}");
+        return EXIT_ERROR;
+    }
+    let object = match zerodds_types::type_object_v1::convert::from_complete(
+        &loaded.type_identifier,
+        &registry,
+    ) {
+        Ok(object) => object,
+        Err(e) => {
+            eprintln!("ERROR: no TypeObject of DDS-XTypes 1.1 for this type: {e}");
+            return EXIT_ERROR;
+        }
+    };
+    match object.the_type.first() {
+        Some(TypeId::Constructed { id, .. }) => {
+            println!("Type ID: {id}");
+            EXIT_OK
+        }
+        Some(TypeId::Primitive(kind)) => {
+            println!("Type ID: {kind}");
+            EXIT_OK
+        }
+        None => {
+            eprintln!("ERROR: the TypeObject of DDS-XTypes 1.1 names no type");
+            EXIT_ERROR
+        }
+    }
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -206,6 +285,37 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The suite's settings apply over the runtime's defaults, and a
+    /// setting the environment names keeps the value the environment gave
+    /// it.
+    #[test]
+    fn the_suite_settings_apply_unless_the_environment_names_them() {
+        let mut config = zerodds_dcps::runtime::RuntimeConfig::default();
+        suite_settings(&mut config, |_| false);
+        assert!(config.accept_empty_acknack_base_zero);
+        assert_eq!(
+            config.pl_cdr1_reading,
+            zerodds_ast_layout::PlCdr1Reading::Tolerant
+        );
+        assert_eq!(
+            config.absent_type_consistency,
+            zerodds_dcps::runtime::AbsentTypeConsistency::Allow
+        );
+
+        let defaults = zerodds_dcps::runtime::RuntimeConfig::default();
+        let mut config = zerodds_dcps::runtime::RuntimeConfig::default();
+        suite_settings(&mut config, |_| true);
+        assert_eq!(
+            config.accept_empty_acknack_base_zero,
+            defaults.accept_empty_acknack_base_zero
+        );
+        assert_eq!(config.pl_cdr1_reading, defaults.pl_cdr1_reading);
+        assert_eq!(
+            config.absent_type_consistency,
+            defaults.absent_type_consistency
+        );
+    }
 
     /// The defaults of the axes the suite answers otherwise than the
     /// clause are the suite's; the flags give the clause's reading.

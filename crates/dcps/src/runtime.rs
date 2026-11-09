@@ -10458,6 +10458,36 @@ impl DcpsRuntime {
         Ok(())
     }
 
+    /// Whether the minimal `TypeObject`s this participant announces and
+    /// serves keep every type flag of a structure or union (`IS_NESTED`,
+    /// `IS_AUTOID_HASH`), as RTI Connext, CoreDX, Cyclone DDS and HDDS
+    /// write them, rather than Annex B's `TypeFlagMinimalMask` (the
+    /// default). Set it before [`Self::register_type_object`], as the
+    /// camp.
+    ///
+    /// # Errors
+    /// `PreconditionNotMet` if the type-lookup server mutex is poisoned.
+    pub fn set_minimal_type_flags_kept(&self, kept: bool) -> Result<()> {
+        let mut server =
+            self.type_lookup_server
+                .lock()
+                .map_err(|_| DdsError::PreconditionNotMet {
+                    reason: "type_lookup_server mutex poisoned",
+                })?;
+        server.registry.set_minimal_type_flags_kept(kept);
+        server.registry.project_completes_to_minimal();
+        Ok(())
+    }
+
+    /// The minimal-`TypeObject` vendor camp this participant serves in
+    /// ([`Self::set_minimal_type_object_camp`]); `false` when the
+    /// type-lookup server mutex is poisoned.
+    fn minimal_type_object_camp(&self) -> bool {
+        self.type_lookup_server
+            .lock()
+            .is_ok_and(|server| server.registry.minimal_member_trailing_octet())
+    }
+
     /// The `PID_TYPE_INFORMATION` value this participant announces for an
     /// endpoint whose type is `type_identifier`, or `None` when it has
     /// nothing true to say.
@@ -31623,9 +31653,14 @@ fn send_type_lookup_reply(
         },
         ret,
     };
-    // The encoding of `wire.type_lookup_encoding`, as for the request.
+    // The encoding of `wire.type_lookup_encoding`, as for the request; a
+    // minimal object in the reply in the camp the participant announces,
+    // so that its bytes hash to the identifier the requester was given.
     let payload = envelope
-        .to_payload(rt.config.type_lookup_encoding)
+        .to_payload_with(
+            rt.config.type_lookup_encoding,
+            rt.minimal_type_object_camp(),
+        )
         .map_err(|_| DdsError::PreconditionNotMet {
             reason: "type_lookup reply envelope encode failed",
         })?;

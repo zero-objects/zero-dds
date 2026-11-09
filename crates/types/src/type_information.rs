@@ -43,7 +43,8 @@ use zerodds_wire::{Endianness, Reader, WireError, Writer};
 use crate::error::TypeCodecError;
 use crate::framing::encode_mutable_member;
 use crate::hash::{
-    complete_serialized_size, compute_complete_hash, compute_minimal_hash, minimal_serialized_size,
+    complete_serialized_size, compute_complete_hash, compute_minimal_hash_with,
+    minimal_serialized_size_with,
 };
 use crate::type_identifier::TypeIdentifier;
 use crate::type_object::common::{decode_seq_appendable, encode_seq_appendable};
@@ -224,11 +225,25 @@ impl TypeInformation {
         minimal: &MinimalTypeObject,
         complete: &CompleteTypeObject,
     ) -> Result<Self, WireError> {
-        let min_hash = compute_minimal_hash(minimal)?;
+        Self::from_minimal_and_complete_with(minimal, complete, false)
+    }
+
+    /// Like [`Self::from_minimal_and_complete`], the minimal hash and size
+    /// taken in the vendor camp `minimal_member_trailing_octet`
+    /// (`docs/omg-xtypes-issues.md` §C2).
+    ///
+    /// # Errors
+    /// `WireError` when serializing for size/hash.
+    pub fn from_minimal_and_complete_with(
+        minimal: &MinimalTypeObject,
+        complete: &CompleteTypeObject,
+        minimal_member_trailing_octet: bool,
+    ) -> Result<Self, WireError> {
+        let min_hash = compute_minimal_hash_with(minimal, minimal_member_trailing_octet)?;
         let com_hash = compute_complete_hash(complete)?;
         // The size is the length of the same serialization the hash is taken
         // over — DHEADER included, see `hash::minimal_serialized_size`.
-        let min_size = minimal_serialized_size(minimal)?;
+        let min_size = minimal_serialized_size_with(minimal, minimal_member_trailing_octet)?;
         let com_size = complete_serialized_size(complete)?;
         Ok(Self {
             minimal: TypeIdentifierWithDependencies::without_dependencies(TypeIdentifierWithSize {
@@ -285,7 +300,10 @@ impl TypeInformation {
                     "a complete TypeObject whose dependencies project to their minimal form",
                 ),
             })?;
-        let mut information = Self::from_minimal_and_complete(&minimal, complete)?;
+        // The camp the registry projects in, so that the minimal hash
+        // announced here is the one the registry files and serves.
+        let camp = registry.minimal_member_trailing_octet();
+        let mut information = Self::from_minimal_and_complete_with(&minimal, complete, camp)?;
         let own = compute_complete_hash(complete)?;
 
         let mut provided = true;
@@ -320,11 +338,11 @@ impl TypeInformation {
                 type_id: TypeIdentifier::EquivalenceHashComplete(hash),
                 typeobject_serialized_size: complete_serialized_size(object)?,
             });
-            let minimal_hash = compute_minimal_hash(&projected)?;
+            let minimal_hash = compute_minimal_hash_with(&projected, camp)?;
             if minimal_met.insert(minimal_hash) {
                 minimal_deps.push(TypeIdentifierWithSize {
                     type_id: TypeIdentifier::EquivalenceHashMinimal(minimal_hash),
-                    typeobject_serialized_size: minimal_serialized_size(&projected)?,
+                    typeobject_serialized_size: minimal_serialized_size_with(&projected, camp)?,
                 });
             }
             match collect_referenced_hashes(
@@ -394,6 +412,7 @@ impl TypeInformation {
             at: 0,
             expected: String::from(what),
         };
+        let camp = registry.minimal_member_trailing_octet();
         let complete_members = registry
             .component_members(&scc.hash)
             .ok_or_else(|| missing("a strongly connected component the registry holds"))?;
@@ -431,7 +450,7 @@ impl TypeInformation {
         let minimal_size = |members: &[MinimalTypeObject]| -> Result<u32, WireError> {
             let mut total = 0_u32;
             for member in members {
-                total = total.saturating_add(minimal_serialized_size(member)?);
+                total = total.saturating_add(minimal_serialized_size_with(member, camp)?);
             }
             Ok(total)
         };
@@ -439,7 +458,10 @@ impl TypeInformation {
         let mut information = Self {
             minimal: TypeIdentifierWithDependencies::without_dependencies(TypeIdentifierWithSize {
                 type_id: component_id(kinds::EK_MINIMAL, minimal_hash, scc.scc_index),
-                typeobject_serialized_size: minimal_serialized_size(&minimal_members[position])?,
+                typeobject_serialized_size: minimal_serialized_size_with(
+                    &minimal_members[position],
+                    camp,
+                )?,
             }),
             complete: TypeIdentifierWithDependencies::without_dependencies(
                 TypeIdentifierWithSize {
@@ -491,11 +513,13 @@ impl TypeInformation {
                             type_id: TypeIdentifier::EquivalenceHashComplete(*hash),
                             typeobject_serialized_size: complete_serialized_size(dependency)?,
                         });
-                        let projected_hash = compute_minimal_hash(&projected)?;
+                        let projected_hash = compute_minimal_hash_with(&projected, camp)?;
                         if minimal_met.insert(projected_hash) {
                             minimal_deps.push(TypeIdentifierWithSize {
                                 type_id: TypeIdentifier::EquivalenceHashMinimal(projected_hash),
-                                typeobject_serialized_size: minimal_serialized_size(&projected)?,
+                                typeobject_serialized_size: minimal_serialized_size_with(
+                                    &projected, camp,
+                                )?,
                             });
                         }
                         queue.push(dependency);

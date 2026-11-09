@@ -188,6 +188,31 @@ pub struct Options {
     /// trailing member octet; `rti` writes one, matching RTI Connext
     /// and CoreDX. `coredx` is an alias for `rti`.
     pub minimal_hash_camp: bool,
+    /// `--minimal-type-flags kept|masked`. Whether the MINIMAL
+    /// `TypeObject` keeps every type flag of a structure or union
+    /// (`IS_NESTED`, `IS_AUTOID_HASH`). `kept` (default, the suite's
+    /// answer) is how RTI Connext, CoreDX, Cyclone DDS and HDDS write it;
+    /// `masked` applies Annex B's `TypeFlagMinimalMask`.
+    pub minimal_type_flags_kept: bool,
+    /// `--hash-id omitted|written`. Whether the COMPLETE `TypeObject`
+    /// leaves `AppliedBuiltinMemberAnnotations::hash_id` out for a member
+    /// with `@hashid`. `omitted` (default, the suite's answer) is how RTI
+    /// Connext, CoreDX, Cyclone DDS and HDDS write it; `written` is the
+    /// field of Annex B.
+    pub hash_id_omitted: bool,
+}
+
+impl Options {
+    /// The form of the `TypeObject`s this run builds, announces and
+    /// prints.
+    #[must_use]
+    pub fn object_form(&self) -> zerodds_types::from_ast::TypeObjectForm {
+        zerodds_types::from_ast::TypeObjectForm {
+            minimal_member_trailing_octet: self.minimal_hash_camp,
+            minimal_type_flags_kept: self.minimal_type_flags_kept,
+            hash_id_omitted: self.hash_id_omitted,
+        }
+    }
 }
 
 impl Default for Options {
@@ -216,6 +241,8 @@ impl Default for Options {
             key_member_bounds: KeyMemberBounds::Ignored,
             strong_assignability: None,
             minimal_hash_camp: false,
+            minimal_type_flags_kept: true,
+            hash_id_omitted: true,
             runtime_config: None,
             data_representation: 2,
             print_writer_samples: false,
@@ -455,6 +482,34 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
             "--runtime-config" => {
                 o.runtime_config = Some(value(args, &mut i, "--runtime-config")?);
             }
+            "--minimal-type-flags" => {
+                let v = value(args, &mut i, "--minimal-type-flags")?;
+                o.minimal_type_flags_kept = match v.as_str() {
+                    "kept" => true,
+                    "masked" => false,
+                    _ => {
+                        return Err(CliError::BadValue {
+                            flag: "--minimal-type-flags".to_owned(),
+                            value: v.clone(),
+                            expected: "kept or masked",
+                        });
+                    }
+                };
+            }
+            "--hash-id" => {
+                let v = value(args, &mut i, "--hash-id")?;
+                o.hash_id_omitted = match v.as_str() {
+                    "omitted" => true,
+                    "written" => false,
+                    _ => {
+                        return Err(CliError::BadValue {
+                            flag: "--hash-id".to_owned(),
+                            value: v.clone(),
+                            expected: "omitted or written",
+                        });
+                    }
+                };
+            }
             "--minimal-hash-camp" => {
                 let v = value(args, &mut i, "--minimal-hash-camp")?;
                 o.minimal_hash_camp = match v.as_str() {
@@ -562,6 +617,8 @@ pub fn usage(prog: &str) -> String {
         "   --type-object-version [1|2]",
         "   --print-typeid",
         "   --minimal-hash-camp [cyclone|rti]",
+        "   --minimal-type-flags [kept|masked]",
+        "   --hash-id [omitted|written]",
         "   --periodic-announcement <ms>",
         "   --key-on-union-discriminator [refused|carried]",
         "   --defaulted-discriminator-member [type-default|stream-value]",
@@ -620,6 +677,28 @@ mod tests {
         o.validate().expect("and is complete");
         assert!(o.subscribe);
         assert_eq!(o.ignore_member_names, TriState::False);
+    }
+
+    /// The typeid forms default to the suite's answers (the vendors'
+    /// hashes) and the flags give Annex B's.
+    #[test]
+    fn the_typeid_forms_default_to_the_vendors_and_the_flags_give_annex_b() {
+        let o = parse(&argv("-P -t test -y T --print-typeid")).unwrap();
+        let form = o.object_form();
+        assert!(form.minimal_type_flags_kept);
+        assert!(form.hash_id_omitted);
+        assert!(!form.minimal_member_trailing_octet);
+        let o = parse(&argv(
+            "-P -t test -y T --print-typeid --minimal-type-flags masked --hash-id written \
+             --minimal-hash-camp rti",
+        ))
+        .unwrap();
+        let form = o.object_form();
+        assert!(!form.minimal_type_flags_kept);
+        assert!(!form.hash_id_omitted);
+        assert!(form.minimal_member_trailing_octet);
+        assert!(parse(&argv("-P -t test -y T --hash-id maybe")).is_err());
+        assert!(parse(&argv("-P -t test -y T --minimal-type-flags some")).is_err());
     }
 
     /// `d` is not `f`: the suite passes both and expects different

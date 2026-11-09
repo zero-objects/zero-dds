@@ -117,6 +117,12 @@ pub struct TypeRegistry {
     /// it announces and the one it serves agree. `docs/omg-xtypes-issues.md`
     /// §C2.
     minimal_member_trailing_octet: bool,
+    /// Whether this registry's minimal projection keeps every type flag of
+    /// a structure or union (`IS_NESTED`, `IS_AUTOID_HASH`) rather than
+    /// applying Annex B's `TypeFlagMinimalMask`
+    /// ([`crate::from_ast::TypeObjectForm::minimal_type_flags_kept`]).
+    /// Set before the types are registered, as the camp is.
+    minimal_type_flags_kept: bool,
     /// Bumped by every insertion (direct or via [`Self::project_completes_to_minimal`]),
     /// never by a lookup. A caller that cached "this hash is not here yet"
     /// compares its own last-seen value against [`Self::generation`] to
@@ -143,6 +149,21 @@ impl TypeRegistry {
     #[must_use]
     pub fn minimal_member_trailing_octet(&self) -> bool {
         self.minimal_member_trailing_octet
+    }
+
+    /// Whether the minimal projection keeps every type flag of a
+    /// structure or union. `false` (default) applies Annex B's
+    /// `TypeFlagMinimalMask`; `true` is the reading of RTI Connext,
+    /// CoreDX, Cyclone DDS and HDDS
+    /// ([`crate::from_ast::TypeObjectForm::minimal_type_flags_kept`]).
+    pub fn set_minimal_type_flags_kept(&mut self, on: bool) {
+        self.minimal_type_flags_kept = on;
+    }
+
+    /// Whether the minimal projection keeps every type flag.
+    #[must_use]
+    pub fn minimal_type_flags_kept(&self) -> bool {
+        self.minimal_type_flags_kept
     }
 
     /// Inserts a minimal TypeObject, indexed by its hash.

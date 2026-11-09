@@ -10,6 +10,23 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **The forms in which the implementations write XTypes TypeObjects, as
+  options** (`zerodds-types` `from_ast::TypeObjectForm`, `zerodds-dcps`
+  `DomainParticipant::set_minimal_type_flags_kept`). RTI Connext 7.7.0,
+  CoreDX 6.15.3, Cyclone DDS 11.0.1 and HDDS 1.4.8 keep `IS_AUTOID_HASH` in
+  the MINIMAL object and leave `AppliedBuiltinMemberAnnotations::hash_id` out
+  of the COMPLETE one; the defaults stay Annex B's (`docs/omg-xtypes-issues.md`
+  B11, B12). The OMG dds-xtypes client selects the vendors' form, the suite's
+  answer, and its typeid cases `struct_hashid_1` and `_2` print the vendors'
+  hashes (`--minimal-type-flags`, `--hash-id` give Annex B's). The client
+  also sets the settings the suite needs where the runtime keeps the clause
+  (an endpoint without PID 0x0074 as ALLOW_TYPE_COERCION, PL_CDR1 lengths of
+  either convention, the empty ACKNACK), as `omg-shape-main` does, and
+  prints the TypeObject V1 id of DDS-XTypes 1.1. Measured on the Linux test
+  host: the seven cases ZeroDDS -> Cyclone and `primitives_struct_mutable`
+  Cyclone -> ZeroDDS that were declared deviations pass; their rows left
+  `tests/interop/omg/vendor-deviations.tsv`.
+
 - **`PID_WRITER_GROUP_INFO` in 16 octets for Dust DDS participants**
   (`zerodds-rtps` `dialect::WriterGroupInfoWidth`, `VendorId::DUST`). A Dust
   0.17.0 reader reads the parameter as 16 octets (`GroupDigest = [Octet;
@@ -663,6 +680,11 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   domains by the protocol of `crates/test-domains`.
 
 ### Fixed
+
+- **In the RTI/CoreDX minimal camp, the announced and served minimal hashes
+  agree with the registry** (`zerodds-types` `TypeInformation::from_registry`,
+  `from_component`; `zerodds-dcps` TypeLookup replies). They were taken in
+  the default camp.
 
 - **The end of a group coherent set is checked against its members'
   first sequence number** (DDSI-RTPS 2.5 §8.7.6; `zerodds-dcps`, and through

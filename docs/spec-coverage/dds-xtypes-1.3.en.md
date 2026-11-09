@@ -5949,7 +5949,13 @@ RTI Connext 7.7.0, CoreDX 6.15.3, Cyclone 11.0.1 and HDDS 1.4.8 all keep
 reproduced by serializing the object with `0x11`, and the two camps differ
 only in the octet of `docs/omg-xtypes-issues.md` §C2; this tree prints the
 hash of `0x01`. The three MINIMAL cases are red against every vendor in the
-typeid report; the data cases of both types pass.
+typeid report; the data cases of both types pass. The vendors' reading is an
+option: `TypeObjectForm::minimal_type_flags_kept` (`from_ast`),
+`TypeRegistry::set_minimal_type_flags_kept` and
+`DomainParticipant::set_minimal_type_flags_kept` (the projection the runtime
+announces and serves); the OMG dds-xtypes client selects it
+(`--minimal-type-flags kept`). Test:
+`crates/types/tests/typeobject_vendor_forms.rs::xtypes_annex_b_the_kept_minimal_type_flags_give_the_vendors_hashes`.
 
 ### §7.3.4.6.6 Complete Hash TypeIdentifiers
 
@@ -15644,7 +15650,9 @@ Cyclone 11.0.1 and HDDS 1.4.8 leave `ann_builtin` out for the member
 hash is reproduced by serializing the object without it, this tree's with
 `hash_id = "x1"` (official workflow in the ZeroDDS fork, runs 42504601421
 and 42504609519). The member id is `hash("x1")` in all five. The field
-stays written.
+stays written; `TypeObjectForm::hash_id_omitted` leaves it out, which the OMG
+dds-xtypes client selects (`--hash-id omitted`). Test:
+`crates/types/tests/typeobject_vendor_forms.rs::xtypes_annex_b_the_omitted_hash_id_gives_the_vendors_complete_hash`.
 
 ### Annex B CommonStructMember, CompleteMemberDetail, MinimalMemberDetail, Complete/MinimalStructMember
 

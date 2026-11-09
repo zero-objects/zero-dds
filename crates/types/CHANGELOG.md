@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
+- `from_ast::TypeObjectForm` with the forms in which the implementations read
+  Annex B otherwise than the default: `minimal_type_flags_kept` (the MINIMAL
+  object of a structure or union keeps `IS_NESTED` and `IS_AUTOID_HASH`
+  instead of `TypeFlagMinimalMask`) and `hash_id_omitted` (the COMPLETE object
+  leaves `AppliedBuiltinMemberAnnotations::hash_id` out), beside the
+  RTI/CoreDX minimal camp. `type_identifier_in`, `minimal_type_object_in`,
+  `complete_type_object_in`, `type_component_in` and
+  `dependency_type_objects_in` take it; the earlier functions keep their
+  signatures. `TypeRegistry::set_minimal_type_flags_kept` makes the registry's
+  projection follow. Measured against the hashes RTI Connext 7.7.0, CoreDX
+  6.15.3, Cyclone DDS 11.0.1 and HDDS 1.4.8 print for the OMG dds-xtypes types
+  `struct_hashid_1` and `_2`. Tests in `tests/typeobject_vendor_forms.rs`.
+- `hash::minimal_serialized_size_with`,
+  `TypeInformation::from_minimal_and_complete_with` and
+  `TypeLookupReplyMessage::to_payload_with`: the minimal size, hash and
+  reply bytes in a given minimal camp.
+
 - `assignability::KeyMustUnderstand` (`Flagged`, the default, or
   `ImpliedByKey`) in `AssignabilityConfig` and
   `TypeMatcher::with_key_must_understand`: where two types are compared
@@ -219,6 +236,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   (§7.5.2.2).
 
 ### Fixed
+
+- `TypeInformation::from_registry` and `from_component` take the minimal
+  hashes and sizes in the registry's camp
+  (`TypeRegistry::minimal_member_trailing_octet`). In the RTI/CoreDX camp they
+  were taken in the default one, so the announced minimal identifier differed
+  from the one the registry files and serves (found by reading, then tested:
+  `xtypes_7_3_4_9_the_registry_projects_and_announces_in_the_chosen_form`).
 
 - `TypeConsistencyEnforcement::from_bytes` reads `kind` 2 as `ALLOW_TYPE_COERCION` (OpenDDS numbers DISALLOW 1, ALLOW 2), any other value Annex D does not define as `DISALLOW_TYPE_COERCION`, and keeps the five booleans after an unknown kind; `try_from_bytes` refuses both as before. Test: `xtypes_7_6_3_4_1_type_consistency_kind_has_the_two_values_of_annex_d`.
 

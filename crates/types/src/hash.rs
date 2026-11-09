@@ -135,6 +135,19 @@ pub fn minimal_serialized_size(t: &MinimalTypeObject) -> Result<u32, WireError> 
     serialized_size_of(minimal_hash_input(t)?.len())
 }
 
+/// Like [`minimal_serialized_size`], in the minimal-`TypeObject` vendor
+/// camp the hash is taken in (`docs/omg-xtypes-issues.md` §C2): one
+/// serialization for both.
+///
+/// # Errors
+/// `WireError`, and a TypeObject that does not fit a `u32` serialized.
+pub fn minimal_serialized_size_with(
+    t: &MinimalTypeObject,
+    minimal_member_trailing_octet: bool,
+) -> Result<u32, WireError> {
+    serialized_size_of(minimal_hash_input_with(t, minimal_member_trailing_octet)?.len())
+}
+
 /// The `typeobject_serialized_size` of a `CompleteTypeObject`. See
 /// [`minimal_serialized_size`] for the clause and for why the DHEADER counts.
 ///

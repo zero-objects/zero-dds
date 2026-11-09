@@ -91,12 +91,46 @@ use crate::type_object::{CompleteTypeObject, MinimalTypeObject, TypeObject};
 struct Descent {
     seen: Vec<Id<TypeNode>>,
     scc: Option<Scc>,
-    /// Whether nested minimal `TypeObject` hashes are taken over the
-    /// RTI/CoreDX byte stream (one trailing octet per aggregated
-    /// member). Carried down the descent so a nested identifier is
-    /// hashed in the same camp as its parent. `docs/omg-xtypes-issues.md`
-    /// §C2.
-    minimal_member_trailing_octet: bool,
+    /// The form the objects of the walk take ([`TypeObjectForm`]).
+    /// Carried down the descent so a nested identifier is formed and
+    /// hashed as its parent is.
+    form: TypeObjectForm,
+}
+
+/// How the TypeObjects of a type are formed where the implementations
+/// read DDS-XTypes 1.3 otherwise than this tree does. The default is this
+/// tree's reading: the specification's, and for the octet the clause
+/// leaves open the camp of Cyclone DDS and Fast DDS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TypeObjectForm {
+    /// Minimal hashes over the RTI Connext/CoreDX byte stream, one
+    /// trailing octet per minimal aggregated member
+    /// (`docs/omg-xtypes-issues.md` §C2).
+    pub minimal_member_trailing_octet: bool,
+    /// The MINIMAL object of a structure or union keeps every type flag,
+    /// `IS_NESTED` and `IS_AUTOID_HASH` among them, where Annex B's
+    /// `TypeFlagMinimalMask` keeps only the extensibility. RTI Connext
+    /// 7.7.0, CoreDX 6.15.3, Cyclone DDS 11.0.1 and HDDS 1.4.8 keep
+    /// `IS_AUTOID_HASH` (their equivalence hashes of the OMG dds-xtypes
+    /// type `struct_hashid_1`); `IS_NESTED` by the same reading, not
+    /// measured.
+    pub minimal_type_flags_kept: bool,
+    /// The COMPLETE object leaves `AppliedBuiltinMemberAnnotations::hash_id`
+    /// out for a member with `@hashid`, as RTI Connext 7.7.0, CoreDX
+    /// 6.15.3, Cyclone DDS 11.0.1 and HDDS 1.4.8 do (their equivalence
+    /// hashes of `struct_hashid_2`); the member id is still the hash.
+    pub hash_id_omitted: bool,
+}
+
+impl TypeObjectForm {
+    /// The default form with the minimal camp `minimal_member_trailing_octet`.
+    #[must_use]
+    pub fn with_minimal_member_trailing_octet(minimal_member_trailing_octet: bool) -> Self {
+        Self {
+            minimal_member_trailing_octet,
+            ..Self::default()
+        }
+    }
 }
 
 /// A strongly connected component, in the order XTypes 1.3 §7.3.4.9.2
@@ -137,7 +171,7 @@ impl Descent {
         Self {
             seen: Vec::new(),
             scc: None,
-            minimal_member_trailing_octet: false,
+            form: TypeObjectForm::default(),
         }
     }
 
@@ -410,11 +444,30 @@ pub fn type_identifier_with(
     form: Form,
     minimal_member_trailing_octet: bool,
 ) -> Result<TypeIdentifier, FromAstError> {
+    type_identifier_in(
+        ast,
+        type_,
+        form,
+        TypeObjectForm::with_minimal_member_trailing_octet(minimal_member_trailing_octet),
+    )
+}
+
+/// Like [`type_identifier`], for the objects formed as `object_form` says
+/// and every nested identifier they reach.
+///
+/// # Errors
+/// [`FromAstError`].
+pub fn type_identifier_in(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    form: Form,
+    object_form: TypeObjectForm,
+) -> Result<TypeIdentifier, FromAstError> {
     if let Some(members) = strongly_connected_component(ast, type_) {
-        return component_identifier(ast, type_, form, &members, minimal_member_trailing_octet);
+        return component_identifier(ast, type_, form, &members, object_form);
     }
     let mut seen = Descent::new();
-    seen.minimal_member_trailing_octet = minimal_member_trailing_octet;
+    seen.form = object_form;
     identifier(ast, type_, form, &mut seen)
 }
 
@@ -444,9 +497,9 @@ fn component_identifier(
     type_: Id<TypeNode>,
     form: Form,
     members: &[Id<TypeNode>],
-    minimal_member_trailing_octet: bool,
+    object_form: TypeObjectForm,
 ) -> Result<TypeIdentifier, FromAstError> {
-    let hash = component_hash(ast, type_, form, members, minimal_member_trailing_octet)?;
+    let hash = component_hash(ast, type_, form, members, object_form)?;
     let descent = Descent {
         seen: Vec::new(),
         scc: Some(Scc {
@@ -454,7 +507,7 @@ fn component_identifier(
             equivalence_kind: form.equivalence_kind(),
             hash: Some(hash),
         }),
-        minimal_member_trailing_octet,
+        form: object_form,
     };
     descent
         .component_identifier(type_)
@@ -470,7 +523,7 @@ fn component_hash(
     type_: Id<TypeNode>,
     form: Form,
     members: &[Id<TypeNode>],
-    minimal_member_trailing_octet: bool,
+    object_form: TypeObjectForm,
 ) -> Result<crate::type_identifier::EquivalenceHash, FromAstError> {
     // Steps 4c to 4e: the objects "in the order of their scc_index", as
     // a `TypeObjectSeq` serialised "using the XCDR serialization for
@@ -493,13 +546,14 @@ fn component_hash(
                 equivalence_kind: form.equivalence_kind(),
                 hash: None,
             }),
-            minimal_member_trailing_octet,
+            form: object_form,
         };
         let object = type_object(ast, *member, form, &mut descent)?;
         let bytes = match &object {
-            TypeObject::Minimal(minimal) => {
-                crate::hash::minimal_hash_input_with(minimal, minimal_member_trailing_octet)
-            }
+            TypeObject::Minimal(minimal) => crate::hash::minimal_hash_input_with(
+                minimal,
+                object_form.minimal_member_trailing_octet,
+            ),
             TypeObject::Complete(complete) => crate::hash::complete_hash_input(complete),
         }
         .map_err(|_| FromAstError::Unrepresentable {
@@ -837,18 +891,29 @@ pub fn minimal_type_object_with(
     type_: Id<TypeNode>,
     minimal_member_trailing_octet: bool,
 ) -> Result<MinimalTypeObject, FromAstError> {
+    minimal_type_object_in(
+        ast,
+        type_,
+        TypeObjectForm::with_minimal_member_trailing_octet(minimal_member_trailing_octet),
+    )
+}
+
+/// Like [`minimal_type_object`], formed as `object_form` says, with every
+/// nested hash it embeds.
+///
+/// # Errors
+/// [`FromAstError`].
+pub fn minimal_type_object_in(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    object_form: TypeObjectForm,
+) -> Result<MinimalTypeObject, FromAstError> {
     // A type that reaches itself is built with its component in hand,
     // so members pointing back into it render as component identifiers
     // rather than sending the walker round again.
     let mut seen = match strongly_connected_component(ast, type_) {
         Some(members) => {
-            let hash = component_hash(
-                ast,
-                type_,
-                Form::Minimal,
-                &members,
-                minimal_member_trailing_octet,
-            )?;
+            let hash = component_hash(ast, type_, Form::Minimal, &members, object_form)?;
             Descent {
                 seen: Vec::new(),
                 scc: Some(Scc {
@@ -856,12 +921,12 @@ pub fn minimal_type_object_with(
                     equivalence_kind: Form::Minimal.equivalence_kind(),
                     hash: Some(hash),
                 }),
-                minimal_member_trailing_octet,
+                form: object_form,
             }
         }
         None => {
             let mut d = Descent::new();
-            d.minimal_member_trailing_octet = minimal_member_trailing_octet;
+            d.form = object_form;
             d
         }
     };
@@ -879,12 +944,25 @@ pub fn complete_type_object(
     ast: &Ast,
     type_: Id<TypeNode>,
 ) -> Result<CompleteTypeObject, FromAstError> {
+    complete_type_object_in(ast, type_, TypeObjectForm::default())
+}
+
+/// Like [`complete_type_object`], formed as `object_form` says, with every
+/// nested hash it embeds.
+///
+/// # Errors
+/// [`FromAstError`].
+pub fn complete_type_object_in(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    object_form: TypeObjectForm,
+) -> Result<CompleteTypeObject, FromAstError> {
     // A type that reaches itself is built with its component in hand,
     // so members pointing back into it render as component identifiers
     // rather than sending the walker round again.
     let mut seen = match strongly_connected_component(ast, type_) {
         Some(members) => {
-            let hash = component_hash(ast, type_, Form::Complete, &members, false)?;
+            let hash = component_hash(ast, type_, Form::Complete, &members, object_form)?;
             Descent {
                 seen: Vec::new(),
                 scc: Some(Scc {
@@ -892,10 +970,14 @@ pub fn complete_type_object(
                     equivalence_kind: Form::Complete.equivalence_kind(),
                     hash: Some(hash),
                 }),
-                minimal_member_trailing_octet: false,
+                form: object_form,
             }
         }
-        None => Descent::new(),
+        None => {
+            let mut d = Descent::new();
+            d.form = object_form;
+            d
+        }
     };
     match type_object(ast, type_, Form::Complete, &mut seen)? {
         TypeObject::Complete(c) => Ok(c),
@@ -918,16 +1000,28 @@ pub fn type_component(
     ast: &Ast,
     type_: Id<TypeNode>,
 ) -> Result<Option<crate::resolve::TypeComponent>, FromAstError> {
+    type_component_in(ast, type_, TypeObjectForm::default())
+}
+
+/// Like [`type_component`], formed as `object_form` says.
+///
+/// # Errors
+/// [`FromAstError`] for a member whose object could not be built.
+pub fn type_component_in(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    object_form: TypeObjectForm,
+) -> Result<Option<crate::resolve::TypeComponent>, FromAstError> {
     let Some(members) = strongly_connected_component(ast, type_) else {
         return Ok(None);
     };
-    let complete_hash = component_hash(ast, type_, Form::Complete, &members, false)?;
-    let minimal_hash = component_hash(ast, type_, Form::Minimal, &members, false)?;
+    let complete_hash = component_hash(ast, type_, Form::Complete, &members, object_form)?;
+    let minimal_hash = component_hash(ast, type_, Form::Minimal, &members, object_form)?;
     let mut complete = Vec::with_capacity(members.len());
     let mut minimal = Vec::with_capacity(members.len());
     for member in &members {
-        complete.push(complete_type_object(ast, *member)?);
-        minimal.push(minimal_type_object(ast, *member)?);
+        complete.push(complete_type_object_in(ast, *member, object_form)?);
+        minimal.push(minimal_type_object_in(ast, *member, object_form)?);
     }
     Ok(Some(crate::resolve::TypeComponent {
         complete_hash,
@@ -969,6 +1063,20 @@ pub fn dependency_type_objects(
     ast: &Ast,
     type_: Id<TypeNode>,
 ) -> Result<Vec<CompleteTypeObject>, FromAstError> {
+    dependency_type_objects_in(ast, type_, TypeObjectForm::default())
+}
+
+/// Like [`dependency_type_objects`], each object formed as `object_form`
+/// says.
+///
+/// # Errors
+/// [`FromAstError`] for a representable dependency that still could not
+/// be built.
+pub fn dependency_type_objects_in(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    object_form: TypeObjectForm,
+) -> Result<Vec<CompleteTypeObject>, FromAstError> {
     let annotations = applied_annotation_declarations(ast, &ast.reachable_types(type_), type_);
     let reachable = closure_with_annotations(ast, type_, &annotations);
     let mut objects = Vec::new();
@@ -977,7 +1085,7 @@ pub fn dependency_type_objects(
         {
             continue;
         }
-        match complete_type_object(ast, id) {
+        match complete_type_object_in(ast, id, object_form) {
             Ok(object) => objects.push(object),
             Err(FromAstError::Unrepresentable { .. } | FromAstError::Recursive { .. }) => {}
             Err(e) => return Err(e),
@@ -1418,13 +1526,7 @@ fn identifier(
     if !seen.in_component(type_)
         && let Some(members) = strongly_connected_component(ast, type_)
     {
-        return component_identifier(
-            ast,
-            type_,
-            form,
-            &members,
-            seen.minimal_member_trailing_octet,
-        );
+        return component_identifier(ast, type_, form, &members, seen.form);
     }
     if seen.contains(&type_) {
         return Err(FromAstError::Recursive { what: name });
@@ -1537,7 +1639,7 @@ fn identifier_inner(
             let object = type_object_inner(ast, type_, form, seen)?;
             Ok(match object {
                 TypeObject::Minimal(m) => TypeIdentifier::EquivalenceHashMinimal(
-                    compute_minimal_hash_with(&m, seen.minimal_member_trailing_octet)?,
+                    compute_minimal_hash_with(&m, seen.form.minimal_member_trailing_octet)?,
                 ),
                 TypeObject::Complete(c) => {
                     TypeIdentifier::EquivalenceHashComplete(compute_complete_hash(&c)?)
@@ -1933,6 +2035,17 @@ fn extensibility_bits(extensibility: Extensibility) -> u16 {
     }
 }
 
+/// The type flags of a MINIMAL structure or union: Annex B's
+/// `TypeFlagMinimalMask` applied, or every flag kept
+/// ([`TypeObjectForm::minimal_type_flags_kept`]).
+fn minimal_type_flags_in(bits: u16, object_form: TypeObjectForm) -> u16 {
+    if object_form.minimal_type_flags_kept {
+        bits
+    } else {
+        minimal_type_flags(bits)
+    }
+}
+
 fn aggregate_flags(ast: &Ast, type_: Id<TypeNode>) -> u16 {
     let mut bits = extensibility_bits(ast.effective_extensibility(type_));
     // `@nested` on the type, else the `@default_nested` of the nearest
@@ -2252,6 +2365,7 @@ fn builtin_member_annotations(
     facets: &[Option<&zerodds_ast::XTypesFacet>],
     member_type: Id<TypeNode>,
     at: &str,
+    object_form: TypeObjectForm,
 ) -> Result<AppliedBuiltinMemberAnnotations, FromAstError> {
     let mut out = AppliedBuiltinMemberAnnotations::default();
     let first = |get: fn(&zerodds_ast::XTypesFacet) -> bool| {
@@ -2272,6 +2386,7 @@ fn builtin_member_annotations(
         origin: MemberIdOrigin::Hashed { source_name },
         ..
     }) = &facet.member_id
+        && !object_form.hash_id_omitted
     {
         out.hash_id = Some(source_name.clone());
     }
@@ -2584,6 +2699,7 @@ fn structure(
                         &[member.facets.xtypes.as_ref()],
                         member_type,
                         &at,
+                        seen.form,
                     )?,
                     ann_custom: applied_annotations(ast, &member.facets.annotations, &at)?,
                 },
@@ -2593,7 +2709,10 @@ fn structure(
 
     Ok(match form {
         Form::Minimal => TypeObject::Minimal(MinimalTypeObject::Struct(MinimalStructType {
-            struct_flags: StructTypeFlag(minimal_type_flags(aggregate_flags(ast, type_))),
+            struct_flags: StructTypeFlag(minimal_type_flags_in(
+                aggregate_flags(ast, type_),
+                seen.form,
+            )),
             header: MinimalStructHeader { base_type: base_ti },
             member_seq: minimal,
         })),
@@ -2752,6 +2871,7 @@ fn union(
                             &[case.facets.xtypes.as_ref(), member.facets.xtypes.as_ref()],
                             member_type,
                             &at,
+                            seen.form,
                         )?,
                         ann_custom: applied_annotations(ast, &applied, &at)?,
                     },
@@ -2763,7 +2883,7 @@ fn union(
     let union_flags = UnionTypeFlag(aggregate_flags(ast, type_));
     Ok(match form {
         Form::Minimal => TypeObject::Minimal(MinimalTypeObject::Union(MinimalUnionType {
-            union_flags: UnionTypeFlag(minimal_type_flags(union_flags.0)),
+            union_flags: UnionTypeFlag(minimal_type_flags_in(union_flags.0, seen.form)),
             discriminator: MinimalDiscriminatorMember {
                 common: CommonDiscriminatorMember {
                     member_flags: UnionDiscriminatorFlag(minimal_member_flags(

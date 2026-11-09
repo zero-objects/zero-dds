@@ -22,7 +22,8 @@ set -euo pipefail
 # it (measured: sec-diag16/17, every red zerodds->fastdds cell had rejections
 # with left_out > 0, every green cell none). The ZeroDDS processes of the
 # vendor pairs, writers and readers, therefore accept it
-# (wire.accept_empty_acknack_base_zero). This is the only place the runner sets it.
+# (wire.accept_empty_acknack_base_zero). The client sets it itself as well
+# (suite_settings in src/main.rs), for a run without this script.
 export ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO=1
 # PL_CDR1 parameters with the rounded length. Cyclone DDS (extended header) and
 # RTI Connext (short header) write the length of a PL_CDR1 parameter rounded up
@@ -31,8 +32,8 @@ export ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO=1
 # other form. This runner meets both vendors, so every pair reads tolerantly; the vendors whose writers use the rounded form (taken from the
 # recorded rows: ast-layout Dialect::Cyclone and Dialect::Rti,
 # pads_declared_length) get a ZeroDDS reader with wire.pl_cdr1_reading=tolerant;
-# Fast DDS and OpenDDS write the exact length. This is the only place the runner
-# sets it.
+# Fast DDS and OpenDDS write the exact length. The client sets it itself as well
+# (suite_settings in src/main.rs), for a run without this script.
 export ZERODDS_WIRE_PL_CDR1_READING=tolerant
 
 suite=$1; python=$2; pub=$3; sub=$4; domain=$5; out=$6; shift 6

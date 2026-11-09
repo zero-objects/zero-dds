@@ -6009,7 +6009,13 @@ Hash ergibt sich aus der Serialisierung des Objekts mit `0x11`, die beiden
 Lager unterscheiden sich nur im Oktett aus `docs/omg-xtypes-issues.md` §C2;
 dieser Baum druckt den Hash zu `0x01`. Die drei MINIMAL-Fälle sind im
 typeid-Bericht gegen jeden Hersteller rot; die Datenfälle beider Typen
-bestehen.
+bestehen. Die Lesart der Hersteller ist eine Option:
+`TypeObjectForm::minimal_type_flags_kept` (`from_ast`),
+`TypeRegistry::set_minimal_type_flags_kept` und
+`DomainParticipant::set_minimal_type_flags_kept` (die Projektion, die die
+Runtime ankündigt und ausliefert); der OMG-dds-xtypes-Client wählt sie
+(`--minimal-type-flags kept`). Test:
+`crates/types/tests/typeobject_vendor_forms.rs::xtypes_annex_b_the_kept_minimal_type_flags_give_the_vendors_hashes`.
 
 ### §7.3.4.6.6 Complete Hash TypeIdentifiers
 
@@ -15722,7 +15728,9 @@ für den Member `x2` mit `hashid="x1"` aus `struct_hashid_2` der Suite weg:
 ihr COMPLETE-Hash ergibt sich aus der Serialisierung ohne das Feld, der
 dieses Baums mit `hash_id = "x1"` (offizieller Workflow im ZeroDDS-Fork,
 Läufe 42504601421 und 42504609519). Die Member-ID ist bei allen fünf
-`hash("x1")`. Das Feld wird weiter geschrieben.
+`hash("x1")`. Das Feld wird weiter geschrieben; `TypeObjectForm::hash_id_omitted`
+lässt es weg, was der OMG-dds-xtypes-Client wählt (`--hash-id omitted`). Test:
+`crates/types/tests/typeobject_vendor_forms.rs::xtypes_annex_b_the_omitted_hash_id_gives_the_vendors_complete_hash`.
 
 ### Annex B CommonStructMember, CompleteMemberDetail, MinimalMemberDetail, Complete/MinimalStructMember
 

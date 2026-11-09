@@ -997,7 +997,16 @@ fn encode_payload(
     encoding: TypeLookupEncoding,
     encode: impl FnOnce(&mut Writer) -> Result<(), WireError>,
 ) -> Result<Vec<u8>, WireError> {
-    let mut w = encoding.writer();
+    encode_payload_in(encoding, encoding.writer(), encode)
+}
+
+/// [`encode_payload`] with the writer given: `encoding`'s, set as the
+/// caller needs it.
+fn encode_payload_in(
+    encoding: TypeLookupEncoding,
+    mut w: Writer,
+    encode: impl FnOnce(&mut Writer) -> Result<(), WireError>,
+) -> Result<Vec<u8>, WireError> {
     encode(&mut w)?;
     let body = w.finish();
     let padding = (4 - body.len() % 4) % 4;
@@ -1072,6 +1081,24 @@ impl TypeLookupReplyMessage {
     /// As [`Self::encode_into`].
     pub fn to_payload(&self, encoding: TypeLookupEncoding) -> Result<Vec<u8>, WireError> {
         encode_payload(encoding, |w| self.encode_into(w))
+    }
+
+    /// Like [`Self::to_payload`], every minimal `TypeObject` in the reply
+    /// written in the vendor camp `minimal_member_trailing_octet`
+    /// (`docs/omg-xtypes-issues.md` §C2), the camp its identifier was
+    /// hashed in.
+    ///
+    /// # Errors
+    /// As [`Self::encode_into`].
+    pub fn to_payload_with(
+        &self,
+        encoding: TypeLookupEncoding,
+        minimal_member_trailing_octet: bool,
+    ) -> Result<Vec<u8>, WireError> {
+        let w = encoding
+            .writer()
+            .with_minimal_member_trailing_octet(minimal_member_trailing_octet);
+        encode_payload_in(encoding, w, |w| self.encode_into(w))
     }
 
     /// Encode.
