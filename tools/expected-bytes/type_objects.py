@@ -29,7 +29,6 @@ names the cases left out and why.
     tools/expected-bytes/type_objects.py --matrix ../zerodds/matrix
     tools/expected-bytes/type_objects.py --matrix ../zerodds/matrix --check
 """
-import argparse
 import collections
 import hashlib
 import re
@@ -38,7 +37,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate import ROOT, git, read_blobs, tree  # noqa: E402
+from generate import matrix_arguments, read_blobs, tree  # noqa: E402
 
 ENCODING_DIR = "xcdr2-le"
 
@@ -82,20 +81,8 @@ def pairs(data, offset):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--matrix", type=Path, required=True,
-                        help="a checkout of zerodds-matrix (read only)")
-    parser.add_argument("--rev", default="HEAD", help="the matrix commit (default HEAD)")
-    parser.add_argument("--corpus", type=Path, default=ROOT / "tests/interop-corpus")
-    parser.add_argument("--out", type=Path, default=None,
-                        help="default: <corpus>/cyclone-type-objects.tsv")
-    parser.add_argument("--check", action="store_true",
-                        help="compare with the file instead of writing it")
-    args = parser.parse_args()
-    out_path = args.out or args.corpus / "cyclone-type-objects.tsv"
-
-    commit = git(args.matrix, "rev-parse", f"{args.rev}^{{commit}}").decode().strip()
-    when = git(args.matrix, "log", "-1", "--format=%cI", commit).decode().strip()
+    args, out_path, commit, when = matrix_arguments(
+        __doc__.split("\n\n")[0], "cyclone-type-objects.tsv")
     blobs = tree(args.matrix, commit, ["cases", f"cyclone/{ENCODING_DIR}"])
     corpus = sorted(p.name for p in args.corpus.iterdir() if (p / "type.idl").is_file())
     wanted = {}

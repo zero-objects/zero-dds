@@ -145,8 +145,8 @@ pub const FOREIGN_DOMAINS: &[i32] = &[226, 230];
 /// * `<low>-<high>` — the domains of the band in that closed range.
 /// * unset — every other host: the band without the CI share.
 ///
-/// `ci/merge-jobs.yml`, `ci/interop-omg.yml` and the root `.gitlab-ci.yml`
-/// set it to `ci`.
+/// `ci/merge-jobs.yml`, `ci/interop-omg.yml`, the root `.gitlab-ci.yml` and
+/// the GitHub workflow `.github/workflows/ci.yml` set it to `ci`.
 pub const BAND_VARIABLE: &str = "ZERODDS_TEST_DOMAIN_BAND";
 
 /// The lowest domain of the CI runner host's share; see [`BAND_VARIABLE`].

@@ -19,6 +19,11 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   RUSTFLAGS: "-D warnings"
+  # A runner shares its network with no other test host, so the tests take
+  # the CI share of the DDS domain band (crates/test-domains, BAND_VARIABLE):
+  # 11 domains on Linux. Unset, a test binary gets 6 there, and one that
+  # leases a seventh waits 180 s and fails.
+  ZERODDS_TEST_DOMAIN_BAND: ci
 
 # `shell: bash` runs a step with `-eo pipefail`; the default is `bash -e`,
 # under which `cmd | tee log` reports tee's status and a failing cmd passes.

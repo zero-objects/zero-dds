@@ -1656,6 +1656,15 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   `corba-rt`, `corba-rust`, `corba-cos-notify`, `opcua-pubsub`,
   `recorder-decode` and `opcua-server` (`e398c0db084`).
 
+### Security
+
+- **`rusqlite` 0.41 closes RUSTSEC-2026-0459.** The SQLite that
+  `libsqlite3-sys` 0.30.1 bundled (before 3.54.0) can return uninitialized
+  page-cache memory when a database is opened with a `-wal` file of another
+  page size. `zerodds-durability-store-sqlite`, `zerodds-recorder-decode`
+  and `zerodds-record` take `rusqlite` 0.41.1 with `libsqlite3-sys` 0.39.1
+  (SQLite 3.54.1); the API they use did not change.
+
 ## [1.0.0-rc.7.4] — 2026-11-09
 
 Two crates on crates.io only; no other channel.

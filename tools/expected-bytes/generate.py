@@ -133,21 +133,29 @@ def vendor_optset(dialect, encoding, endian):
     return f"{encoding}-{endian}"
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+def matrix_arguments(description, out_name):
+    """The command line of this script and type_objects.py: the arguments,
+    the file to write or check, and the matrix commit with its date."""
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--matrix", type=Path, required=True,
                         help="a checkout of zerodds-matrix (read only)")
     parser.add_argument("--rev", default="HEAD", help="the matrix commit (default HEAD)")
     parser.add_argument("--corpus", type=Path, default=ROOT / "tests/interop-corpus")
     parser.add_argument("--out", type=Path, default=None,
-                        help="default: <corpus>/expected-bytes.tsv")
+                        help=f"default: <corpus>/{out_name}")
     parser.add_argument("--check", action="store_true",
                         help="compare with the file instead of writing it")
     args = parser.parse_args()
-    out_path = args.out or args.corpus / "expected-bytes.tsv"
+    out_path = args.out or args.corpus / out_name
 
     commit = git(args.matrix, "rev-parse", f"{args.rev}^{{commit}}").decode().strip()
     when = git(args.matrix, "log", "-1", "--format=%cI", commit).decode().strip()
+    return args, out_path, commit, when
+
+
+def main():
+    args, out_path, commit, when = matrix_arguments(
+        __doc__.split("\n\n")[0], "expected-bytes.tsv")
     vendors = sorted(set(DIALECTS) - {"specification"})
     blobs = tree(args.matrix, commit, ["cases", "defects.py", *vendors])
     defects = blobs["defects.py"][0]

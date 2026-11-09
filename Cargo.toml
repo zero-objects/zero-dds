@@ -554,7 +554,7 @@ ccm = { version = "0.5", default-features = false, features = ["alloc"] }
 aes = { version = "0.8", default-features = false }
 # sqlite (WAL) cold adapter for the Durability-Service (ADR 0009). `bundled`
 # compiles sqlite3 from source — no system libsqlite dependency on any target.
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 # PostgreSQL cold adapter (ADR 0009, O11): the sync rust-postgres client — a
 # blocking API over its own internal runtime, so it fits the synchronous
 # `DurabilityStore` trait with no tokio in our code. Optional TimescaleDB
