@@ -208,14 +208,31 @@ fn scratch(name: &str) -> PathBuf {
     path
 }
 
-/// Fails the test when `program` does not answer `--version`.
-fn require(program: &str) {
-    let found = Command::new(program)
+/// Whether `program` answers `--version`.
+fn answers(program: &Path) -> bool {
+    Command::new(program)
         .arg("--version")
         .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
-    assert!(found, "`{program}` is not on PATH; this column needs it");
+        .is_ok_and(|output| output.status.success())
+}
+
+/// Fails the test when `program` does not answer `--version`.
+fn require(program: &str) {
+    assert!(
+        answers(Path::new(program)),
+        "`{program}` is not on PATH; this column needs it"
+    );
+}
+
+/// The TypeScript compiler: runtime/typescript's own, which `npm ci` there
+/// installs, as lang-rules' TypeScript tests take it; else `tsc` on PATH.
+fn tsc() -> PathBuf {
+    let local = workspace_root().join("../../runtime/typescript/node_modules/.bin/tsc");
+    if answers(&local) {
+        return local;
+    }
+    require("tsc");
+    PathBuf::from("tsc")
 }
 
 fn write(directory: &Path, name: &str, contents: &str) -> PathBuf {
@@ -410,7 +427,7 @@ fn ddsamqp_c_1_12_the_emitted_java_writes_the_same_octets_and_the_same_json() {
 #[test]
 fn ddsamqp_c_1_12_the_emitted_typescript_writes_the_same_octets_and_the_same_json() {
     require("node");
-    require("tsc");
+    let tsc = tsc();
     let ast = model();
     let plans = plans(&ast);
     let plan = plans.get("probe::Sample").expect("the plan");
@@ -435,7 +452,7 @@ fn ddsamqp_c_1_12_the_emitted_typescript_writes_the_same_octets_and_the_same_jso
     write(&directory, "main.ts", &source);
 
     run(
-        Command::new("tsc")
+        Command::new(&tsc)
             .arg("--strict")
             .arg("--target")
             .arg("es2020")
