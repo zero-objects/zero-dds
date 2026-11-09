@@ -1,6 +1,9 @@
 [package]
 name = "zerodds-lang-rules"
-version.workspace = true
+# Published on crates.io as 1.0.0-rc.7.5 (GitHub #62 to #64, the recorder's
+# TRANSIENT_LOCAL reader, discovery's routing answers); `version.workspace = true`
+# again with RC8.
+version = "1.0.0-rc.7.5"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
