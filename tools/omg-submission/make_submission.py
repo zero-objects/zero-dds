@@ -400,6 +400,10 @@ def main():
         print(f"{args.suite}: {CERT_DIR}/ signed by the repository's TESTONLY CAs")
     if config.get("unsupported_manifest"):
         product = f"{PRODUCT}-{args.version}"
+        # The harness looks up the file by the product's version; one of an
+        # earlier version would name a product that is no longer there.
+        for earlier in (repo / "unsupported_test_manifest").glob(f"{PRODUCT}-*.txt"):
+            earlier.unlink()
         (repo / "unsupported_test_manifest" / f"{product}.txt").write_text(
             f"# Unsupported tests for {product}\n#\n"
             "# Format: one full test ID per line.\n"
