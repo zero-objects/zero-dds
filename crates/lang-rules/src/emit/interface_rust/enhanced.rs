@@ -166,7 +166,7 @@ fn struct_path(
     if from == module {
         Ok(Path::single(name))
     } else {
-        relative_module_path(ast, from, module, name)
+        relative_module_path(ast, from, module, &rust::escape_keyword(name))
     }
 }
 
@@ -622,12 +622,12 @@ fn result_cases(
         match &member.type_ {
             EnhancedMemberType::Struct(name) => cases.push(ChoiceCase {
                 variant: "Ok".to_string(),
-                body: CaseBody::Payload(Path::single(name)),
+                body: CaseBody::Payload(Path::single(&rs::composed(name))),
                 member_id: member.member_id,
                 doc: "`result`. DDS-RPC 1.0 §7.5.1.2.3 rule 5.".to_string(),
             }),
             EnhancedMemberType::Exception(raise) => cases.push(ChoiceCase {
-                variant: rust::escape_keyword(&raise.name),
+                variant: rs::raise(&raise.name),
                 body: CaseBody::Payload(exception_path(ast, module, raise.id)?),
                 member_id: member.member_id,
                 doc: format!("`{}`. DDS-RPC 1.0 §7.5.1.2.3 rule 6.", member.name),
@@ -661,7 +661,7 @@ fn service_cases(
                     .map_or(module, |operation| operation.module);
                 cases.push(ChoiceCase {
                     variant: variant_name(&member.name),
-                    body: CaseBody::Payload(struct_path(ast, module, owner, name)?),
+                    body: CaseBody::Payload(struct_path(ast, module, owner, &rs::composed(name))?),
                     member_id: member.member_id,
                     doc: format!(
                         "`{}`. DDS-RPC 1.0 §7.5.1.2.{}.",
@@ -704,6 +704,7 @@ pub(super) fn declare(
     };
     let module = service.module;
     let ops = service.all_operations();
+    let _naming = rs::scope(ast, service, &ops)?;
     let model = interface::enhanced_service(ast, service, service.mapping.empty_style())?;
 
     // The exceptions the interface's own operations raise, one codec each
@@ -722,7 +723,7 @@ pub(super) fn declare(
     {
         let op = &operation.operation;
         out.push((module, rust::Item::Struct(in_struct(ast, service, op)?)));
-        let in_name = &operation.in_struct.name;
+        let in_name = &rs::composed(&operation.in_struct.name);
         if operation.in_struct.mutable {
             out.push((
                 module,
@@ -746,7 +747,7 @@ pub(super) fn declare(
             ));
         }
         out.push((module, rust::Item::Struct(out_struct(ast, service, op)?)));
-        let out_name = &operation.out_struct.name;
+        let out_name = &rs::composed(&operation.out_struct.name);
         if operation.out_struct.mutable {
             out.push((
                 module,
@@ -770,10 +771,11 @@ pub(super) fn declare(
             ));
         }
         let cases = result_cases(ast, module, operation)?;
+        let result_name = &rs::composed(&operation.result_struct.name);
         out.push((
             module,
             choice_enum(
-                &operation.result_struct.name,
+                result_name,
                 Doc::line(&format!(
                     "The outcome of `{}`: a `@Choice` over the result and the exceptions. \
                      DDS-RPC 1.0 §7.5.1.2.3.",
@@ -785,12 +787,12 @@ pub(super) fn declare(
         ));
         out.push((
             module,
-            choice_codec(&operation.result_struct.name, &cases, Unknown::Exception),
+            choice_codec(result_name, &cases, Unknown::Exception),
         ));
     }
 
     let request = service_cases(ast, module, &model, false)?;
-    let request_name = interface::request_type_name(&service.name);
+    let request_name = rs::request_type_name(&service.name);
     out.push((
         module,
         choice_enum(
@@ -808,7 +810,7 @@ pub(super) fn declare(
         choice_codec(&request_name, &request, Unknown::Operation),
     ));
     let reply = service_cases(ast, module, &model, true)?;
-    let reply_name = interface::reply_type_name(&service.name);
+    let reply_name = rs::reply_type_name(&service.name);
     out.push((
         module,
         choice_enum(
@@ -829,8 +831,8 @@ pub(super) fn declare(
     // The Basic mapping's client and dispatcher name `${I}_Call` and
     // `${I}_Return`; here they are the two choice types.
     for (alias, target) in [
-        (interface::call_union_name(&service.name), &request_name),
-        (interface::return_union_name(&service.name), &reply_name),
+        (rs::call_union_name(&service.name), &request_name),
+        (rs::return_union_name(&service.name), &reply_name),
     ] {
         out.push((
             module,
@@ -852,8 +854,24 @@ pub(super) fn declare(
         module,
         rust::Item::Enum(error_enum(ast, module, service, &exceptions)?),
     ));
-    out.push((module, dds_type_impl(&request_name, &request_name, false)));
-    out.push((module, dds_type_impl(&reply_name, &reply_name, false)));
+    // The registered type names are DDS-RPC's, whatever the Rust types are
+    // called.
+    out.push((
+        module,
+        dds_type_impl(
+            &request_name,
+            &interface::request_type_name(&service.name),
+            false,
+        ),
+    ));
+    out.push((
+        module,
+        dds_type_impl(
+            &reply_name,
+            &interface::reply_type_name(&service.name),
+            false,
+        ),
+    ));
 
     if service.is_remote() {
         out.push((module, rust::Item::Trait(service_trait(ast, service)?)));
@@ -908,10 +926,7 @@ fn answer_unknown_operations(
     let rust::Item::Impl(mut implementation) = item else {
         return item;
     };
-    let unknown = Path::new(&[
-        &interface::call_union_name(&service.name),
-        UNKNOWN_OP_VARIANT,
-    ]);
+    let unknown = Path::new(&[&rs::call_union_name(&service.name), UNKNOWN_OP_VARIANT]);
     let answer = || {
         call(
             local("Err"),

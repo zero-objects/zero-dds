@@ -7302,6 +7302,7 @@ dependencies = [
  "zerodds-ast-core",
  "zerodds-ast-layout",
  "zerodds-idl-compose",
+ "zerodds-idl-lower",
  "zerodds-idl-parse",
  "zerodds-lang-cst",
  "zerodds-lang-render",

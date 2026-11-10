@@ -146,3 +146,36 @@ pub mod basic_new {
     use zerodds_wire::{Reader, WireError, Writer};
     include!(concat!(env!("OUT_DIR"), "/basic_new.rs"));
 }
+
+/// `module Arm_Ctl { … }` of `build.rs`'s `NAMING` source under the IDL
+/// naming scheme, Basic Service Mapping.
+#[allow(missing_docs, non_camel_case_types, non_snake_case)]
+pub mod naming_idl {
+    use zerodds_wire::{Reader, WireError, Writer};
+    include!(concat!(env!("OUT_DIR"), "/naming_idl.rs"));
+}
+
+/// The same source under the Rust naming scheme
+/// (`zerodds_lang_rules::rust_names::RustNaming::Rust`): every name the
+/// generator writes passes `nonstandard_style`.
+#[allow(missing_docs)]
+#[deny(nonstandard_style)]
+pub mod naming_rust {
+    use zerodds_wire::{Reader, WireError, Writer};
+    include!(concat!(env!("OUT_DIR"), "/naming_rust.rs"));
+}
+
+/// `NAMING` under the IDL naming scheme, Enhanced Service Mapping.
+#[allow(missing_docs, non_camel_case_types, non_snake_case)]
+pub mod naming_enhanced_idl {
+    use zerodds_wire::{Reader, WireError, Writer};
+    include!(concat!(env!("OUT_DIR"), "/naming_enhanced_idl.rs"));
+}
+
+/// `NAMING` under the Rust naming scheme, Enhanced Service Mapping.
+#[allow(missing_docs)]
+#[deny(nonstandard_style)]
+pub mod naming_enhanced_rust {
+    use zerodds_wire::{Reader, WireError, Writer};
+    include!(concat!(env!("OUT_DIR"), "/naming_enhanced_rust.rs"));
+}

@@ -163,6 +163,7 @@ fn enumerated_parameter(annotation: &str) -> bool {
             | "java_mapping"
             | "csharp_mapping"
             | "cpp_mapping"
+            | "rust_mapping"
     )
 }
 
@@ -653,7 +654,7 @@ impl Lowering<'_> {
                 }
             }
             "verbatim" => self.verbatim_annotation(applied, target),
-            "java_mapping" | "csharp_mapping" | "cpp_mapping" => {
+            "java_mapping" | "csharp_mapping" | "cpp_mapping" | "rust_mapping" => {
                 self.mapping_annotation(applied, target);
             }
             "topic" => self.topic_annotation(applied, target),
@@ -711,7 +712,8 @@ impl Lowering<'_> {
         });
     }
 
-    /// `@java_mapping`, `@csharp_mapping` or `@cpp_mapping`: each written
+    /// `@java_mapping`, `@csharp_mapping`, `@cpp_mapping` or
+    /// `@rust_mapping`: each written
     /// parameter, checked against the annotation's declaration in its
     /// language mapping, into [`zerodds_ast::Facets::mappings`].
     ///
@@ -725,7 +727,10 @@ impl Lowering<'_> {
     /// `DOTNET_NAMING_CONVENTION`), `constants_container`, `struct_type`.
     /// IDL4 to C++ 1.0 §8.1: `struct_mapping`
     /// (`STRUCT_WITH_PUBLIC_MEMBERS`,
-    /// `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`). A parameter the
+    /// `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`). `@rust_mapping` is
+    /// ZeroDDS's own, declared as `@annotation rust_mapping { enum
+    /// NamingConvention { IDL_NAMING_CONVENTION, RUST_NAMING_CONVENTION };
+    /// NamingConvention apply_naming_convention; }`. A parameter the
     /// declaration does not have, a value of the wrong kind and an
     /// enumerator the enumeration does not have are errors: the
     /// annotation is declared, and §7.4.15.4.2 holds an application to its
@@ -765,11 +770,16 @@ impl Lowering<'_> {
                     "CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS",
                 ]),
             )],
+            MappingLanguage::Rust => &[(
+                "apply_naming_convention",
+                Kind::Enumerator(&["IDL_NAMING_CONVENTION", "RUST_NAMING_CONVENTION"]),
+            )],
         };
         let clause = match language {
             MappingLanguage::Java => "IDL4 to Java 1.0 §8.1",
             MappingLanguage::CSharp => "IDL4 to C# 1.0 §8.1",
             MappingLanguage::Cpp => "IDL4 to C++ 1.0 §8.1",
+            MappingLanguage::Rust => "OMG IDL 4.2 §7.4.15.4.2",
         };
         let mut settings = Vec::new();
         for argument in &applied.arguments {

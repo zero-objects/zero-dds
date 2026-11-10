@@ -154,3 +154,53 @@ fn idl4java_8_1_the_settings_survive_a_snapshot() {
     assert_eq!(module_settings(&back, "M"), module_settings(&ast, "M"));
     assert_eq!(module_settings(&back, "M").len(), 1);
 }
+
+/// `@rust_mapping`, ZeroDDS's annotation for its Rust generator: the
+/// naming scheme reaches the model from a module and from a declaration,
+/// survives a snapshot, and an application that does not fit the
+/// declaration is an error like the three specified annotations'.
+#[test]
+fn rust_mapping_reaches_the_model_and_is_held_to_its_declaration() {
+    let (ast, found) = lowered(
+        "@rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)
+         module M {
+             @rust_mapping(apply_naming_convention = IDL_NAMING_CONVENTION)
+             struct S { long a; };
+         };",
+    );
+    assert!(found.is_empty(), "{found:?}");
+    let expected = vec![setting(
+        MappingLanguage::Rust,
+        "apply_naming_convention",
+        MappingValue::Name("RUST_NAMING_CONVENTION".into()),
+    )];
+    assert_eq!(module_settings(&ast, "M"), expected);
+    let (_, s) = ast
+        .types()
+        .find(|(_, node)| node.name == "S")
+        .expect("the struct S");
+    assert_eq!(
+        s.facets.mappings,
+        vec![setting(
+            MappingLanguage::Rust,
+            "apply_naming_convention",
+            MappingValue::Name("IDL_NAMING_CONVENTION".into()),
+        )]
+    );
+    let bytes = ast.to_snapshot().expect("a snapshot");
+    let back = Ast::from_snapshot(&bytes).expect("the snapshot reads back");
+    assert_eq!(module_settings(&back, "M"), expected);
+
+    for source in [
+        "@rust_mapping(naming = RUST_NAMING_CONVENTION) module M { };",
+        "@rust_mapping(apply_naming_convention = JAVA_NAMING_CONVENTION) module M { };",
+        "@rust_mapping(apply_naming_convention = \"rust\") module M { };",
+        "@rust_mapping(RUST_NAMING_CONVENTION) module M { };",
+    ] {
+        let (_, found) = lowered(source);
+        assert!(
+            found.iter().any(|d| d.code.as_str() == "IDL0007"),
+            "{source}: {found:?}"
+        );
+    }
+}

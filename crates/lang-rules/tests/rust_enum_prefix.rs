@@ -36,15 +36,44 @@ fn it_is_cut_only_where_a_valid_identifier_is_left() {
     assert_eq!(strip_enum_prefix("MyEnum", "OTHER_A"), None);
 }
 
+/// The model lowered from `source`.
+fn enumeration(source: &str) -> zerodds_ast::Ast {
+    let parsed = zerodds_idl_parse::parse(source);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "test.idl");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    lowered.ast
+}
+
+fn ident(ast: &zerodds_ast::Ast, enumeration: &str, enumerator: &str) -> String {
+    let (_, node) = ast
+        .types()
+        .find(|(_, node)| node.name == enumeration)
+        .expect("the enumeration");
+    enumerator_ident(ast, node, enumerator)
+}
+
 #[test]
 fn the_rust_name_is_the_idl_name_unless_the_switch_is_set() {
-    assert_eq!(enumerator_ident("MyEnum", "MY_ENUM_A"), "MY_ENUM_A");
+    let ast = enumeration(
+        "enum MyEnum { MY_ENUM_A, MY_ENUM_1 }; enum Kind { KIND_type };
+         @rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)
+         enum Named { NAMED_first_value };",
+    );
+    assert_eq!(ident(&ast, "MyEnum", "MY_ENUM_A"), "MY_ENUM_A");
+    // The Rust naming scheme writes what is left as a variant.
+    assert_eq!(ident(&ast, "Named", "NAMED_first_value"), "NamedFirstValue");
     {
         let _strip = RustEnumPrefixScope::enter(true);
-        assert_eq!(enumerator_ident("MyEnum", "MY_ENUM_A"), "A");
-        assert_eq!(enumerator_ident("MyEnum", "MY_ENUM_1"), "MY_ENUM_1");
+        assert_eq!(ident(&ast, "MyEnum", "MY_ENUM_A"), "A");
+        assert_eq!(ident(&ast, "MyEnum", "MY_ENUM_1"), "MY_ENUM_1");
         // What is left is escaped like any other name.
-        assert_eq!(enumerator_ident("Kind", "KIND_type"), "r#type");
+        assert_eq!(ident(&ast, "Kind", "KIND_type"), "r#type");
+        assert_eq!(ident(&ast, "Named", "NAMED_first_value"), "FirstValue");
     }
-    assert_eq!(enumerator_ident("MyEnum", "MY_ENUM_A"), "MY_ENUM_A");
+    assert_eq!(ident(&ast, "MyEnum", "MY_ENUM_A"), "MY_ENUM_A");
 }

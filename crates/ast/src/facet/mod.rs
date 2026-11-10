@@ -66,7 +66,8 @@ pub struct Facets {
     /// to reconcile two answers.
     pub annotations: Vec<AppliedAnnotation>,
     /// The settings of the IDL4 language mappings' own annotations
-    /// (`@java_mapping`, `@csharp_mapping`, `@cpp_mapping`), in the order
+    /// (`@java_mapping`, `@csharp_mapping`, `@cpp_mapping`) and of
+    /// `@rust_mapping`, in the order
     /// they were written.
     pub mappings: Vec<MappingSetting>,
 }

@@ -148,6 +148,7 @@ pub(crate) fn shape(ast: &Ast, union_type: Id<TypeNode>) -> Result<RustUnion<'_>
     let node = ast
         .type_(union_type)
         .map_err(|_| "a union the model does not hold")?;
+    let naming = crate::rust_names::of_type(ast, node);
     let TypeKind::Union {
         discriminator,
         cases,
@@ -199,7 +200,7 @@ pub(crate) fn shape(ast: &Ast, union_type: Id<TypeNode>) -> Result<RustUnion<'_>
         }
         rust_cases.push(RustCase {
             member,
-            variant: crate::adapter::cst::variant_name(&member.name),
+            variant: naming.case_variant(&member.name),
             labels,
             is_default,
         });
@@ -360,7 +361,8 @@ pub(crate) fn enumerator_path_of(
         .map(|s| s.as_str().to_string())
         .collect();
     segments.push(crate::adapter::cst::enumerator_ident(
-        &node.name,
+        ast,
+        node,
         &enumerator.name,
     ));
     let borrowed: Vec<&str> = segments.iter().map(String::as_str).collect();

@@ -825,7 +825,7 @@ fn field_value_item(ast: &Ast, id: Id<TypeNode>, node: &TypeNode) -> String {
         let Ok(target_node) = ast.type_(target) else {
             continue;
         };
-        let field = zerodds_lang_cst::rust::escape_keyword(&member_node.name);
+        let field = zerodds_lang_rules::rust_names::of_type(ast, node).field(&member_node.name);
         // A member held as a `rust_type` mapping: the filter compares the
         // IDL value the Rust value stands for, written through `to_wire`
         // and read back, as a peer would receive it.
@@ -962,14 +962,18 @@ fn field_value_item(ast: &Ast, id: Id<TypeNode>, node: &TypeNode) -> String {
 /// the enumeration `enumeration` (DDS 1.4 Annex B.2 ENUMERATEDVALUE).
 fn enumerator_name(ast: &Ast, enumeration: Id<TypeNode>, value: &str) -> Option<String> {
     let path = zerodds_lang_rules::adapter::cst::path_from_file_root(ast, enumeration).ok()?;
-    let enumeration_name = ast.type_(enumeration).ok()?.name.clone();
+    let enumeration_node = ast.type_(enumeration).ok()?;
     let mut arms = String::new();
     for enumerator in ast.enumerators_of(enumeration) {
         let enumerator = ast.enumerator(*enumerator).ok()?;
         let _ = write!(
             arms,
             "{path}::{} => \"{}\", ",
-            zerodds_lang_rules::adapter::cst::enumerator_ident(&enumeration_name, &enumerator.name),
+            zerodds_lang_rules::adapter::cst::enumerator_ident(
+                ast,
+                enumeration_node,
+                &enumerator.name
+            ),
             enumerator.name
         );
     }

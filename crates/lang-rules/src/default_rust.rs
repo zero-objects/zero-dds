@@ -81,7 +81,7 @@ pub(crate) fn member_value_default(
         ));
     }
     match node.facets.xtypes.as_ref().and_then(|x| x.default_value) {
-        Some(expr) => explicit(ast, expr, type_, &node.name),
+        Some(expr) => explicit(ast, from, expr, type_, &node.name),
         None => default_of(ast, from, type_, &node.name),
     }
 }
@@ -201,7 +201,7 @@ fn at_depth(
                     continue;
                 };
                 fields.push((
-                    Ident::new(&rust::escape_keyword(field_name)),
+                    Ident::new(&crate::rust_names::of_type_id(ast, type_).field(field_name)),
                     rust::Expr::Literal(Literal::int(0)),
                 ));
             }
@@ -308,12 +308,15 @@ fn at_depth(
                         .as_ref()
                         .and_then(|x| x.default_value)
                     {
-                        Some(expr) => explicit(ast, expr, member_type, &member_node.name)?,
+                        Some(expr) => explicit(ast, from, expr, member_type, &member_node.name)?,
                         None => at_depth(ast, from, member_type, &member_node.name, depth + 1)?,
                     };
                     crate::adapter::cst::external_value(ast, member_node, value)
                 };
-                fields.push((Ident::new(&rust::escape_keyword(&member_node.name)), value));
+                fields.push((
+                    Ident::new(&crate::rust_names::of_type(ast, node).field(&member_node.name)),
+                    value,
+                ));
             }
             rust::Expr::StructLit {
                 path: crate::adapter::cst::relative_path(ast, from, node)
@@ -420,13 +423,13 @@ fn primitive_default(kind: PrimitiveKind) -> rust::Expr {
 
 /// The enumerator a default takes, as its Rust variant name.
 fn default_enumerator(ast: &Ast, type_: Id<TypeNode>) -> Option<String> {
-    let enumeration = ast.type_(type_).map(|node| node.name.clone()).ok()?;
+    let enumeration = ast.type_(type_).ok()?;
     let mut first = None;
     for enumerator in ast.enumerators_of(type_) {
         let Ok(node) = ast.enumerator(*enumerator) else {
             continue;
         };
-        let variant = crate::adapter::cst::enumerator_ident(&enumeration, &node.name);
+        let variant = crate::adapter::cst::enumerator_ident(ast, enumeration, &node.name);
         if node
             .facets
             .xtypes
@@ -445,6 +448,7 @@ fn default_enumerator(ast: &Ast, type_: Id<TypeNode>) -> Option<String> {
 /// An explicit `@default` as a Rust expression of the member's type.
 fn explicit(
     ast: &Ast,
+    from: Id<zerodds_ast::ModuleNode>,
     expr: Id<zerodds_ast::ConstExprNode>,
     type_: Id<TypeNode>,
     member_name: &str,
@@ -503,16 +507,14 @@ fn explicit(
             let target = reference
                 .resolved()
                 .ok_or_else(|| refuse("a `@default` enumerator that is unresolved"))?;
-            let enumerator = ast
-                .enumerator(target)
-                .map_err(|_| refuse("a `@default` enumerator this frontend cannot follow"))?;
-            let owner = ast
-                .type_(resolved)
-                .map_err(|_| refuse("a `@default` whose member type is stale"))?;
-            rust::Expr::Path(Path::new(&[
-                &rust::escape_type_name(&owner.name),
-                &crate::adapter::cst::enumerator_ident(&owner.name, &enumerator.name),
-            ]))
+            // The enumeration's path from the module the value is written
+            // in: the bare type name did not resolve where the enumeration
+            // and the member's type sit in a module and the `Default` impl
+            // in another.
+            rust::Expr::Path(
+                crate::rust_union::enumerator_path_of(ast, from, resolved, target)
+                    .map_err(|_| refuse("a `@default` enumerator this frontend cannot follow"))?,
+            )
         }
         // An integer literal, a named constant or arithmetic over them,
         // folded the way a bound or a case label is: `eval_const`, so that
@@ -736,7 +738,8 @@ pub(crate) fn idl_default_value(
         }
         TypeKind::Primitive(kind) => {
             let value = match explicit_value {
-                Some(expr) => explicit(ast, expr, idl_type, name)?,
+                // A primitive names no enumerator, so no path is written.
+                Some(expr) => explicit(ast, ast.root_module(), expr, idl_type, name)?,
                 None => primitive_default(*kind),
             };
             Ok(rust::Expr::Ref {

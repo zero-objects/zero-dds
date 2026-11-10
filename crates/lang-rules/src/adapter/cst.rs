@@ -244,7 +244,7 @@ fn weave_rust_verbatim(
         }
         let name = ast
             .type_(*id)
-            .map(|node| rust::escape_type_name(&node.name))
+            .map(|node| crate::rust_names::type_ident(ast, node))
             .unwrap_or_default();
         let tail = items.split_off(range_end.min(items.len()));
         let module = *module;
@@ -291,6 +291,116 @@ impl crate::verbatim::Carrier for rust::Item {
     }
 }
 
+/// The declarations of one module that the naming scheme or an escape
+/// gives one Rust name: `my_type` and `MyType` are both `MyType` under the
+/// Rust scheme, and one of the two would be unreachable.
+///
+/// Types, exceptions, interfaces and modules share Rust's type namespace,
+/// constants and the bits of a bit mask its value namespace. Two
+/// declarations that keep their IDL names are not looked at: IDL already
+/// holds them apart.
+///
+/// # Errors
+/// [`MaterialiseError::SpellingCollision`], naming the earlier declaration
+/// first.
+fn no_renamed_collision(ast: &Ast) -> Result<(), MaterialiseError> {
+    type Scope = (Id<zerodds_ast::ModuleNode>, bool);
+    let mut declared: Vec<(Scope, String, String)> = Vec::new();
+    for (id, node) in ast.modules() {
+        if let Some(parent) = node.parent {
+            declared.push((
+                (parent, true),
+                crate::rust_names::module_ident(ast, id),
+                node.name.clone(),
+            ));
+        }
+    }
+    for (_, node) in ast.types() {
+        if node.name.is_empty() {
+            continue;
+        }
+        let naming = crate::rust_names::of_type(ast, node);
+        match &node.kind {
+            TypeKind::Structure { .. }
+            | TypeKind::Union { .. }
+            | TypeKind::Enumeration { .. }
+            | TypeKind::Alias { .. }
+            | TypeKind::Bitset { .. }
+            | TypeKind::Valuetype { .. }
+            | TypeKind::Native => {}
+            TypeKind::Bitmask { bits } => {
+                for bit in bits {
+                    if let Ok(bit_node) = ast.bit_value(*bit) {
+                        declared.push((
+                            (node.module, false),
+                            naming.bit(&bit_node.name),
+                            bit_node.name.clone(),
+                        ));
+                    }
+                }
+            }
+            _ => continue,
+        }
+        declared.push((
+            (node.module, true),
+            naming.type_name(&node.name),
+            node.name.clone(),
+        ));
+    }
+    for (_, node) in ast.constants() {
+        let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
+        declared.push((
+            (node.module, false),
+            naming.constant(&node.name),
+            node.name.clone(),
+        ));
+    }
+    for (_, node) in ast.exceptions() {
+        let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
+        declared.push((
+            (node.module, true),
+            naming.type_name(&node.name),
+            node.name.clone(),
+        ));
+    }
+    for (_, node) in ast.interfaces() {
+        let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
+        declared.push((
+            (node.module, true),
+            naming.type_name(&node.name),
+            node.name.clone(),
+        ));
+    }
+    for (at, (scope, spelled, name)) in declared.iter().enumerate() {
+        let Some((_, _, first)) = declared[..at].iter().find(|(other, other_spelled, first)| {
+            other == scope
+                && other_spelled == spelled
+                && (first != other_spelled || name != spelled)
+        }) else {
+            continue;
+        };
+        if first == name {
+            // One declaration seen twice (a module the source reopens).
+            continue;
+        }
+        let module = ast
+            .module(scope.0)
+            .map_or("", |module| module.name.as_str());
+        return Err(MaterialiseError::SpellingCollision {
+            first: first.clone(),
+            second: name.clone(),
+            spelled: spelled.clone(),
+            language: "Rust",
+            at: if module.is_empty() {
+                String::from("the file scope")
+            } else {
+                format!("module `{module}`")
+            },
+        });
+    }
+    Ok(())
+}
+
 /// As [`rust_items`], each item paired with the module it belongs in and
 /// nothing nested yet.
 ///
@@ -319,6 +429,8 @@ pub fn rust_item_pairs(
     // whose consumers import `CosNaming::NameComponent`.
     let mut items: Vec<(Id<zerodds_ast::ModuleNode>, rust::Item)> = Vec::new();
 
+    no_renamed_collision(ast)?;
+
     // Where each type's items begin, for the `@verbatim` pass after the
     // walk: the arms below leave by `continue` at many points, so the
     // text is woven once every type has declared what it declares.
@@ -330,6 +442,7 @@ pub fn rust_item_pairs(
         // Every type this item names is written relative to the module the
         // item itself lands in.
         let from = node.module;
+        let naming = crate::rust_names::of_type(ast, node);
         starts.push((id, from, items.len()));
         match &node.kind {
             TypeKind::Enumeration { enumerators } => {
@@ -358,14 +471,14 @@ pub fn rust_item_pairs(
                     variants.push(rust::Variant {
                         doc: Doc::none(),
                         attrs: Vec::new(),
-                        name: Ident::new(&enumerator_ident(&node.name, &enum_node.name)),
+                        name: Ident::new(&enumerator_ident(ast, node, &enum_node.name)),
                         body: rust::VariantBody::Unit,
                         discriminant: Some(rust::Expr::Literal(
                             zerodds_lang_cst::common::Literal::int(value),
                         )),
                     });
                     spelled.push((
-                        enumerator_ident(&node.name, &enum_node.name),
+                        enumerator_ident(ast, node, &enum_node.name),
                         enum_node.name.clone(),
                     ));
                 }
@@ -398,7 +511,7 @@ pub fn rust_item_pairs(
                         // member rules it out.
                         derives: data_derives(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         variants,
                     }),
@@ -426,7 +539,7 @@ pub fn rust_item_pairs(
                         doc: Doc::none(),
                         attrs: Vec::new(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         type_,
                     }),
@@ -452,6 +565,7 @@ pub fn rust_item_pairs(
                 })?;
                 let discriminator_type = rust_type_of(ast, from, Some(shape.discriminator))?;
                 let mut variants = Vec::new();
+                let mut spelled: Vec<(String, String)> = Vec::new();
                 for case in cases {
                     let Ok(case_node) = ast.case(*case) else {
                         continue;
@@ -472,14 +586,24 @@ pub fn rust_item_pairs(
                         fields.push(discriminator_type.clone());
                     }
                     fields.push(field_type(ast, from, member)?);
+                    spelled.push((naming.case_variant(&member.name), member.name.clone()));
                     variants.push(rust::Variant {
                         doc: Doc::none(),
                         attrs: Vec::new(),
-                        name: Ident::new(&variant_name(&member.name)),
+                        name: Ident::new(&naming.case_variant(&member.name)),
                         body: rust::VariantBody::Tuple(fields),
                         discriminant: None,
                     });
                 }
+                // Two branches that are one variant under the naming
+                // scheme (`my_branch` and `myBranch`) are a build error.
+                no_spelling_collision(
+                    spelled
+                        .iter()
+                        .map(|(spelled, declared)| (spelled.as_str(), declared.as_str())),
+                    "Rust",
+                    &node.name,
+                )?;
                 if shape.no_member {
                     variants.push(rust::Variant {
                         doc: Doc::none(),
@@ -508,7 +632,7 @@ pub fn rust_item_pairs(
                         // member rules it out.
                         derives: data_derives(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         variants,
                     }),
@@ -529,7 +653,7 @@ pub fn rust_item_pairs(
                         doc: Doc::none(),
                         attrs: Vec::new(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         type_: rust::Type::Primitive(bitmask_primitive(width)),
                     }),
@@ -553,7 +677,7 @@ pub fn rust_item_pairs(
                             doc: Doc::none(),
                             attrs: Vec::new(),
                             visibility: Visibility::Public,
-                            name: Ident::new(&rust::escape_keyword(&bit_node.name)),
+                            name: Ident::new(&naming.bit(&bit_node.name)),
                             type_: rust::Type::Primitive(bitmask_primitive(width)),
                             value: rust::Expr::Binary {
                                 op: rust::BinaryOp::Shl,
@@ -577,6 +701,18 @@ pub fn rust_item_pairs(
                 // width calls for, the base's included; the packing is
                 // the layout's business and not the source's shape.
                 let mut struct_fields = Vec::new();
+                no_spelling_collision(
+                    ast.all_bitfields_of(id)
+                        .iter()
+                        .filter_map(|field| ast.bitfield(*field).ok())
+                        .filter_map(|field| field.name.as_deref())
+                        .map(|name| (naming.field(name), name))
+                        .collect::<Vec<_>>()
+                        .iter()
+                        .map(|(spelled, declared)| (spelled.as_str(), *declared)),
+                    "Rust",
+                    &node.name,
+                )?;
                 for field in &ast.all_bitfields_of(id) {
                     let Ok(field_node) = ast.bitfield(*field) else {
                         continue;
@@ -590,7 +726,7 @@ pub fn rust_item_pairs(
                         doc: Doc::none(),
                         attrs: Vec::new(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_keyword(name)),
+                        name: Ident::new(&naming.field(name)),
                         type_: rust::Type::Primitive(bitmask_primitive(field_node.bits)),
                     });
                 }
@@ -614,7 +750,7 @@ pub fn rust_item_pairs(
                         // member rules it out.
                         derives: data_derives(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         body: rust::StructBody::Named(struct_fields),
                     }),
@@ -626,6 +762,17 @@ pub fn rust_item_pairs(
                     continue;
                 }
                 let mut struct_fields = Vec::new();
+                no_spelling_collision(
+                    state
+                        .iter()
+                        .filter_map(|member| ast.member(*member).ok())
+                        .map(|member| (naming.field(&member.name), member.name.as_str()))
+                        .collect::<Vec<_>>()
+                        .iter()
+                        .map(|(spelled, declared)| (spelled.as_str(), *declared)),
+                    "Rust",
+                    &node.name,
+                )?;
                 for member in state {
                     let Ok(member_node) = ast.member(*member) else {
                         continue;
@@ -638,7 +785,7 @@ pub fn rust_item_pairs(
                         doc: Doc::none(),
                         attrs: Vec::new(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_keyword(&member_node.name)),
+                        name: Ident::new(&naming.field(&member_node.name)),
                         type_: field_type(ast, from, member_node)?,
                     });
                 }
@@ -662,7 +809,7 @@ pub fn rust_item_pairs(
                         // member rules it out.
                         derives: data_derives(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         body: rust::StructBody::Named(struct_fields),
                     }),
@@ -682,7 +829,7 @@ pub fn rust_item_pairs(
                         doc: Doc::none(),
                         attrs: Vec::new(),
                         visibility: Visibility::Public,
-                        name: Ident::new(&rust::escape_type_name(&node.name)),
+                        name: Ident::new(&naming.type_name(&node.name)),
                         generics: Vec::new(),
                         type_: native_type(ast, id),
                     }),
@@ -720,7 +867,7 @@ pub fn rust_item_pairs(
             if ghost_created_for(applied, member_node.node_id, "RustField").is_none() {
                 continue;
             }
-            let field = rust::escape_keyword(&member_node.name);
+            let field = naming.field(&member_node.name);
             spelled.push((field.clone(), member_node.name.clone()));
             fields.push(rust::Field {
                 doc: Doc::none(),
@@ -758,7 +905,7 @@ pub fn rust_item_pairs(
                 // member rules it out.
                 derives: data_derives(),
                 visibility: Visibility::Public,
-                name: Ident::new(&rust::escape_type_name(&node.name)),
+                name: Ident::new(&naming.type_name(&node.name)),
                 generics: Vec::new(),
                 body: rust::StructBody::Named(fields),
             }),
@@ -773,6 +920,7 @@ pub fn rust_item_pairs(
         // Every type this item names is written relative to the module the
         // item itself lands in.
         let from = node.module;
+        let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
         if ghost_created_for(applied, node.node_id, "RustConst").is_none() {
             continue;
         }
@@ -796,7 +944,7 @@ pub fn rust_item_pairs(
                 doc: Doc::none(),
                 attrs: Vec::new(),
                 visibility: Visibility::Public,
-                name: Ident::new(&rust::escape_type_name(&node.name)),
+                name: Ident::new(&naming.constant(&node.name)),
                 type_,
                 value: rust::Expr::Literal(literal),
             }),
@@ -808,10 +956,22 @@ pub fn rust_item_pairs(
         // Every type this item names is written relative to the module the
         // item itself lands in.
         let from = node.module;
+        let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
         if ghost_created_for(applied, node.node_id, "RustErrorStruct").is_none() {
             continue;
         }
         let mut fields = Vec::new();
+        no_spelling_collision(
+            node.members
+                .iter()
+                .filter_map(|member| ast.member(*member).ok())
+                .map(|member| (naming.field(&member.name), member.name.as_str()))
+                .collect::<Vec<_>>()
+                .iter()
+                .map(|(spelled, declared)| (spelled.as_str(), *declared)),
+            "Rust",
+            &node.name,
+        )?;
         for member in &node.members {
             let Ok(member_node) = ast.member(*member) else {
                 continue;
@@ -820,7 +980,7 @@ pub fn rust_item_pairs(
                 doc: Doc::line(&format!("The IDL exception member `{}`.", member_node.name)),
                 attrs: Vec::new(),
                 visibility: Visibility::Public,
-                name: Ident::new(&rust::escape_keyword(&member_node.name)),
+                name: Ident::new(&naming.field(&member_node.name)),
                 type_: rust_type_of(ast, from, member_node.type_.resolved())?,
             });
         }
@@ -849,7 +1009,7 @@ pub fn rust_item_pairs(
                 // member rules it out.
                 derives: data_derives(),
                 visibility: Visibility::Public,
-                name: Ident::new(&rust::escape_type_name(&node.name)),
+                name: Ident::new(&naming.type_name(&node.name)),
                 generics: Vec::new(),
                 body: rust::StructBody::Named(fields),
             }),
@@ -861,6 +1021,7 @@ pub fn rust_item_pairs(
         // Every type this item names is written relative to the module the
         // item itself lands in.
         let from = node.module;
+        let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
         if ghost_created_for(applied, node.node_id, "RustTrait").is_none() {
             continue;
         }
@@ -888,7 +1049,7 @@ pub fn rust_item_pairs(
                     continue;
                 };
                 params.push(rust::Param {
-                    name: Some(Ident::new(&rust::escape_keyword(&param_node.name))),
+                    name: Some(Ident::new(&naming.parameter(&param_node.name))),
                     type_: rust_type_of(ast, from, param_node.type_.resolved())?,
                     receiver: None,
                 });
@@ -897,7 +1058,7 @@ pub fn rust_item_pairs(
                 doc: Doc::none(),
                 attrs: Vec::new(),
                 visibility: Visibility::Private,
-                name: Ident::new(&rust::escape_keyword(&op.name)),
+                name: Ident::new(&naming.function(&op.name)),
                 generics: Vec::new(),
                 params,
                 returns: op
@@ -914,7 +1075,7 @@ pub fn rust_item_pairs(
                 doc: Doc::none(),
                 attrs: Vec::new(),
                 visibility: Visibility::Public,
-                name: Ident::new(&rust::escape_type_name(&node.name)),
+                name: Ident::new(&naming.type_name(&node.name)),
                 generics: Vec::new(),
                 supertraits: Vec::new(),
                 items: methods,
@@ -1013,9 +1174,9 @@ pub(crate) fn relative_path(
             .map_err(|_| MaterialiseError::NoModule {
                 at: module_handle(*module),
             })?;
-        segments.push(rust::escape_type_name(&enclosing.name));
+        segments.push(crate::rust_names::in_module(ast, *module).module(&enclosing.name));
     }
-    segments.push(rust::escape_type_name(&node.name));
+    segments.push(crate::rust_names::type_ident(ast, node));
     let borrowed: Vec<&str> = segments.iter().map(String::as_str).collect();
     Ok(Path::new(&borrowed))
 }
@@ -1046,9 +1207,9 @@ pub fn path_from_file_root(ast: &Ast, type_: Id<TypeNode>) -> Result<String, Mat
         let enclosing = ast.module(module).map_err(|_| MaterialiseError::NoModule {
             at: module_handle(module),
         })?;
-        segments.push(rust::escape_type_name(&enclosing.name));
+        segments.push(crate::rust_names::in_module(ast, module).module(&enclosing.name));
     }
-    segments.push(rust::escape_type_name(&node.name));
+    segments.push(crate::rust_names::type_ident(ast, node));
     Ok(segments.join("::"))
 }
 
@@ -1139,7 +1300,7 @@ fn fold_by_path(
             doc: Doc::line(&format!("The IDL module `{}`.", node.name)),
             attrs: Vec::new(),
             visibility: Visibility::Public,
-            name: Ident::new(&rust::escape_type_name(&node.name)),
+            name: Ident::new(&crate::rust_names::in_module(ast, module).module(&node.name)),
             // A module is a scope: everything the file imported, and every
             // type declared beside this module, has to be reachable from
             // inside it. `use super::*` is one line per module and reaches
@@ -1158,7 +1319,7 @@ fn fold_by_path(
 
 /// How deep a module chain is followed before the model is taken to be
 /// malformed. IDL nests nowhere near this.
-const MAX_MODULE_DEPTH: usize = 64;
+pub(crate) const MAX_MODULE_DEPTH: usize = 64;
 
 /// How deep a type's Rust spelling may nest before the walk refuses it.
 ///
@@ -1318,17 +1479,19 @@ impl Drop for RustEnumPrefixScope {
 /// The enumerator's own name, escaped, by default. Under
 /// [`RustEnumPrefixScope`] the enumeration's name is cut off its front
 /// where it stands there ([`strip_enum_prefix`]): `MY_ENUM_A` of `MyEnum`
-/// is `A` (GitHub #61), like prost's default. The IDL name stays wherever
+/// is `A` (GitHub #61), like prost's default. Under the Rust naming scheme
+/// ([`crate::rust_names`]) what is left is written in `UpperCamelCase`:
+/// `MyEnumA`, or `A` with the prefix cut. The IDL name stays wherever
 /// the wire and type matching read it: the TypeObject, a content filter,
 /// `Config::rust_type`.
 #[must_use]
-pub fn enumerator_ident(enumeration: &str, enumerator: &str) -> String {
+pub fn enumerator_ident(ast: &Ast, enumeration: &TypeNode, enumerator: &str) -> String {
     let name = if ENUM_PREFIX.with(std::cell::Cell::get) {
-        strip_enum_prefix(enumeration, enumerator).unwrap_or(enumerator)
+        strip_enum_prefix(&enumeration.name, enumerator).unwrap_or(enumerator)
     } else {
         enumerator
     };
-    rust::escape_keyword(name)
+    crate::rust_names::of_type(ast, enumeration).variant(name)
 }
 
 /// `enumerator` without the `enumeration` it begins with, or `None`.
@@ -1507,19 +1670,6 @@ pub(crate) fn external_value(
         }
     } else {
         value
-    }
-}
-
-/// The Rust variant name a union case member takes.
-///
-/// Rust variants are upper camel case and IDL members are not; the name
-/// is the member's with its first letter raised, so the two stay
-/// recognisably the same name.
-pub(crate) fn variant_name(member: &str) -> String {
-    let mut chars = member.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
 }
 

@@ -58,6 +58,7 @@ pub mod encode_c;
 mod fixed_literal;
 pub mod generate;
 pub mod rule;
+pub mod rust_names;
 mod rust_union;
 pub use rust_union::{UnionVariant, UnionVariants, union_variants};
 pub mod verbatim;

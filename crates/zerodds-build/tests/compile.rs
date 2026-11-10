@@ -304,6 +304,187 @@ fn github_61_two_enumerators_that_are_one_name_after_the_cut_stop_the_build() {
     assert!(text.contains("E_A") && text.contains('A'), "{text}");
 }
 
+/// GitHub #61: `rust_naming(RustNaming::Rust)` writes the names after RFC
+/// 430; without it every name is the IDL's. The IDL names stay where the
+/// wire reads them.
+#[test]
+fn github_61_the_rust_naming_scheme_is_written_only_when_asked() {
+    let source = "module sensor_data {                     const long maxSamples = 8;                     enum reading_kind { READING_KIND_raw, READING_KIND_filtered };                     bitmask status_flags { flagReady, flag_error };                     typedef sequence<long> sample_list;                     union reading_value switch (long) { case 1: long rawValue; case 2: double filtered_value; };                     struct HTTPReading { @key long sensorId; reading_kind kind; sample_list Samples;                                          reading_value lastValue; status_flags flags; long type; };                   };";
+    let kept = generate(source, |config| config).expect("compile");
+    for spelled in [
+        "pub mod sensor_data",
+        "pub const maxSamples:",
+        "pub enum reading_kind",
+        "READING_KIND_raw = 0",
+        "pub type status_flags",
+        "pub const flagReady:",
+        "pub type sample_list",
+        "pub enum reading_value",
+        "RawValue(",
+        "Filtered_value(",
+        "pub struct HTTPReading",
+        "pub sensorId:",
+        "pub Samples:",
+        "pub r#type:",
+    ] {
+        assert!(kept.contains(spelled), "`{spelled}` is missing: {kept}");
+    }
+
+    let renamed = generate(source, |config| {
+        config.rust_naming(zerodds_build::RustNaming::Rust)
+    })
+    .expect("compile");
+    for spelled in [
+        "pub mod sensor_data",
+        "pub const MAX_SAMPLES:",
+        "pub enum ReadingKind",
+        "ReadingKindRaw = 0",
+        "ReadingKindFiltered = 1",
+        "pub type StatusFlags",
+        "pub const FLAG_READY:",
+        "pub const FLAG_ERROR:",
+        "pub type SampleList",
+        "pub enum ReadingValue",
+        "RawValue(",
+        "FilteredValue(",
+        "pub struct HttpReading",
+        "pub sensor_id:",
+        "pub kind: ReadingKind",
+        "pub samples: Vec<i32>",
+        "pub last_value: ReadingValue",
+        "pub flags: StatusFlags",
+        "pub r#type:",
+    ] {
+        assert!(
+            renamed.contains(spelled),
+            "`{spelled}` is missing: {renamed}"
+        );
+    }
+    for idl_name in [
+        "pub sensorId",
+        "pub enum reading_kind",
+        "maxSamples:",
+        "struct HTTPReading",
+    ] {
+        assert!(
+            !renamed.contains(idl_name),
+            "`{idl_name}` is left: {renamed}"
+        );
+    }
+    // The type name on the wire and the filter's field names are the IDL's.
+    let typed = generate(source, |config| {
+        config
+            .rust_naming(zerodds_build::RustNaming::Rust)
+            .dds_type_impls(true)
+    })
+    .expect("compile");
+    assert!(typed.contains("\"sensor_data::HTTPReading\""), "{typed}");
+    assert!(typed.contains("(\"sensorId\", None)"), "{typed}");
+    assert!(typed.contains("self.sensor_id"), "{typed}");
+
+    // With the enum prefix cut, what is left is written as a variant.
+    let cut = generate(source, |config| {
+        config
+            .rust_naming(zerodds_build::RustNaming::Rust)
+            .strip_enum_prefix(true)
+    })
+    .expect("compile");
+    assert!(
+        cut.contains("Raw = 0") && cut.contains("Filtered = 1"),
+        "{cut}"
+    );
+}
+
+/// GitHub #61: `@rust_mapping(apply_naming_convention = ...)` sets the
+/// scheme for a module or a declaration, the innermost last, over what
+/// the build chose.
+#[test]
+fn github_61_rust_mapping_sets_the_scheme_per_module_and_declaration() {
+    let source = "@rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)                   module ByRust {                     struct first_type { long firstField; };                     @rust_mapping(apply_naming_convention = IDL_NAMING_CONVENTION)                     struct kept_type { long keptField; first_type inner; };                     @rust_mapping(apply_naming_convention = IDL_NAMING_CONVENTION)                     module Inner_Module { struct deep_type { long deepField; }; };                   };                   module ByBuild { struct other_type { long otherField; ByRust::first_type f; }; };";
+    let by_idl = generate(source, |config| config).expect("compile");
+    for spelled in [
+        "pub mod by_rust",
+        "pub struct FirstType",
+        "pub first_field:",
+        "pub struct kept_type",
+        "pub keptField:",
+        "pub inner: FirstType",
+        "pub mod Inner_Module",
+        "pub struct deep_type",
+        "pub mod ByBuild",
+        "pub struct other_type",
+        "pub otherField:",
+        "by_rust::FirstType",
+    ] {
+        assert!(by_idl.contains(spelled), "`{spelled}` is missing: {by_idl}");
+    }
+    let by_rust = generate(source, |config| {
+        config.rust_naming(zerodds_build::RustNaming::Rust)
+    })
+    .expect("compile");
+    for spelled in [
+        "pub struct kept_type",
+        "pub mod Inner_Module",
+        "pub mod by_build",
+        "pub struct OtherType",
+        "pub other_field:",
+    ] {
+        assert!(
+            by_rust.contains(spelled),
+            "`{spelled}` is missing: {by_rust}"
+        );
+    }
+}
+
+/// GitHub #61: two declarations of one scope that are one Rust name under
+/// the scheme stop the build instead of one hiding the other.
+#[test]
+fn github_61_two_names_that_are_one_under_the_rust_scheme_stop_the_build() {
+    for (source, first, second) in [
+        (
+            "struct S { long my_field; long myField; };",
+            "my_field",
+            "myField",
+        ),
+        (
+            "struct my_type { long a; }; struct MyType { long a; };",
+            "my_type",
+            "MyType",
+        ),
+        (
+            "const long max_size = 1; const long maxSize = 2;",
+            "max_size",
+            "maxSize",
+        ),
+        (
+            "module my_mod { struct A { long x; }; }; module MyMod { struct B { long x; }; };",
+            "my_mod",
+            "MyMod",
+        ),
+        (
+            "union U switch (long) { case 1: long my_branch; case 2: long myBranch; };",
+            "my_branch",
+            "myBranch",
+        ),
+        (
+            "enum E { first_value, firstValue };",
+            "first_value",
+            "firstValue",
+        ),
+    ] {
+        assert!(generate(source, |config| config).is_ok(), "{source}");
+        let error = generate(source, |config| {
+            config.rust_naming(zerodds_build::RustNaming::Rust)
+        })
+        .expect_err(source);
+        let text = format!("{error}");
+        assert!(
+            text.contains(first) && text.contains(second),
+            "{source}: {text}"
+        );
+    }
+}
+
 /// A name the generated code uses for something of its own: a type takes a
 /// trailing `_` (`Option_`, `Reader_`), a keyword with no raw form too
 /// (`Self_`, `crate_`), and a member named like a local of the codec is

@@ -504,6 +504,39 @@ ist eine
 die die Operationen einer Map hat und ihre Einträge in aufsteigender
 Schlüsselreihenfolge hält.
 .TP
+.B \-\-strip\-enum\-prefix
+Nur
+.B generate
+.BR "\-\-lang rust" :
+schneidet den Namen jeder Enumeration von den Rust-Namen ihrer
+Enumeratoren ab
+.RI ( MY_ENUM_A
+von
+.I MyEnum
+ist
+.IR A ),
+wo ein gültiger Bezeichner bleibt. Zwei Enumeratoren, die denselben Namen
+ergeben, brechen die Erzeugung ab. Standard: aus.
+.TP
+.BR \-\-rust\-naming " " \fIidl\fR|\fIrust\fR
+Nur
+.B generate
+.BR "\-\-lang rust" :
+das Namensschema des erzeugten Rust.
+.I idl
+(der Standard) behält die IDL-Namen;
+.I rust
+schreibt sie nach RFC 430: Typen, Traits und Varianten in UpperCamelCase,
+Felder, Module, Methoden und Parameter in snake_case, Konstanten in
+SCREAMING_SNAKE_CASE.
+.B @rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)
+(oder
+.BR IDL_NAMING_CONVENTION )
+setzt das Schema für ein Modul oder eine Deklaration. Zwei Deklarationen
+eines Scopes, die denselben Namen ergeben, brechen die Erzeugung ab. Das
+TypeObject, die registrierten Typnamen und die Oktette auf der Leitung
+sind unter beiden Schemata die der IDL-Namen.
+.TP
 .BR \-\-dialect " " \fINAME\fR
 Nur
 .BR generate :

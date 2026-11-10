@@ -278,6 +278,45 @@ fn model(source: &str, file: &str) -> Ast {
     ast
 }
 
+/// One source with names the Rust API guidelines do not use, generated
+/// under both naming schemes (`zerodds_lang_rules::rust_names`) and for
+/// both service mappings; `tests/rust_naming.rs` holds the octets and the
+/// registered type names of the four against each other.
+const NAMING: &str = "
+module Arm_Ctl {
+  exception out_of_range { long maxValue; };
+  @DDSService interface base_arm {
+    long pingCount(in long seqNo);
+  };
+  @DDSService interface robot_arm : base_arm {
+    long moveTo(in long targetX, inout long stepCount, out long reachedX) raises (out_of_range);
+    void resetAll();
+    attribute long holdTime;
+  };
+};
+";
+
+fn write_naming(out_dir: &std::path::Path) {
+    use zerodds_lang_rules::generate::ServiceMapping;
+    use zerodds_lang_rules::rust_names::{RustNaming, RustNamingScope};
+    for (naming, scheme) in [(RustNaming::Idl, "idl"), (RustNaming::Rust, "rust")] {
+        let _naming = RustNamingScope::enter(naming);
+        write_generated(
+            NAMING,
+            "naming.idl",
+            &format!("naming_{scheme}.rs"),
+            out_dir,
+        );
+        write_generated_enhanced(
+            NAMING,
+            "naming.idl",
+            &format!("naming_enhanced_{scheme}.rs"),
+            out_dir,
+            ServiceMapping::Enhanced,
+        );
+    }
+}
+
 fn write_generated(source: &str, file: &str, out_name: &str, out_dir: &std::path::Path) {
     let ast = model(source, file);
     let key = LayoutKey::data(Encoding::PlainCdr2, Endianness::Little);
@@ -310,6 +349,7 @@ fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     write_generated(CALCULATOR, "calculator.idl", "calculator.rs", &out_dir);
+    write_naming(&out_dir);
     write_generated(HIERARCHY, "hierarchy.idl", "hierarchy.rs", &out_dir);
     write_generated(WIDE, "wide.idl", "wide.rs", &out_dir);
     write_generated(NESTED, "nested.idl", "nested.rs", &out_dir);

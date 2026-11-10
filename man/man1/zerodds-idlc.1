@@ -481,6 +481,36 @@ is a
 .IR BTreeMap ,
 which has the operations of a map and keeps its entries in ascending key order.
 .TP
+.B \-\-strip\-enum\-prefix
+.B generate
+.RB "\-\-lang " rust
+only: cut each enumeration's name off its enumerators' Rust names
+.RI ( MY_ENUM_A
+of
+.I MyEnum
+is
+.IR A )
+where a valid identifier is left. Two enumerators that come out as one
+name stop the generation. Off by default.
+.TP
+.BR \-\-rust\-naming " " \fIidl\fR|\fIrust\fR
+.B generate
+.RB "\-\-lang " rust
+only: the naming scheme of the generated Rust.
+.I idl
+(the default) keeps the IDL names;
+.I rust
+writes them after RFC 430: UpperCamelCase types, traits and variants,
+snake_case fields, modules, methods and parameters, SCREAMING_SNAKE_CASE
+constants.
+.B @rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)
+(or
+.BR IDL_NAMING_CONVENTION )
+sets the scheme for one module or declaration. Two declarations of one
+scope that come out as one name stop the generation. The TypeObject, the
+registered type names and the octets on the wire are those of the IDL
+names under either scheme.
+.TP
 .BR \-\-dialect " " \fINAME\fR
 .B generate
 only: reproduce one peer's answers to every wire axis at once, before

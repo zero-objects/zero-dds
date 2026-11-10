@@ -241,6 +241,10 @@ struct GenerateRequest {
     /// enumerators' Rust names (`MY_ENUM_A` of `MyEnum` is `A`, GitHub #61).
     /// Off by default.
     strip_enum_prefix: bool,
+    /// `--rust-naming idl|rust`: the naming scheme of the Rust column. `idl`
+    /// (the default) keeps the IDL names; `rust` writes them after RFC 430
+    /// (GitHub #61).
+    rust_naming: zerodds_lang_rules::rust_names::RustNaming,
     /// `--dialect <name>`: the preset, one peer's answers to every wire
     /// question at once. `None` is the default, `specification`.
     dialect: Option<Dialect>,
@@ -430,6 +434,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut generate_cpp_mapping = zerodds_lang_rules::adapter::cpp::CppMapping::default();
     let mut generate_rust_map = zerodds_lang_rules::adapter::cst::RustMapForm::Entries;
     let mut generate_strip_enum_prefix = false;
+    let mut generate_rust_naming = zerodds_lang_rules::rust_names::RustNaming::Idl;
     let mut generate_axis_overrides: Vec<(AxisFlag, String)> = Vec::new();
     let mut generate_java_mapping: Option<zerodds_lang_rules::adapter::java::JavaMapping> = None;
     let mut generate_java_idl4 = false;
@@ -707,6 +712,18 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--strip-enum-prefix" if command == Command::Generate => {
                 generate_strip_enum_prefix = true;
             }
+            "--rust-naming" if command == Command::Generate => {
+                let value = iter
+                    .next()
+                    .ok_or("--rust-naming: the option takes a value")?;
+                generate_rust_naming = match value.as_str() {
+                    "idl" => zerodds_lang_rules::rust_names::RustNaming::Idl,
+                    "rust" => zerodds_lang_rules::rust_names::RustNaming::Rust,
+                    other => {
+                        return Err(format!("--rust-naming: `{other}` is neither idl nor rust"));
+                    }
+                };
+            }
             "--dialect" if command == Command::Generate => {
                 let name = iter.next().ok_or("--dialect: the option takes a value")?;
                 generate_dialect = Some(Dialect::parse(name).ok_or_else(|| {
@@ -749,7 +766,8 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             | "--csharp-platform"
             | "--csharp-corba-module"
             | "--rust-map"
-            | "--strip-enum-prefix") => {
+            | "--strip-enum-prefix"
+            | "--rust-naming") => {
                 return Err(format!("`{other}` belongs to the `generate` subcommand"));
             }
             // Axis flags under `generate`.  Only `--`-prefixed names are
@@ -882,6 +900,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             cpp_mapping: generate_cpp_mapping,
             rust_map: generate_rust_map,
             strip_enum_prefix: generate_strip_enum_prefix,
+            rust_naming: generate_rust_naming,
             axis_overrides: generate_axis_overrides,
             java_mapping: generate_java_mapping.unwrap_or_default(),
             java_idl4,
@@ -1264,6 +1283,7 @@ fn run_generate(
     let _map_form = zerodds_lang_rules::adapter::cst::RustMapFormScope::enter(request.rust_map);
     let _enum_prefix =
         zerodds_lang_rules::adapter::cst::RustEnumPrefixScope::enter(request.strip_enum_prefix);
+    let _rust_naming = zerodds_lang_rules::rust_names::RustNamingScope::enter(request.rust_naming);
     for language in &request.languages {
         // `--java-mapping idl4`: the language mapping, a file per class
         // under the package directories, and no codec.
@@ -1639,6 +1659,11 @@ OPTIONS:\n    \
              off its enumerators' Rust names (MY_ENUM_A of MyEnum is A) where a valid \
              identifier is left; two that come out as one name stop the generation \
              (default: the IDL names)\n    \
+             --rust-naming <idl|rust>  generate --lang rust only: the naming scheme — idl \
+             (default; the IDL names) or rust (RFC 430: UpperCamelCase types, traits and variants, \
+             snake_case fields, modules, methods and parameters, SCREAMING_SNAKE_CASE constants); \
+             @rust_mapping(apply_naming_convention = ...) sets it per module or declaration; \
+             two declarations that come out as one name stop the generation\n    \
              --dialect <NAME>   generate only: reproduce one peer's answers to every wire \
              axis at once, before any axis flag overrides one of them (default: specification, \
              which is what generate always emitted) — an unknown name lists the valid ones\n    \

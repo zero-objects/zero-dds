@@ -1295,6 +1295,174 @@ fn github_61_every_place_that_names_an_enumerator_takes_the_cut_name() {
     );
 }
 
+/// GitHub #61: the Rust naming scheme changes the Rust names and nothing
+/// else. One IDL file is compiled twice into one crate, with the IDL names
+/// and with `rust_naming(RustNaming::Rust)`; the second module is held to
+/// `deny(nonstandard_style)`. For the same values the two give the same
+/// octets in every encoding, the same type name, TypeIdentifier and
+/// TypeObject, and each reads what the other wrote.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn github_61_both_naming_schemes_give_the_same_type_and_the_same_octets() {
+    run_generated_items(
+        "rustnaming",
+        "module sensor_data { \
+           const long maxSamples = 8; \
+           enum reading_kind { READING_KIND_raw, READING_KIND_filtered }; \
+           bitmask status_flags { flagReady, flag_error }; \
+           bitset packed_bits { bitfield<3> lowPart; bitfield<5> high_part; }; \
+           typedef sequence<long> sample_list; \
+           union reading_value switch (reading_kind) { \
+             case READING_KIND_raw: long rawValue; \
+             case READING_KIND_filtered: double filtered_value; }; \
+           @appendable struct base_reading { @key long sensorId; @optional string unitName; }; \
+           @appendable struct HTTPReading : base_reading { \
+             @default(READING_KIND_filtered) reading_kind kind; sample_list Samples; \
+             reading_value lastValue; status_flags flags; packed_bits bits; \
+             long type; long r; double grid[2]; }; \
+           @mutable struct sparse_reading { @key long sensorId; @optional double lastSeen; \
+             sequence<HTTPReading> allReadings; }; \
+         }; \
+         module Outer_Scope { \
+           @final struct top_level { @key sensor_data::reading_kind kindKey; @key long instanceNo; \
+             sensor_data::HTTPReading inner_reading; }; \
+         };",
+        ".dds_type_impls(true).compile(&[\"idl.idl\"])?;\n    \
+         let renamed = std::path::PathBuf::from(std::env::var(\"OUT_DIR\").expect(\"OUT_DIR\"))\
+         .join(\"renamed\");\n    \
+         std::fs::create_dir_all(&renamed).expect(\"mkdir\");\n    \
+         zerodds_build::Config::new().out_dir(&renamed)\
+         .rust_naming(zerodds_build::RustNaming::Rust)",
+        "#[deny(nonstandard_style)]\npub mod by_rust {\n    \
+         include!(concat!(env!(\"OUT_DIR\"), \"/renamed/idl.rs\"));\n}\n",
+        &format!(
+            r#"{KEY_READ_CHECK}
+        fn by_idl_reading() -> sensor_data::HTTPReading {{
+            let mut a = sensor_data::HTTPReading::default();
+            a.parent.sensorId = 7;
+            a.parent.unitName = Some("K".to_string());
+            a.kind = sensor_data::reading_kind::READING_KIND_raw;
+            a.Samples = vec![1, 2, 3];
+            a.lastValue = sensor_data::reading_value::Filtered_value(2.5);
+            a.flags = sensor_data::flagReady | sensor_data::flag_error;
+            a.bits.lowPart = 5;
+            a.bits.high_part = 17;
+            a.r#type = 9;
+            a.r = 4;
+            a.grid = [1.0, 2.0];
+            a
+        }}
+        fn by_rust_reading() -> by_rust::sensor_data::HttpReading {{
+            let mut b = by_rust::sensor_data::HttpReading::default();
+            b.parent.sensor_id = 7;
+            b.parent.unit_name = Some("K".to_string());
+            b.kind = by_rust::sensor_data::ReadingKind::ReadingKindRaw;
+            b.samples = vec![1, 2, 3];
+            b.last_value = by_rust::sensor_data::ReadingValue::FilteredValue(2.5);
+            b.flags = by_rust::sensor_data::FLAG_READY | by_rust::sensor_data::FLAG_ERROR;
+            b.bits.low_part = 5;
+            b.bits.high_part = 17;
+            b.r#type = 9;
+            b.r = 4;
+            b.grid = [1.0, 2.0];
+            b
+        }}
+        fn same_type<A: zerodds_dcps::DdsType, B: zerodds_dcps::DdsType>() {{
+            assert_eq!(A::TYPE_NAME, B::TYPE_NAME);
+            assert_eq!(A::type_identifier(), B::type_identifier(), "{{}}", A::TYPE_NAME);
+            assert_eq!(A::type_object(), B::type_object(), "{{}}", A::TYPE_NAME);
+            assert_eq!(
+                A::type_object_dependencies(),
+                B::type_object_dependencies(),
+                "{{}}",
+                A::TYPE_NAME
+            );
+            assert_eq!(A::HAS_KEY, B::HAS_KEY);
+            assert_eq!(A::MAX_SERIALIZED_SIZE, B::MAX_SERIALIZED_SIZE);
+        }}
+
+        #[test]
+        fn the_type_is_the_same_under_both_schemes() {{
+            assert_eq!(sensor_data::maxSamples, by_rust::sensor_data::MAX_SAMPLES);
+            assert_eq!(sensor_data::flag_error, by_rust::sensor_data::FLAG_ERROR);
+            same_type::<sensor_data::base_reading, by_rust::sensor_data::BaseReading>();
+            same_type::<sensor_data::HTTPReading, by_rust::sensor_data::HttpReading>();
+            same_type::<sensor_data::sparse_reading, by_rust::sensor_data::SparseReading>();
+            same_type::<sensor_data::reading_value, by_rust::sensor_data::ReadingValue>();
+            same_type::<Outer_Scope::top_level, by_rust::outer_scope::TopLevel>();
+            assert_eq!(
+                <sensor_data::HTTPReading as zerodds_dcps::DdsType>::TYPE_NAME,
+                "sensor_data::HTTPReading"
+            );
+        }}
+
+        #[test]
+        fn the_octets_are_the_same_under_both_schemes() {{
+            use zerodds_dcps::DdsType;
+            let a = by_idl_reading();
+            let b = by_rust_reading();
+            assert_eq!(b.kind, by_rust::sensor_data::ReadingKind::ReadingKindRaw);
+            assert_eq!(
+                by_rust::sensor_data::HttpReading::default().kind,
+                by_rust::sensor_data::ReadingKind::ReadingKindFiltered,
+                "the @default names the enumerator by its Rust name"
+            );
+            let mut sparse_a = sensor_data::sparse_reading::default();
+            sparse_a.sensorId = 11;
+            sparse_a.lastSeen = Some(0.5);
+            sparse_a.allReadings = vec![by_idl_reading(), by_idl_reading()];
+            let mut sparse_b = by_rust::sensor_data::SparseReading::default();
+            sparse_b.sensor_id = 11;
+            sparse_b.last_seen = Some(0.5);
+            sparse_b.all_readings = vec![by_rust_reading(), by_rust_reading()];
+            let mut top_a = Outer_Scope::top_level::default();
+            top_a.kindKey = sensor_data::reading_kind::READING_KIND_filtered;
+            top_a.instanceNo = 3;
+            top_a.inner_reading = by_idl_reading();
+            let mut top_b = by_rust::outer_scope::TopLevel::default();
+            top_b.kind_key = by_rust::sensor_data::ReadingKind::ReadingKindFiltered;
+            top_b.instance_no = 3;
+            top_b.inner_reading = by_rust_reading();
+            for (xcdr1, be) in modes() {{
+                let reading = write(&a, xcdr1, be);
+                assert_eq!(reading, write(&b, xcdr1, be), "HTTPReading {{xcdr1}} {{be}}");
+                let sparse = write(&sparse_a, xcdr1, be);
+                assert_eq!(sparse, write(&sparse_b, xcdr1, be), "sparse_reading {{xcdr1}} {{be}}");
+                let top = write(&top_a, xcdr1, be);
+                assert_eq!(top, write(&top_b, xcdr1, be), "top_level {{xcdr1}} {{be}}");
+                // The key-only read of one scheme takes the other's octets.
+                let key: by_rust::outer_scope::TopLevel = keys(&top, xcdr1, be);
+                assert_eq!(key.instance_no, 3);
+                assert_eq!(key.kind_key, by_rust::sensor_data::ReadingKind::ReadingKindFiltered);
+                let key: by_rust::sensor_data::HttpReading = keys(&reading, xcdr1, be);
+                assert_eq!(key.parent.sensor_id, 7);
+            }}
+            // Each reads what the other wrote.
+            let mut bytes = Vec::new();
+            DdsType::encode(&a, &mut bytes).expect("encode");
+            let back =
+                <by_rust::sensor_data::HttpReading as DdsType>::decode(&bytes).expect("decode");
+            assert_eq!(back, b);
+            let mut bytes = Vec::new();
+            DdsType::encode(&sparse_b, &mut bytes).expect("encode");
+            let back = <sensor_data::sparse_reading as DdsType>::decode(&bytes).expect("decode");
+            assert_eq!(back, sparse_a);
+            // A content filter names the IDL member under either scheme.
+            assert_eq!(
+                format!("{{:?}}", DdsType::field_value(&top_a, "instanceNo")),
+                format!("{{:?}}", DdsType::field_value(&top_b, "instanceNo"))
+            );
+            assert!(DdsType::field_value(&top_b, "instance_no").is_none());
+            assert_eq!(
+                format!("{{:?}}", DdsType::field_value(&top_b, "kindKey")),
+                format!("{{:?}}", DdsType::field_value(&top_a, "kindKey"))
+            );
+        }}
+        "#
+        ),
+    );
+}
+
 /// A `fixed<P, S>` member, through the whole consumer path.
 ///
 /// The last member kind the Rust column had no writer for: `zerodds-build`

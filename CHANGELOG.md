@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **A Rust naming scheme after RFC 430: `zerodds_build::Config::rust_naming`,
+  `zerodds-idlc --rust-naming` and `@rust_mapping`** (GitHub #61;
+  `zerodds-lang-rules` `rust_names`, `zerodds-ast`
+  `MappingLanguage::Rust`). `RustNaming::Rust` writes modules, fields and
+  the locals of the codec in `snake_case`, types, enumerators and union
+  branches in `UpperCamelCase`, constants and the bits of a bit mask in
+  `SCREAMING_SNAKE_CASE`; an acronym is one word (`HTTPReading` is
+  `HttpReading`), and with `strip_enum_prefix` the enumeration's name is cut
+  first. `RustNaming::Idl`, the IDL names, stays the default, as in IDL4 to
+  Java 1.0 and IDL4 to C# 1.0 §7.1.1. `@rust_mapping(apply_naming_convention
+  = RUST_NAMING_CONVENTION | IDL_NAMING_CONVENTION)` sets the scheme for a
+  module or for a type, constant, exception or interface. Two declarations
+  of one scope that come out as one name stop the build. The TypeObject,
+  member ids, content filters, type matching and the keys of
+  `Config::rust_type` keep the IDL names. An interface's trait, its methods
+  and parameters, the client, the dispatcher and the types DDS-RPC 1.0
+  §7.5.1.1.4-7 composes (`Service_operation_In`) take the scheme as Rust
+  items; their registered type names and TypeObjects stay DDS-RPC's
+  (`zerodds-rpc-rust-e2e` `tests/rust_naming.rs`: the same octets for the
+  Basic and the Enhanced Service Mapping). An interface and its base take
+  one scheme. Tests:
+  `github_61_both_naming_schemes_give_the_same_type_and_the_same_octets`
+  (one IDL file compiled under both schemes into one crate, the renamed
+  module under `deny(nonstandard_style)`: the same octets in XCDR1 and
+  XCDR2, both byte orders, the same TypeIdentifier and TypeObject),
+  `github_61_the_rust_naming_scheme_is_written_only_when_asked`,
+  `github_61_rust_mapping_sets_the_scheme_per_module_and_declaration`,
+  `github_61_two_names_that_are_one_under_the_rust_scheme_stop_the_build`,
+  `rust_mapping_reaches_the_model_and_is_held_to_its_declaration`.
+
 - **`zerodds_build::Config::strip_enum_prefix` and `zerodds-idlc
   --strip-enum-prefix`** (GitHub #61; `zerodds-lang-rules`
   `adapter::cst::RustEnumPrefixScope`, `enumerator_ident`). They cut each

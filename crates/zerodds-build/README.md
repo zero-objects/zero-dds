@@ -116,6 +116,47 @@ change from lower to upper case; it is cut only where a valid identifier is
 left (`MY_ENUM_1` stays), and two enumerators that come out as one name stop
 the build. It is off by default.
 
+`rust_naming(RustNaming::Rust)` writes the names after the Rust API
+guidelines (RFC 430) instead of the IDL's:
+
+| IDL | Rust |
+|---|---|
+| module `Sensor_Data` | `pub mod sensor_data` |
+| struct, union, enum, bit set, bit mask, typedef, exception `reading_kind`, `HTTPReading` | `ReadingKind`, `HttpReading` |
+| member `sensorId` | field `sensor_id` |
+| enumerator `READING_KIND_raw` | variant `ReadingKindRaw`, and `Raw` with `strip_enum_prefix(true)` |
+| union branch `filtered_value` | variant `FilteredValue` |
+| constant `maxSamples`, bit `flagReady` | `MAX_SAMPLES`, `FLAG_READY` |
+| interface `robot_arm`, operation `moveTo`, parameter `targetX` | trait `RobotArm`, method `move_to`, parameter `target_x`; `RobotArmClient`, `RobotArmDispatcher`, `RobotArmError` |
+| the DDS-RPC types `robot_arm_moveTo_In`, `robot_arm_Call` | `RobotArmMoveToIn`, `RobotArmCall`, registered under the DDS-RPC names |
+
+A name is split into words at each `_`, where a lower-case letter is
+followed by an upper-case one, and before the last letter of an upper-case
+run that a lower-case letter follows, so an acronym is one word. The module
+that includes the generated file then needs no `#[allow(non_snake_case)]`.
+The IDL names are the default, as in IDL4 to Java 1.0 and IDL4 to C# 1.0
+§7.1.1; there is no adopted IDL4 to Rust mapping.
+
+An annotation sets the scheme for one module or one type, constant,
+exception or interface, over what the build chose, the innermost last:
+
+```idl
+@rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)
+module Sensor_Data {
+    struct HTTPReading { long sensorId; };       // HttpReading, sensor_id
+
+    @rust_mapping(apply_naming_convention = IDL_NAMING_CONVENTION)
+    struct legacy_frame { long frameNo; };       // legacy_frame, frameNo
+};
+```
+
+Two declarations of one scope that come out as one name (`my_field` and
+`myField`) stop the build. Under either scheme the TypeObject, the member
+ids, a content filter, the type matching and the paths `rust_type` takes
+read the IDL names, and so do the registered names and the TypeObjects of
+the types DDS-RPC 1.0 §7.5.1.1.4-7 composes for an interface. An interface
+and its base take one scheme.
+
 Where XCDR1 cannot frame a type, the four XCDR1 methods are **left out**
 and the trait's own refusing defaults stand, with a comment in the
 generated file naming the type. They are not delegated to the XCDR2
@@ -197,6 +238,7 @@ fn main() -> Result<(), zerodds_build::Error> {
 | `rust_type(idl_path, rust_type)` | hold a typedef, struct member or union branch as a Rust type that implements `zerodds_wire::WireRepr` |
 | `rust_type_with(idl_path, rust_type, adapter)` | the same through an adapter value that implements `zerodds_wire::WireReprWith` |
 | `strip_enum_prefix(bool)` | cut each enumeration's name off its enumerators' Rust names, as `zerodds-idlc --strip-enum-prefix` (default: off) |
+| `rust_naming(RustNaming)` | the naming scheme: `RustNaming::Idl` (default, the IDL names) or `RustNaming::Rust` (RFC 430), as `zerodds-idlc --rust-naming` |
 
 The CLI exposes `--out` and `--default-extensibility`, as well as its own
 `--lang`, `--encoding` and `--endian` options. Include directories, macro

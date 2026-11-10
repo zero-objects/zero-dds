@@ -895,6 +895,8 @@ fn codec_items(
     companions: Companions,
 ) -> Result<Vec<rust::Item>, EncodeError> {
     axes_the_rust_codec_carries(key)?;
+    // The members by the naming scheme of the type that declares each.
+    let _members = crate::rust_names::MemberNamingScope::of_type(ast, type_);
     // Which set of names this run writes, and — through
     // `MemberWrite::Nested` — which set it calls on a member. The two
     // have to be the same set: a nested call that named the XCDR2
@@ -958,7 +960,7 @@ fn codec_items(
             attrs: Vec::new(),
             generics: Vec::new(),
             trait_: None,
-            self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
+            self_type: rust::Type::named(Path::single(&crate::rust_names::type_ident(ast, node))),
             items,
         })]);
     }
@@ -998,7 +1000,7 @@ fn codec_items(
             attrs: Vec::new(),
             generics: Vec::new(),
             trait_: None,
-            self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
+            self_type: rust::Type::named(Path::single(&crate::rust_names::type_ident(ast, node))),
             items,
         })];
         if companions == Companions::Emit
@@ -1049,7 +1051,7 @@ fn codec_items(
             attrs: Vec::new(),
             generics: Vec::new(),
             trait_: None,
-            self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
+            self_type: rust::Type::named(Path::single(&crate::rust_names::type_ident(ast, node))),
             items,
         })];
         // A union returns from here and not through the tail, so its
@@ -1080,7 +1082,7 @@ fn codec_items(
         attrs: Vec::new(),
         generics: Vec::new(),
         trait_: None,
-        self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
+        self_type: rust::Type::named(Path::single(&crate::rust_names::type_ident(ast, node))),
         items,
     })];
     // The specification's default values, as an `impl Default`. A member
@@ -2089,7 +2091,14 @@ fn enumerator_variant_and_value(
     // it is built from a member name — and using it here produced
     // `Self::Missing_node` for an enumerator declared `missing_node`.
     Ok((
-        crate::adapter::cst::enumerator_ident(enumeration, &enumerator.name),
+        match ast.type_(enumerator.parent) {
+            Ok(owner) => crate::adapter::cst::enumerator_ident(ast, owner, &enumerator.name),
+            Err(error) => {
+                return Err(EncodeError::NoLayout {
+                    detail: alloc_format(&error),
+                });
+            }
+        },
         value,
     ))
 }
@@ -2228,7 +2237,7 @@ fn bitset_fields(
         }
         if let Some(field_name) = field_node.name.as_ref() {
             out.push((
-                rust::escape_keyword(field_name).to_string(),
+                crate::rust_names::field_ident(field_name),
                 field_node.bits,
                 position,
             ));
@@ -2998,7 +3007,7 @@ fn key_holder_fns(
             &kind,
             rust::Expr::Field {
                 receiver: Box::new(holder_of(ast, type_, *node)),
-                name: Ident::new(&rust::escape_keyword(&name)),
+                name: Ident::new(&crate::rust_names::field_ident(&name)),
             },
             // A key member is never `@optional` — §7.2.2.4.4.4.8, and
             // `idl-lower::validate::member_rules` refuses the pair — so
@@ -3142,7 +3151,10 @@ fn key_holder_fns(
             )?;
             fields.push((
                 member_node.node_id,
-                (Ident::new(&rust::escape_keyword(&member_node.name)), value),
+                (
+                    Ident::new(&crate::rust_names::field_ident(&member_node.name)),
+                    value,
+                ),
             ));
         }
         from_holder.push(rust::Statement::Tail(rust::Expr::Call {
@@ -3558,7 +3570,10 @@ fn decode_in_plan_order(
             )?;
             fields.push((
                 member_node.node_id,
-                (Ident::new(&rust::escape_keyword(&member_node.name)), value),
+                (
+                    Ident::new(&crate::rust_names::field_ident(&member_node.name)),
+                    value,
+                ),
             ));
         }
     }
@@ -4220,7 +4235,7 @@ fn write_for(
 ) -> Result<rust::Statement, EncodeError> {
     let value = rust::Expr::Field {
         receiver: Box::new(receiver),
-        name: Ident::new(&rust::escape_keyword(name)),
+        name: Ident::new(&crate::rust_names::field_ident(name)),
     };
     write_value_to("w", name, kind, value, false)
 }
@@ -6816,7 +6831,7 @@ fn read_optional_member(
                     vec![parameter_role("Optional")],
                 ))),
             ),
-            let_statement(
+            member_let(
                 name,
                 rust::Expr::If {
                     condition: Box::new(rust::Expr::Binary {
@@ -6877,7 +6892,7 @@ fn read_optional_member(
 /// same way wrong.
 fn field_binding(name: &str) -> (Ident, rust::Expr) {
     (
-        Ident::new(&rust::escape_keyword(name)),
+        Ident::new(&crate::rust_names::field_ident(name)),
         rust::Expr::Path(Path::single(&member_local(name))),
     )
 }
@@ -6910,6 +6925,9 @@ fn member_local(name: &str) -> String {
         "sentinel",
         "discriminator",
     ];
+    // Under the Rust naming scheme the local is spelled as the field is.
+    let spelled = crate::rust_names::member_naming(name).field_unescaped(name);
+    let name = spelled.as_str();
     if name.starts_with("zd_") || GENERATED.contains(&name) {
         return format!("zd_m_{name}");
     }
@@ -6974,7 +6992,7 @@ fn default_impl(ast: &Ast, type_: Id<TypeNode>) -> Result<Option<rust::Item>, En
     }
     let from = node.module;
     // Named from inside its own module, which is the plain name.
-    let self_type = rust::Type::named(Path::single(&rust::escape_type_name(&node.name)));
+    let self_type = rust::Type::named(Path::single(&crate::rust_names::type_ident(ast, node)));
     let value = crate::default_rust::default_of(ast, from, type_, &node.name)?;
     // A member held as a `rust_type` mapping takes its IDL default through
     // `from_wire`, which may refuse it — a `NonZeroU32` has no zero. Such a

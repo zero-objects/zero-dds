@@ -85,6 +85,7 @@ use crate::adapter::interface::{
     self, BindingError, InterfaceError, Operation, RETURN_MEMBER, Raise, Service,
 };
 use crate::encode::{EncodeError, MemberWrite, Position, read_for, write_of, write_value_to};
+use crate::rust_names::RustNaming;
 
 /// Why an interface did not become a Rust binding.
 #[derive(Debug)]
@@ -328,6 +329,7 @@ fn declare(
 ) -> Result<(), RustInterfaceError> {
     let module = service.module;
     let ops = service.all_operations();
+    let _naming = rs::scope(ast, service, &ops)?;
 
     // The exceptions this interface's operations raise, each declared
     // (as a plain struct, by `crate::adapter::cst`'s own walk of
@@ -360,7 +362,7 @@ fn declare(
     let mut result_ok: Vec<bool> = Vec::new();
     for op in &ops {
         out.push((module, rust::Item::Struct(in_struct(ast, service, op)?)));
-        let in_name = interface::in_struct_name(&service.name, &op.name);
+        let in_name = rs::in_struct_name(&service.name, &op.name);
         out.push((
             module,
             struct_codec_item(ast, module, &in_name, &in_fields(op))?,
@@ -374,7 +376,7 @@ fn declare(
         }
         in_ok.push(ok);
         out.push((module, rust::Item::Struct(out_struct(ast, service, op)?)));
-        let out_name = interface::out_struct_name(&service.name, &op.name);
+        let out_name = rs::out_struct_name(&service.name, &op.name);
         out.push((
             module,
             struct_codec_item(ast, module, &out_name, &out_fields(op))?,
@@ -407,7 +409,7 @@ fn declare(
             out.push((
                 module,
                 union_codec_with(
-                    &interface::result_union_name(&service.name, &op.name),
+                    &rs::result_union_name(&service.name, &op.name),
                     &result_union_cases(ast, module, service, op)?,
                     None,
                     CodecVariant::Xcdr1,
@@ -424,7 +426,7 @@ fn declare(
         out.push((
             module,
             union_codec_with(
-                &interface::call_union_name(&service.name),
+                &rs::call_union_name(&service.name),
                 &call_union_cases(service, &ops),
                 Some(UNKNOWN_OP_VARIANT),
                 CodecVariant::Xcdr1,
@@ -440,7 +442,7 @@ fn declare(
         out.push((
             module,
             union_codec_with(
-                &interface::return_union_name(&service.name),
+                &rs::return_union_name(&service.name),
                 &return_union_cases(service, &ops),
                 Some(UNKNOWN_OP_VARIANT),
                 CodecVariant::Xcdr1,
@@ -466,7 +468,7 @@ fn declare(
     out.push((
         module,
         dds_type_impl(
-            &interface::call_union_name(&service.name),
+            &rs::call_union_name(&service.name),
             &interface::call_union_name(&service.name),
             call_ok,
         ),
@@ -474,7 +476,7 @@ fn declare(
     out.push((
         module,
         dds_type_impl(
-            &interface::return_union_name(&service.name),
+            &rs::return_union_name(&service.name),
             &interface::return_union_name(&service.name),
             return_ok,
         ),
@@ -491,6 +493,143 @@ fn declare(
     }
 
     Ok(())
+}
+
+// == Rust names ===========================================================
+
+/// The Rust names of what one interface declares, under its naming scheme
+/// ([`crate::rust_names`]).
+///
+/// DDS-RPC 1.0 §7.5.1.1.4-7 composes the names of the topic types and of
+/// the per-operation structures (`Service_operation_In`), and those names
+/// go on the wire: the registered type name and the TypeObjects are built
+/// from `crate::adapter::interface`'s functions, never from these. What
+/// is here is the spelling of the Rust items that hold them.
+mod rs {
+    use super::{Ast, InterfaceError, Operation, RustInterfaceError, Service, interface};
+    use crate::adapter::cst::{MaterialiseError, no_spelling_collision};
+    use crate::rust_names::{self, MemberNamingScope, RustNaming};
+
+    /// The scheme of the interface being written ([`scope`]).
+    pub(super) fn naming() -> RustNaming {
+        rust_names::member_naming("")
+    }
+
+    /// The scheme of `service` on this thread until dropped.
+    ///
+    /// # Errors
+    /// A base under another scheme than `service`: the client, the
+    /// dispatcher and the request choice of a derived interface name the
+    /// base's items, and one spelling has to hold for both. Two
+    /// operations, or two parameters of one operation, that are one Rust
+    /// name under the scheme.
+    pub(super) fn scope(
+        ast: &Ast,
+        service: &Service,
+        ops: &[Operation],
+    ) -> Result<MemberNamingScope, RustInterfaceError> {
+        let of = |id, at: &str| {
+            ast.interface(id)
+                .map(|node| rust_names::of_declaration(ast, node.module, &node.facets))
+                .map_err(|_| InterfaceError::NoNode {
+                    kind: "interface",
+                    at: at.to_string(),
+                })
+        };
+        let naming = of(service.id, &service.name)?;
+        for base in &service.bases {
+            if of(base.id, &base.name)? != naming {
+                return Err(MaterialiseError::NoLanguageForm {
+                    construct: String::from(
+                        "an interface whose base stands under another naming scheme \
+                         (`@rust_mapping`); the two take one scheme",
+                    ),
+                    language: "rust",
+                    at: format!("{} : {}", service.name, base.name),
+                }
+                .into());
+            }
+        }
+        let methods: Vec<(String, &str)> = ops
+            .iter()
+            .map(|op| (naming.function(&op.name), op.name.as_str()))
+            .collect();
+        no_spelling_collision(
+            methods
+                .iter()
+                .map(|(spelled, name)| (spelled.as_str(), *name)),
+            "Rust",
+            &service.name,
+        )?;
+        for op in ops {
+            let params: Vec<(String, &str)> = op
+                .params
+                .iter()
+                .map(|p| (naming.parameter(&p.name), p.name.as_str()))
+                .collect();
+            no_spelling_collision(
+                params
+                    .iter()
+                    .map(|(spelled, name)| (spelled.as_str(), *name)),
+                "Rust",
+                &format!("{}::{}", service.name, op.name),
+            )?;
+        }
+        Ok(MemberNamingScope::all(naming))
+    }
+
+    /// A name DDS-RPC 1.0 composes, as the Rust type that holds it.
+    pub(super) fn composed(name: &str) -> String {
+        naming().composed_type(name)
+    }
+
+    pub(super) fn in_struct_name(service: &str, operation: &str) -> String {
+        composed(&interface::in_struct_name(service, operation))
+    }
+
+    pub(super) fn out_struct_name(service: &str, operation: &str) -> String {
+        composed(&interface::out_struct_name(service, operation))
+    }
+
+    pub(super) fn result_union_name(service: &str, operation: &str) -> String {
+        composed(&interface::result_union_name(service, operation))
+    }
+
+    pub(super) fn call_union_name(service: &str) -> String {
+        composed(&interface::call_union_name(service))
+    }
+
+    pub(super) fn return_union_name(service: &str) -> String {
+        composed(&interface::return_union_name(service))
+    }
+
+    pub(super) fn request_type_name(service: &str) -> String {
+        composed(&interface::request_type_name(service))
+    }
+
+    pub(super) fn reply_type_name(service: &str) -> String {
+        composed(&interface::reply_type_name(service))
+    }
+
+    /// A parameter, and the field of an `In` or `Out` structure it is.
+    pub(super) fn param(name: &str) -> String {
+        naming().parameter(name)
+    }
+
+    /// An operation, as the trait's and the client's method.
+    pub(super) fn method(name: &str) -> String {
+        naming().function(name)
+    }
+
+    /// A raised exception, as a variant of a `Result` or of the error enum.
+    pub(super) fn raise(name: &str) -> String {
+        naming().variant(name)
+    }
+
+    /// The interface, as its trait.
+    pub(super) fn service(name: &str) -> String {
+        naming().variant(name)
+    }
 }
 
 // == field description ===================================================
@@ -513,7 +652,7 @@ fn in_fields(op: &Operation) -> Vec<FieldSpec> {
 fn in_fields_styled(op: &Operation, empty: interface::EmptyOperationStyle) -> Vec<FieldSpec> {
     let mut out: Vec<FieldSpec> = op
         .inputs()
-        .map(|p| FieldSpec::Real(rust::escape_keyword(&p.name), p.type_))
+        .map(|p| FieldSpec::Real(rs::param(&p.name), p.type_))
         .collect();
     if out.is_empty() && empty == interface::EmptyOperationStyle::DummyMember {
         out.push(FieldSpec::Octet(interface::DUMMY_MEMBER.to_string()));
@@ -530,7 +669,7 @@ fn out_fields(op: &Operation) -> Vec<FieldSpec> {
 fn out_fields_styled(op: &Operation, empty: interface::EmptyOperationStyle) -> Vec<FieldSpec> {
     let mut out: Vec<FieldSpec> = op
         .outputs()
-        .map(|p| FieldSpec::Real(rust::escape_keyword(&p.name), p.type_))
+        .map(|p| FieldSpec::Real(rs::param(&p.name), p.type_))
         .collect();
     if let Some(returns) = op.returns {
         let taken: Vec<&str> = out
@@ -624,7 +763,7 @@ fn in_struct(
         fields.push(field(&name, type_, &doc));
     }
     Ok(struct_of(
-        &interface::in_struct_name(&service.name, &op.name),
+        &rs::in_struct_name(&service.name, &op.name),
         fields,
         Doc::line("The `in` and `inout` parameters of one call. DDS-RPC 1.0 §7.5.1.1.4."),
     ))
@@ -661,7 +800,7 @@ fn out_struct(
         fields.push(field(&name, type_, &doc));
     }
     Ok(struct_of(
-        &interface::out_struct_name(&service.name, &op.name),
+        &rs::out_struct_name(&service.name, &op.name),
         fields,
         Doc::line(
             "The return value and the `out`/`inout` parameters of one call. DDS-RPC 1.0 §7.5.1.1.5.",
@@ -671,7 +810,7 @@ fn out_struct(
 
 fn request_struct(service: &Service) -> rust::Struct {
     struct_of(
-        &interface::request_type_name(&service.name),
+        &rs::request_type_name(&service.name),
         vec![
             field(
                 "header",
@@ -680,7 +819,7 @@ fn request_struct(service: &Service) -> rust::Struct {
             ),
             field(
                 interface::DATA_MEMBER,
-                rust::Type::named(Path::single(&interface::call_union_name(&service.name))),
+                rust::Type::named(Path::single(&rs::call_union_name(&service.name))),
                 "The call, as a union over every operation. DDS-RPC 1.0 §7.5.1.1.6 rule 2.",
             ),
         ],
@@ -699,7 +838,7 @@ fn request_struct(service: &Service) -> rust::Struct {
 
 fn reply_struct(service: &Service) -> rust::Struct {
     struct_of(
-        &interface::reply_type_name(&service.name),
+        &rs::reply_type_name(&service.name),
         vec![
             field(
                 "header",
@@ -708,7 +847,7 @@ fn reply_struct(service: &Service) -> rust::Struct {
             ),
             field(
                 interface::DATA_MEMBER,
-                rust::Type::named(Path::single(&interface::return_union_name(&service.name))),
+                rust::Type::named(Path::single(&rs::return_union_name(&service.name))),
                 "The outcome, as a union over every non-`oneway` operation. \
                  DDS-RPC 1.0 §7.5.1.1.7 rule 3.",
             ),
@@ -958,7 +1097,10 @@ fn exception_path(
         kind: "exception",
         at: "the model".to_string(),
     })?;
-    relative_module_path(ast, from, node.module, &node.name)
+    // The struct is `crate::adapter::cst`'s, under the exception's naming
+    // scheme.
+    let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
+    relative_module_path(ast, from, node.module, &naming.type_name(&node.name))
 }
 
 /// A declared type's path as written from inside module `from`, given
@@ -967,7 +1109,9 @@ fn exception_path(
 /// `crate::adapter::cst::relative_path` cannot be reused directly — it
 /// takes a `&TypeNode`, and neither an exception nor an interface (an
 /// RPC trait's base) is one. Same logic, over
-/// `adapter::interface::module_chain`.
+/// `adapter::interface::module_chain`. `leaf` is the Rust name, spelled
+/// by the caller; each module takes the name its declaration has
+/// ([`crate::rust_names::module_ident`]).
 fn relative_module_path(
     ast: &Ast,
     from: Id<ModuleNode>,
@@ -985,10 +1129,10 @@ fn relative_module_path(
     for _ in shared..here.len() {
         segments.push("super".to_string());
     }
-    for (_, name) in there.iter().skip(shared) {
-        segments.push(rust::escape_keyword(name));
+    for (module, _) in there.iter().skip(shared) {
+        segments.push(crate::rust_names::module_ident(ast, *module));
     }
-    segments.push(rust::escape_keyword(leaf));
+    segments.push(leaf.to_string());
     let borrowed: Vec<&str> = segments.iter().map(String::as_str).collect();
     Ok(Path::new(&borrowed))
 }
@@ -1031,6 +1175,9 @@ fn exception_codec_item_with(
         at: "the model".to_string(),
     })?;
     let module = node.module;
+    // The struct and its fields are `crate::adapter::cst`'s, under the
+    // exception's naming scheme.
+    let naming = crate::rust_names::of_declaration(ast, node.module, &node.facets);
     let mut fields = Vec::new();
     for member in &node.members {
         let member_node = ast.member(*member).map_err(|_| InterfaceError::NoNode {
@@ -1044,12 +1191,9 @@ fn exception_codec_item_with(
             }
             .into());
         };
-        fields.push(FieldSpec::Real(
-            rust::escape_keyword(&member_node.name),
-            target,
-        ));
+        fields.push(FieldSpec::Real(naming.field(&member_node.name), target));
     }
-    struct_codec_item_with(ast, module, &node.name, &fields, variant)
+    struct_codec_item_with(ast, module, &naming.type_name(&node.name), &fields, variant)
 }
 
 // == tagged unions =========================================================
@@ -1308,7 +1452,7 @@ fn result_union(
     op: &Operation,
 ) -> Result<(rust::Item, rust::Item), RustInterfaceError> {
     let cases = result_union_cases(ast, module, service, op)?;
-    let name = interface::result_union_name(&service.name, &op.name);
+    let name = rs::result_union_name(&service.name, &op.name);
     tagged_union(
         &name,
         Doc::line(&format!(
@@ -1329,13 +1473,13 @@ fn result_union_cases(
 ) -> Result<Vec<UnionCase>, RustInterfaceError> {
     let mut cases = vec![UnionCase {
         variant: "Ok".to_string(),
-        payload: Path::single(&interface::out_struct_name(&service.name, &op.name)),
+        payload: Path::single(&rs::out_struct_name(&service.name, &op.name)),
         discriminator: interface::RETCODE_OK,
         doc: "`dds::RETCODE_OK`. DDS-RPC 1.0 §7.5.1.1.5 rule 3a.".to_string(),
     }];
     for raise in &op.raises {
         cases.push(UnionCase {
-            variant: rust::escape_keyword(&raise.name),
+            variant: rs::raise(&raise.name),
             payload: exception_path(ast, module, raise.id)?,
             discriminator: interface::exception_hash(&raise.scoped_name),
             doc: format!("The `{}` case. DDS-RPC 1.0 §7.5.1.1.5 rule 5.", raise.name),
@@ -1358,7 +1502,7 @@ fn call_union(
 ) -> Result<(rust::Item, rust::Item), RustInterfaceError> {
     let cases = call_union_cases(service, ops);
     tagged_union(
-        &interface::call_union_name(&service.name),
+        &rs::call_union_name(&service.name),
         Doc::line("The request union over every operation. DDS-RPC 1.0 §7.5.1.1.6."),
         cases,
         Some(UNKNOWN_OP_VARIANT),
@@ -1370,7 +1514,7 @@ fn call_union_cases(service: &Service, ops: &[Operation]) -> Vec<UnionCase> {
     ops.iter()
         .map(|op| UnionCase {
             variant: variant_name(&op.name),
-            payload: Path::single(&interface::in_struct_name(&service.name, &op.name)),
+            payload: Path::single(&rs::in_struct_name(&service.name, &op.name)),
             discriminator: interface::operation_hash(&op.name),
             doc: format!("`{}`. DDS-RPC 1.0 §7.5.1.1.6 rule 5.", op.name),
         })
@@ -1383,7 +1527,7 @@ fn return_union(
 ) -> Result<(rust::Item, rust::Item), RustInterfaceError> {
     let cases = return_union_cases(service, ops);
     tagged_union(
-        &interface::return_union_name(&service.name),
+        &rs::return_union_name(&service.name),
         Doc::line("The reply union. DDS-RPC 1.0 §7.5.1.1.7."),
         cases,
         Some(UNKNOWN_OP_VARIANT),
@@ -1395,7 +1539,7 @@ fn return_union_cases(service: &Service, ops: &[Operation]) -> Vec<UnionCase> {
     ops.iter()
         .map(|op| UnionCase {
             variant: variant_name(&op.name),
-            payload: Path::single(&interface::result_union_name(&service.name, &op.name)),
+            payload: Path::single(&rs::result_union_name(&service.name, &op.name)),
             discriminator: interface::operation_hash(&op.name),
             doc: format!("`{}`. DDS-RPC 1.0 §7.5.1.1.7 rule 5b.", op.name),
         })
@@ -1418,6 +1562,14 @@ const UNKNOWN_EX_VARIANT: &str = "UnknownEx";
 /// `GetMemory`; a name that is already one word capitalises its first
 /// letter and keeps the rest, so `add` becomes `Add`.
 fn variant_name(name: &str) -> String {
+    if rs::naming() == RustNaming::Rust {
+        let out = crate::rust_names::upper_camel_case(name);
+        return if out.chars().any(char::is_alphanumeric) {
+            out
+        } else {
+            String::from("Op")
+        };
+    }
     let mut out = String::new();
     for segment in name.split('_') {
         let mut chars = segment.chars();
@@ -1450,7 +1602,7 @@ fn field_vis(name: &str, type_: rust::Type, visibility: Visibility, doc: &str) -
 }
 
 fn error_type_name(service: &Service) -> String {
-    format!("{}Error", service.name)
+    rs::naming().type_with_suffix(&service.name, "Error")
 }
 
 // == DdsType bridge ========================================================
@@ -1941,7 +2093,7 @@ fn error_enum(
                 raise.name
             )),
             attrs: Vec::new(),
-            name: Ident::new(&rust::escape_keyword(&raise.name)),
+            name: Ident::new(&rs::raise(&raise.name)),
             body: rust::VariantBody::Tuple(vec![exception_type(ast, module, raise.id)?]),
             discriminant: None,
         });
@@ -1996,7 +2148,7 @@ fn same_source(a: &OutFieldSource, b: &OutFieldSource) -> bool {
 fn out_field_map(op: &Operation) -> Vec<(String, OutFieldSource)> {
     let mut out = Vec::new();
     for p in op.outputs() {
-        let field_name = rust::escape_keyword(&p.name);
+        let field_name = rs::param(&p.name);
         let source = match p.direction {
             ParamDirection::InOut => OutFieldSource::InOut(p.name.clone()),
             _ => OutFieldSource::Out(p.name.clone()),
@@ -2127,12 +2279,12 @@ fn op_params(
         let base = rust_type_of(ast, module, Some(p.type_))?;
         match p.direction {
             ParamDirection::In => params.push(rust::Param {
-                name: Some(Ident::new(&rust::escape_keyword(&p.name))),
+                name: Some(Ident::new(&rs::param(&p.name))),
                 type_: base,
                 receiver: None,
             }),
             ParamDirection::InOut => params.push(rust::Param {
-                name: Some(Ident::new(&rust::escape_keyword(&p.name))),
+                name: Some(Ident::new(&rs::param(&p.name))),
                 type_: rust::Type::Ref {
                     target: Box::new(base),
                     mutable: true,
@@ -2169,7 +2321,7 @@ fn trait_method_signature(
         doc: Doc::line(&method_doc(op)),
         attrs: Vec::new(),
         visibility: Visibility::Private,
-        name: Ident::new(&rust::escape_keyword(&op.name)),
+        name: Ident::new(&rs::method(&op.name)),
         generics: Vec::new(),
         params: op_params(ast, service.module, op)?,
         returns: Some(op_return_type(ast, service.module, service, op)?),
@@ -2187,7 +2339,12 @@ fn base_interface_path(
         kind: "base interface",
         at: base.name.clone(),
     })?;
-    relative_module_path(ast, from, node.module, &format!("{}{suffix}", node.name))
+    relative_module_path(
+        ast,
+        from,
+        node.module,
+        &rust::escape_keyword(&rs::naming().type_with_suffix(&node.name, suffix)),
+    )
 }
 
 fn service_trait(ast: &Ast, service: &Service) -> Result<rust::Trait, RustInterfaceError> {
@@ -2220,7 +2377,7 @@ fn service_trait(ast: &Ast, service: &Service) -> Result<rust::Trait, RustInterf
         doc,
         attrs: Vec::new(),
         visibility: Visibility::Public,
-        name: Ident::new(&rust::escape_keyword(&service.name)),
+        name: Ident::new(&rs::service(&service.name)),
         generics: Vec::new(),
         supertraits,
         items,
@@ -2230,11 +2387,14 @@ fn service_trait(ast: &Ast, service: &Service) -> Result<rust::Trait, RustInterf
 // -- the client -------------------------------------------------------------
 
 fn client_type_name(service: &Service) -> String {
-    format!("{}Client", service.name)
+    rs::naming().type_with_suffix(&service.name, "Client")
 }
 
 fn client_field_name(base: &interface::Base) -> String {
-    format!("base_{}", base.name.to_lowercase())
+    match rs::naming() {
+        RustNaming::Idl => format!("base_{}", base.name.to_lowercase()),
+        RustNaming::Rust => format!("base_{}", crate::rust_names::snake_case(&base.name)),
+    }
 }
 
 fn client_struct(ast: &Ast, service: &Service) -> Result<rust::Struct, RustInterfaceError> {
@@ -2243,8 +2403,8 @@ fn client_struct(ast: &Ast, service: &Service) -> Result<rust::Struct, RustInter
         rust::Type::generic(
             Path::new(&["zerodds_rpc", "requester", "Requester"]),
             vec![
-                rust::Type::named(Path::single(&interface::call_union_name(&service.name))),
-                rust::Type::named(Path::single(&interface::return_union_name(&service.name))),
+                rust::Type::named(Path::single(&rs::call_union_name(&service.name))),
+                rust::Type::named(Path::single(&rs::return_union_name(&service.name))),
             ],
         ),
         Visibility::Private,
@@ -2731,7 +2891,7 @@ fn in_struct_literal(
 ) -> Result<rust::Expr, RustInterfaceError> {
     let mut fields = Vec::new();
     for p in op.inputs() {
-        let name = rust::escape_keyword(&p.name);
+        let name = rs::param(&p.name);
         // An `in` parameter (`op_params`) is already owned by this method,
         // so it moves straight into the payload. An `inout` one is
         // `&mut T` (`rust::Type::Ref { mutable: true, .. }`): the payload
@@ -2785,8 +2945,8 @@ fn client_method(
     let params = op_params(ast, module, op)?;
     let returns = op_return_type(ast, module, service, op)?;
     let variant = variant_name(&op.name);
-    let in_struct_path = Path::single(&interface::in_struct_name(&service.name, &op.name));
-    let call_path = Path::new(&[&interface::call_union_name(&service.name), &variant]);
+    let in_struct_path = Path::single(&rs::in_struct_name(&service.name, &op.name));
+    let call_path = Path::new(&[&rs::call_union_name(&service.name), &variant]);
 
     let build_payload = rust::Statement::Let {
         name: Ident::new("request_payload"),
@@ -2838,7 +2998,7 @@ fn client_method(
         doc: Doc::line(&method_doc(op)),
         attrs: Vec::new(),
         visibility: Visibility::Public,
-        name: Ident::new(&rust::escape_keyword(&op.name)),
+        name: Ident::new(&rs::method(&op.name)),
         generics: Vec::new(),
         params,
         returns: Some(returns),
@@ -2860,7 +3020,7 @@ fn client_reply_match(
             OutFieldSource::InOut(param_name) => {
                 assigns.push(rust::Statement::Semi(rust::Expr::Assign {
                     target: Box::new(rust::Expr::Deref(Box::new(rust::Expr::Path(Path::single(
-                        &rust::escape_keyword(param_name),
+                        &rs::param(param_name),
                     ))))),
                     value: Box::new(field_expr("out_val", field_name)),
                 }));
@@ -2888,7 +3048,7 @@ fn client_reply_match(
     let mut ok_arm_statements = assigns;
     ok_arm_statements.push(rust::Statement::Tail(ok_expr));
 
-    let result_name = interface::result_union_name(&service.name, &op.name);
+    let result_name = rs::result_union_name(&service.name, &op.name);
     // `out_val` is read by `assigns`/`ok_values` above only where the
     // reply carries an `out`, `inout`, or return value (DDS-RPC 1.0
     // §7.5.1.1.5); an operation whose `${I}_${op}_Out` is empty (no
@@ -2910,7 +3070,7 @@ fn client_reply_match(
         }),
     }];
     for raise in &op.raises {
-        let raise_variant = rust::escape_keyword(&raise.name);
+        let raise_variant = rs::raise(&raise.name);
         result_arms.push(rust::MatchArm {
             pattern: rust::Pattern::TupleStruct {
                 path: Path::new(&[&result_name, &raise_variant]),
@@ -2967,7 +3127,7 @@ fn client_reply_match(
         });
     }
 
-    let return_name = interface::return_union_name(&service.name);
+    let return_name = rs::return_union_name(&service.name);
     let outer_match = rust::Expr::Match {
         scrutinee: Box::new(rust::Expr::Path(Path::single("reply"))),
         arms: vec![
@@ -3019,7 +3179,7 @@ fn client_reply_match(
 // -- the dispatcher -----------------------------------------------------------
 
 fn dispatcher_type_name(service: &Service) -> String {
-    format!("{}Dispatcher", service.name)
+    rs::naming().type_with_suffix(&service.name, "Dispatcher")
 }
 
 fn remote_exception_code(variant: &str) -> Path {
@@ -3033,7 +3193,7 @@ fn remote_exception_code(variant: &str) -> Path {
 
 fn service_bound(service: &Service) -> Vec<rust::Type> {
     vec![
-        rust::Type::named(Path::single(&rust::escape_keyword(&service.name))),
+        rust::Type::named(Path::single(&rs::service(&service.name))),
         rust::Type::named(Path::single("Send")),
         rust::Type::named(Path::single("Sync")),
         rust::Type::named(Path::single("'static")),
@@ -3084,7 +3244,7 @@ fn dispatcher_out_literal(
     qualify: &impl Fn(&str) -> Result<Path, RustInterfaceError>,
 ) -> Result<rust::Expr, RustInterfaceError> {
     let map = out_field_map(op);
-    let out_path = qualify(&interface::out_struct_name(&service.name, &op.name))?;
+    let out_path = qualify(&rs::out_struct_name(&service.name, &op.name))?;
     if map.is_empty() {
         let fields = if service.mapping.empty_style() == interface::EmptyOperationStyle::DummyMember
         {
@@ -3106,7 +3266,7 @@ fn dispatcher_out_literal(
     for (field_name, source) in &map {
         let expr = match source {
             OutFieldSource::InOut(param_name) => {
-                rust::Expr::Path(Path::single(&rust::escape_keyword(param_name)))
+                rust::Expr::Path(Path::single(&rs::param(param_name)))
             }
             OutFieldSource::Return | OutFieldSource::Out(_) => {
                 ok_component_expr(&positions, source, "value", op)?
@@ -3141,7 +3301,7 @@ fn in_binding_pattern(op: &Operation) -> rust::Pattern {
 fn dispatcher_call_args(op: &Operation) -> Vec<rust::Expr> {
     let mut args = Vec::new();
     for p in &op.params {
-        let name = rust::escape_keyword(&p.name);
+        let name = rs::param(&p.name);
         match p.direction {
             ParamDirection::In => args.push(field_expr("in_", &name)),
             ParamDirection::InOut => args.push(rust::Expr::Ref {
@@ -3159,7 +3319,7 @@ fn dispatcher_inout_locals(op: &Operation) -> Vec<rust::Statement> {
         .iter()
         .filter(|p| matches!(p.direction, ParamDirection::InOut))
         .map(|p| {
-            let name = rust::escape_keyword(&p.name);
+            let name = rs::param(&p.name);
             rust::Statement::Let {
                 name: Ident::new(&name),
                 type_: None,
@@ -3193,13 +3353,13 @@ fn dispatcher_call_arm_via(
 ) -> Result<rust::MatchArm, RustInterfaceError> {
     let service = dispatching;
     let variant = variant_name(&op.name);
-    let call_name = interface::call_union_name(&service.name);
-    let return_name = interface::return_union_name(&service.name);
+    let call_name = rs::call_union_name(&service.name);
+    let return_name = rs::return_union_name(&service.name);
 
     let mut statements = dispatcher_inout_locals(op);
     let call_expr = rust::Expr::MethodCall {
         receiver: Box::new(field_expr("self", "service")),
-        method: Ident::new(&rust::escape_keyword(&op.name)),
+        method: Ident::new(&rs::method(&op.name)),
         args: dispatcher_call_args(op),
     };
 
@@ -3208,7 +3368,7 @@ fn dispatcher_call_arm_via(
     } else {
         rust::Pattern::Binding(Ident::new("value"))
     };
-    let result_name = interface::result_union_name(&declaring.name, &op.name);
+    let result_name = rs::result_union_name(&declaring.name, &op.name);
     let ok_arm = rust::MatchArm {
         pattern: rust::Pattern::TupleStruct {
             path: Path::single("Ok"),
@@ -3228,7 +3388,7 @@ fn dispatcher_call_arm_via(
     };
     let mut arms = vec![ok_arm];
     for raise in &op.raises {
-        let raise_variant = rust::escape_keyword(&raise.name);
+        let raise_variant = rs::raise(&raise.name);
         arms.push(rust::MatchArm {
             pattern: rust::Pattern::TupleStruct {
                 path: Path::single("Err"),
@@ -3285,7 +3445,7 @@ fn dispatcher_handle_fn(
     service: &Service,
     ops: &[Operation],
 ) -> Result<rust::Item, RustInterfaceError> {
-    let call_name = interface::call_union_name(&service.name);
+    let call_name = rs::call_union_name(&service.name);
     let mut arms: Vec<rust::MatchArm> = ops
         .iter()
         .map(|op| dispatcher_call_arm(service, op))
@@ -3322,7 +3482,7 @@ fn dispatcher_handle_fn(
         returns: Some(rust::Type::generic(
             Path::single("Result"),
             vec![
-                rust::Type::named(Path::single(&interface::return_union_name(&service.name))),
+                rust::Type::named(Path::single(&rs::return_union_name(&service.name))),
                 rust::Type::named(Path::new(&[
                     "zerodds_rpc",
                     "common_types",
@@ -3372,8 +3532,8 @@ fn dispatcher_impl(ast: &Ast, service: &Service) -> Result<Vec<rust::Item>, Rust
         }),
     });
 
-    let call_name = interface::call_union_name(&service.name);
-    let return_name = interface::return_union_name(&service.name);
+    let call_name = rs::call_union_name(&service.name);
+    let return_name = rs::return_union_name(&service.name);
     let serve_fn = rust::Item::Function(rust::Function {
         doc: Doc::line(
             "Registers a `Replier` for this interface level and starts serving. \

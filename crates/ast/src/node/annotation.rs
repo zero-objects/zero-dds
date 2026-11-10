@@ -54,7 +54,7 @@ pub struct AnnotationMemberNode {
 /// building-block annotations. The order is fixed, because builtin
 /// identities are allocated in it and must be identical in every model
 /// so that snapshots from different processes compare. Spec §3.6, §9.
-pub const BUILTIN_ANNOTATIONS: [&str; 43] = [
+pub const BUILTIN_ANNOTATIONS: [&str; 44] = [
     "id",
     "autoid",
     "optional",
@@ -109,6 +109,9 @@ pub const BUILTIN_ANNOTATIONS: [&str; 43] = [
     "java_mapping",
     "csharp_mapping",
     "cpp_mapping",
+    // ZeroDDS's annotation for its Rust generator, shaped like the three
+    // above. Appended for the same reason.
+    "rust_mapping",
 ];
 
 /// Name of the module holding the built-in declarations.

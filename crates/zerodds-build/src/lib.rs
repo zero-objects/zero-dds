@@ -106,6 +106,9 @@ use zerodds_lang_rules::adapter::cst::{
 pub use zerodds_lang_rules::adapter::cst::RustMapForm;
 use zerodds_lang_rules::encode::{rust_codec, rust_codec_pair};
 use zerodds_lang_rules::rule::rust;
+/// The naming scheme of the generated Rust ([`Config::rust_naming`]).
+pub use zerodds_lang_rules::rust_names::RustNaming;
+use zerodds_lang_rules::rust_names::RustNamingScope;
 use zerodds_lang_rules::{ModelGraph, apply};
 
 /// What went wrong.
@@ -251,6 +254,7 @@ pub struct Config {
     pl_cdr1_reading: PlCdr1Reading,
     rust_map: RustMapForm,
     strip_enum_prefix: bool,
+    rust_naming: RustNaming,
     rust_types: Vec<rust_type::RustTypeOverride>,
 }
 
@@ -279,6 +283,7 @@ impl Config {
             pl_cdr1_reading: PlCdr1Reading::default(),
             rust_map: RustMapForm::default(),
             strip_enum_prefix: false,
+            rust_naming: RustNaming::Idl,
             rust_types: Vec::new(),
         }
     }
@@ -561,6 +566,34 @@ impl Config {
     /// matches stay the same.
     pub fn strip_enum_prefix(&mut self, strip: bool) -> &mut Self {
         self.strip_enum_prefix = strip;
+        self
+    }
+
+    /// The naming scheme of the generated Rust, as `zerodds-idlc
+    /// --rust-naming` sets it (GitHub #61).
+    ///
+    /// [`RustNaming::Idl`] is the default: every name is the IDL's, as
+    /// IDL4 to Java 1.0 and IDL4 to C# 1.0 §7.1.1 have it for their
+    /// languages, and the module that includes the generated file takes
+    /// `#[allow(non_snake_case, non_camel_case_types,
+    /// non_upper_case_globals)]`. [`RustNaming::Rust`] writes the names
+    /// after RFC 430: `UpperCamelCase` for types and variants, `snake_case`
+    /// for fields and modules, `SCREAMING_SNAKE_CASE` for constants; an
+    /// acronym is one word (`HTTPServer` is `HttpServer`). With
+    /// [`Self::strip_enum_prefix`] the enumeration's name is cut first:
+    /// `MY_ENUM_A` of `MyEnum` is `A`, and `MyEnumA` without it.
+    ///
+    /// `@rust_mapping(apply_naming_convention = RUST_NAMING_CONVENTION)`
+    /// (or `IDL_NAMING_CONVENTION`) on a module or on a type, constant,
+    /// exception or interface replaces the scheme for what that
+    /// declaration encloses. Two declarations of one scope that come out
+    /// as one name stop the build.
+    ///
+    /// Only the Rust names change: the TypeObject, member ids, a content
+    /// filter, the type matching and the paths [`Self::rust_type`] takes
+    /// read the IDL's, so the wire and what a type matches stay the same.
+    pub fn rust_naming(&mut self, naming: RustNaming) -> &mut Self {
+        self.rust_naming = naming;
         self
     }
 
@@ -967,6 +1000,7 @@ impl Config {
     ) -> Result<String, Error> {
         let _map_form = RustMapFormScope::enter(self.rust_map);
         let _enum_prefix = RustEnumPrefixScope::enter(self.strip_enum_prefix);
+        let _naming = RustNamingScope::enter(self.rust_naming);
         // Every walk below spells a type or a member's codec; the ones a
         // `rust_type` call named are held as the Rust type it gave.
         let _rust_types = RustTypeScope::enter(rust_types.mappings);
@@ -1171,7 +1205,7 @@ fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
                      zerodds_types::TypeIdentifier::EquivalenceHashComplete(\
                      zerodds_types::EquivalenceHash([{}]));\n",
                     node.name,
-                    type_constant_name(&node.name),
+                    type_constant_name(ast, node),
                     octets.join(", ")
                 )
             }
@@ -1188,7 +1222,7 @@ fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
                      zerodds_types::EquivalenceHash([{}]),\n            scc_length: {},\n            \
                      scc_index: {},\n        }});\n",
                     node.name,
-                    type_constant_name(&node.name),
+                    type_constant_name(ast, node),
                     scc.equivalence_kind,
                     octets.join(", "),
                     scc.scc_length,
@@ -1257,7 +1291,7 @@ fn type_objects_module(ast: &Ast, stem: &str) -> String {
             format!(
                 "/// Minimal TypeObject for `{}`, XCDR2-LE.\npub const {}: &[u8] = &[{}];\n",
                 node.name,
-                type_constant_name(&node.name),
+                type_constant_name(ast, node),
                 octets.join(", ")
             ),
         ));
@@ -1340,9 +1374,17 @@ fn nested_by_module(entries: &[(Vec<String>, String)], depth: usize) -> String {
 /// reason.
 /// [`constant_name`] for a constant named after a type: a type the IDL
 /// calls `Self` or `type` gives `Self_` or `r#type`, as its Rust type does
-/// (`zerodds_lang_cst::rust::escape_keyword`).
-fn type_constant_name(name: &str) -> String {
-    zerodds_lang_cst::rust::escape_keyword(&constant_name(name))
+/// (`zerodds_lang_cst::rust::escape_keyword`). Under the Rust naming
+/// scheme of the type the constant is shouted like every other one
+/// (`HTTPReading` is `HTTP_READING`).
+fn type_constant_name(ast: &Ast, node: &TypeNode) -> String {
+    let name = constant_name(&node.name);
+    match zerodds_lang_rules::rust_names::of_type(ast, node) {
+        RustNaming::Idl => zerodds_lang_cst::rust::escape_keyword(&name),
+        RustNaming::Rust => zerodds_lang_cst::rust::escape_keyword(
+            &zerodds_lang_rules::rust_names::screaming_snake_case(&name),
+        ),
+    }
 }
 
 fn constant_name(name: &str) -> String {

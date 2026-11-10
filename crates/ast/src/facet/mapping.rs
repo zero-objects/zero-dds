@@ -3,7 +3,10 @@
 //! The annotations the IDL4 language mappings define for themselves.
 //!
 //! IDL4 to Java 1.0 §8.1 defines `@java_mapping`, IDL4 to C# 1.0 §8.1
-//! `@csharp_mapping` and IDL4 to C++ 1.0 §8.1 `@cpp_mapping`. Each
+//! `@csharp_mapping` and IDL4 to C++ 1.0 §8.1 `@cpp_mapping`.
+//! `@rust_mapping` is ZeroDDS's own, shaped like the three: no IDL4 to
+//! Rust mapping is adopted, and the Rust generator's naming scheme is
+//! chosen the way the Java and C# ones are. Each
 //! steers one language's generator — a naming scheme, the class constants
 //! are collected in, the width of an unsigned integer — and none changes
 //! the type: the model keeps the settings as written, and the generator of
@@ -20,6 +23,8 @@ pub enum MappingLanguage {
     CSharp,
     /// `@cpp_mapping`, IDL4 to C++ 1.0 §8.1.
     Cpp,
+    /// `@rust_mapping`, ZeroDDS's annotation for its Rust generator.
+    Rust,
 }
 
 impl MappingLanguage {
@@ -30,6 +35,7 @@ impl MappingLanguage {
             Self::Java => "java_mapping",
             Self::CSharp => "csharp_mapping",
             Self::Cpp => "cpp_mapping",
+            Self::Rust => "rust_mapping",
         }
     }
 
@@ -40,6 +46,7 @@ impl MappingLanguage {
             "java_mapping" => Some(Self::Java),
             "csharp_mapping" => Some(Self::CSharp),
             "cpp_mapping" => Some(Self::Cpp),
+            "rust_mapping" => Some(Self::Rust),
             _ => None,
         }
     }
@@ -51,6 +58,7 @@ impl MappingLanguage {
             Self::Java => 0,
             Self::CSharp => 1,
             Self::Cpp => 2,
+            Self::Rust => 3,
         }
     }
 
@@ -61,6 +69,7 @@ impl MappingLanguage {
             0 => Some(Self::Java),
             1 => Some(Self::CSharp),
             2 => Some(Self::Cpp),
+            3 => Some(Self::Rust),
             _ => None,
         }
     }

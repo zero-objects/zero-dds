@@ -1201,7 +1201,16 @@ fn rust_source(
             .map_err(|error| GenerateError::NoForm(error.to_string()))?
             .into_iter()
             .filter(crate::adapter::interface::Service::is_remote)
-            .map(|service| zerodds_lang_cst::rust::escape_keyword(&service.name))
+            // The name `rust_item_pairs` gave the trait it wrote.
+            .map(|service| {
+                ast.interface(service.id).map_or_else(
+                    |_| zerodds_lang_cst::rust::escape_type_name(&service.name),
+                    |node| {
+                        crate::rust_names::of_declaration(ast, node.module, &node.facets)
+                            .type_name(&service.name)
+                    },
+                )
+            })
             .collect();
     pairs.retain(|(_, item)| {
         !matches!(
