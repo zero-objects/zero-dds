@@ -1,6 +1,9 @@
 [package]
 name = "zerodds-lang-cst"
-version.workspace = true
+# Published on crates.io as 1.0.0-rc.7.6 (names the generated Rust uses itself,
+# dropped arrays, numeric defaults, GitHub #61); `version.workspace = true`
+# again with RC8.
+version = "1.0.0-rc.7.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

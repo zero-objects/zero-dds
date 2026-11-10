@@ -1,6 +1,9 @@
 [package]
 name = "zerodds-idlc"
-version.workspace = true
+# Published on crates.io as 1.0.0-rc.7.6 (names the generated Rust uses itself,
+# dropped arrays, numeric defaults, GitHub #61); `version.workspace = true`
+# again with RC8.
+version = "1.0.0-rc.7.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -29,9 +32,9 @@ zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../../crates/idl-compose
 zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../../crates/idl-lower" }
 zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../../crates/idl-parse" }
 zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../../crates/ast-layout" }
-zerodds-lang-cst = { version = "1.0.0-rc.7", path = "../../crates/lang-cst" }
+zerodds-lang-cst = { version = "1.0.0-rc.7.6", path = "../../crates/lang-cst" }
 zerodds-lang-render = { version = "1.0.0-rc.7", path = "../../crates/lang-render" }
-zerodds-lang-rules = { version = "1.0.0-rc.7", path = "../../crates/lang-rules" }
+zerodds-lang-rules = { version = "1.0.0-rc.7.6", path = "../../crates/lang-rules" }
 # The XTypes type system. `type_object()` in the emitted C++ trait is the
 # same `from_ast::complete_type_object` blob `crates/zerodds-build` puts
 # behind the Rust column's `DdsType::type_object` — one lowering of one
