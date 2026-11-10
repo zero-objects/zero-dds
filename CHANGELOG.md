@@ -1759,6 +1759,38 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   and `zerodds-record` take `rusqlite` 0.41.1 with `libsqlite3-sys` 0.39.1
   (SQLite 3.54.1); the API they use did not change.
 
+## [1.0.0-rc.7.6] — 2026-11-10
+
+Four crates on crates.io only; no other channel.
+
+### Added
+
+- `zerodds-build` `Config::strip_enum_prefix` and `zerodds-idlc
+  --strip-enum-prefix` (GitHub #61; the Unreleased section above).
+
+### Fixed
+
+- `zerodds-lang-cst`, `zerodds-lang-rules` and `zerodds-build`: generated
+  Rust compiles for names the generated code uses itself, for a non-key
+  array the key-only read drops inside a sequence, a map or `@external`,
+  and for numeric `@default`s in the member's type (the Unreleased section
+  above).
+- `zerodds-idlc`: its last release was 1.0.0-rc.7, so it carries everything
+  since, among it `--idl-profile`, `--java-mapping idl4` and
+  `--csharp-mapping idl4` with their naming and platform options.
+
+`zerodds-build` and `zerodds-idlc` require `zerodds-lang-rules` and
+`zerodds-lang-cst` `^1.0.0-rc.7.6`, `zerodds-lang-rules` requires
+`zerodds-lang-cst` `^1.0.0-rc.7.6`. Checked on the Linux test host before
+the upload, with the four packaged crates patched in: every published
+zerodds crate checks as without them (133 of 146, the 13 others stop with
+"no longer part of ZeroDDS" either way), the binary of `zerodds-idlc`
+builds, and zero-dds-snippets `zerodds-build-cases` builds and passes.
+After the upload, from crates.io alone: `zerodds-build-cases` passes,
+`cargo install zerodds-idlc` installs 1.0.0-rc.7.6, and every published
+crate checks as before. With the next release the four return to the
+workspace version.
+
 ## [1.0.0-rc.7.5] — 2026-11-09
 
 Fourteen crates on crates.io only; no other channel.
