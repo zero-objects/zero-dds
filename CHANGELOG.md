@@ -1789,6 +1789,41 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   and `zerodds-record` take `rusqlite` 0.41.1 with `libsqlite3-sys` 0.39.1
   (SQLite 3.54.1); the API they use did not change.
 
+## [1.0.0-rc.7.7] — 2026-11-10
+
+Five crates on crates.io only; no other channel.
+
+### Added
+
+- `zerodds-build` `Config::rust_naming`, `zerodds-idlc --rust-naming` and
+  `@rust_mapping(apply_naming_convention = ...)`: the Rust naming scheme
+  after RFC 430 (GitHub #61; the Unreleased section above), in
+  `zerodds-lang-rules`, with the annotation in `zerodds-idl-lower` and
+  `zerodds-ast`.
+
+### Fixed
+
+- `zerodds-lang-rules`: a `@default` naming an enumerator writes the
+  enumeration by its path from the module the value stands in; it did not
+  compile where the `Default` impl of an enclosing type sits in another
+  module. An `@optional` member under XCDR1 is bound like every other
+  member of the decoder.
+
+`zerodds-idl-lower` requires `zerodds-ast` `^1.0.0-rc.7.7`,
+`zerodds-lang-rules` requires both, `zerodds-build` and `zerodds-idlc`
+require the three; `zerodds-build` names `zerodds-idl-lower` for that, since
+an older front end ignores `@rust_mapping` as an annotation it does not
+know. The three that required `zerodds-lang-cst` `^1.0.0-rc.7.6` still do;
+`zerodds-lang-cst` is unchanged and was not uploaded again. Checked on the
+Linux test host before the upload, with the five packaged crates patched
+in: every published zerodds crate checks as without them (133 of 146, the
+13 others stop with "no longer part of ZeroDDS" either way), the binary of
+`zerodds-idlc` builds and writes both schemes, and zero-dds-snippets
+`zerodds-build-cases` builds and passes with its naming case. After the
+upload, from crates.io alone: `zerodds-build-cases` passes, `cargo install
+zerodds-idlc` installs 1.0.0-rc.7.7, and every published crate checks as
+before. With the next release the five return to the workspace version.
+
 ## [1.0.0-rc.7.6] — 2026-11-10
 
 Four crates on crates.io only; no other channel.
