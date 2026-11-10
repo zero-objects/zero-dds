@@ -26,7 +26,8 @@ use crate::default_common::{discriminator_default_value, resolve_alias};
 use crate::encode::EncodeError;
 use crate::fixed_literal::fixed_text;
 use zerodds_ast::{
-    Ast, ConstExpr, Literal as AstLiteral, MemberNode, PrimitiveKind, TypeKind, TypeNode,
+    Ast, ConstExpr, ConstValue, Literal as AstLiteral, MemberNode, PrimitiveKind, TypeKind,
+    TypeNode,
 };
 use zerodds_ast_core::Id;
 use zerodds_lang_cst::common::{Ident, Literal, Path};
@@ -400,7 +401,11 @@ fn primitive_default(kind: PrimitiveKind) -> rust::Expr {
         PrimitiveKind::Char | PrimitiveKind::WChar => rust::Expr::Literal(Literal::Char('\0')),
         PrimitiveKind::Float32 => rust::Expr::Literal(Literal::Float(String::from("0.0f32"))),
         PrimitiveKind::Float64 => rust::Expr::Literal(Literal::Float(String::from("0.0f64"))),
-        PrimitiveKind::Float128 => rust::Expr::Path(Path::new(&["Float128", "ZERO"])),
+        // By its crate, as the field's type is written: the generated file
+        // imports no `Float128`.
+        PrimitiveKind::Float128 => {
+            rust::Expr::Path(Path::new(&["zerodds_float128", "Float128", "ZERO"]))
+        }
         PrimitiveKind::Octet
         | PrimitiveKind::UInt8
         | PrimitiveKind::Int8
@@ -415,12 +420,13 @@ fn primitive_default(kind: PrimitiveKind) -> rust::Expr {
 
 /// The enumerator a default takes, as its Rust variant name.
 fn default_enumerator(ast: &Ast, type_: Id<TypeNode>) -> Option<String> {
+    let enumeration = ast.type_(type_).map(|node| node.name.clone()).ok()?;
     let mut first = None;
     for enumerator in ast.enumerators_of(type_) {
         let Ok(node) = ast.enumerator(*enumerator) else {
             continue;
         };
-        let variant = rust::escape_keyword(&node.name);
+        let variant = crate::adapter::cst::enumerator_ident(&enumeration, &node.name);
         if node
             .facets
             .xtypes
@@ -477,21 +483,22 @@ fn explicit(
                 args: Vec::new(),
             }
         }
-        ConstExpr::Literal(AstLiteral::Float {
-            mantissa,
-            exponent: None,
-        }) => rust::Expr::Literal(Literal::Float(mantissa.clone())),
-        ConstExpr::Literal(AstLiteral::Float {
-            mantissa,
-            exponent: Some(exponent),
-        }) => rust::Expr::Literal(Literal::Float(format!("{mantissa}e{exponent}"))),
-        ConstExpr::Literal(AstLiteral::Fixed { digits, scale }) => rust::Expr::MethodCall {
-            receiver: Box::new(rust::Expr::Literal(Literal::string(&fixed_text(
-                digits, *scale,
-            )))),
-            method: Ident::new("to_string"),
-            args: Vec::new(),
-        },
+        ConstExpr::Literal(AstLiteral::Float { mantissa, exponent }) => {
+            let text = match exponent {
+                Some(exponent) => format!("{mantissa}e{exponent}"),
+                None => mantissa.clone(),
+            };
+            numeric(ast, resolved, &Number::Float(text), member_name)?
+        }
+        ConstExpr::Literal(AstLiteral::Fixed { digits, scale }) => numeric(
+            ast,
+            resolved,
+            &Number::Fixed {
+                digits: digits.clone(),
+                scale: *scale,
+            },
+            member_name,
+        )?,
         ConstExpr::Literal(AstLiteral::Enumerator(reference)) => {
             let target = reference
                 .resolved()
@@ -503,29 +510,163 @@ fn explicit(
                 .type_(resolved)
                 .map_err(|_| refuse("a `@default` whose member type is stale"))?;
             rust::Expr::Path(Path::new(&[
-                &owner.name,
-                &rust::escape_keyword(&enumerator.name),
+                &rust::escape_type_name(&owner.name),
+                &crate::adapter::cst::enumerator_ident(&owner.name, &enumerator.name),
             ]))
         }
         // An integer literal, a named constant or arithmetic over them,
-        // folded the way a bound or a case label is.
+        // folded the way a bound or a case label is: `eval_const`, so that
+        // a constant of a floating-point or fixed-point type is a value
+        // too (`const float CF = 2.5; @default(CF) float f;` was refused
+        // as a `@default` this frontend cannot evaluate).
         _ => {
             let value = ast
-                .eval_integral(expr)
+                .eval_const(expr)
                 .map_err(|_| refuse("a `@default` this frontend cannot evaluate"))?;
-            // On a `float` or `double` the integer is that value as a
-            // floating-point literal: `f32_value: 1` does not compile
-            // (zero-objects/zero-dds#64).
-            match ast.type_(resolved).map(|node| &node.kind) {
-                Ok(TypeKind::Primitive(PrimitiveKind::Float32)) => {
-                    rust::Expr::Literal(Literal::Float(format!("{value}.0f32")))
+            match value {
+                ConstValue::Integer(value) => {
+                    numeric(ast, resolved, &Number::Integer(value), member_name)?
                 }
-                Ok(TypeKind::Primitive(PrimitiveKind::Float64)) => {
-                    rust::Expr::Literal(Literal::Float(format!("{value}.0f64")))
+                ConstValue::Float { mantissa, exponent } => {
+                    let text = match exponent {
+                        Some(exponent) => format!("{mantissa}e{exponent}"),
+                        None => mantissa,
+                    };
+                    numeric(ast, resolved, &Number::Float(text), member_name)?
                 }
-                _ => rust::Expr::Literal(Literal::int(value)),
+                ConstValue::Fixed { digits, scale } => {
+                    numeric(ast, resolved, &Number::Fixed { digits, scale }, member_name)?
+                }
+                ConstValue::Boolean(flag) => rust::Expr::Literal(Literal::Bool(flag)),
+                ConstValue::Char(ch) => rust::Expr::Literal(Literal::Char(ch)),
+                _ => {
+                    return Err(refuse(
+                        "a `@default` constant of a kind this frontend cannot spell",
+                    ));
+                }
             }
         }
+    })
+}
+
+/// A numeric `@default`, as the evaluator gives it.
+enum Number {
+    /// An integer.
+    Integer(i128),
+    /// A floating-point literal, as written.
+    Float(String),
+    /// A fixed-point literal: its digits without the point, and how many
+    /// of them follow it.
+    Fixed { digits: String, scale: u8 },
+}
+
+/// A numeric `@default` written for the member's type.
+///
+/// The value is one thing and the field's type another: `@default(1)` on a
+/// `float` is `1.0f32`, not `1`, which rustc refuses (zero-objects/zero-dds#64);
+/// on a `long double` it is the binary128 of the decimal, computed here
+/// and written as its bits, because `zerodds_float128::Float128` has no
+/// literal; on a `fixed<P,S>` it is the decimal at the member's scale.
+fn numeric(
+    ast: &Ast,
+    resolved: Id<TypeNode>,
+    value: &Number,
+    member_name: &str,
+) -> Result<rust::Expr, EncodeError> {
+    let refuse = |kind: &'static str| EncodeError::NoWriter {
+        member: member_name.to_string(),
+        kind,
+    };
+    let member_kind = ast
+        .type_(resolved)
+        .map(|node| &node.kind)
+        .map_err(|_| refuse("a `@default` whose member type is stale"))?;
+    Ok(match (member_kind, value) {
+        (TypeKind::Primitive(PrimitiveKind::Float32), Number::Integer(value)) => {
+            rust::Expr::Literal(Literal::Float(format!("{value}.0f32")))
+        }
+        (TypeKind::Primitive(PrimitiveKind::Float64), Number::Integer(value)) => {
+            rust::Expr::Literal(Literal::Float(format!("{value}.0f64")))
+        }
+        (
+            TypeKind::Primitive(PrimitiveKind::Float32 | PrimitiveKind::Float64),
+            Number::Float(text),
+        ) => rust::Expr::Literal(Literal::Float(text.clone())),
+        (
+            TypeKind::Primitive(PrimitiveKind::Float128),
+            Number::Integer(_) | Number::Float(_) | Number::Fixed { .. },
+        ) => {
+            let text = match value {
+                Number::Integer(value) => format!("{value}"),
+                Number::Float(text) => text.clone(),
+                Number::Fixed { digits, scale } => fixed_text(digits, *scale),
+            };
+            let quad: zerodds_float128::Float128 = text
+                .parse()
+                .map_err(|_| refuse("a `@default` a long double cannot hold"))?;
+            rust::Expr::Call {
+                callee: Box::new(rust::Expr::Path(Path::new(&[
+                    "zerodds_float128",
+                    "Float128",
+                    "from_bits",
+                ]))),
+                args: vec![rust::Expr::Literal(Literal::Int(format!(
+                    "0x{:032x}",
+                    quad.to_bits()
+                )))],
+            }
+        }
+        (
+            TypeKind::Fixed {
+                scale: member_scale,
+                ..
+            },
+            Number::Integer(value),
+        ) => fixed_default(format!("{value}"), 0, *member_scale).map_err(refuse)?,
+        (
+            TypeKind::Fixed {
+                scale: member_scale,
+                ..
+            },
+            Number::Fixed { digits, scale },
+        ) => fixed_default(digits.clone(), *scale, *member_scale).map_err(refuse)?,
+        (_, Number::Integer(value)) => rust::Expr::Literal(Literal::int(*value)),
+        _ => {
+            return Err(refuse(
+                "a `@default` whose value the member's type does not take",
+            ));
+        }
+    })
+}
+
+/// A fixed-point `@default` at the member's scale: `1` on `fixed<5,2>` is
+/// `"1.00"`, the one spelling the canonical form accepts. Digits past the
+/// member's scale are refused rather than dropped.
+fn fixed_default(
+    mut digits: String,
+    scale: u8,
+    member_scale: u8,
+) -> Result<rust::Expr, &'static str> {
+    if scale < member_scale {
+        digits.push_str(&"0".repeat(usize::from(member_scale - scale)));
+    } else if scale > member_scale {
+        let cut = usize::from(scale - member_scale);
+        if digits.len() < cut {
+            return Err("a `@default` with more decimals than its fixed type");
+        }
+        let keep = digits.len() - cut;
+        if digits[keep..].bytes().any(|b| b != b'0') {
+            return Err("a `@default` with more decimals than its fixed type");
+        }
+        digits.truncate(keep);
+    }
+    Ok(rust::Expr::MethodCall {
+        receiver: Box::new(rust::Expr::Literal(Literal::string(&fixed_text(
+            &digits,
+            member_scale,
+        )))),
+        method: Ident::new("to_string"),
+        args: Vec::new(),
     })
 }
 

@@ -91,6 +91,31 @@ It is **off by default**: it puts `zerodds-dcps`, `zerodds-types` and
 DCPS runtime, and this crate is also used by consumers that want the
 codec and no DDS in the graph at all.
 
+An IDL file with a `long double` needs `zerodds-float128` in the
+consumer's `[dependencies]` as well: the generated field is a
+`zerodds_float128::Float128`, which has no Rust primitive to stand for it.
+
+## Names
+
+The generated Rust takes the IDL's names. Where the IDL name cannot stand
+in Rust as written, it is spelled apart; the IDL name stays in the
+TypeObject, on the wire and in a content filter:
+
+- a Rust keyword is a raw identifier: `type` is `r#type`, `gen` is `r#gen`;
+- the four keywords with no raw form take a trailing `_`: `crate_`,
+  `self_`, `super_`, `Self_`;
+- a type, module or constant named like an item the generated code uses
+  without a path takes a trailing `_`: `Option_`, `Vec_`, `Result_`,
+  `Reader_`, `Writer_`, and the others in `zerodds_lang_cst::rust::escape_type_name`.
+
+`strip_enum_prefix(true)` cuts each enumeration's name off its
+enumerators' Rust names: `enum MyEnum { MY_ENUM_A, MY_ENUM_B };` has the
+variants `A` and `B` instead of `MY_ENUM_A` and `MY_ENUM_B`. The name
+matches without regard to case and underscores and ends at an `_` or a
+change from lower to upper case; it is cut only where a valid identifier is
+left (`MY_ENUM_1` stays), and two enumerators that come out as one name stop
+the build. It is off by default.
+
 Where XCDR1 cannot frame a type, the four XCDR1 methods are **left out**
 and the trait's own refusing defaults stand, with a comment in the
 generated file naming the type. They are not delegated to the XCDR2
@@ -171,6 +196,7 @@ fn main() -> Result<(), zerodds_build::Error> {
 | `axis(AxisFlag, value)` | override one answer of the dialect; several calls apply in the order given |
 | `rust_type(idl_path, rust_type)` | hold a typedef, struct member or union branch as a Rust type that implements `zerodds_wire::WireRepr` |
 | `rust_type_with(idl_path, rust_type, adapter)` | the same through an adapter value that implements `zerodds_wire::WireReprWith` |
+| `strip_enum_prefix(bool)` | cut each enumeration's name off its enumerators' Rust names, as `zerodds-idlc --strip-enum-prefix` (default: off) |
 
 The CLI exposes `--out` and `--default-extensibility`, as well as its own
 `--lang`, `--encoding` and `--endian` options. Include directories, macro

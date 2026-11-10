@@ -958,7 +958,7 @@ fn codec_items(
             attrs: Vec::new(),
             generics: Vec::new(),
             trait_: None,
-            self_type: rust::Type::named(Path::single(&node.name)),
+            self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
             items,
         })]);
     }
@@ -998,7 +998,7 @@ fn codec_items(
             attrs: Vec::new(),
             generics: Vec::new(),
             trait_: None,
-            self_type: rust::Type::named(Path::single(&node.name)),
+            self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
             items,
         })];
         if companions == Companions::Emit
@@ -1049,7 +1049,7 @@ fn codec_items(
             attrs: Vec::new(),
             generics: Vec::new(),
             trait_: None,
-            self_type: rust::Type::named(Path::single(&node.name)),
+            self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
             items,
         })];
         // A union returns from here and not through the tail, so its
@@ -1080,7 +1080,7 @@ fn codec_items(
         attrs: Vec::new(),
         generics: Vec::new(),
         trait_: None,
-        self_type: rust::Type::named(Path::single(&node.name)),
+        self_type: rust::Type::named(Path::single(&rust::escape_type_name(&node.name))),
         items,
     })];
     // The specification's default values, as an `impl Default`. A member
@@ -1776,7 +1776,11 @@ pub fn has_key_members_read(ast: &Ast, type_: Id<TypeNode>, key: LayoutKey) -> b
 /// anything a DHEADER delimits — and otherwise read as `decode…` reads it
 /// and dropped, so the read goes on at the octet the writer's next member
 /// starts at.
-fn skip_statements(name: &str, kind: &MemberWrite) -> Result<Vec<rust::Statement>, EncodeError> {
+fn skip_statements(
+    name: &str,
+    kind: &MemberWrite,
+    value_type: rust::Type,
+) -> Result<Vec<rust::Statement>, EncodeError> {
     let step = |method: &str, args: Vec<rust::Expr>| {
         vec![rust::Statement::Semi(rust::Expr::Try(Box::new(call(
             method, args,
@@ -1848,10 +1852,16 @@ fn skip_statements(name: &str, kind: &MemberWrite) -> Result<Vec<rust::Statement
         }
         _ => {}
     }
-    Ok(vec![let_statement(
-        "_",
-        rust::Expr::Try(Box::new(read_for(name, kind)?)),
-    )])
+    // Read and dropped as the member's own type: rustc takes the length of
+    // an array from it, also inside a `Vec`, a `MapEntry` or a `Box`
+    // (`sequence<C4>` with `typedef char C4[4]`, zero-dds-snippets
+    // `zerodds-build-issues`).
+    Ok(vec![rust::Statement::Let {
+        name: Ident::new("_"),
+        type_: Some(value_type),
+        value: Some(rust::Expr::Try(Box::new(read_for(name, kind)?))),
+        mutable: false,
+    }])
 }
 
 /// The octets of a primitive a key-only read steps over without reading:
@@ -2078,7 +2088,10 @@ fn enumerator_variant_and_value(
     // `variant_name` capitalises, which is what a *union* case takes —
     // it is built from a member name — and using it here produced
     // `Self::Missing_node` for an enumerator declared `missing_node`.
-    Ok((rust::escape_keyword(&enumerator.name), value))
+    Ok((
+        crate::adapter::cst::enumerator_ident(enumeration, &enumerator.name),
+        value,
+    ))
 }
 
 /// `fn decode(r: &mut Reader) -> Result<Self, WireError>` for an
@@ -2799,7 +2812,7 @@ fn write_optional_member(
     kind: &MemberWrite,
     chosen: bool,
 ) -> Result<Vec<rust::Statement>, EncodeError> {
-    let bound = rust::escape_keyword(name);
+    let bound = member_local(name);
     let value = rust::Expr::Path(Path::single(&bound));
 
     let (mut present, absent) = match plan.header {
@@ -3077,15 +3090,11 @@ fn key_holder_fns(
     for node in keys.iter().filter(|node| own.contains(node)) {
         match member_of(ast, type_, *node, key, codec) {
             Some((name, kind)) => {
-                let field = rust::escape_keyword(&name);
-                from_holder.push(let_statement(
-                    &field,
+                from_holder.push(member_let(
+                    &name,
                     rust::Expr::Try(Box::new(read_for(&name, &kind)?)),
                 ));
-                key_fields.push((
-                    *node,
-                    (Ident::new(&field), rust::Expr::Path(Path::single(&field))),
-                ));
+                key_fields.push((*node, field_binding(&name)));
             }
             None => undescribed = Some(*node),
         }
@@ -3388,14 +3397,18 @@ fn decode_in_plan_order(
                         statements: Vec::new(),
                     },
                     otherwise: Some(rust::Block {
-                        statements: skip_statements(&name, &kind)?,
+                        statements: skip_statements(
+                            &name,
+                            &kind,
+                            value_type_of(ast, type_, member)?,
+                        )?,
                     }),
                 }));
-                statements.push(let_statement(&name, default));
+                statements.push(member_let(&name, default));
                 fields.push((plan.member, field_binding(&name)));
                 continue;
             }
-            statements.push(let_statement(
+            statements.push(member_let(
                 &name,
                 rust::Expr::If {
                     condition: Box::new(reached),
@@ -3420,8 +3433,12 @@ fn decode_in_plan_order(
             && !member.facets.is_optional()
             && let Some(member_type) = member.type_.resolved()
         {
-            statements.extend(skip_statements(&name, &kind)?);
-            statements.push(let_statement(
+            statements.extend(skip_statements(
+                &name,
+                &kind,
+                value_type_of(ast, type_, member)?,
+            )?);
+            statements.push(member_let(
                 &name,
                 crate::default_rust::member_default(
                     ast,
@@ -3460,7 +3477,7 @@ fn decode_in_plan_order(
         // Every read is fallible, so every read is followed by `?`. A
         // decoder that could not fail would have to guess at bytes that
         // are not there, and a guess is a value nobody sent.
-        statements.push(let_statement(
+        statements.push(member_let(
             &name,
             rust::Expr::Try(Box::new(read_for(&name, &kind)?)),
         ));
@@ -3727,7 +3744,7 @@ fn decode_by_member_id(
     // one header.
     for slot in &slots {
         statements.push(rust::Statement::Let {
-            name: Ident::new(&rust::escape_keyword(&slot.name)),
+            name: Ident::new(&member_local(&slot.name)),
             type_: None,
             value: Some(rust::Expr::Path(Path::single("None"))),
             mutable: true,
@@ -3748,7 +3765,7 @@ fn decode_by_member_id(
         let Some((name, _)) = member_of(ast, type_, plan.member, key, codec) else {
             continue;
         };
-        let bound = rust::escape_keyword(&name);
+        let bound = member_local(&name);
         let optional = member_node_of(ast, type_, plan.member)
             .is_some_and(|member| member.facets.is_optional());
         if !optional {
@@ -3758,7 +3775,7 @@ fn decode_by_member_id(
             let Some(member_type) = member.type_.resolved() else {
                 continue;
             };
-            statements.push(let_statement(
+            statements.push(member_let(
                 &name,
                 or_default(
                     &bound,
@@ -3771,10 +3788,7 @@ fn decode_by_member_id(
                 ),
             ));
         }
-        fields.push((
-            plan.member,
-            (Ident::new(&bound), rust::Expr::Path(Path::single(&bound))),
-        ));
+        fields.push((plan.member, field_binding(&name)));
     }
 
     statements.push(rust::Statement::Tail(rust::Expr::Call {
@@ -3992,7 +4006,7 @@ fn member_header_loop(slots: &[MutableSlot]) -> Result<Vec<rust::Statement>, Enc
     });
 
     for slot in slots.iter().rev() {
-        let bound = rust::escape_keyword(&slot.name);
+        let bound = member_local(&slot.name);
         let mut arm = vec![refuse_a_second_header(&bound, slot.member_id)];
         arm.push(rust::Statement::Semi(rust::Expr::Assign {
             target: Box::new(rust::Expr::Path(Path::single(&bound))),
@@ -4086,7 +4100,7 @@ fn parameter_list_loop(slots: &[MutableSlot]) -> Result<Vec<rust::Statement>, En
     let mut chain = Some(unknown.clone());
 
     for slot in slots.iter().rev() {
-        let bound = rust::escape_keyword(&slot.name);
+        let bound = member_local(&slot.name);
         let mut arm = vec![refuse_a_second_header(&bound, slot.member_id)];
         arm.push(rust::Statement::Semi(rust::Expr::Assign {
             target: Box::new(rust::Expr::Path(Path::single(&bound))),
@@ -5222,7 +5236,7 @@ fn narrowed_with(
     narrow: &Narrowing,
     name: &str,
 ) -> Result<rust::Expr, EncodeError> {
-    let bound = rust::escape_keyword(name);
+    let bound = member_local(name);
     // USE_DEFAULT is the only behaviour that needs a value here; under
     // DISCARD `fit_…` has already returned `Err(WireError::Discarded)`
     // and under TRIM it has returned the trimmed value.
@@ -5245,7 +5259,7 @@ fn narrowed_with(
     };
     Ok(rust::Expr::Block(rust::Block {
         statements: vec![
-            let_statement(name, rust::Expr::Try(Box::new(read))),
+            member_let(name, rust::Expr::Try(Box::new(read))),
             rust::Statement::Tail(rust::Expr::Match {
                 scrutinee: Box::new(rust::Expr::Try(Box::new(call(
                     fit,
@@ -6780,7 +6794,7 @@ fn read_optional_member(
     };
     let read = rust::Expr::Try(Box::new(read_for(name, kind)?));
     match plan.header {
-        MemberHeader::OptionalFlag => Ok(vec![let_statement(
+        MemberHeader::OptionalFlag => Ok(vec![member_let(
             name,
             rust::Expr::If {
                 condition: Box::new(rust::Expr::Try(Box::new(call("read_bool", Vec::new())))),
@@ -6840,7 +6854,7 @@ fn read_optional_member(
                 )],
                 _ => Vec::new(),
             };
-            out.push(let_statement(name, some(read)));
+            out.push(member_let(name, some(read)));
             if matches!(plan.header, MemberHeader::PidCdr1 { .. }) {
                 out.push(rust::Statement::Semi(rust::Expr::Try(Box::new(call(
                     "finish_pid",
@@ -6862,11 +6876,54 @@ fn read_optional_member(
 /// three call sites that built this pair by hand had each got it the
 /// same way wrong.
 fn field_binding(name: &str) -> (Ident, rust::Expr) {
-    let escaped = rust::escape_keyword(name);
     (
-        Ident::new(&escaped),
-        rust::Expr::Path(Path::single(&escaped)),
+        Ident::new(&rust::escape_keyword(name)),
+        rust::Expr::Path(Path::single(&member_local(name))),
     )
+}
+
+/// The local a generated function binds member `name` to.
+///
+/// The member's own name, escaped, unless the generated code gives a
+/// local or a parameter of its own that name: a member called `r` bound as
+/// `let r = …` hid the reader, and every read after it called a method of
+/// an `i32` (zero-dds-snippets `zerodds-build-issues`). Such a member, and
+/// one whose name begins with `zd_`, the prefix of the generated code's
+/// own locals, is bound as `zd_m_<name>`. No generated local has that
+/// form, and no two members get the same one.
+fn member_local(name: &str) -> String {
+    /// The locals and parameters of the generated codec's functions.
+    const GENERATED: &[&str] = &[
+        "r",
+        "w",
+        "v",
+        "end",
+        "ends",
+        "ended",
+        "value",
+        "pid",
+        "holder",
+        "bits",
+        "dheader",
+        "emheader",
+        "header",
+        "sentinel",
+        "discriminator",
+    ];
+    if name.starts_with("zd_") || GENERATED.contains(&name) {
+        return format!("zd_m_{name}");
+    }
+    rust::escape_keyword(name)
+}
+
+/// `let <member's local> = value;` ([`member_local`]).
+fn member_let(name: &str, value: rust::Expr) -> rust::Statement {
+    rust::Statement::Let {
+        name: Ident::new(&member_local(name)),
+        type_: None,
+        value: Some(value),
+        mutable: false,
+    }
 }
 
 fn let_statement(name: &str, value: rust::Expr) -> rust::Statement {
@@ -6917,7 +6974,7 @@ fn default_impl(ast: &Ast, type_: Id<TypeNode>) -> Result<Option<rust::Item>, En
     }
     let from = node.module;
     // Named from inside its own module, which is the plain name.
-    let self_type = rust::Type::named(Path::single(&rust::escape_keyword(&node.name)));
+    let self_type = rust::Type::named(Path::single(&rust::escape_type_name(&node.name)));
     let value = crate::default_rust::default_of(ast, from, type_, &node.name)?;
     // A member held as a `rust_type` mapping takes its IDL default through
     // `from_wire`, which may refuse it — a `NonZeroU32` has no zero. Such a
@@ -7019,6 +7076,20 @@ fn nested_struct_literal(
         path: Path::single("Self"),
         fields: Vec::new(),
         base: rest(),
+    })
+}
+
+/// The Rust type a read of `member` of `type_` gives
+/// ([`crate::adapter::cst::member_value_type`]).
+fn value_type_of(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    member: &zerodds_ast::MemberNode,
+) -> Result<rust::Type, EncodeError> {
+    crate::adapter::cst::member_value_type(ast, module_of(ast, type_), member).map_err(|error| {
+        EncodeError::NoLayout {
+            detail: format!("the Rust type of `{}`: {error:?}", member.name),
+        }
     })
 }
 

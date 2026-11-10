@@ -971,6 +971,7 @@ path = "src/lib.rs"
 [dependencies]
 zerodds-codec = {{ path = "{root}/crates/codec" }}
 zerodds-dcps = {{ path = "{root}/crates/dcps" }}
+zerodds-float128 = {{ path = "{root}/crates/float128" }}
 zerodds-types = {{ path = "{root}/crates/types" }}
 zerodds-wire = {{ path = "{root}/crates/wire" }}
 
@@ -1138,6 +1139,159 @@ fn xtypes_7_6_8_decode_key_members_gives_the_key_of_the_whole_sample() {
             }
         }
         "#,
+    );
+}
+
+/// The four encodings a key-only read is checked in, for the tests below.
+const KEY_READ_CHECK: &str = r#"
+    fn modes() -> [(bool, bool); 4] {
+        [(false, false), (false, true), (true, false), (true, true)]
+    }
+    fn write<T: zerodds_dcps::DdsType>(value: &T, xcdr1: bool, be: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        match (xcdr1, be) {
+            (false, false) => T::encode(value, &mut out),
+            (false, true) => T::encode_be(value, &mut out),
+            (true, false) => T::encode_xcdr1(value, &mut out),
+            (true, true) => T::encode_xcdr1_be(value, &mut out),
+        }
+        .expect("encode");
+        out
+    }
+    fn keys<T: zerodds_dcps::DdsType>(bytes: &[u8], xcdr1: bool, be: bool) -> T {
+        T::decode_key_members(bytes, xcdr1, be)
+            .expect("a generated type has the read")
+            .expect("the read succeeds")
+    }
+"#;
+
+/// Names the generated code uses itself (zero-dds-snippets
+/// `zerodds-build-issues`): members named like the codec's locals (`r`,
+/// `value`, `zd_origin`, `w`, `pid`, `end`), a member `gen` (reserved since
+/// the 2024 edition), keywords with no raw form (`crate`, `Self`, `super`),
+/// modules `std` and `core`, and types named like what the codec writes
+/// without a path (`Option`, `Vec`, `Reader`). The crate compiles, and the
+/// key-only read steps over the members.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn generated_rust_compiles_for_the_names_the_codec_uses_itself() {
+    run_generated(
+        "ownnames",
+        "module std { @final struct S { @key long id; }; }; \
+         module core { @final struct T { @key long id; }; }; \
+         module crate { @final struct Self { @key long id; long super; }; }; \
+         @final struct Option { @key long id; }; @final struct Vec { @key long id; }; \
+         @final struct Reader { @key long id; }; \
+         @appendable struct Locals { long r; long value; long zd_origin; long w; long pid; \
+         long end; long gen; @key long id; };",
+        &format!(
+            r#"{KEY_READ_CHECK}
+        #[test]
+        fn the_members_read_back_and_the_key_only_read_steps_over_them() {{
+            let r = Locals {{ r: 1, value: 2, zd_origin: 3, w: 4, pid: 5, end: 6, r#gen: 7, id: 8 }};
+            for (xcdr1, be) in modes() {{
+                let bytes = write(&r, xcdr1, be);
+                let back: Locals = keys(&bytes, xcdr1, be);
+                assert_eq!(back.id, 8);
+                assert_eq!(back.r, 0, "a member the key-only read steps over is at its default");
+            }}
+            let _ = (super::std::S::default(), super::core::T::default(), crate_::Self_::default());
+            let _ = (Option_::default(), Vec_::default(), Reader_::default());
+        }}
+        "#
+        ),
+    );
+}
+
+/// The key-only read drops a non-key member of an array type held in a
+/// `Vec`, a `MapEntry` or a `Box` (zero-dds-snippets `zerodds-build-issues`):
+/// `let _: <the member's type> = …`, so that rustc has the array's length.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn a_dropped_array_member_compiles_inside_a_sequence_a_map_and_a_box() {
+    run_generated(
+        "droppedarrays",
+        "typedef char C4[4]; \
+         @appendable struct S { sequence<C4> seqs; map<long, C4> m; @external char c[4]; \
+         long double ld[2]; @key long id; };",
+        &format!(
+            r#"{KEY_READ_CHECK}
+        #[test]
+        fn the_key_only_read_gives_the_key() {{
+            let mut s = S::default();
+            s.seqs = vec![['a', 'b', 'c', 'd']];
+            s.c = Box::new(['w', 'x', 'y', 'z']);
+            s.id = 42;
+            for (xcdr1, be) in modes() {{
+                let back: S = keys(&write(&s, xcdr1, be), xcdr1, be);
+                assert_eq!(back.id, 42);
+                assert!(back.seqs.is_empty());
+            }}
+        }}
+        "#
+        ),
+    );
+}
+
+/// A numeric `@default` takes the member's type: a `float` constant
+/// (`@default(CF)`), an integer on a `fixed<5,2>` (`"1.00"`), an integer and
+/// a decimal on a `long double` (zero-dds-snippets `zerodds-build-issues`).
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn a_numeric_default_takes_the_members_type() {
+    run_generated(
+        "numericdefaults",
+        "const float CF = 2.5; \
+         @final struct D { @key long id; @default(CF) float f; @default(1) fixed<5,2> fx; \
+         @default(1) long double one; @default(1.5) long double half; };",
+        r#"
+        #[test]
+        fn the_defaults_are_the_declared_values() {
+            let d = D::default();
+            assert_eq!(d.f, 2.5_f32);
+            assert_eq!(d.fx, "1.00");
+            assert_eq!(d.one, zerodds_float128::Float128::from_f64(1.0));
+            assert_eq!(d.half, zerodds_float128::Float128::from_f64(1.5));
+        }
+        "#,
+    );
+}
+
+/// GitHub #61: with `strip_enum_prefix(true)` every place that names an
+/// enumerator in Rust takes the cut name: the declaration, a `@default`, the
+/// first literal as a default, a union's case label and the codec. A
+/// content filter still reads the IDL name.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn github_61_every_place_that_names_an_enumerator_takes_the_cut_name() {
+    run_generated_with(
+        "enumprefix",
+        "enum MyEnum { MY_ENUM_A, MY_ENUM_B, MY_ENUM_1 }; \
+         union U switch (MyEnum) { case MY_ENUM_A: long a; case MY_ENUM_B: short b; }; \
+         @final struct S { @key long id; @default(MY_ENUM_B) MyEnum chosen; MyEnum first; U un; };",
+        ".strip_enum_prefix(true)",
+        &format!(
+            r#"{KEY_READ_CHECK}
+        #[test]
+        fn the_variants_are_cut_and_the_values_hold() {{
+            use zerodds_dcps::DdsType;
+            let s = S::default();
+            assert_eq!(s.chosen, MyEnum::B);
+            assert_eq!(s.first, MyEnum::A);
+            let _kept = MyEnum::MY_ENUM_1;
+            let mut written = S::default();
+            written.id = 3;
+            written.chosen = MyEnum::MY_ENUM_1;
+            for (xcdr1, be) in modes() {{
+                let bytes = write(&written, xcdr1, be);
+                let back: S = keys(&bytes, xcdr1, be);
+                assert_eq!(back.id, 3);
+            }}
+            let filtered = format!("{{:?}}", DdsType::field_value(&written, "chosen"));
+            assert!(filtered.contains("MY_ENUM_1"), "the filter reads the IDL name: {{filtered}}");
+        }}
+        "#
+        ),
     );
 }
 

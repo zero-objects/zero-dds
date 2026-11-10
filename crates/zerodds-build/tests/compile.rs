@@ -247,3 +247,89 @@ fn a_broken_unit_writes_nothing() {
     assert!(result.is_err(), "a syntax error must fail the build");
     assert!(!out_dir.join("Bad.rs").exists(), "and write nothing");
 }
+
+/// Generate `source` into a scratch directory with `configure` applied,
+/// and answer the generated Rust or the error.
+fn generate(
+    source: &str,
+    configure: impl FnOnce(&mut Config) -> &mut Config,
+) -> Result<String, zerodds_build::Error> {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let idl = dir.path().join("unit.idl");
+    fs::write(&idl, source).expect("write idl");
+    let out_dir = dir.path().join("out");
+    fs::create_dir_all(&out_dir).expect("out dir");
+    let mut config = Config::new();
+    config.out_dir(&out_dir).emit_cargo_directives(false);
+    configure(&mut config).compile(&[&idl])?;
+    Ok(fs::read_to_string(out_dir.join("unit.rs")).expect("read generated"))
+}
+
+/// GitHub #61: `strip_enum_prefix(true)` cuts the enumeration's name off
+/// its enumerators where a valid identifier is left; without it the IDL
+/// names stay. The TypeObject keeps the IDL names either way.
+#[test]
+fn github_61_the_enum_prefix_is_cut_only_when_asked() {
+    let source = "enum MyEnum { MY_ENUM_A, MY_ENUM_B, MY_ENUM_1 }; \
+                  enum Color { ColorRed, COLOR_GREEN };";
+    let kept = generate(source, |config| config).expect("compile");
+    assert!(kept.contains("MY_ENUM_A = 0"), "{kept}");
+    assert!(kept.contains("ColorRed = 0"), "{kept}");
+
+    let cut = generate(source, |config| config.strip_enum_prefix(true)).expect("compile");
+    assert!(
+        cut.contains("A = 0") && !cut.contains("MY_ENUM_A = 0"),
+        "{cut}"
+    );
+    assert!(cut.contains("B = 1"), "{cut}");
+    assert!(
+        cut.contains("MY_ENUM_1 = 2"),
+        "a leading digit keeps the prefix: {cut}"
+    );
+    assert!(
+        cut.contains("Red = 0") && cut.contains("GREEN = 1"),
+        "{cut}"
+    );
+}
+
+/// GitHub #61: two enumerators that are one Rust name after the cut stop
+/// the build instead of one variant standing for both.
+#[test]
+fn github_61_two_enumerators_that_are_one_name_after_the_cut_stop_the_build() {
+    let source = "enum E { E_A, A };";
+    assert!(generate(source, |config| config).is_ok());
+    let error = generate(source, |config| config.strip_enum_prefix(true))
+        .expect_err("a collision after the cut");
+    let text = format!("{error}");
+    assert!(text.contains("E_A") && text.contains('A'), "{text}");
+}
+
+/// A name the generated code uses for something of its own: a type takes a
+/// trailing `_` (`Option_`, `Reader_`), a keyword with no raw form too
+/// (`Self_`, `crate_`), and a member named like a local of the codec is
+/// bound to a local of its own (zero-dds-snippets `zerodds-build-issues`).
+#[test]
+fn names_the_generated_code_uses_itself_are_spelled_apart() {
+    let generated = generate(
+        "struct Option { long v; }; struct Reader { long v; }; \
+         module crate { struct Self { long v; }; }; \
+         @appendable struct Locals { @key long id; long r; long value; long zd_origin; };",
+        |config| config,
+    )
+    .expect("compile");
+    for spelled in [
+        "pub struct Option_",
+        "pub struct Reader_",
+        "pub mod crate_",
+        "pub struct Self_",
+        "let zd_m_r = ",
+        "let zd_m_value = ",
+        "let zd_m_zd_origin = ",
+        "r: zd_m_r",
+    ] {
+        assert!(
+            generated.contains(spelled),
+            "no `{spelled}` in: {generated}"
+        );
+    }
+}

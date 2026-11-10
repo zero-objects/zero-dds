@@ -797,6 +797,8 @@ pub enum Pattern {
 ///
 /// `r#type` rather than `type_`: the raw form keeps the name the IDL
 /// wrote, and a reader of the generated code sees the field it declared.
+/// `crate`, `self`, `super` and `Self` have no raw form and become
+/// `crate_`, `self_`, `super_` and `Self_`.
 #[must_use]
 pub fn escape_keyword(name: &str) -> String {
     if RESERVED.contains(&name) {
@@ -804,20 +806,74 @@ pub fn escape_keyword(name: &str) -> String {
         out.push_str(name);
         return out;
     }
+    if NO_RAW_FORM.contains(&name) {
+        let mut out = name.to_string();
+        out.push('_');
+        return out;
+    }
     name.to_string()
 }
 
+/// The name an IDL type, module or constant takes in Rust.
+///
+/// [`escape_keyword`], and in addition a name the generated code uses
+/// without a path takes a trailing `_`: a struct `Option` hid
+/// `core::option::Option` from every `Option<T>` the codec writes beside
+/// it, and a struct `Reader` collided with the generated file's `use
+/// zerodds_wire::Reader` (zero-dds-snippets `zerodds-build-issues`).
+/// Members and enumerators keep their names: the codec reaches them
+/// through a value (`s.value`) or their type (`E::None`).
+#[must_use]
+pub fn escape_type_name(name: &str) -> String {
+    if UNQUALIFIED.contains(&name) {
+        let mut out = name.to_string();
+        out.push('_');
+        return out;
+    }
+    escape_keyword(name)
+}
+
+/// The names the generated Rust uses without a path: the prelude items it
+/// writes and the items it imports.
+const UNQUALIFIED: &[&str] = &[
+    "Option",
+    "Some",
+    "None",
+    "Result",
+    "Ok",
+    "Err",
+    "Vec",
+    "String",
+    "Box",
+    "Default",
+    "Reader",
+    "Writer",
+    "WireError",
+    "ParameterRole",
+    "Narrowed",
+    "TryConstruct",
+    "MapEntry",
+    "Float128",
+];
+
 /// The Rust keywords a generated identifier may collide with.
 ///
-/// The strict and reserved keywords of the 2021 edition, less the ones
-/// no raw identifier is permitted for.
+/// The strict and reserved keywords of the 2021 and 2024 editions (`gen`
+/// is reserved since 2024), less the ones no raw identifier is permitted
+/// for ([`NO_RAW_FORM`]).
 const RESERVED: &[&str] = &[
     "as", "break", "const", "continue", "else", "enum", "extern", "false", "fn", "for", "if",
     "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "static",
     "struct", "trait", "true", "type", "unsafe", "use", "where", "while", "async", "await", "dyn",
     "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized",
-    "virtual", "yield", "try",
+    "virtual", "yield", "try", "gen",
 ];
+
+/// The keywords no raw identifier is permitted for. IDL allows them as
+/// names (`module crate`, `struct Self`, a member `super`), and Rust has no
+/// way to write them as identifiers: they take a trailing `_`, as prost
+/// does. The IDL name stays in the TypeObject and on the wire.
+const NO_RAW_FORM: &[&str] = &["crate", "self", "super", "Self"];
 
 #[cfg(test)]
 mod tests {
@@ -831,6 +887,20 @@ mod tests {
         assert_eq!(escape_keyword("type"), "r#type");
         assert_eq!(escape_keyword("match"), "r#match");
         assert_eq!(escape_keyword("value"), "value");
+        // Reserved since the 2024 edition.
+        assert_eq!(escape_keyword("gen"), "r#gen");
+        // No raw form exists for these four.
+        assert_eq!(escape_keyword("crate"), "crate_");
+        assert_eq!(escape_keyword("self"), "self_");
+        assert_eq!(escape_keyword("super"), "super_");
+        assert_eq!(escape_keyword("Self"), "Self_");
+        // A type may not take a name the generated code uses unqualified;
+        // a member may.
+        assert_eq!(escape_type_name("Option"), "Option_");
+        assert_eq!(escape_type_name("Reader"), "Reader_");
+        assert_eq!(escape_type_name("Self"), "Self_");
+        assert_eq!(escape_type_name("Telemetry"), "Telemetry");
+        assert_eq!(escape_keyword("Option"), "Option");
     }
 
     #[test]

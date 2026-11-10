@@ -237,6 +237,10 @@ struct GenerateRequest {
     /// default) is the sequence of `MapEntry` structures XTypes 1.3 §7.5.1.3.6 binds a map to;
     /// `btree-map` is the idiomatic container.
     rust_map: zerodds_lang_rules::adapter::cst::RustMapForm,
+    /// `--strip-enum-prefix`: cut each enumeration's name off its
+    /// enumerators' Rust names (`MY_ENUM_A` of `MyEnum` is `A`, GitHub #61).
+    /// Off by default.
+    strip_enum_prefix: bool,
     /// `--dialect <name>`: the preset, one peer's answers to every wire
     /// question at once. `None` is the default, `specification`.
     dialect: Option<Dialect>,
@@ -425,6 +429,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut generate_rpc_mapping = ServiceMapping::Basic;
     let mut generate_cpp_mapping = zerodds_lang_rules::adapter::cpp::CppMapping::default();
     let mut generate_rust_map = zerodds_lang_rules::adapter::cst::RustMapForm::Entries;
+    let mut generate_strip_enum_prefix = false;
     let mut generate_axis_overrides: Vec<(AxisFlag, String)> = Vec::new();
     let mut generate_java_mapping: Option<zerodds_lang_rules::adapter::java::JavaMapping> = None;
     let mut generate_java_idl4 = false;
@@ -699,6 +704,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                     }
                 };
             }
+            "--strip-enum-prefix" if command == Command::Generate => {
+                generate_strip_enum_prefix = true;
+            }
             "--dialect" if command == Command::Generate => {
                 let name = iter.next().ok_or("--dialect: the option takes a value")?;
                 generate_dialect = Some(Dialect::parse(name).ok_or_else(|| {
@@ -740,7 +748,8 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             | "--csharp-naming"
             | "--csharp-platform"
             | "--csharp-corba-module"
-            | "--rust-map") => {
+            | "--rust-map"
+            | "--strip-enum-prefix") => {
                 return Err(format!("`{other}` belongs to the `generate` subcommand"));
             }
             // Axis flags under `generate`.  Only `--`-prefixed names are
@@ -872,6 +881,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             dialect: generate_dialect,
             cpp_mapping: generate_cpp_mapping,
             rust_map: generate_rust_map,
+            strip_enum_prefix: generate_strip_enum_prefix,
             axis_overrides: generate_axis_overrides,
             java_mapping: generate_java_mapping.unwrap_or_default(),
             java_idl4,
@@ -1252,6 +1262,8 @@ fn run_generate(
     // C++ type path, and `generate::files` is one of them.
     let _mapping = zerodds_lang_rules::adapter::cpp::CppMappingScope::enter(request.cpp_mapping);
     let _map_form = zerodds_lang_rules::adapter::cst::RustMapFormScope::enter(request.rust_map);
+    let _enum_prefix =
+        zerodds_lang_rules::adapter::cst::RustEnumPrefixScope::enter(request.strip_enum_prefix);
     for language in &request.languages {
         // `--java-mapping idl4`: the language mapping, a file per class
         // under the package directories, and no codec.
@@ -1623,6 +1635,10 @@ OPTIONS:\n    \
              --rust-map <entries|btree-map>  generate --lang rust only: how an IDL map is \
              held — entries (default; the MapEntry sequence of XTypes 1.3 §7.5.1.3.6) or \
              btree-map (a BTreeMap, entries in ascending key order)\n    \
+             --strip-enum-prefix  generate --lang rust only: cut each enumeration's name \
+             off its enumerators' Rust names (MY_ENUM_A of MyEnum is A) where a valid \
+             identifier is left; two that come out as one name stop the generation \
+             (default: the IDL names)\n    \
              --dialect <NAME>   generate only: reproduce one peer's answers to every wire \
              axis at once, before any axis flag overrides one of them (default: specification, \
              which is what generate always emitted) — an unknown name lists the valid ones\n    \

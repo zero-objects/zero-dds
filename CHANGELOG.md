@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **`zerodds_build::Config::strip_enum_prefix` and `zerodds-idlc
+  --strip-enum-prefix`** (GitHub #61; `zerodds-lang-rules`
+  `adapter::cst::RustEnumPrefixScope`, `enumerator_ident`). They cut each
+  enumeration's name off its enumerators' Rust names: `MY_ENUM_A` of
+  `MyEnum` is `A`, as prost does by default. The name matches without
+  regard to case and underscores and ends at an `_` or a change from lower
+  to upper case; it is cut only where a valid identifier is left (not
+  empty, not starting with a digit), and two enumerators that come out as
+  one name stop the build. Off by default. The declaration, a `@default`,
+  a union's case label and the codec take the cut name; the TypeObject and
+  a content filter keep the IDL's. Tests:
+  `github_61_the_enum_prefix_is_cut_only_when_asked`,
+  `github_61_two_enumerators_that_are_one_name_after_the_cut_stop_the_build`,
+  `github_61_every_place_that_names_an_enumerator_takes_the_cut_name`.
+
 - **The forms in which the implementations write XTypes TypeObjects, as
   options** (`zerodds-types` `from_ast::TypeObjectForm`, `zerodds-dcps`
   `DomainParticipant::set_minimal_type_flags_kept`). RTI Connext 7.7.0,
@@ -680,6 +695,34 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   domains by the protocol of `crates/test-domains`.
 
 ### Fixed
+
+- **Generated Rust compiles for IDL names the generated code uses itself**
+  (`zerodds-lang-cst`, `zerodds-lang-rules`, `zerodds-build`; found with a
+  matrix of cases beside GitHub #62 to #64; zero-dds-snippets
+  `zerodds-build-cases`). A member named like a local
+  of the codec (`r`, `w`, `value`, `zd_origin`, …) hid it: it is bound to a
+  local of its own, `zd_m_<name>`. `crate`, `self`, `super` and `Self`
+  have no raw form and take a trailing `_`; `gen`, reserved since the 2024
+  edition, is `r#gen`. A type, module or constant named like an item the
+  generated code uses without a path (`Option`, `Vec`, `Result`, `Reader`,
+  …) takes a trailing `_`. The `DdsType` impls name `::core::mem::take`,
+  so a module `core` or `std` no longer hides it. The IDL names stay in
+  the TypeObject and on the wire.
+
+- **The key-only read compiles for a non-key array held in a sequence, a
+  map or `@external`** (`zerodds-lang-rules`). The dropped read is
+  annotated with the member's own type, from which rustc takes the array's
+  length (`sequence<C4>` with `typedef char C4[4]` stopped at `E0284`).
+
+- **A numeric `@default` takes the member's type in generated Rust**
+  (`zerodds-lang-rules`). A constant of a floating-point or fixed-point
+  type is a value (`const float CF = 2.5; @default(CF) float f;` was
+  refused as a `@default` it cannot evaluate); an integer on a
+  `fixed<P,S>` is the decimal at the member's scale (`"1.00"`, it was the
+  integer `1`); a `long double` default is computed as binary128 while
+  generating and written as `zerodds_float128::Float128::from_bits(…)`,
+  and a `long double` member's zero is `zerodds_float128::Float128::ZERO`
+  by its crate (`Float128::ZERO` did not resolve).
 
 - **Discovery asks the routing table once per destination, not once per pair
   of endpoints** (`zerodds-dcps`, OPEN-ITEMS 114). Choosing among the UDPv4

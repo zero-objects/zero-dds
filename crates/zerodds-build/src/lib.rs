@@ -99,7 +99,7 @@ use zerodds_ast_layout::key::{Encoding, Endianness, LayoutKey, Purpose};
 use zerodds_ast_layout::{AxisFlag, Dialect, DialectLowering, DialectSettings, PlCdr1Reading};
 use zerodds_idl_compose::{ComposeOptions, PathLoader, compose_with};
 use zerodds_lang_rules::adapter::cst::{
-    RustMapFormScope, RustTypeScope, nest_by_module, rust_item_pairs,
+    RustEnumPrefixScope, RustMapFormScope, RustTypeScope, nest_by_module, rust_item_pairs,
 };
 
 /// How the generated Rust holds an IDL `map` ([`Config::rust_map`]).
@@ -250,6 +250,7 @@ pub struct Config {
     axis_overrides: Vec<(AxisFlag, String)>,
     pl_cdr1_reading: PlCdr1Reading,
     rust_map: RustMapForm,
+    strip_enum_prefix: bool,
     rust_types: Vec<rust_type::RustTypeOverride>,
 }
 
@@ -277,6 +278,7 @@ impl Config {
             axis_overrides: Vec::new(),
             pl_cdr1_reading: PlCdr1Reading::default(),
             rust_map: RustMapForm::default(),
+            strip_enum_prefix: false,
             rust_types: Vec::new(),
         }
     }
@@ -539,6 +541,26 @@ impl Config {
     /// order and not in the order they were put in.
     pub fn rust_map(&mut self, form: RustMapForm) -> &mut Self {
         self.rust_map = form;
+        self
+    }
+
+    /// Cut each enumeration's name off the front of its enumerators' Rust
+    /// names, as `zerodds-idlc --strip-enum-prefix` does (GitHub #61).
+    ///
+    /// Off by default: the generated Rust keeps the IDL's names, so
+    /// `enum MyEnum { MY_ENUM_A, MY_ENUM_B };` has the variants
+    /// `MY_ENUM_A` and `MY_ENUM_B`. With `strip_enum_prefix(true)` they are
+    /// `A` and `B`, like prost's default. The name matches without regard to
+    /// case and underscores and ends at an `_` or a lower-to-upper case
+    /// change; it is cut only where a valid identifier is left, not empty
+    /// and not starting with a digit (`MY_ENUM_1` stays). Two enumerators
+    /// that come out as one name stop the build.
+    ///
+    /// Only the Rust names change: the TypeObject, a content filter and
+    /// the type matching read the IDL's, so the wire and what a type
+    /// matches stay the same.
+    pub fn strip_enum_prefix(&mut self, strip: bool) -> &mut Self {
+        self.strip_enum_prefix = strip;
         self
     }
 
@@ -944,6 +966,7 @@ impl Config {
         rust_types: rust_type::Resolved,
     ) -> Result<String, Error> {
         let _map_form = RustMapFormScope::enter(self.rust_map);
+        let _enum_prefix = RustEnumPrefixScope::enter(self.strip_enum_prefix);
         // Every walk below spells a type or a member's codec; the ones a
         // `rust_type` call named are held as the Rust type it gave.
         let _rust_types = RustTypeScope::enter(rust_types.mappings);
@@ -1148,7 +1171,7 @@ fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
                      zerodds_types::TypeIdentifier::EquivalenceHashComplete(\
                      zerodds_types::EquivalenceHash([{}]));\n",
                     node.name,
-                    constant_name(&node.name),
+                    type_constant_name(&node.name),
                     octets.join(", ")
                 )
             }
@@ -1165,7 +1188,7 @@ fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
                      zerodds_types::EquivalenceHash([{}]),\n            scc_length: {},\n            \
                      scc_index: {},\n        }});\n",
                     node.name,
-                    constant_name(&node.name),
+                    type_constant_name(&node.name),
                     scc.equivalence_kind,
                     octets.join(", "),
                     scc.scc_length,
@@ -1234,7 +1257,7 @@ fn type_objects_module(ast: &Ast, stem: &str) -> String {
             format!(
                 "/// Minimal TypeObject for `{}`, XCDR2-LE.\npub const {}: &[u8] = &[{}];\n",
                 node.name,
-                constant_name(&node.name),
+                type_constant_name(&node.name),
                 octets.join(", ")
             ),
         ));
@@ -1315,6 +1338,13 @@ fn nested_by_module(entries: &[(Vec<String>, String)], depth: usize) -> String {
 /// `ROBOT_S_POSE` are not the same name to a reader looking for the type
 /// they wrote, and the module allows `non_upper_case_globals` for that
 /// reason.
+/// [`constant_name`] for a constant named after a type: a type the IDL
+/// calls `Self` or `type` gives `Self_` or `r#type`, as its Rust type does
+/// (`zerodds_lang_cst::rust::escape_keyword`).
+fn type_constant_name(name: &str) -> String {
+    zerodds_lang_cst::rust::escape_keyword(&constant_name(name))
+}
+
 fn constant_name(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })

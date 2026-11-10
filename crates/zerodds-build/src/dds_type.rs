@@ -610,7 +610,7 @@ fn continuing_fns(
             format!(
                 "let mut w = zerodds_wire::Writer::continuing(\n                \
                  zerodds_wire::Endianness::Little,\n                {v1_align},\n                \
-                 core::mem::take(prefix),\n            ){v1_write};\n            \
+                 ::core::mem::take(prefix),\n            ){v1_write};\n            \
                  let written = {path}::encode{second}(self, &mut w).and_then(|_| w.check_deferred());\n            \
                  *prefix = w.finish();\n            written"
             ),
@@ -637,7 +637,7 @@ fn continuing_fns(
          let written = if xcdr1 {{\n            {encode_v1}\n        }} else {{\n            \
          let mut w = zerodds_wire::Writer::continuing(\n                \
          zerodds_wire::Endianness::Little,\n                {v2_align},\n                \
-         core::mem::take(prefix),\n            ){v2_write};\n            \
+         ::core::mem::take(prefix),\n            ){v2_write};\n            \
          let written = {path}::encode(self, &mut w).and_then(|_| w.check_deferred());\n            \
          *prefix = w.finish();\n            written\n        }};\n        \
          if written.is_err() {{\n            prefix.truncate(start);\n        }}\n        \
@@ -759,7 +759,7 @@ fn encode_fn(
          let start = out.len();\n        \
          let mut w = zerodds_wire::Writer::appending(\n            \
          zerodds_wire::Endianness::{order},\n            {max_align},\n            \
-         core::mem::take(out),\n        ){settings};\n        \
+         ::core::mem::take(out),\n        ){settings};\n        \
          let written = {path}::{inherent}(self, &mut w).and_then(|_| w.check_deferred());\n        \
          *out = w.finish();\n        \
          if written.is_err() {{\n            out.truncate(start);\n        }}\n        \
@@ -962,13 +962,14 @@ fn field_value_item(ast: &Ast, id: Id<TypeNode>, node: &TypeNode) -> String {
 /// the enumeration `enumeration` (DDS 1.4 Annex B.2 ENUMERATEDVALUE).
 fn enumerator_name(ast: &Ast, enumeration: Id<TypeNode>, value: &str) -> Option<String> {
     let path = zerodds_lang_rules::adapter::cst::path_from_file_root(ast, enumeration).ok()?;
+    let enumeration_name = ast.type_(enumeration).ok()?.name.clone();
     let mut arms = String::new();
     for enumerator in ast.enumerators_of(enumeration) {
         let enumerator = ast.enumerator(*enumerator).ok()?;
         let _ = write!(
             arms,
             "{path}::{} => \"{}\", ",
-            zerodds_lang_cst::rust::escape_keyword(&enumerator.name),
+            zerodds_lang_rules::adapter::cst::enumerator_ident(&enumeration_name, &enumerator.name),
             enumerator.name
         );
     }

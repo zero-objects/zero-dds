@@ -359,7 +359,10 @@ pub(crate) fn enumerator_path_of(
         .iter()
         .map(|s| s.as_str().to_string())
         .collect();
-    segments.push(zerodds_lang_cst::rust::escape_keyword(&enumerator.name));
+    segments.push(crate::adapter::cst::enumerator_ident(
+        &node.name,
+        &enumerator.name,
+    ));
     let borrowed: Vec<&str> = segments.iter().map(String::as_str).collect();
     Ok(Path::new(&borrowed))
 }
