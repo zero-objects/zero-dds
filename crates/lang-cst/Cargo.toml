@@ -1,6 +1,9 @@
 [package]
 name = "zerodds-lang-cst"
-version.workspace = true
+# On crates.io as 1.0.0-rc.7.6, unchanged since and not uploaded with
+# 1.0.0-rc.7.7; named so that its dependents can require it.
+# `version.workspace = true` again with RC8.
+version = "1.0.0-rc.7.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
