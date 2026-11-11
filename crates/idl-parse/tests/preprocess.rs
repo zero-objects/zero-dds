@@ -3,8 +3,9 @@
 //! The preprocessor and its source map. Spec §3.4.
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
+use std::cell::RefCell;
 use zerodds_idl_cst::TokenKind;
-use zerodds_idl_parse::{MemoryLoader, preprocess};
+use zerodds_idl_parse::{FileLoader, MemoryLoader, preprocess};
 
 /// The kinds of the expanded stream, for asserting what survived.
 fn kinds(source: &str, loader: &MemoryLoader) -> Vec<TokenKind> {
@@ -315,6 +316,65 @@ fn a_pragma_once_in_a_branch_that_is_cut_out_does_not_guard() {
     let source = "#include \"guarded.idl\"\n#include \"guarded.idl\"\n";
     let result = preprocess("main.idl", source, &loader);
     assert_eq!(result.text.matches("Once").count(), 2, "{}", result.text);
+}
+
+#[test]
+fn virtual_paths_keep_exact_name_identity() {
+    let loader = MemoryLoader::new()
+        .with("shared.idl", "#pragma once\nstruct One { long n; };\n")
+        .with("./shared.idl", "#pragma once\nstruct Two { long n; };\n");
+    let result = preprocess(
+        "main.idl",
+        "#include \"shared.idl\"\n#include \"./shared.idl\"\n\
+         #include \"shared.idl\"\n#include \"./shared.idl\"\n",
+        &loader,
+    );
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(result.text.matches("One").count(), 1);
+    assert_eq!(result.text.matches("Two").count(), 1);
+}
+
+struct CountingLoader {
+    files: MemoryLoader,
+    requests: RefCell<Vec<String>>,
+}
+
+impl FileLoader for CountingLoader {
+    fn load(&self, path: &str, from: Option<&str>) -> Option<(String, String)> {
+        self.files.load(path, from)
+    }
+
+    fn identity(&self, path: &str) -> Vec<u8> {
+        self.requests.borrow_mut().push(path.to_owned());
+        match path {
+            // The key need not be text, and need not resemble a source path.
+            "shared.idl" | "alias.idl" => vec![0xff, 0x00],
+            _ => path.as_bytes().to_vec(),
+        }
+    }
+}
+
+#[test]
+fn each_include_computes_identity_once_and_reuses_it_for_guards() {
+    let shared = "#pragma once\nstruct Shared { long n; };\n";
+    let loader = CountingLoader {
+        files: MemoryLoader::new()
+            .with("parent.idl", "#include \"shared.idl\"\n")
+            .with("shared.idl", shared)
+            .with("alias.idl", shared),
+        requests: RefCell::new(Vec::new()),
+    };
+    let result = preprocess(
+        "main.idl",
+        "#include \"parent.idl\"\n#include \"alias.idl\"\n",
+        &loader,
+    );
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(result.text.matches("Shared").count(), 1);
+    assert_eq!(
+        *loader.requests.borrow(),
+        ["main.idl", "parent.idl", "shared.idl", "alias.idl"]
+    );
 }
 
 /// Every other pragma still reaches the lowering as trivia: the arm

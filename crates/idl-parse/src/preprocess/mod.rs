@@ -247,6 +247,19 @@ pub trait FileLoader {
     /// Returns the resolved name and the contents. `None` if it cannot
     /// be found — the caller diagnoses that rather than the loader.
     fn load(&self, path: &str, from: Option<&str>) -> Option<(String, String)>;
+
+    /// Return an opaque identity for a resolved name, for include guards and cycles.
+    ///
+    /// Equal identities must refer to the same source, and remain stable during
+    /// preprocessing. The root source's name is also passed here, even when it
+    /// was supplied directly rather than through `load`.
+    ///
+    /// These bytes are only compared within a preprocessing run; they are not
+    /// paths for diagnostics or persistence. Loaders with virtual names retain
+    /// exact-name identity by default.
+    fn identity(&self, path: &str) -> Vec<u8> {
+        path.as_bytes().to_vec()
+    }
 }
 
 /// A loader over an in-memory set of files.
@@ -443,6 +456,12 @@ pub fn preprocess_with(
     }
 }
 
+/// An active include keeps its display path and its identity separately.
+struct OpenFile {
+    path: String,
+    identity: Vec<u8>,
+}
+
 struct Preprocessor<'a> {
     loader: &'a dyn FileLoader,
     map: SourceMap,
@@ -463,8 +482,8 @@ struct Preprocessor<'a> {
     /// it is attached to the next token rather than the previous one.
     pending_pragmas: Vec<(String, Trivia, FileId)>,
     /// The include chain, so a cycle is recognised rather than followed.
-    open: Vec<String>,
-    /// The files that asked to be read once, by resolved path.
+    open: Vec<OpenFile>,
+    /// The files that asked to be read once, by loader identity.
     ///
     /// `#pragma once` reached the pragma arm below and was held as
     /// trivia like every other pragma, which is to say it was carried
@@ -472,7 +491,7 @@ struct Preprocessor<'a> {
     /// expanded once per `#include` all the same, and the second
     /// expansion redeclared every name in it — the same
     /// `DuplicateName` a header with no guard at all produces.
-    once: Vec<String>,
+    once: Vec<Vec<u8>>,
     /// What `#line` (§16.4) said about a file: the difference between
     /// the line `__LINE__` reports and the physical one, and the name
     /// `__FILE__` reports instead of the path.
@@ -548,7 +567,8 @@ enum Sink<'v> {
 
 impl Preprocessor<'_> {
     fn include(&mut self, path: &str, source: &str, depth: usize) {
-        if self.once.iter().any(|seen| seen == path) {
+        let identity = self.loader.identity(path);
+        if self.once.contains(&identity) {
             return;
         }
         if depth > MAX_INCLUDE_DEPTH {
@@ -560,13 +580,17 @@ impl Preprocessor<'_> {
             ));
             return;
         }
-        if self.open.iter().any(|open| open == path) {
+        if self.open.iter().any(|open| open.identity == identity) {
             self.report(Diagnostic::error(
                 DiagnosticCode::UnexpectedToken,
                 Span::default(),
                 format!(
                     "`{path}` includes itself, directly or through {}",
-                    self.open.join(" -> ")
+                    self.open
+                        .iter()
+                        .map(|open| open.path.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" -> ")
                 ),
                 "OMG IDL 4.2 §7.3",
             ));
@@ -574,7 +598,10 @@ impl Preprocessor<'_> {
         }
 
         let file = self.map.add_file(path, source);
-        self.open.push(path.to_owned());
+        self.open.push(OpenFile {
+            path: path.to_owned(),
+            identity,
+        });
         let mut cursor = FileCursor {
             tokens: lex(source),
             at: 0,
@@ -1095,7 +1122,7 @@ impl Preprocessor<'_> {
     /// file's own, so one raised inside an included file names it.
     fn report(&mut self, mut diagnostic: Diagnostic) {
         if self.open.len() > 1 {
-            diagnostic.file = self.open.last().cloned();
+            diagnostic.file = self.open.last().map(|open| open.path.clone());
         }
         self.diagnostics.push(diagnostic);
     }
@@ -1418,10 +1445,10 @@ impl Preprocessor<'_> {
             // acted on is not one the lowering has to report as
             // uninterpreted.
             "pragma" if keeping && rest.trim() == "once" => {
-                if let Some(current) = self.open.last().cloned()
-                    && !self.once.contains(&current)
+                if let Some(current) = self.open.last()
+                    && !self.once.contains(&current.identity)
                 {
-                    self.once.push(current);
+                    self.once.push(current.identity.clone());
                 }
             }
             "pragma" if keeping => {
