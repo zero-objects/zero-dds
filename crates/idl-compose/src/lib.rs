@@ -89,6 +89,14 @@ impl PathLoader {
 }
 
 impl FileLoader for PathLoader {
+    fn identity(&self, path: &str) -> Vec<u8> {
+        std::fs::canonicalize(path)
+            // Identity is compared only within this process. Keep the native
+            // encoding: lossy Unicode conversion can merge distinct targets.
+            .map(|path| path.as_os_str().as_encoded_bytes().to_vec())
+            .unwrap_or_else(|_| path.as_bytes().to_vec())
+    }
+
     fn load(&self, path: &str, from: Option<&str>) -> Option<(String, String)> {
         let mut candidates: Vec<PathBuf> = Vec::new();
         // Beside the including file first.
