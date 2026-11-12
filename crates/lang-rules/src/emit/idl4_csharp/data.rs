@@ -1709,7 +1709,7 @@ fn write_initialisers(w: &mut Writer, members: &[Member], every: bool) {
 }
 
 /// `Equals(T)`, `Equals(object)` and `GetHashCode()` over the members:
-/// "The class shall implement the IEquatable<T> interface".
+/// "The class shall implement the `IEquatable<T>` interface".
 fn write_equality(w: &mut Writer, name: &str, members: &[Member], derived: bool, is_struct: bool) {
     w.line("");
     w.open(&format!("public bool Equals({name} other)"));

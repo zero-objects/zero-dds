@@ -11285,15 +11285,24 @@ impl DcpsRuntime {
                 }
             }
         }
-        let stack = self.install_security_stack(SecurityBuiltinStack::with_auth(
+        let mut fresh = SecurityBuiltinStack::with_auth(
             self.guid_prefix,
             vendor_id,
             auth,
             local_identity,
             local_guid,
-        ));
+        );
         // The `serialized_local_participant_data` of the handshake
-        // operations (§9.3.2.11.4, §9.3.2.11.5).
+        // operations (§9.3.2.11.4, §9.3.2.11.5). The stack has it before the
+        // receive path can reach it: a handshake begun between the install
+        // and a later set carried an empty `c.pdata`, which the peer refuses
+        // on every resend of that request.
+        if let Some(pd) = pdata_for_stack.as_ref() {
+            fresh.set_local_participant_data(pd.clone());
+        }
+        let stack = self.install_security_stack(fresh);
+        // A stack that was installed before keeps its handshakes and takes
+        // the data of this call.
         if let Some(pd) = pdata_for_stack
             && let Ok(mut s) = stack.lock()
         {

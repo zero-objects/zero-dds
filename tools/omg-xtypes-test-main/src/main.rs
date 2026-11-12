@@ -244,7 +244,7 @@ fn print_typeid(
 /// `--print-typeid --type-object-version 1`: the `_TypeId` of DDS-XTypes
 /// 1.1 (XTypes 1.3 Annex D keeps it as `TypeIdV1`), from the type's
 /// TypeObject of 1.1 (`zerodds_types::type_object_v1`, §7.3.4.1.2 of 1.1),
-/// printed as the suite reads it (`print_ids.py`: "Type ID: <number>").
+/// printed as the suite reads it (`print_ids.py`: `Type ID: <number>`).
 fn print_type_id_v1(loaded: &model::Model) -> i32 {
     use zerodds_types::type_object_v1::TypeId;
     let mut registry = zerodds_types::resolve::TypeRegistry::new();

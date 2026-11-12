@@ -13,14 +13,22 @@
 //! | `string`, `wstring` | `std::string` | `CORBA::String_var`, `CORBA::WString_var` |
 //! | `sequence<T>` | `std::vector<T>` | `zerodds::classic::Sequence<T>` |
 //! | `T a[2][3]` | `std::array<std::array<T, 3>, 2>` | `T a[2][3]` |
-//! | `map<K,V>` | `zerodds::Map<K, V>` | `zerodds::Map<K, V>` (a string key is a `std::string`) |
-//! | `@optional T m` | `T *`, NULL when absent | `zerodds::classic::Optional<T>` |
+//! | `map<K,V>` | `zerodds::Map<K, V>` | `zerodds::classic::Map<K, V>` (a string key is a `std::string`) |
+//! | `@optional T m` | `T *`, NULL when absent | `T *`, NULL when absent (`char *` for a string) |
 //! | `@external T m` | `std::shared_ptr<T>` | `zerodds::classic::Var<T>` |
 //! | `struct` | struct, the base a public base class | struct with public members, `S_var` |
 //! | `union` | `_d()` and one accessor per case | class: `_d()`, one accessor per case |
 //! | `enum` | `enum class` | plain `enum`, the values written out |
-//! | `bitmask` | an unsigned integer and constants | the same |
+//! | `bitmask` | an unsigned integer and constants | a struct with the enumeration `_flags` |
+//! | `bitset` | a class of integers | a struct of bit fields |
 //! | `typedef` | `using` | `typedef` |
+//!
+//! For the building blocks OMG IDL 4 added to what the classic mapping knew, the rules are those
+//! of IDL4 to C++ 1.0 Annex D.2: a map is a class with `maximum()`, `length()`, `insert()` and
+//! `erase()` (D.2.1.3.1), a bit set the bit fields of §7.14.3.2 (D.2.1.3.2), a bit mask the
+//! struct of Annex C.2.4.1.1 (D.2.1.3.3), an `@optional` member a plain pointer (Table D.3),
+//! `@default` the initial value (Table D.4), and `@verbatim` text where its placement says
+//! (D.2.3.5).
 //!
 //! The classic declarations stand between the markers `ZD-CLASSIC-BEGIN` and `ZD-CLASSIC-END` and
 //! are C++03: they include `zerodds/classic.hpp` and nothing newer. The native types, the codec and
@@ -30,8 +38,8 @@
 //! the same bytes, the same `TypeObject` and the same type name as the native one.
 //!
 //! Not remapped, and left to the native types by name: constants, exceptions. Refused by name,
-//! because the classic mapping has no form for them: `fixed`, `bitset`, value types, `any`, and an
-//! array as the element of a sequence.
+//! because the classic mapping has no form for them: `fixed`, value types, `any`, and an array as
+//! the element of a sequence.
 
 use super::cpp::{cxx_name, module_names};
 use super::cpp_psm::{in_namespaces, native_path, psm_path};
@@ -190,8 +198,9 @@ fn spell_at(
                 ),
                 None => String::new(),
             };
+            // IDL4 to C++ 1.0 Annex D.2.1.3.1.
             Spelled::plain(format!(
-                "::zerodds::Map< {}, {}{bound} >",
+                "::zerodds::classic::Map< {}, {}{bound} >",
                 inner(k, true)?,
                 inner(value, false)?
             ))
@@ -206,6 +215,7 @@ fn spell_at(
         | TypeKind::Union { .. }
         | TypeKind::Enumeration { .. }
         | TypeKind::Bitmask { .. }
+        | TypeKind::Bitset { .. }
         | TypeKind::Alias { .. } => Spelled::plain(psm_path(ast, id)),
         _ => return Err(no_form("this construct", at)),
     })
@@ -215,8 +225,14 @@ fn spell_at(
 struct Member {
     name: String,
     spelled: Spelled,
-    /// The mem-initialiser: value-initialisation, or the first enumerator of an enumeration.
+    /// The mem-initialiser: value-initialisation, the first enumerator of an enumeration, or the
+    /// value of `@default`.
     init: String,
+    /// Whether it is the plain pointer of an `@optional` member, which the structure owns.
+    pointer: bool,
+    /// Whether the member itself is a C array: declared with dimensions, or of a `typedef`
+    /// that names an array. No mem-initialiser copies one.
+    array: bool,
 }
 
 fn enumerator_path(ast: &Ast, enumeration: Id<TypeNode>, enumerator: &str) -> Option<String> {
@@ -241,16 +257,30 @@ fn member(ast: &Ast, member: &MemberNode, owner: &str) -> Result<Member, Materia
     // The same precedence as the native struct (`cpp::held`): `@external` first, then
     // `@optional`, then a member that only closes a cycle.
     let held = super::cpp::held(ast, member);
+    let array = held == super::cpp::Held::Value
+        && (!inner.dims.is_empty()
+            || matches!(
+                ast.type_(resolve_alias(ast, target)).map(|node| &node.kind),
+                Ok(TypeKind::Array { .. })
+            ));
     let (spelled, init) = if held == super::cpp::Held::Shared {
         (
             Spelled::plain(format!("::zerodds::classic::Var< {} >", inner.type_)),
             format!("{name}()"),
         )
     } else if held == super::cpp::Held::Plain {
-        (
-            Spelled::plain(format!("::zerodds::classic::Optional< {} >", inner.type_)),
-            format!("{name}()"),
-        )
+        // IDL4 to C++ 1.0 Table D.3: "Each IDL struct member annotated with @optional shall be
+        // represented using plain pointers"; a `_var` type becomes "the corresponding plain
+        // pointer type", `char*` for `String_var`. NULL after construction.
+        if !inner.dims.is_empty() {
+            return Err(no_form("an optional array", &member.name));
+        }
+        let pointer = match inner.type_.as_str() {
+            "::CORBA::String_var" => "char*".to_string(),
+            "::CORBA::WString_var" => "::CORBA::WChar*".to_string(),
+            other => format!("{other}*"),
+        };
+        (Spelled::plain(pointer), format!("{name}()"))
     } else {
         // Table 9: an enumeration starts at its first enumerator, not at zero.
         let resolved = resolve_alias(ast, target);
@@ -261,17 +291,83 @@ fn member(ast: &Ast, member: &MemberNode, owner: &str) -> Result<Member, Materia
         .then(|| crate::emit::default_enumerator_name(ast, resolved))
         .flatten()
         .and_then(|first| enumerator_path(ast, resolved, &first));
-        let init = match (first, inner.dims.is_empty()) {
-            (Some(first), true) => format!("{name}({first})"),
+        // Table D.4: "C++ elements declared as result of the mappings defined in this
+        // specification containing a @default annotation shall be initialized to the value of
+        // the annotation."
+        let default = default_value(ast, member, resolved)?;
+        let init = match (default, first, inner.dims.is_empty()) {
+            (Some(value), _, true) => format!("{name}({value})"),
+            (None, Some(first), true) => format!("{name}({first})"),
             _ => format!("{name}()"),
         };
         (inner, init)
     };
     Ok(Member {
         name,
+        pointer: held == super::cpp::Held::Plain,
+        array,
         spelled,
         init,
     })
+}
+
+/// The classic literal of a member's `@default`, for a primitive, a string or an enumeration.
+fn default_value(
+    ast: &Ast,
+    member: &MemberNode,
+    resolved: Id<TypeNode>,
+) -> Result<Option<String>, MaterialiseError> {
+    let Some(expr) = member.facets.xtypes.as_ref().and_then(|x| x.default_value) else {
+        return Ok(None);
+    };
+    let unevaluated = || MaterialiseError::Unevaluated {
+        construct: "the value of @default".to_string(),
+        at: member.name.clone(),
+    };
+    let value = ast.eval_const(expr).map_err(|_| unevaluated())?;
+    let Ok(node) = ast.type_(resolved) else {
+        return Err(unevaluated());
+    };
+    use zerodds_ast::ConstValue as V;
+    Ok(Some(match (&node.kind, &value) {
+        (TypeKind::Enumeration { .. }, V::Integer(number)) => {
+            let mut found = None;
+            for enumerator in ast.enumerators_of(resolved) {
+                if ast.effective_enumerator_value(*enumerator) == Some(*number) {
+                    let e = ast.enumerator(*enumerator).map_err(|_| unevaluated())?;
+                    found = enumerator_path(ast, resolved, &e.name);
+                }
+            }
+            found.ok_or_else(unevaluated)?
+        }
+        (_, V::Boolean(flag)) => flag.to_string(),
+        (TypeKind::Primitive(kind), V::Integer(number)) => {
+            let suffix = if i32::try_from(*number).is_ok() {
+                ""
+            } else if *number < 0 {
+                "LL"
+            } else {
+                "ULL"
+            };
+            format!("static_cast< {} >({number}{suffix})", primitive(*kind))
+        }
+        (_, V::Float { mantissa, exponent }) => {
+            let mut text = mantissa.clone();
+            if !text.contains('.') && exponent.is_none() {
+                text.push_str(".0");
+            }
+            if let Some(exponent) = exponent {
+                text.push('e');
+                text.push_str(exponent);
+            }
+            text
+        }
+        (_, V::Char(c)) => format!("static_cast< ::CORBA::Char >({})", u32::from(*c)),
+        (_, V::WChar(point)) => format!("static_cast< ::CORBA::WChar >({point})"),
+        (_, V::String(text)) => crate::emit::idl4_cpp::text::string_literal(text),
+        (_, V::WString(points)) => crate::emit::idl4_cpp::text::wstring_literal(points),
+        _ => return Err(no_form("@default of this type", &member.name)),
+    }))
 }
 
 /// The struct of a structure, its `_var`, and the specialisation of `zerodds::classic::Conv`.
@@ -294,11 +390,22 @@ fn structure(
         };
         own.push(member(ast, m, &node.name)?);
     }
-    let mut text = format!(
+    let slots = crate::verbatim::declaration_slots(ast, id, crate::verbatim::aliases::CPP);
+    let base_path = base.map(|b| psm_path(ast, b));
+    let mut text = String::new();
+    for verbatim in &slots.before {
+        text.push_str(&format!("{verbatim}\n"));
+    }
+    text.push_str(&format!(
         "/// `{}` as the classic mapping has it: public members.\nstruct {name}{} {{\n",
         node.name,
-        base.map_or(String::new(), |b| format!(" : public {}", psm_path(ast, b))),
-    );
+        base_path
+            .as_ref()
+            .map_or(String::new(), |b| format!(" : public {b}")),
+    ));
+    for verbatim in &slots.begin {
+        text.push_str(&format!("{verbatim}\n"));
+    }
     for m in &own {
         text.push_str(&format!("    {};\n", m.spelled.declare(&m.name)));
     }
@@ -308,9 +415,68 @@ fn structure(
         let inits: Vec<&str> = own.iter().map(|m| m.init.as_str()).collect();
         text.push_str(&format!("    {name}() : {} {{}}\n", inits.join(", ")));
     }
+    // The structure owns the plain pointer of an `@optional` member: copies it deeply and
+    // releases it, as Table D.5 has the enclosing object do for an external one.
+    if own.iter().any(|m| m.pointer) {
+        let mut copies = Vec::new();
+        if let Some(b) = &base_path {
+            copies.push(format!("{b}(other)"));
+        }
+        let mut body = Vec::new();
+        for m in &own {
+            if m.pointer {
+                copies.push(format!("{0}(::zerodds::classic::clone(other.{0}))", m.name));
+            } else if !m.array {
+                copies.push(format!("{0}(other.{0})", m.name));
+            } else {
+                body.push(format!(
+                    "::zerodds::classic::copy_value({0}, other.{0});",
+                    m.name
+                ));
+            }
+        }
+        text.push_str(&format!(
+            "    {name}(const {name}& other) : {} {{ {} }}\n",
+            copies.join(", "),
+            body.join(" ")
+        ));
+        let mut assign = Vec::new();
+        if let Some(b) = &base_path {
+            assign.push(format!("{b}::operator=(other);"));
+        }
+        for m in &own {
+            if m.pointer {
+                assign.push(format!(
+                    "{{ {1} copy = ::zerodds::classic::clone(other.{0}); ::zerodds::classic::release({0}); {0} = copy; }}",
+                    m.name, m.spelled.type_
+                ));
+            } else {
+                assign.push(format!(
+                    "::zerodds::classic::copy_value({0}, other.{0});",
+                    m.name
+                ));
+            }
+        }
+        text.push_str(&format!(
+            "    {name}& operator=(const {name}& other) {{\n        if (this != &other) {{ {} }}\n        return *this;\n    }}\n",
+            assign.join(" ")
+        ));
+        let releases: Vec<String> = own
+            .iter()
+            .filter(|m| m.pointer)
+            .map(|m| format!("::zerodds::classic::release({});", m.name))
+            .collect();
+        text.push_str(&format!("    ~{name}() {{ {} }}\n", releases.join(" ")));
+    }
+    for verbatim in &slots.end {
+        text.push_str(&format!("{verbatim}\n"));
+    }
     text.push_str(&format!(
         "}};\ntypedef ::zerodds::classic::Var< {name} > {name}_var;\n"
     ));
+    for verbatim in &slots.after {
+        text.push_str(&format!("{verbatim}\n"));
+    }
 
     // The conversion: every member, the base's first, by name.
     let path = psm_path(ast, id);
@@ -421,6 +587,10 @@ fn union_class(
             case.type_, case.name
         ));
     }
+    let slots = crate::verbatim::declaration_slots(ast, id, crate::verbatim::aliases::CPP);
+    for verbatim in &slots.end {
+        text.push_str(&format!("{verbatim}\n"));
+    }
     text.push_str(&format!("\nprivate:\n    {disc_type} d_;\n"));
     for case in &cases {
         text.push_str(&format!("    {} {}_;\n", case.type_, case.name));
@@ -428,6 +598,15 @@ fn union_class(
     text.push_str(&format!(
         "}};\ntypedef ::zerodds::classic::Var< {name} > {name}_var;\n"
     ));
+    if let Some(at) = text.find("public:\n") {
+        let begin: String = slots.begin.iter().map(|v| format!("{v}\n")).collect();
+        text.insert_str(at + "public:\n".len(), &begin);
+    }
+    let before: String = slots.before.iter().map(|v| format!("{v}\n")).collect();
+    text.insert_str(0, &before);
+    for verbatim in &slots.after {
+        text.push_str(&format!("{verbatim}\n"));
+    }
 
     let path = psm_path(ast, id);
     let native = native_path(ast, id);
@@ -550,14 +729,27 @@ pub fn classic_layer(ast: &Ast) -> Result<String, MaterialiseError> {
                 let conv = format!(
                     "template <>\nstruct Conv<{path}> {{\n    typedef {native} Native;\n    typedef std::underlying_type<Native>::type Underlying;\n    static Native to_native({path} v) {{ return static_cast<Native>(static_cast<Underlying>(v)); }}\n    static {path} from_native(Native n) {{ return static_cast<{path}>(static_cast<Underlying>(n)); }}\n}};\n"
                 );
+                let slots =
+                    crate::verbatim::declaration_slots(ast, id, crate::verbatim::aliases::CPP);
+                let lines = |texts: &[String]| -> String {
+                    texts.iter().map(|v| format!("{v}\n")).collect()
+                };
                 (
                     format!(
-                        "/// An enumeration, with the numbering of the IDL.\nenum {name} {{\n{}\n}};\n",
-                        values.join(",\n")
+                        "{}/// An enumeration, with the numbering of the IDL.\nenum {name} {{\n{}{}\n{}}};\n{}",
+                        lines(&slots.before),
+                        lines(&slots.begin),
+                        values.join(",\n"),
+                        lines(&slots.end),
+                        lines(&slots.after)
                     ),
                     Some(conv),
                 )
             }
+            // IDL4 to C++ 1.0 Annex D.2.1.3.3: "IDL bitmask declarations shall be mapped as
+            // defined in Clause C.2.4.1.1": a struct with the enumeration `_flags`, the private
+            // `_value` of the unsigned type of the bound, the default and copy constructors,
+            // `|=`, `&=`, `^=` and the function call operator.
             TypeKind::Bitmask { bits } => {
                 let holder = match ast.effective_bit_bound(id) {
                     0..=8 => "::CORBA::Octet",
@@ -565,9 +757,7 @@ pub fn classic_layer(ast: &Ast) -> Result<String, MaterialiseError> {
                     17..=32 => "::CORBA::ULong",
                     _ => "::CORBA::ULongLong",
                 };
-                let mut text = format!(
-                    "/// A bitmask, as the unsigned integer of its bound.\ntypedef {holder} {name};\n"
-                );
+                let mut flags = Vec::new();
                 for bit in bits {
                     let Ok(b) = ast.bit_value(*bit) else {
                         return Err(MaterialiseError::NoNode {
@@ -581,13 +771,42 @@ pub fn classic_layer(ast: &Ast) -> Result<String, MaterialiseError> {
                             at: b.name.clone(),
                         }
                     })?;
-                    text.push_str(&format!(
-                        "const {name} {} ZD_CLASSIC_CONSTANT = static_cast< {name} >({}ULL << {position});\n",
-                        cxx_name(&b.name),
-                        1
+                    let value = 1u128 << position;
+                    let suffix = if value > u128::from(u32::MAX) {
+                        "ULL"
+                    } else {
+                        "U"
+                    };
+                    flags.push(format!(
+                        "        {} = 0x{value:X}{suffix}",
+                        cxx_name(&b.name)
                     ));
                 }
-                (text, None)
+                let text = format!(
+                    "/// A bitmask as Annex C.2.4.1.1 of IDL4 to C++ 1.0 has it.\n\
+                     struct {name} {{\n    enum _flags {{\n{}\n    }};\n    typedef _flags {name}Bits;\n\n    \
+                     {name}() : _value(0U) {{}}\n    \
+                     {name}(const {name}& other) : _value(other._value) {{}}\n    \
+                     {name}({holder} v) : _value(v) {{}}\n    \
+                     {name}& operator=(const {name}& other) {{ _value = other._value; return *this; }}\n\n    \
+                     operator {holder}() const {{ return _value; }}\n    \
+                     {holder} operator()() const {{ return _value; }}\n    \
+                     {name}& operator|=({holder} other) {{ _value |= other; return *this; }}\n    \
+                     {name}& operator&=({holder} other) {{ _value &= other; return *this; }}\n    \
+                     {name}& operator^=({holder} other) {{ _value ^= other; return *this; }}\n    \
+                     bool operator==(const {name}& other) const {{ return _value == other._value; }}\n    \
+                     bool operator!=(const {name}& other) const {{ return _value != other._value; }}\n\n\
+                     private:\n    {holder} _value;\n}};\n",
+                    flags.join(",\n")
+                );
+                let path = psm_path(ast, id);
+                let native = native_path(ast, id);
+                let conv = format!(
+                    "template <>\nstruct Conv<{path}> {{\n    typedef {native} Native;\n    \
+                     static Native to_native(const {path}& v) {{ return static_cast<Native>(v()); }}\n    \
+                     static {path} from_native(Native n) {{ return {path}(static_cast<{holder}>(n)); }}\n}};\n"
+                );
+                (text, Some(conv))
             }
             TypeKind::Alias { aliased } => {
                 let Some(target) = aliased.resolved() else {
@@ -596,8 +815,80 @@ pub fn classic_layer(ast: &Ast) -> Result<String, MaterialiseError> {
                 let spelled = spell(ast, target, &node.name, false)?;
                 (format!("typedef {};\n", spelled.declare(&name)), None)
             }
-            TypeKind::Bitset { .. } => {
-                return Err(no_form("a bit set has no classic mapping", &node.name));
+            // Annex D.2.1.3.2: "IDL bitset declarations shall be mapped as defined in Clause
+            // 7.14.3.2": a struct of bit fields, the base a public base class.
+            TypeKind::Bitset { base, .. } => {
+                let base_path = base
+                    .as_ref()
+                    .and_then(zerodds_ast_core::Ref::resolved)
+                    .map(|b| psm_path(ast, b));
+                let mut fields = String::new();
+                for field in ast.bitfields_of(id) {
+                    let Ok(f) = ast.bitfield(*field) else {
+                        return Err(MaterialiseError::NoNode {
+                            kind: "bit field",
+                            at: node.name.clone(),
+                        });
+                    };
+                    let holder = match &f.holder_type {
+                        Some(holder) => {
+                            let Some(target) = holder.resolved() else {
+                                return Err(no_form("an unresolved bit field type", &node.name));
+                            };
+                            spell(ast, target, &node.name, false)?.type_
+                        }
+                        // OMG IDL 4.2 §7.4.13.4.3.2: the smallest type that holds the field.
+                        None => match f.bits {
+                            1 => "::CORBA::Boolean",
+                            2..=8 => "::CORBA::Octet",
+                            9..=16 => "::CORBA::UShort",
+                            17..=32 => "::CORBA::ULong",
+                            _ => "::CORBA::ULongLong",
+                        }
+                        .to_string(),
+                    };
+                    match &f.name {
+                        Some(field_name) => fields.push_str(&format!(
+                            "    {holder} {} : {};\n",
+                            cxx_name(field_name),
+                            f.bits
+                        )),
+                        None => fields.push_str(&format!("    {holder} : {};\n", f.bits)),
+                    }
+                }
+                let text = format!(
+                    "/// A bit set as §7.14.3.2 of IDL4 to C++ 1.0 has it: bit fields.\nstruct {name}{} {{\n{fields}}};\n",
+                    base_path
+                        .as_ref()
+                        .map_or(String::new(), |b| format!(" : public {b}"))
+                );
+                // The native class has every field, the base's included, as an integer.
+                let path = psm_path(ast, id);
+                let native = native_path(ast, id);
+                let mut to = String::new();
+                let mut from = String::new();
+                for field in ast.all_bitfields_of(id) {
+                    let Ok(f) = ast.bitfield(field) else {
+                        return Err(MaterialiseError::NoNode {
+                            kind: "bit field",
+                            at: node.name.clone(),
+                        });
+                    };
+                    let Some(field_name) = &f.name else {
+                        continue;
+                    };
+                    let field_name = cxx_name(field_name);
+                    to.push_str(&format!(
+                        "        n.{field_name} = static_cast<decltype(n.{field_name})>(v.{field_name});\n"
+                    ));
+                    from.push_str(&format!("        v.{field_name} = n.{field_name};\n"));
+                }
+                let conv = format!(
+                    "template <>\nstruct Conv<{path}> {{\n    typedef {native} Native;\n    \
+                     static Native to_native(const {path}& v) {{\n        Native n;\n{to}        return n;\n    }}\n    \
+                     static {path} from_native(const Native& n) {{\n        {path} v = {path}();\n{from}        return v;\n    }}\n}};\n"
+                );
+                (text, Some(conv))
             }
             TypeKind::Native
             | TypeKind::ValueBox { .. }
@@ -629,6 +920,7 @@ pub fn classic_layer(ast: &Ast) -> Result<String, MaterialiseError> {
                 | TypeKind::Union { .. }
                 | TypeKind::Enumeration { .. }
                 | TypeKind::Bitmask { .. }
+                | TypeKind::Bitset { .. }
                 | TypeKind::Alias { .. }
         ) {
             for (label, key) in [
@@ -656,13 +948,6 @@ pub fn classic_layer(ast: &Ast) -> Result<String, MaterialiseError> {
          #include <string>\n\
          #include \"zerodds/classic.hpp\"\n\
          #include \"zerodds/map.hpp\"\n\
-         // A constant at namespace scope has internal linkage; a translation unit that does not use\n\
-         // it is not warned about it.\n\
-         #if defined(__GNUC__)\n\
-         #define ZD_CLASSIC_CONSTANT __attribute__((unused))\n\
-         #else\n\
-         #define ZD_CLASSIC_CONSTANT\n\
-         #endif\n\
          {forward}\n{types}\
          // {END_MARKER}\n\n\
          #include \"zerodds/classic/convert.hpp\"\n\

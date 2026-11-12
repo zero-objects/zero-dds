@@ -110,10 +110,13 @@ fn compiles(text: &str) {
         .join("../../runtime/swift/Sources/ZdWire")
         .canonicalize()
         .expect("runtime/swift");
+    // One directory per call: two tests of this process run side by side,
+    // and two generated files can have the same length.
+    static CALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
         "zd-swift-codec-{}-{}",
         std::process::id(),
-        text.len()
+        CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).expect("the build directory");
     let file = dir.join("zd_types.swift");

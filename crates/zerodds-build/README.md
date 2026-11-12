@@ -238,6 +238,7 @@ fn main() -> Result<(), zerodds_build::Error> {
 | `rust_type(idl_path, rust_type)` | hold a typedef, struct member or union branch as a Rust type that implements `zerodds_wire::WireRepr` |
 | `rust_type_with(idl_path, rust_type, adapter)` | the same through an adapter value that implements `zerodds_wire::WireReprWith` |
 | `strip_enum_prefix(bool)` | cut each enumeration's name off its enumerators' Rust names, as `zerodds-idlc --strip-enum-prefix` (default: off) |
+| `case_sensitive_identifiers(bool)` | compare IDL identifiers with regard to case, as `zerodds-idlc --case-sensitive` and Cyclone DDS's `idlc -f case-sensitive`: `module shape` beside `struct Shape` builds (default: off, OMG IDL 4.2 §7.2.3 has the two collide) |
 | `rust_naming(RustNaming)` | the naming scheme: `RustNaming::Idl` (default, the IDL names) or `RustNaming::Rust` (RFC 430), as `zerodds-idlc --rust-naming` |
 
 The CLI exposes `--out` and `--default-extensibility`, as well as its own

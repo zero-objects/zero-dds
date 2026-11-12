@@ -727,7 +727,8 @@ impl Lowering<'_> {
     /// `DOTNET_NAMING_CONVENTION`), `constants_container`, `struct_type`.
     /// IDL4 to C++ 1.0 §8.1: `struct_mapping`
     /// (`STRUCT_WITH_PUBLIC_MEMBERS`,
-    /// `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`). `@rust_mapping` is
+    /// `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`), and Annex C.3.1's
+    /// `enum_prefix` and `enum_suffix`. `@rust_mapping` is
     /// ZeroDDS's own, declared as `@annotation rust_mapping { enum
     /// NamingConvention { IDL_NAMING_CONVENTION, RUST_NAMING_CONVENTION };
     /// NamingConvention apply_naming_convention; }`. A parameter the
@@ -763,13 +764,19 @@ impl Lowering<'_> {
                 ("constants_container", Kind::Text),
                 ("struct_type", Kind::Text),
             ],
-            MappingLanguage::Cpp => &[(
-                "struct_mapping",
-                Kind::Enumerator(&[
-                    "STRUCT_WITH_PUBLIC_MEMBERS",
-                    "CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS",
-                ]),
-            )],
+            // Annex C.3.1 augments the declaration with `string
+            // enum_prefix default ""; string enum_suffix default "";`.
+            MappingLanguage::Cpp => &[
+                (
+                    "struct_mapping",
+                    Kind::Enumerator(&[
+                        "STRUCT_WITH_PUBLIC_MEMBERS",
+                        "CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS",
+                    ]),
+                ),
+                ("enum_prefix", Kind::Text),
+                ("enum_suffix", Kind::Text),
+            ],
             MappingLanguage::Rust => &[(
                 "apply_naming_convention",
                 Kind::Enumerator(&["IDL_NAMING_CONVENTION", "RUST_NAMING_CONVENTION"]),

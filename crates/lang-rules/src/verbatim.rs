@@ -357,8 +357,9 @@ pub fn aliases_of(language: zerodds_lang_cst::Language) -> &'static [&'static st
 pub mod aliases {
     /// The C column.
     pub const C: &[&str] = &["c"];
-    /// The C++ column.
-    pub const CPP: &[&str] = &["c++", "cpp", "cxx"];
+    /// The C++ column: IDL4 to C++ 1.0 Table 7.19 names `"c++"`, `"cpp"`,
+    /// `"cc"` and `"cxx"`.
+    pub const CPP: &[&str] = &["c++", "cpp", "cc", "cxx"];
     /// The Java column.
     pub const JAVA: &[&str] = &["java"];
     /// The C# column.

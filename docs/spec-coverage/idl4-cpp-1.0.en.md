@@ -6,31 +6,26 @@ Item-by-item audit against the spec; every requirement with its spec
 quote, repo path, test path and status (`done` / `partial` / `open` /
 `n/a`).
 
-**Context:** the C++ column of the IDL transplant lives in four layers
-today:
+**Context:** the mapping of this specification is `--cpp-mapping idl4` of
+`zerodds-idlc`:
 
-- `crates/lang-rules/src/adapter/cpp.rs` — IDL data types (struct, union,
-  enum, bitset, bitmask, typedef, constant, exception, sequence, array,
-  map, string, `@optional`, `@external`) to the C++ CST.
-- `crates/lang-cst/src/cpp/mod.rs` — the C++ CST (`escape_keyword`,
-  `Include`, `Primitive`).
-- `crates/lang-render/src/cpp.rs` — the renderer.
-- `crates/lang-rules/src/emit/interface_cpp.rs` — interfaces through the
-  DDS-RPC 1.0 §7.11.1 binding (not the generic §7.4 form).
+- `crates/lang-rules/src/emit/idl4_cpp/` — the emitter (`generate`), with
+  `Options` for the platform (`--cpp-platform`: none, `dds`, `corba`), the
+  language standard (`--cpp-standard`: `c++11`, `c++03`) and the CORBA
+  module (`--cpp-corba-module`).
+- `runtime/cpp/include/omg/types.hpp` — the namespace `omg::types`
+  (Chapter 7 and Annex C).
+- `runtime/cpp/include/omg/corba.hpp` and `omg/corba_module.hpp` — the
+  CORBA-specific mappings of Annex A.1; `corba_module.hpp` is generated
+  from `orb.idl` and `runtime/corba/CORBA_PIDL.idl`.
 
-Hand-written runtime, not generated from this spec:
+The other C++ columns (`--cpp-mapping psm`, `native`, `classic`) follow
+DDS-PSM-Cxx and the classic mapping and are not the subject of this
+document; Annex D concerns `classic`.
 
-- `crates/cpp/include/dds/` — the DDS-PSM-Cxx 1.0 API (Time,
-  InstanceHandle, Status, Fixed, Exception, Topic, TopicTraits, Publisher,
-  Subscriber, DomainParticipant).
-- `runtime/cpp/include/` — the wire runtime (`zerodds/wire.hpp`,
-  `dds/rpc.hpp`); the corpus gate compiles against it.
-
-**Finding that carries the page:** the C++ column emits no `omg::types`
-anywhere. `grep -rl "omg::types" crates/ tools/ runtime/ endpoints/`
-finds exactly one file — `crates/corba-codegen/src/traits.rs`, a Rust
-CORBA generator, not this C++ binding. Every item whose requirement is an
-`omg::types` alias or trait is therefore `open` or `partial`.
+Every test generates the header of an IDL file, compiles it with a check
+program under `-std=c++11` and `-std=c++17` (Annex C: `-std=c++03`) with
+warnings as errors, and runs it.
 
 ---
 
@@ -57,17 +52,11 @@ with no requirement on an implementation.
 **Spec:** §2, p. 1 — "A conformant implementation shall transform IDL
 input into C++ source code output as specified in Chapter 7."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`generate`); `tools/idlc/src/generate.rs` (`--cpp-mapping idl4`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`,
-`crates/lang-rules/tests/cpp_corpus_compiles.rs::idl4cpp_2_1_the_compiler_check_catches_a_deliberate_error`
+**Tests:** `tools/idlc/tests/idl4_mappings_take_the_whole_model.rs::idl4cpp_7_3_a_structure_with_an_any_member_is_written_by_the_command_line`
 
-**Status:** partial — the data-type transformation is live and renders
-every corpus case (or names its refusal); the compiler gate checks the
-generated headers. Chapter 7 is not fully met: the `omg::types` runtime
-(type traits, `Any`, `fixed`, `sequence`/`string` aliases) is missing,
-§7.4 interfaces run through the DDS-RPC binding rather than the generic
-form, and §7.4.1 exceptions and §7.6 valuetypes are shaped differently.
+**Status:** `done` — `zerodds-idlc generate --lang cpp --cpp-mapping idl4` writes the mapping of Chapter 7; each clause is an item of its own below, with its test.
 
 ---
 
@@ -136,12 +125,11 @@ audited in §7.1.3, the IDL version in §3.9.
 **Spec:** §7.1.1, p. 5 — "IDL member names and type identifiers shall
 map to equivalent C++ names and type identifiers with no change."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`names::name`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** done — the member name `items` stays unchanged. The only name
-change is the reserved-name escaping of §7.1.2.
+**Status:** `done` — members and types carry their IDL names in C++.
 
 ### 7.1.2 Reserved Names
 
@@ -149,14 +137,11 @@ change is the reserved-name escaping of §7.1.2.
 user-defined IDL type or interface (assuming it is also a legal IDL name)
 shall result in the mapped name having an underscore ('_') prepended."
 
-**Repo:** `crates/lang-cst/src/cpp/mod.rs` (`escape_keyword`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`names::RESERVED`, `names::name`)
 
-**Tests:** `crates/lang-cst/src/cpp/mod.rs::a_keyword_escapes_with_a_trailing_underscore` — `crates/lang-cst/src/cpp/mod.rs:924: assert_eq!(escape_keyword("class"), "class_");`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_1_2_a_reserved_name_gets_an_underscore`
 
-**Status:** partial — collisions with C++ keywords are detected and
-rewritten, but with a **trailing** underscore (`class` -> `class_`), not
-with the **leading** underscore §7.1.2 mandates (`_class`). Detection is
-complete; the applied mapping deviates.
+**Status:** `done` — a name of the list gets the prepended underscore.
 
 ### 7.1.3 C++ Language Version Requirements
 
@@ -164,14 +149,12 @@ complete; the applied mapping deviates.
 specification require C++11 [ISO/IEC-14882:2011] as the minimum C++
 standard version."
 
-**Repo:** `crates/lang-rules/tests/cpp_corpus_compiles.rs`
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`Standard`); `crates/lang-rules/tests/cpp-idl4/support.rs` (`compile_and_run`)
 
-**Tests:** `crates/lang-rules/tests/cpp_corpus_compiles.rs::idl4cpp_7_1_3_every_corpus_case_that_renders_also_compiles` — `crates/lang-rules/tests/cpp_corpus_compiles.rs:159: .args(["-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror"])`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_1_the_basic_types_map_by_tables_7_2_7_3_7_13_and_7_14`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_c_the_cxx03_mapping_follows_annex_c`
 
-**Status:** done — the corpus is syntax-checked under `-std=c++20`; that
-meets the C++11 minimum and covers the C++17 constructs actually used
-(`std::optional`, `inline constexpr`). The corpus test is `#[ignore]` and
-runs with `--include-ignored`.
+**Status:** `done` — every test of the mapping compiles the generated header with `-std=c++11` and `-std=c++17`; the rules of Annex C with `-std=c++03`.
 
 ### 7.1.4 IDL Type Traits (Tab.7.1 and Tab.7.4-7.12)
 
@@ -183,15 +166,16 @@ the omg::types namespace" (`value_type`, `in_type`, `out_type`,
 (`dimensions`), Tab.7.10/7.11 (`is_bounded`, `bound`, `key`, `elements`)
 and Tab.7.12 (`bit_bound`, `underlying_type`).
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`value_type`, `in_type`, `out_type`, `inout_type`, `is_bounded`, `bound`, `digits`, `scale`, `bit_bound`, `underlying_type`, `dimensions`, `key`, `elements`, `*_t`, `*_v`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_1_4_the_type_traits_give_value_in_out_and_inout_types`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_4_fixed_is_omg_types_fixed_with_digits_and_scale`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_3_an_enumeration_is_an_enum_class_of_its_bit_bound`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_4_and_7_2_4_6_arrays_and_typedefs_are_aliases`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_14_3_bit_sets_are_bit_fields_and_bit_masks_structs_with_flags`
 
-**Status:** open — no `omg::types` namespace. `grep -rl "omg::types"
-crates/ tools/ runtime/ endpoints/` finds only
-`crates/corba-codegen/src/traits.rs` (a Rust CORBA generator). The C++
-column writes `std::` types directly; no trait of Tables 7.1 and 7.4-7.12
-is emitted.
+**Status:** `done`
 
 ---
 
@@ -214,12 +198,11 @@ Specification itself."
 of the same name. [...] IDL declarations not enclosed in any module shall
 be mapped into the global scope."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`namespace_of`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_7_2_2_a_module_is_a_namespace_and_not_a_prefix` — `crates/lang-rules/src/adapter/cpp.rs:1987: assert!(text.contains("namespace a {"), "{text}");`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_2_and_7_2_3_modules_are_namespaces_and_constants_are_constexpr`
 
-**Status:** done — modules become `namespace` blocks, references are
-written from the root scope (`::a::P`), no `a_b_P` prefix.
+**Status:** `done`
 
 ### 7.2.3 Constants
 
@@ -230,17 +213,11 @@ omg::types::string_view type [...] of wstring type [...] omg::types::wstring_vie
 [...] The constant value of wide character and wide string constants
 shall be preceded by L."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (constant loop,
-`cpp_constant`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs` (`constant`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_2_and_7_2_3_modules_are_namespaces_and_constants_are_constexpr`
 
-**Status:** partial — numeric and boolean constants are emitted as
-`inline constexpr`. String, wstring and fixed constants are emitted as
-`const char *`, not as `constexpr omg::types::string_view` or
-`std::string_view`; the `L` prefix for wide literals is missing because
-`wstring` is held as UTF-8. No assertion covers the constant form
-directly.
+**Status:** `done` — `constexpr` for every constant type, `omg::types::string_view`/`wstring_view` for strings.
 
 ---
 
@@ -251,42 +228,32 @@ directly.
 **Spec:** §7.2.4.1.1-§7.2.4.1.6, p. 8-9 — integers (Tab.7.2), floating
 point (Tab.7.3), char, wchar, boolean, octet.
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs` (`integer_text`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
-`crates/lang-rules/src/adapter/cpp.rs::idl4cpp_7_2_4_1_an_array_nests_with_the_outer_dimension_outermost`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_1_the_basic_types_map_by_tables_7_2_7_3_7_13_and_7_14`
 
-**Status:** partial — `long -> std::int32_t` is asserted (array,
-interface and verbatim tests), and `octet`/`uint8` as well as `wchar`/
-`unsigned short` collapse onto one type (tag test). The remaining table
-widths (`short -> int16_t`, `long long -> int64_t`, `char`, `wchar`,
-`boolean`, `octet`, `float`) have no assertion of their own. `long double`
-is mapped to `zerodds::wire::Float128` instead of the C++ `long double`
-(§7.2.4.1.2, own item). `cpp_primitive` is
-exhaustive, so a missing primitive is a compile error.
+**Status:** `done`
 
 ### 7.2.4.1.2 long double -> long double
 
 **Spec:** §7.2.4.1.2, Tab.7.3, p. 8 — "long double | long double".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_1_the_basic_types_map_by_tables_7_2_7_3_7_13_and_7_14`
 
-**Status:** open — `cpp_primitive` (`crates/lang-rules/src/adapter/cpp.rs`) maps `long double` to `zerodds::wire::Float128`.
+**Status:** `done` — `long double` is `long double`.
 
 ### 7.2.4.2.1 Sequences -> std::vector<T>
 
 **Spec:** §7.2.4.2.1, p. 9 — "IDL sequences shall be mapped to a C++
 std::vector<T>, or to a type named omg::types::sequence<T> [...]."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`, sequence
-arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs`; `runtime/cpp/include/omg/types.hpp` (`sequence`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** done — `std::vector<T>` is one of the forms §7.2.4.2.1 allows
-(the `omg::types::sequence` alternative is audited in §7.1.4).
+**Status:** `done`
 
 ### 7.2.4.2.1 omg::types::sequence/bounded_sequence
 
@@ -294,28 +261,22 @@ arm)
 omg::types::sequence<T> [...] omg::types::bounded_sequence<T,N> [...] is_bounded
 [...] bound."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`sequence`, `bounded_sequence`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** open — neither `omg::types::sequence<T>` nor
-`omg::types::bounded_sequence<T,N>` nor the `is_bounded`/`bound`
-specialisations exist.
+**Status:** `done`
 
 ### 7.2.4.2.2 Strings -> std::string
 
 **Spec:** §7.2.4.2.2, p. 10 — "IDL strings shall be mapped to C++
 std::string, or to a type named omg::types::string."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`, string
-arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs`; `runtime/cpp/include/omg/types.hpp` (`string`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** partial — `string` is held as `std::string` (an allowed
-form). There is no direct assertion for the data member (only the tag
-test shows that `string` and `wstring` fall onto the same C++ type);
-`omg::types::string` is missing.
+**Status:** `done`
 
 ### 7.2.4.2.2 omg::types::string/bounded_string
 
@@ -323,37 +284,33 @@ test shows that `string` and `wstring` fall onto the same C++ type);
 omg::types::string [...] omg::types::bounded_string<N> [...] is_bounded
 [...] bound."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`string`, `bounded_string`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** open — no `omg::types::string`/`bounded_string<N>` aliases,
-no `is_bounded`/`bound` traits.
+**Status:** `done`
 
 ### 7.2.4.2.3 Wstrings
 
 **Spec:** §7.2.4.2.3, p. 11 — "IDL wstrings shall be mapped to C++
 std::wstrings, or to a type named omg::types::wstring [...]."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs`; `runtime/cpp/include/omg/types.hpp` (`wstring`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** partial — `wstring` is held as `std::string` with UTF-8, not
-as `std::wstring` and not as `omg::types::wstring`; the spec form is not
-met. No direct assertion.
+**Status:** `done` — `wstring` is `std::wstring`.
 
 ### 7.2.4.2.3 omg::types::wstring/bounded_wstring
 
 **Spec:** §7.2.4.2.3 Tab.7.6, p. 11 — "omg::types::wstring [...]
 omg::types::bounded_wstring<N> [...] is_bounded [...] bound."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`wstring`, `bounded_wstring`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** open — no `omg::types::wstring`/`bounded_wstring<N>`, no
-traits.
+**Status:** `done`
 
 ### 7.2.4.2.4 Fixed Type
 
@@ -361,16 +318,11 @@ traits.
 class named fixed [...] under the omg::types namespace" (about 30 methods
 plus free functions and the `digits`/`scale` traits Tab.7.7).
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`fixed`, `fixed_n`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_4_fixed_is_omg_types_fixed_with_digits_and_scale`
 
-**Status:** open — the data-type column maps `fixed<P,S>` to `std::string`
-in `crates/lang-rules/src/adapter/cpp.rs`. The hand-written
-`dds::core::Fixed<P,S>` in `crates/cpp/include/dds/core/Fixed.hpp` is the
-DDS-PSM-Cxx runtime (a different spec) and offers only BCD round-trip plus
-string conversion, not the ~30 spec methods; `omg::types::fixed` and the
-`digits`/`scale` traits are missing.
+**Status:** `done`
 
 ### 7.2.4.3.1 Structures
 
@@ -381,11 +333,11 @@ constructor [...] copy assignment [...] move assignment [...] comparison
 operators, including at least 'equal to' and 'not equal to' [...]
 destructor [...] swap function in the namespace."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs` (class with accessors, `==`, `!=`, `swap`), `crates/lang-rules/src/adapter/cpp.rs` (structure branch)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader` (`crates/cpp/tests/generated_psm_roundtrip.cpp`: constructors, copy, move, `swap`, equality)
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** done — the default mapping (`--cpp-mapping psm`) writes a class with the accessors, the constructor over all members, `==`, `!=` and `swap` in the namespace (§7.12); copy and move are the implicit functions. The option `native` writes the structure of the codecs with public members, `swap` and, for pointer members, the generated copy and move functions, but no `==`. Log: `.agent/REPORT.md`.
+**Status:** `done`
 
 ### 7.2.4.3.1 Default initialization
 
@@ -393,14 +345,12 @@ destructor [...] swap function in the namespace."
 built-in data types to their default value [...] enumerators to their
 first value, and the rest of members using their default constructor."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`member_default`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `tools/idlc/tests/cpp_headers_together.rs::idl4cpp_7_2_4_3_1_two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults` — `tools/idlc/tests/cpp_headers_together.rs:126: status.success(),`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_1_the_basic_types_map_by_tables_7_2_7_3_7_13_and_7_14`
 
-**Status:** done — the test compiles and runs default-constructed
-structs; the exit code is non-zero if a built-in is not 0, `bool` is not
-`false`, `double` is not 0.0, the enum is not its first literal, or an
-array/sequence is not empty.
+**Status:** `done`
 
 ### 7.2.4.3.2 Unions
 
@@ -408,53 +358,43 @@ array/sequence is not empty.
 member accessor/modifier per branch, multi-label modifier with a
 discriminator parameter, and `_default()`.
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (union arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_2_a_union_is_a_class_with_d_accessors_and_modifiers`
 
-**Status:** partial — the union is emitted as a class with a `_d` field
-and one field per branch (asserted: `struct U {`, `std::int32_t _d;`).
-The required accessor/modifier methods, the multi-label variant and
-`_default()` are missing; the branches are public fields.
+**Status:** `done`
 
 ### 7.2.4.3.3 Enumerations
 
 **Spec:** §7.2.4.3.3, p. 16 — "An IDL enum shall be mapped to a C++
 scoped enum class with the same name as the IDL enum type."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (enumeration arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound` — `crates/lang-rules/src/adapter/cpp.rs:2050: assert!(narrow.contains("enum class E : std::uint8_t {"), "{narrow}");`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_3_an_enumeration_is_an_enum_class_of_its_bit_bound`
 
-**Status:** done — a scoped `enum class` with the same name; the
-underlying type is chosen from `@bit_bound` and the enumerator values.
+**Status:** `done`
 
 ### 7.2.4.3.3 Enumeration Type Traits
 
 **Spec:** §7.2.4.3.3 Tab.7.8, p. 17 — "bit_bound [...] underlying_type."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`bit_bound`, `underlying_type`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_3_an_enumeration_is_an_enum_class_of_its_bit_bound`
 
-**Status:** open — the `bit_bound`/`underlying_type` specialisations are
-not emitted (see §7.1.4).
+**Status:** `done`
 
 ### 7.2.4.3.4 Constructed Recursive Types
 
 **Spec:** §7.2.4.3.4, p. 16 — "Constructed recursive types are supported
 by mapping the involved types directly to C++."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (forward declarations,
-sequence/`shared_ptr` arms)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/order.rs`
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_4_a_recursive_type_maps_directly`
 
-**Status:** partial — forward declarations for aggregates and
-`std::vector<T>`/`std::shared_ptr<T>` allow self-reference; only the
-`@external` recursion case is evidenced (`std::shared_ptr<::m::Node>
-next;`). The general case (self-reference through `sequence<Node>` without
-`@external`) has no assertion of its own.
+**Status:** `done`
 
 ### 7.2.4.4 Arrays
 
@@ -463,23 +403,22 @@ std::array of the mapped element type, or to a type named
 omg::types::array [...] Multidimensional arrays shall be constructed
 nesting std::array."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (array arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_7_2_4_1_an_array_nests_with_the_outer_dimension_outermost` — `crates/lang-rules/src/adapter/cpp.rs:2023: assert!(text.contains("std::array<std::array<std::int32_t, 3>, 2> a = {};"), "{text}");`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_4_and_7_2_4_6_arrays_and_typedefs_are_aliases`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** done — `std::array`, multidimensional, nested
-outermost-first; one of the forms §7.2.4.4 allows.
+**Status:** `done`
 
 ### 7.2.4.4 omg::types::array and dimensions
 
 **Spec:** §7.2.4.4 Tab.7.9, p. 17 — "omg::types::array [...] dimensions."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`array`, `dimensions`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_4_and_7_2_4_6_arrays_and_typedefs_are_aliases`
 
-**Status:** open — `omg::types::array` and the `dimensions` trait are
-missing.
+**Status:** `done`
 
 ### 7.2.4.5 Native Types
 
@@ -499,13 +438,11 @@ adapter optionally maps `native` to `void *` or a facet name.
 **Spec:** §7.2.4.6, p. 17 — "IDL typedefs shall be mapped to type alias
 declarations."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (alias arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_4_and_7_2_4_6_arrays_and_typedefs_are_aliases`
 
-**Status:** partial — `typedef` is emitted as a `cpp::Alias` (C++ `using`);
-no assertion checks the alias declaration directly, and the corpus
-compile does not distinguish an alias form from a macro form.
+**Status:** `done`
 
 ---
 
@@ -516,15 +453,12 @@ compile does not distinguish an alias form from a macro form.
 **Spec:** §7.3, p. 18 — "The IDL any type shall be mapped to a C++
 omg::types::Any type."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`Any`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_3_any_is_omg_types_any`,
+`tools/idlc/tests/idl4_mappings_take_the_whole_model.rs::idl4cpp_7_3_a_structure_with_an_any_member_is_written_by_the_command_line`
 
-**Status:** open — `any` is refused in
-`crates/lang-rules/src/adapter/cpp.rs` (`cpp_value_type`,
-`TypeKind::Any`) with `NoLanguageForm` (test
-`idl_7_2_3_an_any_member_is_refused_by_name_at_any_depth`, also for
-`sequence<any>`). No `omg::types::Any`.
+**Status:** `done`
 
 ---
 
@@ -540,18 +474,11 @@ as a reference to const otherwise. Parameters of interface type T shall
 be mapped to std::shared_ptr<T>, or to omg::types::ref_type<T>. [...]
 weak_ref_type<T>."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs`
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`interface`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`,
-`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_4_an_interface_is_a_class_of_pure_virtual_methods`
 
-**Status:** partial — interfaces are emitted through the DDS-RPC 1.0
-§7.11.1 binding as classes with pure-virtual operations and attribute
-accessors (asserted: `in` by value/const ref, `out`/`inout` by reference,
-accessor named after the attribute). The binding follows DDS-RPC 1.0 and
-adds `IAsync`/`Requester`/`Replier`/`Client`/`Service`, which §7.4 does
-not know; `omg::types::ref_type<T>`/`weak_ref_type<T>` for interface
-parameters are missing.
+**Status:** `done`
 
 ### 7.4.1 Exceptions
 
@@ -561,30 +488,22 @@ move constructor, assignment operator, move operator, and destructor
 [...] what() method [...] explicit constructor with one parameter for
 each exception member [...] and a parameter of type const char *."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (exception loop)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs` (`exception`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_4_1_an_exception_extends_std_exception`
 
-**Status:** partial — an IDL exception is emitted as a `struct` with its
-members. The required `class X : public std::exception` derivation,
-`what()`, copy/move constructor, assignment operators and the explicit
-`(member..., const char* what)` constructor are entirely missing.
+**Status:** `done`
 
 ### 7.4.2 Interface Forward Declaration
 
 **Spec:** §7.4.2, p. 20 — "An IDL interface forward declaration shall be
 mapped to a partial forward declaration in C++."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`interface`); `crates/lang-rules/src/emit/idl4_cpp/order.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_4_an_interface_is_a_class_of_pure_virtual_methods`
 
-**Status:** open — interface forward declarations are not emitted; the
-data-type adapter writes `Forward` only for `Structure`, `Union` and
-`Valuetype`. `interface Foo;` without a definition is refused by
-`crates/lang-rules/src/adapter/interface.rs` as `ForwardWithoutDefinition`
-(test
-`crates/lang-rules/tests/interface_bindings.rs::ddsts_11_7_a_forward_declaration_without_a_definition_is_e002`).
+**Status:** `done`
 
 ---
 
@@ -596,14 +515,11 @@ data-type adapter writes `Forward` only for `Structure`, `Union` and
 type, exception, or constant declaration in the IDL interface body. [...]
 constexpr declarations shall be marked as static."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`embedded_declarations`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_5_an_interface_body_declares_in_its_class`
 
-**Status:** open — the DDS-RPC binding in
-`crates/lang-rules/src/emit/interface_cpp.rs` emits topic types and
-operation classes, but no nested type/exception/constant declarations
-inside the interface body and no `static constexpr` inside the class.
+**Status:** `done`
 
 ---
 
@@ -616,14 +532,11 @@ pure-virtual accessor and modifier methods; factory operations ->
 `<ValueTypeName>_factory`; inheritance via public virtual; supports
 interface -> all operations as pure virtual.
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (valuetype arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_6_a_value_type_is_an_abstract_class_with_its_factory`
 
-**Status:** partial — `valuetype` is treated like a `struct`: its members
-become fields. The required public/protected pure-virtual accessor/modifier
-methods, the `<ValueTypeName>_factory` class, the public-virtual
-inheritance and the operations of a supported interface are missing.
+**Status:** `done`
 
 ---
 
@@ -645,11 +558,12 @@ Annex A.1 is audited separately.
 **Spec:** §7.9-7.10, p. 22 — "mapped to equivalent IDL, as specified in
 [OMG-CORBA-COMP]."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`generate`); `crates/ccm/src/transform.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_components.rs::idl4cpp_7_9_and_7_12_a_component_is_its_equivalent_interface_in_cpp`,
+`crates/lang-rules/tests/cpp_idl4_components.rs::idl4cpp_7_10_a_home_is_its_explicit_implicit_and_equivalent_interfaces`
 
-**Status:** open — the transformation into equivalent IDL exists (`crates/ccm/src/transform.rs`, tests in `crates/ccm/tests/equivalent_idl.rs`), the C++ path of `zerodds-idlc` does not apply it: `tools/idlc` and `crates/lang-rules` do not depend on `zerodds-ccm`.
+**Status:** `done`
 
 ### 7.11 CCM-Specific
 
@@ -666,21 +580,23 @@ Annex A.1 is audited separately.
 **Spec:** §7.12-7.13, p. 22 — "mapped to intermediate IDL, as specified
 in [OMG-IDL4]."
 
-**Repo:** `crates/idl-lower/src/lower.rs` (`template_module_inst`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`generate`)
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::an_instantiation_lowers_the_body_with_the_actual_substituted`, `crates/idl-lower/tests/dialects.rs::two_instantiations_of_one_template_are_two_independent_modules`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_components.rs::idl4cpp_7_12_a_connector_maps_through_its_ports`,
+`crates/lang-rules/tests/cpp_idl4_components.rs::idl4cpp_7_13_a_template_module_instance_is_a_namespace_of_its_own`
 
-**Status:** partial — an instantiation of a template module becomes an ordinary module in the model, which the C++ column maps. Ports and connectors are not translated into intermediate IDL; own item.
+**Status:** `done`
 
 ### 7.12 Ports and connectors as intermediate IDL
 
 **Spec:** §7.12, p. 22 — ports and connectors are "mapped to intermediate IDL, as specified in [OMG-IDL4]".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`generate`); `crates/ccm/src/transform.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_components.rs::idl4cpp_7_9_and_7_12_a_component_is_its_equivalent_interface_in_cpp`,
+`crates/lang-rules/tests/cpp_idl4_components.rs::idl4cpp_7_12_a_connector_maps_through_its_ports`
 
-**Status:** open — the C++ column does not translate `porttype`, `port`, `mirrorport` and `connector` into intermediate IDL.
+**Status:** `done`
 
 ---
 
@@ -692,24 +608,21 @@ in [OMG-IDL4]."
 using public inheritance. [...] swap method [...] which shall ensure that
 all inherited members are swapped."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`all_members_of`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** partial — base members are copied flat into the derived
-struct (`all_members_of`), not as `struct Child : Base` with public
-inheritance; the `swap` function for inherited members is missing. The
-flat form keeps the member order of the wire plan; own item.
+**Status:** `done`
 
 ### 7.14.1 Public inheritance and swap of the inherited members
 
 **Spec:** §7.14.1, p. 23 — "shall inherit from the mapped base struct using public inheritance. [...] swap method [...] which shall ensure that all inherited members are swapped."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** open — `all_members_of` (`crates/lang-rules/src/adapter/cpp.rs`) copies the base members flat into the derived structure; no base class, no `swap` for inherited members.
+**Status:** `done`
 
 ### 7.14.2 Union Discriminators
 
@@ -717,14 +630,11 @@ flat form keeps the member order of the wire plan; own item.
 of valid types for a discriminator. [...] int8 and uint8 are valid union
 discriminators."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (union arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_2_a_union_is_a_class_with_d_accessors_and_modifiers`
 
-**Status:** partial — the discriminator runs through `cpp_value_type` and
-accepts any integral type; only `switch (long)` is asserted. `wchar`,
-`octet`, `int8` and `uint8` as discriminators have no assertion of their
-own.
+**Status:** `done`
 
 ### 7.14.3.1 Maps
 
@@ -733,23 +643,22 @@ own.
 std::map<Key,T> [...] or to a type named omg::types::map<Key,T> [...]
 omg::types::bounded_map<Key, T, N>."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs` (map branch)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs`; `runtime/cpp/include/omg/types.hpp` (`map`)
 
-**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** done — in the default mapping (`psm`) `map<K,V>` is `std::map<K,V>`; `--cpp-mapping native` and `classic` are named options (`zerodds::Map`, the order of the entries as an axis of the codec). There is no `omg::types::map` or `bounded_map`; the spec admits `std::map` alone. Log: `.agent/REPORT.md`.
+**Status:** `done`
 
 ### 7.14.3.1 Map Type Traits
 
 **Spec:** §7.14.3.1 Tab.7.10/7.11, p. 24 — "is_bounded [...] bound [...]
 key [...] elements."
 
-**Repo:** —
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`map`, `bounded_map`, `key`, `elements`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_2_template_types_are_the_omg_types_and_their_traits`
 
-**Status:** open — no `omg::types::map`/`bounded_map` and none of the
-four traits.
+**Status:** `done`
 
 ### 7.14.3.2 Bitsets
 
@@ -759,14 +668,11 @@ only members of these structs are bit fields. [...] shall derive (using
 public inheritance) from the struct resulting from mapping the base
 type."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (bitset arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_every_kind_table_9_answers_for_gets_a_defaulter`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_14_3_bit_sets_are_bit_fields_and_bit_masks_structs_with_flags`
 
-**Status:** partial — bitsets are emitted as a struct with separate
-integer members, packed in the codec, not as C++ bit-fields; base
-bit-fields are folded in flat, not through public inheritance. The spec
-requires bit-fields as the only members.
+**Status:** `done`
 
 ### 7.14.3.3 Bitmask Type
 
@@ -775,39 +681,32 @@ enum named _flags [...] private member named _value [...] default
 constructor and a copy constructor [...] !=, &=, and ^= bitwise operators
 [...] function call operator that returns _value."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (bitmask arm)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_14_3_bit_sets_are_bit_fields_and_bit_masks_structs_with_flags`
 
-**Status:** partial — a bitmask is emitted as an integer alias
-(uint8/16/32/64) plus `inline constexpr` bit constants, not as a `struct`
-with an unscoped `_flags` enum, a private `_value`, constructors,
-`!=`/`&=`/`^=` operators and a call operator. The
-`bit_bound`/`underlying_type` traits are missing.
+**Status:** `done`
 
 ### 7.14.4 8-bit Integer Types (Tab.7.13)
 
 **Spec:** §7.14.4 Tab.7.13, p. 26 — "int8 -> int8_t; uint8 -> uint8_t."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs` (`integer_text`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_1_the_basic_types_map_by_tables_7_2_7_3_7_13_and_7_14`
 
-**Status:** partial — `octet`/`uint8` fall onto the same `std::uint8_t`
-(tag test). `int8 -> std::int8_t` has no assertion of its own.
+**Status:** `done`
 
 ### 7.14.5 Explicitly-Named Integer Types (Tab.7.14)
 
 **Spec:** §7.14.5 Tab.7.14, p. 26-27 — "int16/uint16/int32/uint32/int64/uint64
 -> int16_t/uint16_t/int32_t/uint32_t/int64_t/uint64_t."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/types.rs` (`integer_text`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_1_the_basic_types_map_by_tables_7_2_7_3_7_13_and_7_14`
 
-**Status:** partial — the explicit widths are mapped in `cpp_primitive`,
-but no assertion names `int16`/`uint16`/`int32`/`uint32`/`int64`/`uint64`
-individually.
+**Status:** `done`
 
 ---
 
@@ -850,11 +749,11 @@ annotations into its output; the clause imposes no emission requirement.
 @optional of type T shall map to std::optional<T> in implementations of
 this specification supporting C++17 and above."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`; `runtime/cpp/include/omg/types.hpp` (`optional`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_17_the_standardized_annotations_shape_the_struct`
 
-**Status:** `open` — no mapping writes `std::optional<T>`: the default mapping (`psm`) writes `dds::core::optional<T>` (DDS-PSM-Cxx), the option `native` a pointer `T *` (DDS-XTypes 1.3 §7.5.1.2.4.2), the option `classic` `zerodds::classic::Optional<T>`. The form of IDL4 to C++ 1.0 §7.17.1 is missing as a named option. Evidence of the forms that exist: `crates/lang-rules/src/adapter/cpp_psm.rs` (`dds::core::optional<T>`), `crates/lang-rules/src/adapter/cpp.rs` (`T *`), `crates/lang-rules/src/adapter/cpp_classic.rs` (`zerodds::classic::Optional<T>`); tests `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_4_2_an_optional_member_is_a_plain_pointer_and_not_a_second_field`, `crates/cpp/tests/generated_psm_roundtrip.cpp`.
+**Status:** `done`
 
 ### 7.17.1 General Purpose: @value, @position, @id, @autoid, @extensibility
 
@@ -862,15 +761,13 @@ this specification supporting C++17 and above."
 value; `@position` affects the bitmask; `@id`, `@autoid`,
 `@extensibility`, `@final`, `@mutable`, `@appendable` have no impact.
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_3_an_enumeration_is_an_enum_class_of_its_bit_bound`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_14_3_bit_sets_are_bit_fields_and_bit_masks_structs_with_flags`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_17_the_standardized_annotations_shape_the_struct`
 
-**Status:** partial — `@value` reaches the enumerator value (the adapter
-writes every value out) but is not asserted directly; `@position` hangs
-on the bitmask, which is itself partial (§7.14.3.3); `@id`, `@autoid`,
-`@extensibility`, `@final`, `@mutable` and `@appendable` are, as the spec
-intends, not carried into the C++.
+**Status:** `done` — `@value` sets the enumerator's value, `@position` the bit of the bitmask; `@id`, `@autoid`, `@extensibility`, `@final`, `@mutable` and `@appendable` do not change the mapping.
 
 ### 7.17.2 Data Modeling: @key, @must_understand, @default_literal
 
@@ -878,13 +775,11 @@ intends, not carried into the C++.
 impact; "The C++ element declared as result of the mappings [...] shall
 be initialized to the element indicated by [@default_literal]."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`member_default`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `tools/idlc/tests/cpp_headers_together.rs::idl4cpp_7_2_4_3_1_two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_17_the_standardized_annotations_shape_the_struct`
 
-**Status:** partial — `@key` and `@must_understand` have no impact, as
-the spec says. `@default_literal` is not evaluated: the member default
-takes the **first** enumerator, not the one marked `@default_literal`.
+**Status:** `done`
 
 ### 7.17.3 Units and Ranges: @default, @range, @min, @max, @unit
 
@@ -892,29 +787,24 @@ takes the **first** enumerator, not the one marked `@default_literal`.
 min, max>` with `std::out_of_range`; `@min`/`@max` -> setters throw
 `std::out_of_range`; `@unit` no impact; `@default` initialises.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`; `runtime/cpp/include/omg/types.hpp` (`ranged`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_17_the_standardized_annotations_shape_the_struct`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** open — no `omg::types::ranged<T,min,max>`, no setters (the
-data members are public fields) and therefore no `std::out_of_range`
-check for `@range`/`@min`/`@max`. `@default` is evaluated in the codec
-defaulter (`crates/lang-rules/src/default_cpp.rs`), but not as the C++
-member initialiser of the generated struct.
+**Status:** `done`
 
 ### 7.17.4 Data Implementation: @bit_bound
 
 **Spec:** §7.17.4 Tab.7.18, p. 29-30 — "int8_t, for bit bound values
 between 1 and 8; int16_t [...] int32_t [...] int64_t."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`enum_underlying`,
-`cpp_holder`)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_3_an_enumeration_is_an_enum_class_of_its_bit_bound`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_14_3_bit_sets_are_bit_fields_and_bit_masks_structs_with_flags`
 
-**Status:** partial — for enums the underlying type is asserted; for
-bitmasks the adapter follows the same width rule, but the bitmask
-mapping is itself partial (§7.14.3.3).
+**Status:** `done`
 
 ### 7.17.4 Data Implementation: @external
 
@@ -923,15 +813,11 @@ to the equivalent omg::types::ref_type<T> [...] Structures containing
 members annotated with @external shall make a deep copy of the external
 member in their copy constructor."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`held_externally`,
-`shared_ptr` arms)
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`; `runtime/cpp/include/omg/types.hpp` (`ref_type`)
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value` — `crates/lang-rules/tests/external_is_an_indirection.rs:118: generated.contains("std::shared_ptr<::m::Node> next;"),`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_17_the_standardized_annotations_shape_the_struct`
 
-**Status:** partial — `@external T` is held as `std::shared_ptr<T>`
-(asserted). The required deep copy in the copy constructor is missing:
-the compiler-generated copy constructor copies the `shared_ptr` shallowly,
-so the object is shared.
+**Status:** `done`
 
 ### 7.17.4 Data Implementation: @nested
 
@@ -950,30 +836,22 @@ mapping."
 indicated output position when the indicated language is '*', 'c++',
 'cpp', 'cc', or 'cxx'."
 
-**Repo:** `crates/lang-rules/src/verbatim.rs`,
-`crates/lang-rules/src/adapter/cpp.rs` (`weave_verbatim`)
+**Repo:** `crates/lang-rules/src/verbatim.rs` (`file_slots`, `declaration_slots`); `crates/lang-rules/src/emit/idl4_cpp/mod.rs`, `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::idl4cpp_7_17_5_cpp_answers_to_its_alias_spellings_case_insensitively` — `crates/lang-rules/tests/verbatim_end_to_end.rs:150: generated.contains("// vb-alias"),`
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_17_5_verbatim_text_is_copied_for_its_languages`
 
-**Status:** partial — all six placements (BEGIN_FILE,
-BEFORE/BEGIN/END/AFTER_DECLARATION, END_FILE) and the languages `c++`,
-`cpp`, `cxx` as well as `*` are live (asserted). `cc` — explicitly named
-in Tab.7.19 — is missing from `verbatim::aliases::CPP`
-(`&["c++", "cpp", "cxx"]`).
+**Status:** `done` — the six placements of Table 7.19, each at its position, for `*`, `c++`, `cpp`, `cc` and `cxx`.
 
 ### 7.17.6 Interfaces: @service, @oneway, @ami
 
 **Spec:** §7.17.6 Tab.7.20, p. 30 — "Options are 'CORBA', 'DDS', '*'.
 Impact is platform-specific."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs`
+**Repo:** —
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** —
 
-**Status:** partial — `@oneway` (no reply topic, `future<void>` async) and
-`@service` (service name) are handled through the DDS-RPC binding; `@ami`
-has no path of its own. Tab.7.20 explicitly calls the impact
-platform-specific.
+**Status:** `n/a (informative)` — Table 7.20 names no mapping rule for `@service`, `@oneway` and `@ami`: "Impact is platform-specific."
 
 ---
 
@@ -985,11 +863,12 @@ platform-specific.
 CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS }; StructMapping struct_mapping
 default STRUCT_WITH_PUBLIC_MEMBERS."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_8_1_1_class_with_public_accessors_and_modifiers`,
+`crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_7_2_4_3_1_a_structure_is_a_struct_with_comparison_and_swap`
 
-**Status:** open — the annotation is not evaluated; the form of structures is chosen by the option `--cpp-mapping` per run (default `psm`: a class with accessors), not by `@cpp_mapping` per structure, and the default value of the annotation is `STRUCT_WITH_PUBLIC_MEMBERS`.
+**Status:** `done` — `struct_mapping` selects the form; without the annotation `STRUCT_WITH_PUBLIC_MEMBERS` holds.
 
 ### 8.1.1 CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS
 
@@ -997,32 +876,531 @@ default STRUCT_WITH_PUBLIC_MEMBERS."
 class where all members are only accessible via public accessor methods,
 and may only be modified through public modifier methods."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_8_1_1_class_with_public_accessors_and_modifiers`
 
-**Status:** open — no path emits the annotated struct as a class with
-private members, accessors/modifiers and an initialising constructor.
-`@cpp_mapping` is not read by `crates/lang-rules/src/adapter/cpp.rs`.
+**Status:** `done`
 
 ---
 
 ## Annex A: Platform-Specific Mappings
 
-### A.1 CORBA-Specific Mappings
+### A.1.1 Traits (Table A.1)
 
-**Spec:** Annex A.1, p. 33-66 — `CORBA::traits<>` (`value_type`,
-`in_type`, `out_type`, `inout_type`, tables A.1-A.15),
-`CORBA::servant_traits<>`, TypeCode, ORB, Object, Any, Value Types,
-Abstract Interfaces, Server Side Mapping, DSI, PortableServer.
+**Spec:** Annex A.1.1, p. 33 — "all IDL defined types have a type trait specialization that provides the following member types": `value_type`, `in_type`, `out_type`, `inout_type` (Table A.1).
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`CORBA::traits`, `detail::common_traits`, `detail::reference_traits`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`
+
+**Status:** `done`
+
+### A.1.1.1 Traits for interfaces (Table A.2)
+
+**Spec:** Annex A.1.1.1, p. 33 — `is_local`, `is_abstract`, `ref_type`, `weak_ref_type`.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`,
+`crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.1.2-A.1.1.4 Traits for strings, sequences and arrays (Tables A.3-A.7)
+
+**Spec:** Annex A.1.1.2-A.1.1.4, p. 33-34 — `is_bounded`, `bound`, `element_traits`, `dimensions` and the other members of Tables A.3 to A.7.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`CORBA::traits` für `std::basic_string`, `basic_bounded_string`, `std::vector`, `bounded_sequence`, `std::array`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`
+
+**Status:** `done`
+
+### A.1.1.5-A.1.1.6 Traits for valuetypes and valueboxes (Tables A.8, A.9)
+
+**Spec:** Annex A.1.1.5-A.1.1.6, p. 35 — `is_abstract`, `is_truncatable`, `factory_type`, `obv_type`; `boxed_traits`.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`,
+`crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.1.7-A.1.1.8 Traits for maps and bitmasks (Tables A.10-A.12)
+
+**Spec:** Annex A.1.1.7-A.1.1.8, p. 35-36 — `key_traits`, `value_traits`, `is_bounded`, `bound`; `bit_bound`, `underlying_type`, specialized on the `<Bitmask>Bits` type.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`CORBA::traits` für `std::map`, `bounded_map`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`
+
+**Status:** `done`
+
+### A.1.1.9 Parameters (Tables A.13, A.14)
+
+**Spec:** Annex A.1.1.9, p. 36 — the passing modes for `in`, `out`, `inout` and return: basic types, enumerations and references by value, the other types as `const T&` and `T&`.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_by_value`); `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs`
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`
+
+**Status:** `done`
+
+### A.1.1.10 Helper Methods
+
+**Spec:** Annex A.1.1.10, p. 37 — `CORBA::traits<T>::narrow(...)` and `CORBA::make_reference<T>(Args&&...)`, "which shall deliver std::make_shared semantics"; "Declaring a reference and initializing it with its default constructor shall result in a nil reference."
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`CORBA::make_reference`, `detail::reference_access`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_1_corba_traits_have_the_members_of_tables_a_1_to_a_14`,
+`crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.1.11 Servant References (Table A.15)
+
+**Spec:** Annex A.1.1.11, p. 37 — `CORBA::servant_traits<T>` with `base_type`, `ref_type`, `weak_ref_type`.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** open — no `CORBA::traits<>`/`CORBA::servant_traits<>` in the
-C++ column and no `omg::types`. `crates/corba-codegen/src/traits.rs` is a
-Rust CORBA generator, not this C++ binding.
+**Status:** `open` — `CORBA::servant_traits` is only declared in `omg/corba.hpp`; the emitter writes no specialization.
+
+### A.1.2 Exceptions
+
+**Spec:** Annex A.1.2, p. 38-40 — an IDL exception is a class on `CORBA::UserException`; `CORBA::Exception` and `CORBA::SystemException` with `raise()`, `_name()`, `_rep_id()`, `minor()`, `completed()`, as the clause declares them.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`Exception`, `UserException`, `SystemException`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_exception_members`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_2_exceptions_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.2.1 UnknownUserException
+
+**Spec:** Annex A.1.2.1, p. 40 — `CORBA::UnknownUserException` with `exception()`, which returns the exception as an `Any`.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`UnknownUserException`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_2_exceptions_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.2.2 Any Insertion and Extraction for Exceptions
+
+**Spec:** Annex A.1.2.2, p. 40 — insertion and extraction operators for exceptions; `operator<<=(Any&, const Exception&)` inserts the derived type, `operator>>=(const Any&, SystemException&)` extracts any system exception.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp`; `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_exception_extras`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_2_exceptions_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.2.3 Union Field Method Exceptions
+
+**Spec:** Annex A.1.2.3, p. 41 — the access to a union member that is not selected throws `CORBA::BAD_PARAM`.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/data.rs`
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_2_exceptions_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.2.4 Bounded String, Wstring, Sequence, and Map Exceptions
+
+**Spec:** Annex A.1.2.4, p. 41 — "the mapped C++ entity shall throw a CORBA::BAD_PARAM system exception when the application detects that specified bounds have been exceeded".
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`detail::bound_exceeded`, `OMG_TYPES_BOUND_EXCEEDED`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_2_exceptions_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.3 TypeCode
+
+**Spec:** Annex A.1.3, p. 41-42 — `CORBA::TypeCode` as the clause's class; for every IDL type `T` a constant `_tc_T`; the other types of the declaration mapped by Chapter 7 into the namespace `CORBA`.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`TypeCode`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`typecode_of`, `corba_type_extras`); `runtime/cpp/include/omg/corba_module.hpp`
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_3_every_type_has_its_tc_constant_and_typecode_is_the_clauses_class`,
+`crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_3_the_corba_module_header_is_the_cpp_of_its_idl`
+
+**Status:** `done`
+
+### A.1.3 TypeCode for map, bitset and bitmask
+
+**Spec:** Annex A.1.3, p. 41-42, with A.1.7.2, p. 45 — a `_tc_` constant and the `Any` operators "for each separate IDL type T".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — for `map`, `bitset` and `bitmask` the emitter writes neither `_tc_` nor `Any` operators; `TCKind` of CORBA 3.3 has no kind for them.
+
+### A.1.4 ORB
+
+**Spec:** Annex A.1.4, p. 42 — "This pseudo interface has to be implemented as a regular local interface."
+
+**Repo:** `runtime/cpp/include/omg/corba_module.hpp` (`CORBA::ORB`); `runtime/corba/CORBA_PIDL.idl`
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_3_the_corba_module_header_is_the_cpp_of_its_idl`
+
+**Status:** `done`
+
+### A.1.4 ORB_init
+
+**Spec:** Annex A.1.4, p. 42 — `omg::types::ref_type<ORB> ORB_init(int& argc, char** argv, const omg::types::string& orb_identifier = omg::types::string())` with the evaluation of `-ORBid` and the other `-ORB<suffix>` arguments.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — `ORB_init` and an implementation of `CORBA::ORB` are missing; `Object::_get_orb` throws `INITIALIZE`.
+
+### A.1.5 Object
+
+**Spec:** Annex A.1.5, p. 43 — `CORBA::Object` by the rules for Interfaces – Full in the namespace `CORBA`; "all operation names in interface Object have leading underscores".
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`Object`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.5.1-A.1.5.2 Widening Object References
+
+**Spec:** Annex A.1.5.1-A.1.5.2, p. 43 — implicit widening of `B` to `A` and to `Object`; any object reference widens to `omg::types::ref_type<Object>`.
+
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`ref_type`); `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`interface`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.5.3 Nil Object Reference
+
+**Spec:** Annex A.1.5.3, p. 43 — nil is `nullptr`; "Any attempt to invoke an operation through a nil object reference shall result in an INV_OBJREF exception."
+
+**Repo:** `runtime/cpp/include/omg/types.hpp` (`ref_type::operator->`, `OMG_TYPES_NIL_REFERENCE`); `runtime/cpp/include/omg/corba.hpp` (`detail::nil_reference`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.5.4 Narrowing Object Reference
+
+**Spec:** Annex A.1.5.4, p. 44 — `CORBA::traits<T>::narrow` returns a valid reference when the runtime type supports the interface, nil otherwise; nil for nil; the two examples of the clause.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.6 LocalObject
+
+**Spec:** Annex A.1.6, p. 44 — `LocalObject` derives from `Object`; the class of a local interface derives (indirectly) from it and is available as `CORBA::traits<>::base_type`; references are made by `CORBA::make_reference<T>`.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`LocalObject`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_object_base`, `corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_5_and_a_1_6_object_references_widen_narrow_and_answer_nil`
+
+**Status:** `done`
+
+### A.1.7.1-A.1.7.2 Any: Insertion
+
+**Spec:** Annex A.1.7.1-A.1.7.2, p. 45 — `void operator<<=(Any&, T)` for the types passed by value, `operator<<=(Any&, const T&)` and `operator<<=(Any&, T&&)` for arrays, strings, structs, unions, sequences, `any` and exceptions; the TypeCode follows from the C++ type.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`Any`, die `operator<<=`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_type_extras`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_7_any_inserts_and_extracts_every_type`
+
+**Status:** `done` — for `map`, `bitset` and `bitmask` see the item "A.1.3 TypeCode for map, bitset and bitmask".
+
+### A.1.7.3 Any: Extraction
+
+**Spec:** Annex A.1.7.3, p. 46 — `bool operator>>=(const Any&, T&)`; `false` and the variable unchanged for another type; an object reference is extractable as a base object reference, an abstract reference as a base object or base valuetype reference, a valuetype reference as a base valuetype reference.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (die `operator>>=`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_type_extras`, `corba_interface_extras`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_7_any_inserts_and_extracts_every_type`
+
+**Status:** `done`
+
+### A.1.7.4 TypeCode Replacement
+
+**Spec:** Annex A.1.7.4, p. 46-47 — `type()` returns the TypeCode; `type(tc)` replaces it with an equivalent one and throws `BAD_TYPECODE` otherwise; an alias is inserted as its type.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`Any::type`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_7_any_inserts_and_extracts_every_type`
+
+**Status:** `done`
+
+### A.1.8, A.1.8.1 Value types and their data members
+
+**Spec:** Annex A.1.8-A.1.8.1, p. 47-48 — the abstract base class as `traits<>::base_type`, the OBV class as `traits<>::obv_type`; public state members as public, private ones as protected pure virtual accessors and modifiers.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_valuetype_tail`, `corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.2 Constructors, Assignment Operators, and Destructors
+
+**Spec:** Annex A.1.8.2, p. 48-49 — protected constructors and a protected virtual destructor; the OBV class with a constructor that takes an initializer per member, the members of a concrete base valuetype first; defaults: nil, 0, the first enumerator.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_valuetype_tail`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.3-A.1.8.4 Valuetype Operations
+
+**Spec:** Annex A.1.8.3-A.1.8.4, p. 49-50 — operations are public pure virtual functions not declared `const`; `CORBA::traits<>::narrow` for valuetypes; the example `Example`.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.5 ValueBase Default Methods
+
+**Spec:** Annex A.1.8.5, p. 50 — `ValueBase` with `_copy_value()`, which returns nil, protected constructors and destructor, deleted assignments.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`ValueBase`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.6 Value boxes
+
+**Spec:** Annex A.1.8.6, p. 51-52 — a concrete class declared `final` on `ValueBase` with `_value` functions, protected constructors and destructor and deleted assignments, made by `CORBA::make_reference`.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`valuebox`); `runtime/cpp/include/omg/corba.hpp` (`detail::reference_access`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.7 Abstract Valuetypes
+
+**Spec:** Annex A.1.8.7, p. 52 — as concrete valuetypes, without the OBV trait.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_valuetype_tail`, `corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.8 Valuetype Inheritance
+
+**Spec:** Annex A.1.8.8, p. 52-53 — concrete and abstract base valuetypes as `public virtual` bases; supported interfaces are not inherited, except abstract ones; their operations are pure virtual functions of the class.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`,
+`crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_9_abstract_interfaces_derive_from_abstract_base`
+
+**Status:** `done`
+
+### A.1.8.8 Skeleton of a valuetype that supports an interface
+
+**Spec:** Annex A.1.8.8, p. 52-53 — "the IDL compiler generates a skeleton for this value type; this skeleton is available through the CORBA::servant_traits<>::base_type trait".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.8.9.1-A.1.8.9.2 Valuetype Factories
+
+**Spec:** Annex A.1.8.9.1-A.1.8.9.2, p. 53-55 — `ValueFactoryBase` with a private `create_for_unmarshal`; per valuetype with initializers a factory class as `traits<>::factory_type`; for a valuetype without operations and initializers a concrete factory.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`ValueFactoryBase`, `detail::factory_access`); `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_valuetype_tail`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.8.9.1, A.1.8.9.3 Factories at the ORB
+
+**Spec:** Annex A.1.8.9.1 and A.1.8.9.3, p. 53-55 — `ORB::register_value_factory` returns nil when no factory was registered; on unmarshalling the implementation looks the factory up through `ORB::lookup_value_factory`, `MARSHAL` without one.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — `CORBA::ORB` has the operations as pure virtual functions; an implementation of the ORB is missing.
+
+### A.1.8.10 Custom Marshaling
+
+**Spec:** Annex A.1.8.10, p. 55 — `CORBA::CustomMarshal`, `CORBA::DataOutputStream` and `CORBA::DataInputStream` follow the valuetype rules.
+
+**Repo:** `runtime/cpp/include/omg/corba_module.hpp`
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_8_value_types_are_the_classes_of_the_clause`
+
+**Status:** `done`
+
+### A.1.9, A.1.9.1 Abstract Interface Base
+
+**Spec:** Annex A.1.9-A.1.9.1, p. 55-56 — the class of an abstract interface does not derive from `CORBA::Object` but from `CORBA::AbstractBase` with `_to_object` and `_to_value` and protected constructors, assignments and destructor.
+
+**Repo:** `runtime/cpp/include/omg/corba.hpp` (`AbstractBase`); `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_object_base`, `corba_interface_members`); `crates/lang-rules/src/emit/idl4_cpp/behaviour.rs` (`valuetype`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_9_abstract_interfaces_derive_from_abstract_base`
+
+**Status:** `done`
+
+### A.1.9.2 Client side mapping for abstract interfaces
+
+**Spec:** Annex A.1.9.2, p. 56 — a protected default and copy constructor and destructor; abstract interfaces always as `public virtual` bases; `Any` operators; implicit widening of derived interfaces and supporting valuetypes.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/corba.rs` (`corba_interface_members`, `corba_needs_object_base`, `corba_traits`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_9_abstract_interfaces_derive_from_abstract_base`,
+`crates/lang-rules/tests/cpp_idl4_corba.rs::idl4cpp_a_1_7_any_inserts_and_extracts_every_type`
+
+**Status:** `done`
+
+### A.1.10.1 Implementing Interfaces
+
+**Spec:** Annex A.1.10.1, p. 56 — an implementation class defines a non-static member function with the mapped name per operation; the mapping is inheritance-based.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.10.2 PortableServer::Servant
+
+**Spec:** Annex A.1.10.2, p. 57 — `PortableServer::Servant` with `_default_POA()`, `_get_interface()`, `_is_a()`, `_non_existent()` and protected constructors, assignments and destructor; `_default_POA` returns the root POA of the default ORB.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.10.3 Servant References
+
+**Spec:** Annex A.1.10.3, p. 58 — `CORBA::servant_traits<Foo>::ref_type` (`CORBA::servant_reference<>`) and `weak_ref_type` (`CORBA::weak_servant_reference<>`); servants are made by `CORBA::make_reference<>`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.10.4 Servant Argument Passing
+
+**Spec:** Annex A.1.10.4, p. 58 — the POA holds servants as references; `ServantActivator` and `ServantLocator` pass and return `omg::types::ref_type<PortableServer::Servant>`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.10.5 Skeleton Operations
+
+**Spec:** Annex A.1.10.5, p. 58-59 — every skeleton class has `_this()` with the three purposes of the clause (within an invocation, implicit activation, a servant already activated) and `PortableServer::WrongPolicy`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.10.6 Inheritance-Based Interface Implementation
+
+**Spec:** Annex A.1.10.6, p. 59-61 — the skeleton class as `CORBA::servant_traits<T>::base_type` with `PortableServer::Servant` as a virtual base; virtual inheritance of the skeletons of base interfaces; an abstract base interface as a `protected virtual` base.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.10.7 Implementing Operations
+
+**Spec:** Annex A.1.10.7, p. 61-64 — the signature of an implementation function is the mapped signature of the operation; delegation-based implementation through `CORBA::servant_traits<T>::tie_type<U>` with `_tied_object()`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.11.1 Mapping of ServerRequest
+
+**Spec:** Annex A.1.11.1, p. 64 — "The ServerRequest pseudo object maps to a C++ class that follows the local interface mapping."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.11.2 Mapping of PortableServer Dynamic Implementation Routine
+
+**Spec:** Annex A.1.11.2, p. 64-65 — `PortableServer::DynamicImplementation` on `Servant` with `_this()`, `invoke(ref_type<ServerRequest>)` and `_primary_interface(const ObjectId&, ref_type<POA>)`; `_this()` outside an invocation throws `PortableServer::WrongPolicy`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.12 PortableServer Functions
+
+**Spec:** Annex A.1.12, p. 65 — `ObjectId_to_string`, `ObjectId_to_wstring`, `string_to_ObjectId`, `wstring_to_ObjectId`; `BAD_PARAM` when the conversion would result in illegal characters.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.13.1 Mapping for Cookie
+
+**Spec:** Annex A.1.13.1, p. 65 — `PortableServer::ServantLocator::Cookie` is `void*`; `preinvoke()` takes `Cookie&`, `postinvoke()` `Cookie`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.13.2 ServantManagers and AdapterActivators
+
+**Spec:** Annex A.1.13.2, p. 66 — servants for `AdapterActivator`, `ServantActivator` and `ServantLocator` are implemented inheritance-based like any other servant.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
+
+### A.1.13.3 Server Side Mapping for Abstract Interfaces
+
+**Spec:** Annex A.1.13.3, p. 66 — server side code for an abstract interface only when an interface derives from it or a valuetype supports it through an interface; no skeleton of its own.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — neither `PortableServer` nor a skeleton is generated; `runtime/cpp/include/omg/` has no object adapter.
 
 ### A.2 DDS-Specific Mappings
 
@@ -1052,14 +1430,25 @@ DDS-specific C++ mapping.
 
 ## Annex C: Compatibility Rules for C++98 and C++03
 
-**Spec:** Annex C (normative), p. 69-77 — alternative mappings for C++98
-and C++03.
+### Annex C.2-C.3 Mapping for C++98 and C++03
+
+**Spec:** Annex C.2-C.3 (normative), p. 69-76 — `const` constants and `std::string` (C.2.1.1), `omg::types::int32_t` etc. (Tables C.1-C.3), no move operations, a plain `enum` with `enum_prefix`/`enum_suffix` (C.2.1.2.2.1, C.3.1), C arrays, `typedef`, `T*` for interface parameters (C.2.2), `@optional` and `@external` (Tables C.4, C.5), the bitmask of C.2.4.1.1.
+
+**Repo:** `crates/lang-rules/src/emit/idl4_cpp/mod.rs` (`Standard::Cxx03`); `runtime/cpp/include/omg/types.hpp`; `tools/idlc/src/main.rs` (`--cpp-standard`)
+
+**Tests:** `crates/lang-rules/tests/cpp_idl4_mapping.rs::idl4cpp_c_the_cxx03_mapping_follows_annex_c`
+
+**Status:** `done`
+
+### Annex C.4 CORBA-Specific Mappings for C++98 and C++03
+
+**Spec:** Annex C.4, p. 76-77 — the CORBA-specific mappings (exceptions, TypeCode, Any) in their form for C++98 and C++03.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** open — an optional mapping; the PSM column (`--cpp-mapping psm`) targets C++17 (§7.1.3) and has no form for C++98 or C++03.
+**Status:** `open` — `omg/corba.hpp` requires C++11; the CORBA platform is generated for C++11 and later only.
 
 ---
 
@@ -1088,17 +1477,8 @@ specs.
 
 ## Audit Status
 
-9 done / 26 partial / 22 open / 0 blocked / 14 n/a (informative).
+86 done / 1 partial / 20 open / 0 blocked / 15 n/a (informative).
 
-Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document idl4-cpp-1.0.md`):
-
-* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (job `merge-rust-idl-lower`) — 2 tests green.
-* `cargo nextest run --profile merge -p zerodds-lang-cst --all-targets` (job `merge-rust-lang-cst`) — 1 test green.
-* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 12 tests green.
-* `python3 ci/run_integration.py merge-codegen-cpp` (job `merge-codegen-cpp`) — 4 tests green.
-* `python3 ci/run_integration.py integration-codegen` (job `integration-codegen`) — 24 tests green.
-* `python3 ci/run_integration.py integration-sdk` (job `integration-sdk`) — 1 test green.
-
-44 cited tests green, 0 not green.
+Test run: `cargo test -p zerodds-lang-rules --test cpp_idl4_mapping --test cpp_idl4_corba --test cpp_idl4_components` and `cargo test -p zerodds-idlc` on the Linux test host — 35 cited tests green, 0 failed.
 
 Open items: `idl4-cpp-1.0.open.en.md`.

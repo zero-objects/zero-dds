@@ -10,6 +10,23 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **Case-sensitive IDL identifiers as a switch:
+  `zerodds_build::Config::case_sensitive_identifiers` and `zerodds-idlc
+  --case-sensitive`** (GitHub #66; `zerodds-idl-parse`
+  `Dialect::case_sensitive`, `zerodds-idl-lower`, `zerodds-ast`
+  `Ast::set_case_sensitive_identifiers`). With it two names of one scope
+  that differ only in case both stand (`module shape` beside `struct
+  Shape`, a member beside its aggregate or a type used in its scope, a
+  parameter beside its type), and a keyword is its own spelling only, as
+  `idlc -f case-sensitive` of Cyclone DDS reads a file. Off by default: OMG
+  IDL 4.2 §7.2.3 and §7.2.4 have them collide. A name was always resolved
+  by its exact spelling, and the TypeObject and the wire carry the IDL's
+  spelling either way.
+- **`FileLoader::identity`** (`zerodds-idl-parse`; GitHub #67, contributed
+  by Matteo Stefanelli): what a loader takes two names of one source for.
+  The default is the name itself; `zerodds_idl_compose::PathLoader` answers
+  with the canonical path.
+
 - **A Rust naming scheme after RFC 430: `zerodds_build::Config::rust_naming`,
   `zerodds-idlc --rust-naming` and `@rust_mapping`** (GitHub #61;
   `zerodds-lang-rules` `rust_names`, `zerodds-ast`
@@ -725,6 +742,37 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   domains by the protocol of `crates/test-domains`.
 
 ### Fixed
+
+- **`PosixShmTransport::interrupt_recv` reaches a `recv` that is about to
+  park** (`zerodds-transport-shm`). The flag it sets is not the word the
+  consumer parks on, and it woke the ring once. A `recv` that had looked at
+  the flag before the store and parked after the wake slept on; without a
+  `recv_timeout`, which is how the runtime's SHM adapter opens its
+  consumers, for good, and `forget_destination` or `close` then stayed in
+  the join of that receive thread. The waiter now announces the span
+  between its look at the flag and the return of its park, and
+  `interrupt_recv` repeats the wake until the waiter has left that span or
+  taken the flag.
+
+- **A secured participant's first handshake no longer goes out with an
+  empty `c.pdata`** (`zerodds-dcps`). The runtime made its security
+  builtin stack reachable for the receive path before it gave the stack
+  the local `ParticipantBuiltinTopicData`. A peer's SPDP that arrived in
+  between began a handshake whose request carried no participant data;
+  the peer refused it ("c.pdata: no PID_PARTICIPANT_GUID") on every
+  resend, and the two participants never authenticated. Measured on the
+  Linux test host under CPU load with `security_matrix_e2e
+  matrix_origin_authentication_kinds`: 3 of 144 runs before, 0 of 150
+  after.
+
+- **`#pragma once` holds for a file included under two spellings of its
+  path** (`zerodds-idl-parse`, `zerodds-idl-compose`; GitHub #65, fixed by
+  Matteo Stefanelli in #67). `#include "shared.idl"` and `#include
+  "./shared.idl"`, directly or through another file, read the file twice
+  and ended in "`Shared` is already declared in this scope"; a symbolic
+  link and, under Windows, another case of the name did the same. The
+  include guard and the check for a file that includes itself compare the
+  loader's identity of the file.
 
 - **Generated Rust compiles for IDL names the generated code uses itself**
   (`zerodds-lang-cst`, `zerodds-lang-rules`, `zerodds-build`; found with a

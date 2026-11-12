@@ -653,11 +653,16 @@ pub(crate) fn maybe_unused(ast: &Ast, id: Id<TypeNode>, key: LayoutKey) -> bool 
         && matches!(resolve_primitive(ast, id, 0), Some(PrimitiveKind::WChar))
 }
 
-/// Whether another structure in the model derives from `id`.
+/// Whether another structure or bitset in the model derives from `id`. A
+/// derived bitset's codec writes the whole chain of bit fields itself.
 fn is_a_base(ast: &Ast, id: Id<TypeNode>) -> bool {
     ast.all_nodes().any(|any| match any {
         zerodds_ast::AnyId::Type(other, _) => {
             crate::adapter::c::struct_base(ast, other) == Some(id)
+                || matches!(
+                    ast.type_(other).map(|node| &node.kind),
+                    Ok(TypeKind::Bitset { base: Some(base), .. }) if base.resolved() == Some(id)
+                )
         }
         _ => false,
     })

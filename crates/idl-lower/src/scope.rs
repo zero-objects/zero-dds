@@ -79,9 +79,26 @@ pub struct ScopeStack {
     /// Every interface and value type body left so far, for the scope
     /// search through inheritance.
     containers: Vec<ClosedContainer>,
+    /// Whether two names that differ only in case are two names
+    /// (`Dialect::case_sensitive`); OMG IDL 4.2 §7.2.3 has them collide.
+    case_sensitive: bool,
 }
 
 impl ScopeStack {
+    /// Compare names for a collision with regard to case.
+    pub fn set_case_sensitive(&mut self, case_sensitive: bool) {
+        self.case_sensitive = case_sensitive;
+    }
+
+    /// Whether `a` and `b` are one name where a collision is decided.
+    fn collide(&self, a: &str, b: &str) -> bool {
+        if self.case_sensitive {
+            a == b
+        } else {
+            a.eq_ignore_ascii_case(b)
+        }
+    }
+
     /// A stack that has not been given its root yet.
     ///
     /// Only for construction order: the lowering needs a context before
@@ -92,6 +109,7 @@ impl ScopeStack {
             scopes: Vec::new(),
             closed: Vec::new(),
             containers: Vec::new(),
+            case_sensitive: false,
         }
     }
 
@@ -109,6 +127,7 @@ impl ScopeStack {
             }],
             closed: Vec::new(),
             containers: Vec::new(),
+            case_sensitive: false,
         }
     }
 
@@ -271,7 +290,7 @@ impl ScopeStack {
             scope
                 .bindings
                 .iter()
-                .any(|(bound, _)| bound.eq_ignore_ascii_case(name))
+                .any(|(bound, _)| self.collide(bound, name))
         })
     }
 
@@ -479,7 +498,7 @@ impl ScopeStack {
             scope
                 .introduced
                 .iter()
-                .find(|(known, _)| known.eq_ignore_ascii_case(name))
+                .find(|(known, _)| self.collide(known, name))
                 .map(|(known, node)| (known.as_str(), *node))
         })
     }

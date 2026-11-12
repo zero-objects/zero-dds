@@ -145,3 +145,79 @@ fn xtypes_annex_b_the_registry_holds_the_complete_object_under_the_vendors_hash(
         "CycloneDDS and RTI hash the COMPLETE object of to::Plain to 7c0c6fab7d066a0c56b8e93c0ea7"
     );
 }
+
+/// The dialect of `zerodds-idlc --case-sensitive` (GitHub #66).
+fn case_sensitive() -> ComposeOptions {
+    let mut options = ComposeOptions::default();
+    options.dialect.case_sensitive = true;
+    options
+}
+
+/// OMG IDL 4.2 §7.2.3 has `module shape` and `struct Shape` collide in one
+/// scope. Under the case-sensitive dialect both stand, and `shape::Details`
+/// is the type of the module, as Cyclone DDS reads the file with
+/// `idlc -f case-sensitive`.
+#[test]
+fn idl_7_2_3_two_names_that_differ_in_case_stand_only_under_the_case_sensitive_dialect() {
+    let source = "module shapes { module shape { struct Details { long value; }; }; \
+                  struct Shape { shape::Details details; }; };";
+    let refused = compose_source("s.idl", source, &PathLoader::bare());
+    assert!(refused.failed(), "the default is OMG IDL 4.2 §7.2.3");
+
+    let admitted = compose_source_with("s.idl", source, &PathLoader::bare(), case_sensitive());
+    assert!(!admitted.failed(), "{:?}", admitted.diagnostics);
+    let (_, shape) = admitted
+        .ast
+        .types()
+        .find(|(_, node)| node.name == "Shape")
+        .expect("the struct Shape");
+    let zerodds_ast::TypeKind::Structure { members, .. } = &shape.kind else {
+        panic!("Shape is a structure: {:?}", shape.kind);
+    };
+    let member = admitted.ast.member(members[0]).expect("the member");
+    let details = member.type_.resolved().expect("a resolved member type");
+    assert_eq!(
+        admitted.ast.type_(details).expect("the type").name,
+        "Details"
+    );
+}
+
+/// The other places §7.2.3 and §7.2.4 compare without regard to case: an
+/// aggregate's name against its members, two members, a member against a
+/// type used in its scope, two declarations of a module, a parameter
+/// against its type, and an identifier against a keyword.
+#[test]
+fn idl_7_2_3_every_comparison_is_exact_under_the_case_sensitive_dialect() {
+    for source in [
+        "struct A { long a; };",
+        "struct S { long x; long X; };",
+        "struct Inner { long n; }; struct Outer { Inner inner; long other; };",
+        "module m { struct Foo { long n; }; typedef long foo; };",
+        "module m { typedef long M; };",
+        "union U switch (long) { case 1: long v; case 2: short V; };",
+        "typedef long Foo; interface I { void doit(in Foo foo); void Doit(); };",
+        "struct Base { long id; }; struct Derived : Base { long ID; };",
+        "struct Struct { long Long; };",
+    ] {
+        let refused = compose_source("s.idl", source, &PathLoader::bare());
+        assert!(refused.failed(), "refused by default: {source}");
+        let admitted = compose_source_with("s.idl", source, &PathLoader::bare(), case_sensitive());
+        assert!(!admitted.failed(), "{source}: {:?}", admitted.diagnostics);
+    }
+}
+
+/// What stays an error under the case-sensitive dialect: one spelling
+/// declared twice, and a keyword in its own spelling.
+#[test]
+fn idl_7_2_3_one_spelling_twice_is_refused_under_the_case_sensitive_dialect() {
+    for source in [
+        "struct S { long n; }; struct S { long m; };",
+        "struct S { long x; long x; };",
+        "module m { typedef long m; };",
+        "interface I { attribute long level; void level(); };",
+        "struct struct { long n; };",
+    ] {
+        let refused = compose_source_with("s.idl", source, &PathLoader::bare(), case_sensitive());
+        assert!(refused.failed(), "{source}");
+    }
+}

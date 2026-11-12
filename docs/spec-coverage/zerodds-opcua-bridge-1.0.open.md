@@ -59,7 +59,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §9.1/§9.2 Start + Shutdown
 
-**Status:** `partial` — Start und `shutdown()` im Prozess sind geprüft. Ohne Test: die Signalbehandlung (SIGTERM/SIGINT) und der Exit-Code 0 des Binaries.
+**Status:** `partial` — Start (`start_with_reload`) und Ende (`DaemonHandle::shutdown`) im Prozess sind geprüft. Ohne Test: die Signalbehandlung (SIGTERM/SIGINT) und der Exit-Code 0 des Binaries.
 
 ## §9.3 SIGHUP
 

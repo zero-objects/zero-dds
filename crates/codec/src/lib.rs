@@ -190,7 +190,7 @@ impl core::fmt::Display for CodecError {
 /// A value written by a [`zerodds_dcps::DataWriter`] of another Rust type
 /// of the same IDL type ([`zerodds_dcps::WriteAs`]): a derived type whose
 /// fields borrow for less than the program's life, written through the
-/// writer of its `'static` form. [`write`] wraps it.
+/// writer of its `'static` form. [`write()`] wraps it.
 #[derive(Debug, Clone, Copy)]
 pub struct Borrowed<'v, V>(pub &'v V);
 

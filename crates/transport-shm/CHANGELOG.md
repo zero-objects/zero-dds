@@ -9,6 +9,13 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 - `Transport::max_message_size` is `ShmConfig::max_datagram` (DDSI-RTPS 2.5 §8.4.14.1).
 
+### Fixed
+
+- `interrupt_recv` repeats its wake until the waiting `recv` has taken the
+  flag or is no longer between its look at the flag and its park. One wake
+  left a `recv` that parked right after it asleep, for good without a
+  `recv_timeout`.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 ### RC1 audit

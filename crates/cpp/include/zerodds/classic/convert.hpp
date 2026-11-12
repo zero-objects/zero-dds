@@ -85,22 +85,53 @@ struct Conv<::zerodds::classic::Sequence<T>> {
     }
 };
 
-/// `@optional` — `zerodds::classic::Optional<T>`; the native member is a plain `T *`, NULL when
-/// absent (DDS-XTypes 1.3 §7.5.1.2.4.2), which the class that holds it owns and deletes.
+/// `@optional` — a plain `T*`, NULL when absent (IDL4 to C++ 1.0 Table D.3), owned by the classic
+/// structure; the native member is a plain pointer too (DDS-XTypes 1.3 §7.5.1.2.4.2), owned by the
+/// native class. Each conversion allocates the copy the other side owns.
 template <typename T>
-struct Conv<::zerodds::classic::Optional<T>> {
+struct Conv<T*> {
     using Native = typename Conv<T>::Native*;
-    static Native to_native(const ::zerodds::classic::Optional<T>& v) {
-        if (!v.has_value()) {
+    static Native to_native(T* const& v) {
+        if (v == nullptr) {
             return nullptr;
         }
-        return new typename Conv<T>::Native(Conv<T>::to_native(v.value()));
+        return new typename Conv<T>::Native(Conv<T>::to_native(*v));
     }
-    static ::zerodds::classic::Optional<T> from_native(const Native& n) {
+    static T* from_native(const Native& n) {
         if (n == nullptr) {
-            return ::zerodds::classic::Optional<T>();
+            return nullptr;
         }
-        return ::zerodds::classic::Optional<T>(Conv<T>::from_native(*n));
+        return new T(Conv<T>::from_native(*n));
+    }
+};
+
+/// An optional `string`: a `char*` from `CORBA::string_dup`, "the corresponding plain pointer
+/// type" of `String_var`.
+template <>
+struct Conv<char*> {
+    using Native = std::string*;
+    static Native to_native(char* const& v) { return v == nullptr ? nullptr : new std::string(v); }
+    static char* from_native(const Native& n) {
+        return n == nullptr ? nullptr : ::CORBA::string_dup(n->c_str());
+    }
+};
+
+/// An optional `wstring`: a `wchar_t*` from `CORBA::wstring_dup`; the native string holds UTF-8.
+template <>
+struct Conv<wchar_t*> {
+    using Native = std::string*;
+    static Native to_native(wchar_t* const& v) {
+        if (v == nullptr) {
+            return nullptr;
+        }
+        return new std::string(::zerodds::psm::Conv<std::wstring>::to_native(std::wstring(v)));
+    }
+    static wchar_t* from_native(const Native& n) {
+        if (n == nullptr) {
+            return nullptr;
+        }
+        const std::wstring wide = ::zerodds::psm::Conv<std::wstring>::from_native(*n);
+        return ::CORBA::wstring_dup(wide.c_str());
     }
 };
 
@@ -143,6 +174,29 @@ struct Conv<::zerodds::Map<K, V, Bound>> {
         }
         ::zerodds::Map<K, V, Bound> map(out);
         return map;
+    }
+};
+
+/// `map<K, V>` and `map<K, V, N>` — `zerodds::classic::Map` (IDL4 to C++ 1.0 Annex D.2.1.3.1);
+/// the native map is a `zerodds::Map` of the converted entries.
+template <typename K, typename V, ::CORBA::ULong Bound>
+struct Conv<::zerodds::classic::Map<K, V, Bound>> {
+    using Native = ::zerodds::Map<typename Conv<K>::Native, typename Conv<V>::Native, Bound>;
+    static Native to_native(const ::zerodds::classic::Map<K, V, Bound>& v) {
+        typename Native::Base out;
+        out.reserve(v.length());
+        for (const auto& e : v) {
+            out.emplace_back(Conv<K>::to_native(e.first), Conv<V>::to_native(e.second));
+        }
+        Native map(out);
+        return map;
+    }
+    static ::zerodds::classic::Map<K, V, Bound> from_native(const Native& n) {
+        ::zerodds::classic::Map<K, V, Bound> out;
+        for (const auto& e : n) {
+            out.insert(Conv<K>::from_native(e.first), Conv<V>::from_native(e.second));
+        }
+        return out;
     }
 };
 

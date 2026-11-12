@@ -514,3 +514,70 @@ fn names_the_generated_code_uses_itself_are_spelled_apart() {
         );
     }
 }
+
+/// GitHub #66: two names of one scope that differ only in case stop the
+/// build (OMG IDL 4.2 §7.2.3) unless `case_sensitive_identifiers(true)` is
+/// set; a file that builds without the switch gives the same module with it.
+#[test]
+fn github_66_names_that_differ_only_in_case_build_when_asked() {
+    let source = "module shapes { module shape { struct Details { long value; }; }; \
+                  struct Shape { shape::Details details; }; };";
+    assert!(generate(source, |config| config).is_err());
+    let built =
+        generate(source, |config| config.case_sensitive_identifiers(true)).expect("compile");
+    assert!(built.contains("pub mod shape"), "{built}");
+    assert!(built.contains("pub struct Shape"), "{built}");
+    assert!(built.contains("pub struct Details"), "{built}");
+
+    let portable = "module m { struct Point { long x; long y; }; \
+                    enum Kind { KIND_A, KIND_B }; };";
+    let without = generate(portable, |config| config).expect("compile");
+    let with =
+        generate(portable, |config| config.case_sensitive_identifiers(true)).expect("compile");
+    assert_eq!(without, with);
+}
+
+/// GitHub #65: a file with `#pragma once` included as `"shared.idl"` and
+/// as `"./shared.idl"`, directly and through another file, is read once.
+#[test]
+fn github_65_pragma_once_holds_for_two_spellings_of_one_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("shared.idl"),
+        "#pragma once\nstruct Shared { long number; };\n",
+    )
+    .expect("shared");
+    fs::write(
+        dir.path().join("a.idl"),
+        "#pragma once\n#include \"shared.idl\"\nstruct A { Shared value; };\n",
+    )
+    .expect("a");
+    for (name, source) in [
+        (
+            "direct",
+            "#include \"shared.idl\"\n#include \"./shared.idl\"\nstruct Example { Shared value; };\n",
+        ),
+        (
+            "transitive",
+            "#include \"a.idl\"\n#include \"./shared.idl\"\nstruct B { A first; Shared value; };\n",
+        ),
+    ] {
+        let idl = dir.path().join(format!("{name}.idl"));
+        fs::write(&idl, source).expect("write idl");
+        let out_dir = dir.path().join(format!("out-{name}"));
+        fs::create_dir_all(&out_dir).expect("out dir");
+        Config::new()
+            .out_dir(&out_dir)
+            .emit_cargo_directives(false)
+            .dds_type_impls(true)
+            .compile(&[&idl])
+            .expect("compile");
+        let generated =
+            fs::read_to_string(out_dir.join(format!("{name}.rs"))).expect("read generated");
+        assert_eq!(
+            generated.matches("pub struct Shared").count(),
+            1,
+            "{generated}"
+        );
+    }
+}

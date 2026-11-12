@@ -10,7 +10,7 @@ use zerodds_ast_core::Id;
 /// The model with its components, homes, connectors, extended ports and
 /// event types replaced by their intermediate IDL: §7.9, §7.10 and §7.12
 /// of IDL4 to Java, C# and C++ 1.0 ("they shall be mapped to intermediate
-/// IDL ... and mapped to <language> accordingly"). The intermediate IDL
+/// IDL ... and mapped to `<language>` accordingly"). The intermediate IDL
 /// of a component, a home and an event type is CCM 4.0 §6's equivalent IDL; that of an extended port the
 /// basic ports of its port type (`zerodds_ccm::expand_extended_ports`).
 /// The names CCM 4.0 introduces (`Components::CCMObject` and the rest)

@@ -196,6 +196,7 @@ all.
 | | |
 |---|---|
 | `--strict` | OMG IDL 4.2 only; reject every vendor extension |
+| `--case-sensitive` | compare identifiers with regard to case, as `idlc -f case-sensitive` of Cyclone DDS: two names of one scope that differ only in case (`module shape`, `struct Shape`) both stand, and a keyword is its own spelling only. Default off: OMG IDL 4.2 §7.2.3 has them collide. Names were always resolved by their exact spelling; the TypeObject and the wire do not change |
 | `--json` | machine-readable diagnostics |
 | `--deny-warnings` | exit non-zero when anything was reported |
 | `--default-extensibility final\|appendable\|mutable` | default for unannotated aggregates; default `appendable`, explicit annotations win. Cyclone's `idlc` assumes `final`, RTI, Fast DDS and OpenDDS `appendable` (`docs/wire-axis-flags.md`); IDL written for Cyclone needs `final` |

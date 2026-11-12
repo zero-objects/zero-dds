@@ -176,8 +176,14 @@ fn compiles(text: &str) {
         .join("../../runtime/d/zdwire.d")
         .canonicalize()
         .expect("runtime/d");
-    let dir =
-        std::env::temp_dir().join(format!("zd-d-codec-{}-{}", std::process::id(), text.len()));
+    // One directory per call: two tests of this process run side by side,
+    // and two generated files can have the same length.
+    static CALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "zd-d-codec-{}-{}",
+        std::process::id(),
+        CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).expect("the build directory");
     let file = dir.join("zd_types.d");
     std::fs::write(&file, text).expect("the module");

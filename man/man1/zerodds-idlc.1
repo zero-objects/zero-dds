@@ -190,6 +190,16 @@ case from the member name, such as
 .BR "Pose pose;" ,
 resolves to the type.
 .TP
+.B \-\-case\-sensitive
+Compare identifiers with regard to case, as
+.B idlc \-f case\-sensitive
+of Cyclone DDS does: two names of one scope that differ only in case, such as
+.B module shape
+and
+.BR "struct Shape" ,
+both stand, and a keyword is its own spelling only. Off by default: OMG IDL
+4.2 section 7.2.3 has them collide. The TypeObject and the wire do not change.
+.TP
 .B \-\-json
 Machine-readable diagnostics.
 .TP
@@ -433,7 +443,7 @@ reader \(em but the preamble names it. Default:
 The DDS-TS 1.0 spelling of
 .BR \-\-endian .
 .TP
-.BR \-\-cpp\-mapping " " \fIpsm\fR|\fInative\fR|\fIclassic\fR
+.BR \-\-cpp\-mapping " " \fIpsm\fR|\fInative\fR|\fIclassic\fR|\fIidl4\fR
 .B generate
 .RB "\-\-lang " c++
 only: how topic types are spelled. Default:
@@ -461,10 +471,44 @@ is the classic OMG IDL to C++ 1.3 mapping in C++03 over the same codec:
 .IR CORBA::Long ,
 .IR CORBA::String_var ,
 .I zerodds::classic::Sequence
-for a sequence and
-.I zerodds::classic::Optional
-for
-.BR @optional .
+for a sequence, and for what OMG IDL 4 added the rules of Annex D.2 of IDL4 to C++ 1.0:
+.I zerodds::classic::Map
+for a map, a plain pointer for
+.BR @optional ,
+bit fields for a bit set and a struct with
+.I _flags
+for a bit mask.
+.I idl4
+is the IDL4 to C++ Language Mapping 1.0: one header
+.IR <file>.hpp
+over
+.IR omg/types.hpp ,
+without the codec.
+.TP
+.BR \-\-cpp\-platform " " \fIdds\fR|\fIcorba\fR
+With
+.BR "\-\-cpp\-mapping idl4" :
+the platform of Annex A.
+.I dds
+(the default) adds nothing to clauses 7 and 8;
+.I corba
+applies Annex A.1 over
+.IR omg/corba.hpp .
+.TP
+.BR \-\-cpp\-standard " " \fIc++11\fR|\fIc++03\fR
+With
+.BR "\-\-cpp\-mapping idl4" :
+.I c++11
+(the default; also written c++14 to c++23) is clause 7, which requires C++11;
+.I c++03
+(or c++98) applies the compatibility rules of Annex C.
+.TP
+.B \-\-cpp\-corba\-module
+With
+.BR "\-\-cpp\-platform corba" :
+also write the C++ of the CORBA module an included
+.I orb.idl
+declares, which the ORB's runtime otherwise provides.
 .TP
 .BR \-\-rust\-map " " \fIentries\fR|\fIbtree-map\fR
 .B generate

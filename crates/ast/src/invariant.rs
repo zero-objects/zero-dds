@@ -341,7 +341,11 @@ fn check_member_names(
                 aggregate,
                 name: m.name.clone(),
             });
-        } else if let Some(first) = names.iter().find(|held| held.eq_ignore_ascii_case(&m.name)) {
+        } else if let Some(first) = names
+            .iter()
+            .filter(|_| !ast.case_sensitive_identifiers)
+            .find(|held| held.eq_ignore_ascii_case(&m.name))
+        {
             out.push(InvariantViolation::NameCollidesOnlyInCase {
                 scope: aggregate,
                 first: String::from(*first),

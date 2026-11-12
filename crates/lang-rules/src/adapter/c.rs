@@ -450,14 +450,36 @@ pub fn ordered_types(ast: &Ast) -> Vec<Id<TypeNode>> {
     // Nothing reaches it then, and a codec for it is a refusal of a
     // construct no declaration uses. One that something still reaches is
     // kept, so that the refusal by name stays where it is needed.
+    // A primitive that is in the model only as the holder of a
+    // `bitfield<4, unsigned short>` has no codec of its own: the bitset's
+    // codec writes the bits itself, and the primitive's would be a
+    // `static` function nothing calls. A primitive a constant is declared
+    // with keeps its codec, as does every primitive once an interface or
+    // a pair of types is in the model: the RPC binding names the codecs
+    // it calls (`crate::emit::encode::maybe_unused`).
+    let binding =
+        ast.interfaces().next().is_some() || crate::emit::type_pair_cpp::has_pair_types(ast);
+    let holders: Vec<Id<TypeNode>> = all
+        .iter()
+        .flat_map(|id| ast.bitfields_of(*id))
+        .filter_map(|field| ast.bitfield(*field).ok()?.holder_type.as_ref()?.resolved())
+        .collect();
+    let constant_types: Vec<Id<TypeNode>> = ast
+        .constants()
+        .filter_map(|(_, constant)| constant.type_.resolved())
+        .collect();
     order
         .iter()
         .copied()
         .filter(|id| {
-            let no_data_form = ast
-                .type_(*id)
-                .is_ok_and(|node| matches!(node.kind, TypeKind::Any | TypeKind::ValueBase));
-            !no_data_form
+            let only_where_reached = ast.type_(*id).is_ok_and(|node| match node.kind {
+                TypeKind::Any | TypeKind::ValueBase => true,
+                TypeKind::Primitive(_) => {
+                    !binding && holders.contains(id) && !constant_types.contains(id)
+                }
+                _ => false,
+            });
+            !only_where_reached
                 || order
                     .iter()
                     .any(|other| other != id && dependencies(ast, *other).contains(id))

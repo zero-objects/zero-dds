@@ -21,6 +21,17 @@ pub struct Dialect {
     /// ROS 2 dialect: admits unqualified member types that differ only in case
     /// from the member name (e.g., `Pose pose;`).
     pub ros2: bool,
+    /// Identifiers are compared with regard to case.
+    ///
+    /// OMG IDL 4.2 §7.2.3: "Upper- and lower-case letters are treated as
+    /// the same letter" when two identifiers are compared for a
+    /// collision, and §7.2.4 has an identifier collide with a keyword it
+    /// differs from only in case. With this set, both comparisons are
+    /// exact: `module shape` and `struct Shape` stand in one scope, and
+    /// `Struct` is an identifier. It is what `idlc -f case-sensitive` of
+    /// Cyclone DDS does. A file that needs it is not OMG IDL, and no
+    /// vendor flag turns it on.
+    pub case_sensitive: bool,
 }
 
 impl Dialect {
@@ -34,6 +45,7 @@ impl Dialect {
         fast_dds: false,
         open_dds: false,
         ros2: false,
+        case_sensitive: false,
     };
 
     /// Every vendor dialect at once.
@@ -43,6 +55,7 @@ impl Dialect {
         fast_dds: true,
         open_dds: true,
         ros2: false,
+        case_sensitive: false,
     };
 
     /// Whether any vendor extension is admitted.

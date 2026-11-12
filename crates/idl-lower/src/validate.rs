@@ -889,7 +889,7 @@ impl Lowering<'_> {
             for (index, (element, any, from)) in inherited.iter().enumerate() {
                 let Some((_, _, other)) = inherited[..index]
                     .iter()
-                    .find(|(known, other, _)| known.eq_ignore_ascii_case(element) && other != any)
+                    .find(|(known, other, _)| self.is_one_name(known, element) && other != any)
                 else {
                     continue;
                 };
@@ -907,7 +907,7 @@ impl Lowering<'_> {
             for (element, any) in self.elements_of(id) {
                 let Some((_, _, from)) = inherited
                     .iter()
-                    .find(|(known, _, _)| known.eq_ignore_ascii_case(&element))
+                    .find(|(known, _, _)| self.is_one_name(known, &element))
                 else {
                     continue;
                 };
@@ -1836,7 +1836,7 @@ impl Lowering<'_> {
 
             if inherited_members
                 .iter()
-                .any(|(n, _)| n.eq_ignore_ascii_case(&member_name))
+                .any(|(n, _)| self.is_one_name(n, &member_name))
             {
                 let message = alloc::format!(
                     "`{member_name}` is declared in `{name}` and inherited from `{base_name}`; \

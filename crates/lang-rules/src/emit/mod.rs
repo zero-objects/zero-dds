@@ -72,6 +72,7 @@ pub mod elixir;
 pub mod encode;
 pub mod fsharp;
 pub mod go;
+pub mod idl4_cpp;
 pub mod idl4_csharp;
 pub mod idl4_java;
 pub mod interface_cpp;

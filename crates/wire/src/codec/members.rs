@@ -137,7 +137,7 @@ where
     <T::Idl as IdlType>::write_repr(out, |out| value.to_wire(out))
 }
 
-/// [`DdsMember::deserialize_member`] of a [`WireRepr`] type: its
+/// [`DdsMemberRead::deserialize_member`] of a [`WireRepr`] type: its
 /// `from_wire` over the IDL value, a `string` lent out of the sample.
 ///
 /// # Errors

@@ -255,6 +255,7 @@ pub struct Config {
     rust_map: RustMapForm,
     strip_enum_prefix: bool,
     rust_naming: RustNaming,
+    case_sensitive_identifiers: bool,
     rust_types: Vec<rust_type::RustTypeOverride>,
 }
 
@@ -284,6 +285,7 @@ impl Config {
             rust_map: RustMapForm::default(),
             strip_enum_prefix: false,
             rust_naming: RustNaming::Idl,
+            case_sensitive_identifiers: false,
             rust_types: Vec::new(),
         }
     }
@@ -569,6 +571,29 @@ impl Config {
         self
     }
 
+    /// Compare IDL identifiers with regard to case, as `zerodds-idlc
+    /// --case-sensitive` and `idlc -f case-sensitive` of Cyclone DDS do
+    /// (GitHub #66).
+    ///
+    /// Off by default: OMG IDL 4.2 §7.2.3 has two identifiers that differ
+    /// only in case collide, and §7.2.4 has an identifier collide with a
+    /// keyword it differs from only in case, so `module shape` beside
+    /// `struct Shape` stops the build. With
+    /// `case_sensitive_identifiers(true)` both comparisons are exact: the
+    /// two declarations stand, `Struct` is an identifier, and a name is
+    /// declared twice only when it is written the same way twice.
+    ///
+    /// A name was always resolved by its exact spelling, and the
+    /// TypeObject, the member ids and the registered type names carry the
+    /// spelling of the IDL either way; a file that builds without the
+    /// switch gives the same code and the same octets with it. A file that
+    /// needs the switch is not OMG IDL: Cyclone DDS reads it with its own
+    /// switch, and a front end without one refuses it.
+    pub fn case_sensitive_identifiers(&mut self, case_sensitive: bool) -> &mut Self {
+        self.case_sensitive_identifiers = case_sensitive;
+        self
+    }
+
     /// The naming scheme of the generated Rust, as `zerodds-idlc
     /// --rust-naming` sets it (GitHub #61).
     ///
@@ -792,7 +817,11 @@ impl Config {
                 // vendor's. Refusing an extension here would fail the
                 // build over a portability question nobody asked;
                 // `zerodds-idlc --strict` is where that question is put.
-                dialect: zerodds_idl_compose::ComposeOptions::default().dialect,
+                dialect: {
+                    let mut dialect = zerodds_idl_compose::ComposeOptions::default().dialect;
+                    dialect.case_sensitive = self.case_sensitive_identifiers;
+                    dialect
+                },
             },
         )
         .map_err(|detail| Error::Read {
@@ -905,7 +934,11 @@ impl Config {
                 // vendor's. Refusing an extension here would fail the
                 // build over a portability question nobody asked;
                 // `zerodds-idlc --strict` is where that question is put.
-                dialect: zerodds_idl_compose::ComposeOptions::default().dialect,
+                dialect: {
+                    let mut dialect = zerodds_idl_compose::ComposeOptions::default().dialect;
+                    dialect.case_sensitive = self.case_sensitive_identifiers;
+                    dialect
+                },
             },
         )
         .map_err(|detail| Error::Read {

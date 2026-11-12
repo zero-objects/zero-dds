@@ -145,7 +145,7 @@ impl CType {
 
     /// The type an `@optional` or `@external` member of this type has:
     /// "IDL elements annotated with @optional whose type T maps to a C#
-    /// value type shall map to System.Nullable<T>. IDL types mapped to
+    /// value type shall map to `System.Nullable<T>`. IDL types mapped to
     /// reference types shall remain unchanged."
     #[must_use]
     pub fn nullable(&self) -> Self {

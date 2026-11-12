@@ -217,3 +217,26 @@ fn external_indirection_requires_a_finite_value_not_just_a_pointer() {
         assert!(refuses_the_cycle(source), "{source}: {:?}", errors(source));
     }
 }
+
+/// CORBA 3.3 Part 2 §9.3.4.4: "All value types have a distinguished
+/// 'null.'" A member whose type is a value type is a reference that can be
+/// null, so the cycle it closes terminates: the `valuetype Val { public
+/// Val t; }` of IDL4 to C++ 1.0 A.1.8.1 and the `Example` of A.1.8.4. A
+/// structure on the cycle changes nothing about that, and a value box is a
+/// value type.
+#[test]
+fn corba_9_3_4_4_a_cycle_through_a_value_type_member_terminates_in_its_null() {
+    for source in [
+        "valuetype Val { public Val t; };",
+        "valuetype Example { private short val1; private Example val5; };",
+        "valuetype Node;\nstruct Holder { Node next; };\nvaluetype Node { public Holder held; };",
+        "struct Link;\nvaluetype Boxed Link;\nstruct Link { Boxed next; };",
+        "valuetype Tree;\nunion Pick switch (long) { case 1: Tree t; };\nvaluetype Tree { public Pick p; };",
+    ] {
+        assert!(
+            !refuses_the_cycle(source),
+            "a cycle through a value type member is admitted: {source}\n{:?}",
+            errors(source)
+        );
+    }
+}

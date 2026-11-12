@@ -193,6 +193,18 @@ der Groß-/Kleinschreibung vom Member-Namen unterscheidet, etwa
 .BR "Pose pose;" ,
 wird zum Typ aufgelöst.
 .TP
+.B \-\-case\-sensitive
+Bezeichner mit Beachtung der Groß-/Kleinschreibung vergleichen, wie
+.B idlc \-f case\-sensitive
+von Cyclone DDS: Zwei Namen eines Scopes, die sich nur in der
+Groß-/Kleinschreibung unterscheiden, etwa
+.B module shape
+und
+.BR "struct Shape" ,
+bleiben beide stehen, und ein Schlüsselwort ist nur seine eigene Schreibweise.
+Standard aus: Nach OMG IDL 4.2 Abschnitt 7.2.3 kollidieren sie. Das TypeObject
+und die Oktette auf der Leitung ändern sich nicht.
+.TP
 .B \-\-json
 Maschinenlesbare Diagnosen.
 .TP
@@ -449,7 +461,7 @@ Die Schreibweise von
 .B \-\-endian
 aus DDS-TS 1.0.
 .TP
-.BR \-\-cpp\-mapping " " \fIpsm\fR|\fInative\fR|\fIclassic\fR
+.BR \-\-cpp\-mapping " " \fIpsm\fR|\fInative\fR|\fIclassic\fR|\fIidl4\fR
 Nur
 .B generate
 .BR "\-\-lang c++" :
@@ -482,10 +494,47 @@ Codec:
 .IR CORBA::Long ,
 .IR CORBA::String_var ,
 .I zerodds::classic::Sequence
-für eine Sequenz und
-.I zerodds::classic::Optional
-für
-.BR @optional .
+für eine Sequenz, und für das, was OMG IDL 4 hinzugefügt hat, die Regeln aus
+Anhang D.2 von IDL4 to C++ 1.0:
+.I zerodds::classic::Map
+für eine Map, ein einfacher Zeiger für
+.BR @optional ,
+Bitfelder für ein Bitset und eine Struktur mit
+.I _flags
+für eine Bitmaske.
+.I idl4
+ist das IDL4 to C++ Language Mapping 1.0: ein Header
+.IR <Datei>.hpp
+über
+.IR omg/types.hpp ,
+ohne den Codec.
+.TP
+.BR \-\-cpp\-platform " " \fIdds\fR|\fIcorba\fR
+Mit
+.BR "\-\-cpp\-mapping idl4" :
+die Plattform aus Anhang A.
+.I dds
+(Standard) fügt Kapitel 7 und 8 nichts hinzu;
+.I corba
+wendet Anhang A.1 über
+.I omg/corba.hpp
+an.
+.TP
+.BR \-\-cpp\-standard " " \fIc++11\fR|\fIc++03\fR
+Mit
+.BR "\-\-cpp\-mapping idl4" :
+.I c++11
+(Standard; auch c++14 bis c++23 geschrieben) ist Kapitel 7, das C++11
+voraussetzt;
+.I c++03
+(oder c++98) wendet die Kompatibilitätsregeln aus Anhang C an.
+.TP
+.B \-\-cpp\-corba\-module
+Mit
+.BR "\-\-cpp\-platform corba" :
+auch das C++ des CORBA-Moduls schreiben, das ein eingebundenes
+.I orb.idl
+deklariert und das sonst die Laufzeit des ORB stellt.
 .TP
 .BR \-\-rust\-map " " \fIentries\fR|\fIbtree-map\fR
 Nur

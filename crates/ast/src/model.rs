@@ -80,6 +80,9 @@ pub struct Ast {
     pub(crate) stash: Vec<Option<crate::edit::Stashed>>,
     /// Failure of the most recent auto-committed mutation.
     pub(crate) last_commit_error: Option<AstError>,
+    /// Whether two names that differ only in case are two names.
+    /// [`Ast::set_case_sensitive_identifiers`].
+    pub(crate) case_sensitive_identifiers: bool,
 
     root: Id<ModuleNode>,
     builtin_module: Id<ModuleNode>,
@@ -125,6 +128,24 @@ impl Ast {
         let mut ast = Self::empty();
         ast.populate_builtins();
         ast
+    }
+
+    /// Compare the names of one scope with regard to case.
+    ///
+    /// OMG IDL 4.2 §7.2.3 has two names that differ only in case collide,
+    /// and the model refuses them
+    /// ([`crate::InvariantViolation::NameCollidesOnlyInCase`]). A front
+    /// end that reads a file under a case-sensitive dialect sets this
+    /// before it builds the model; the refusal then applies to equal names
+    /// only.
+    pub fn set_case_sensitive_identifiers(&mut self, case_sensitive: bool) {
+        self.case_sensitive_identifiers = case_sensitive;
+    }
+
+    /// Whether the names of one scope are compared with regard to case.
+    #[must_use]
+    pub fn case_sensitive_identifiers(&self) -> bool {
+        self.case_sensitive_identifiers
     }
 
     pub(crate) fn empty_public() -> Self {
@@ -207,6 +228,7 @@ impl Ast {
             pending: None,
             stash: Vec::new(),
             last_commit_error: None,
+            case_sensitive_identifiers: false,
             root,
             builtin_module,
         }

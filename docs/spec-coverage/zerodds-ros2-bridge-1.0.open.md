@@ -27,7 +27,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §11 librmw_zerodds_cpp.so + Diagnose-Binary
 
-**Status:** `partial` — `librmw_zerodds_cpp.so` liegt im deb-Paket `ros-<distro>-rmw-zerodds-cpp` (gebaut aus `crates/rmw-zerodds-shim/ament`), das Image installiert es aus diesem Paket; Diagnose-Binary, Konfiguration und Handbuchseiten sind ausgeliefert. Der wöchentliche Job `ros-rmw-deb` und der Image-Bau sind nicht gelaufen. Es fehlen die Veröffentlichung auf dem `packages.ros.org`-Spiegel (§11.1) und Paket und Image für Iron (§10.2).
+**Status:** `partial` — `librmw_zerodds_cpp.so` liegt im deb-Paket `ros-<distro>-rmw-zerodds-cpp` (gebaut aus `crates/rmw-zerodds-shim/ament`), das Image installiert es aus diesem Paket; Diagnose-Binary, Konfiguration und Handbuchseiten sind ausgeliefert. Der Image-Bau ist nicht gelaufen. Es fehlen die Veröffentlichung auf dem `packages.ros.org`-Spiegel (§11.1) und Paket und Image für Iron (§10.2).
 
 ## §11.1 Veröffentlichung auf dem packages.ros.org-Spiegel
 

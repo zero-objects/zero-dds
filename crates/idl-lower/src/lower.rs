@@ -438,6 +438,9 @@ pub fn lower_into_with(
         templates: Vec::new(),
     };
     ctx.scopes = ScopeStack::new(ctx.ast.root_module());
+    let case_sensitive = ctx.options.dialect.case_sensitive;
+    ctx.scopes.set_case_sensitive(case_sensitive);
+    ctx.ast.set_case_sensitive_identifiers(case_sensitive);
     ctx.file(root);
     // Completion runs over the finished model: a rule that reads the
     // previous member's id needs every member to be there first.
@@ -591,7 +594,13 @@ impl Lowering<'_> {
     /// The escaped form is exempt. §7.2.3.2: prefixing an underscore "is
     /// a purely lexical convention that ONLY turns off keyword
     /// checking", which is exactly the check this is.
+    ///
+    /// Under `Dialect::case_sensitive` a keyword is its own spelling and
+    /// nothing else, so `Struct` is an identifier and nothing is asked.
     fn identifiers_do_not_collide_with_keywords(&mut self, root: &Arc<SyntaxNode>) {
+        if self.options.dialect.case_sensitive {
+            return;
+        }
         let mut found: Vec<(Span, String, &'static str)> = Vec::new();
         for node in root.descendants() {
             for (span, token) in node.tokens() {
@@ -4104,6 +4113,12 @@ impl Lowering<'_> {
             child_index += 1;
         }
 
+        // Under a case-sensitive dialect two spellings are two names: what
+        // is left of this rule is the name declared twice.
+        let case_sensitive = self.options.dialect.case_sensitive;
+        let differs_only_in_case = |other: &&str, name: &String| {
+            !case_sensitive && *other != name.as_str() && other.eq_ignore_ascii_case(name)
+        };
         for index in 0..declared.len() {
             let current = &declared[index];
             let name = &current.name;
@@ -4115,13 +4130,13 @@ impl Lowering<'_> {
                 .iter()
                 .filter(|u| u.child_index != child_idx)
                 .map(|u| u.name.as_str())
-                .find(|other| *other != name && other.eq_ignore_ascii_case(name));
+                .find(|other| differs_only_in_case(other, name));
 
             // Check against previously declared names (always an error)
             let clash_declared = declared[..index]
                 .iter()
                 .map(|d| d.name.as_str())
-                .find(|other| *other != name && other.eq_ignore_ascii_case(name));
+                .find(|other| differs_only_in_case(other, name));
 
             // Check against used type names from the same declaration
             // Only relevant under ROS 2 dialect: admit this specific case
@@ -4129,7 +4144,7 @@ impl Lowering<'_> {
                 .iter()
                 .filter(|u| u.child_index == child_idx)
                 .map(|u| u.name.as_str())
-                .find(|other| *other != name && other.eq_ignore_ascii_case(name));
+                .find(|other| differs_only_in_case(other, name));
 
             // The same name declared twice: for the members of an
             // aggregate and the parameters of an operation the model
@@ -4148,7 +4163,7 @@ impl Lowering<'_> {
             // as for a declaration that reuses the name of its scope.
             let names_the_interface = node.kind() == CstKind::InterfaceDecl
                 && self.options.name_of_the_enclosing_scope == NameOfTheEnclosingScope::Refused
-                && first_ident(node).is_some_and(|scope| scope.eq_ignore_ascii_case(name));
+                && first_ident(node).is_some_and(|scope| self.is_one_name(&scope, name));
             if names_the_interface {
                 let message = alloc::format!(
                     "`{name}` is the name of the interface it is declared in; OMG IDL 4.2 \
@@ -4223,11 +4238,26 @@ impl Lowering<'_> {
         }
     }
 
+    /// Whether `a` and `b` are one name where a collision is decided:
+    /// without regard to case (OMG IDL 4.2 §7.2.3), or exactly under
+    /// `Dialect::case_sensitive`.
+    pub(crate) fn is_one_name(&self, a: &str, b: &str) -> bool {
+        if self.options.dialect.case_sensitive {
+            a == b
+        } else {
+            a.eq_ignore_ascii_case(b)
+        }
+    }
+
     /// Collision reporting, kept where the duplicate rule is stated.
     fn duplicate(&mut self, name: &str, at: &Arc<SyntaxNode>) {
-        let message = alloc::format!(
-            "`{name}` is already declared in this scope; IDL compares identifiers case-insensitively"
-        );
+        let message = if self.options.dialect.case_sensitive {
+            alloc::format!("`{name}` is already declared in this scope")
+        } else {
+            alloc::format!(
+                "`{name}` is already declared in this scope; IDL compares identifiers case-insensitively"
+            )
+        };
         self.diagnose_at(
             DiagnosticCode::DuplicateName,
             at.span(),
@@ -4370,7 +4400,7 @@ impl Lowering<'_> {
         let Some(scope) = self.scopes.innermost_name() else {
             return;
         };
-        if !scope.eq_ignore_ascii_case(name) {
+        if !self.is_one_name(scope, name) {
             return;
         }
         // The vendors split here, so the axis decides. Under

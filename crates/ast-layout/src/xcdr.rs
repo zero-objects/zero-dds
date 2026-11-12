@@ -361,6 +361,20 @@ fn has_finite_value(
     finite
 }
 
+/// Whether a member of `type_` holds a value type or a value box: a
+/// reference that can be null. CORBA 3.3 Part 2 §9.3.4.4: "All value types
+/// have a distinguished 'null.' All null values are encoded by the
+/// <null_tag> (0x0)." The null ends a value the way an absent `@optional`
+/// member does, so a cycle through such a member terminates — the
+/// `valuetype Val { public Val t; }` of IDL4 to C++ 1.0 A.1.8.1.
+fn holds_a_value_reference(ast: &Ast, type_: Id<TypeNode>) -> bool {
+    matches!(
+        ast.type_(through_aliases(ast, type_))
+            .map(|node| &node.kind),
+        Ok(TypeKind::Valuetype { .. } | TypeKind::ValueBox { .. })
+    )
+}
+
 fn finite_external_member(ast: &Ast, member: &zerodds_ast::MemberNode) -> bool {
     member.facets.xtypes.as_ref().is_some_and(|x| x.is_external)
         && member.type_.resolved().is_some_and(|type_| {
@@ -1093,7 +1107,8 @@ fn plan_at_inner(
                 // The same refusal the aggregate members make: a
                 // branch of an enclosing type closes a cycle with no
                 // sequence or map on it (IDL 4.2 §7.4.1.4.4.4.4).
-                let external = finite_external_member(ast, member);
+                let external = finite_external_member(ast, member)
+                    || holds_a_value_reference(ast, member_type);
                 if !external && closes_a_cycle_without_length(ast, member_type, deps) {
                     return Err(LayoutError::RecursionOutsideCollection {
                         node: member.node_id,
@@ -1817,7 +1832,9 @@ fn plan_aggregate(
             .resolved()
             .ok_or(LayoutError::Unresolved { node: node_id })?;
         let optional = member_node.facets.is_optional();
-        let terminates = optional || finite_external_member(ast, member_node);
+        let terminates = optional
+            || finite_external_member(ast, member_node)
+            || holds_a_value_reference(ast, member_type);
         // A member whose type is one this descent is already inside
         // closes a cycle. Whether that is legal is the question of what
         // terminates a *value*, not of what the type graph looks like:

@@ -59,7 +59,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §9.1/§9.2 Startup + shutdown
 
-**Status:** `partial` — in-process start and `shutdown()` are checked. Without a test: signal handling (SIGTERM/SIGINT) and exit code 0 of the binary.
+**Status:** `partial` — in-process start (`start_with_reload`) and end (`DaemonHandle::shutdown`) are checked. Without a test: signal handling (SIGTERM/SIGINT) and exit code 0 of the binary.
 
 ## §9.3 SIGHUP
 

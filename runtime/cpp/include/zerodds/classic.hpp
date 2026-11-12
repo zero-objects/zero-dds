@@ -4,7 +4,8 @@
 // zerodds/classic.hpp — the types the classic OMG IDL to C++ mapping (IDL to C++ 1.3) names, in
 // C++03: `CORBA::Long` and the other basic types, `CORBA::String_var`, `CORBA::WString_var`, and
 // three class templates the generated declarations use — `zerodds::classic::Sequence<T>`,
-// `zerodds::classic::Var<T>` and `zerodds::classic::Optional<T>`.
+// `zerodds::classic::Var<T>` and `zerodds::classic::Map<K, V, N>` — with the functions that copy
+// and release the plain pointer of an `@optional` member (IDL4 to C++ 1.0 Table D.3).
 //
 // A header generated with `--cpp-mapping classic` declares its structures, unions, enumerations
 // and typedefs in these terms, between the markers `ZD-CLASSIC-BEGIN` and `ZD-CLASSIC-END`; that
@@ -15,6 +16,8 @@
 #ifndef ZERODDS_CLASSIC_HPP
 #define ZERODDS_CLASSIC_HPP
 
+#include <map>
+#include <stdexcept>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -298,37 +301,122 @@ private:
     T* p_;
 };
 
-/// `@optional T m`: a value or nothing (XTypes 1.3 §7.2.2.4.4.4.7). The classic mapping has no
-/// optional; this is the smallest holder that tells a present zero from an absent member.
-template <class T>
-class Optional {
+/// `map<K, V>` and `map<K, V, N>` (IDL4 to C++ 1.0 Annex D.2.1.3.1): a default constructor that
+/// leaves the map empty, `operator[]`, `maximum()`, `length()`, `clear()`, `insert()`,
+/// `insert_or_assign()` and `erase()`; an unbounded map (`N` 0) also has the copy constructor,
+/// the assignment, the maximum constructor and `maximum(ULong)`. A bounded map holds at most `N`
+/// entries, an unbounded one at most its `maximum()`, which starts at the greatest `ULong`.
+template <class K, class V, CORBA::ULong N = 0>
+class Map {
 public:
-    Optional() : present_(false), value_() {}
-    Optional(const T& value) : present_(true), value_(value) {}
+    typedef std::map<K, V> Entries;
+    typedef typename Entries::const_iterator const_iterator;
 
-    bool has_value() const { return present_; }
-    T& value() { return value_; }
-    const T& value() const { return value_; }
-    void set(const T& value) {
-        value_ = value;
-        present_ = true;
-    }
-    void reset() {
-        value_ = T();
-        present_ = false;
-    }
-    Optional& operator=(const T& value) {
-        set(value);
+    Map() : maximum_(N == 0 ? 0xFFFFFFFFu : N) {}
+    /// The maximum constructor: "allowing internal preallocations if necessary".
+    explicit Map(CORBA::ULong maximum) : maximum_(N == 0 ? maximum : N) {}
+    Map(const Map& other) : maximum_(other.maximum_), entries_(other.entries_) {}
+    ~Map() {}
+    Map& operator=(const Map& other) {
+        if (this != &other) {
+            maximum_ = other.maximum_;
+            entries_ = other.entries_;
+        }
         return *this;
     }
-    bool operator==(const Optional& other) const {
-        return present_ == other.present_ && (!present_ || value_ == other.value_);
+
+    /// The value of `key`; a key the map does not hold is inserted with a default value, as
+    /// `std::map` does, and `std::length_error` when the map is full.
+    V& operator[](const K& key) {
+        typename Entries::iterator found = entries_.find(key);
+        if (found != entries_.end()) {
+            return found->second;
+        }
+        if (length() + 1 > maximum_) {
+            throw std::length_error("zerodds::classic::Map: a new key past the maximum");
+        }
+        return entries_[key];
+    }
+    /// The value of `key`, or a default value when the map does not hold it.
+    const V& operator[](const K& key) const {
+        typename Entries::const_iterator found = entries_.find(key);
+        return found != entries_.end() ? found->second : absent_;
     }
 
+    CORBA::ULong maximum() const { return maximum_; }
+    /// The maximum of an unbounded map; the entries past it, in key order, are dropped.
+    void maximum(CORBA::ULong max_size) {
+        if (N != 0) {
+            return;
+        }
+        maximum_ = max_size;
+        while (entries_.size() > maximum_) {
+            typename Entries::iterator last = entries_.end();
+            --last;
+            entries_.erase(last);
+        }
+    }
+    CORBA::ULong length() const { return static_cast<CORBA::ULong>(entries_.size()); }
+    void clear() { entries_.clear(); }
+
+    /// FALSE when the key is held and `replace` is FALSE, and when a new entry would take the
+    /// length past the maximum; TRUE when the entry is in the map.
+    CORBA::Boolean insert(const K& key, const V& element, CORBA::Boolean replace = true) {
+        typename Entries::iterator found = entries_.find(key);
+        if (found != entries_.end()) {
+            if (!replace) {
+                return false;
+            }
+            found->second = element;
+            return true;
+        }
+        if (length() + 1 > maximum_) {
+            return false;
+        }
+        entries_.insert(std::make_pair(key, element));
+        return true;
+    }
+    CORBA::Boolean insert_or_assign(const K& key, const V& element) {
+        return insert(key, element, true);
+    }
+    CORBA::Boolean erase(const K& key) { return entries_.erase(key) == 1; }
+
+    const_iterator begin() const { return entries_.begin(); }
+    const_iterator end() const { return entries_.end(); }
+    bool operator==(const Map& other) const { return entries_ == other.entries_; }
+
 private:
-    bool present_;
-    T value_;
+    CORBA::ULong maximum_;
+    Entries entries_;
+    V absent_;
 };
+
+/// The plain pointer of an `@optional` member (IDL4 to C++ 1.0 Table D.3), owned by the structure
+/// that holds it: `clone` is its deep copy, `release` frees it; NULL stays NULL.
+template <class T>
+inline T* clone(const T* p) {
+    return p == 0 ? 0 : new T(*p);
+}
+inline char* clone(const char* p) { return CORBA::string_dup(p); }
+inline wchar_t* clone(const wchar_t* p) { return CORBA::wstring_dup(p); }
+template <class T>
+inline void release(T* p) {
+    delete p;
+}
+inline void release(char* p) { CORBA::string_free(p); }
+inline void release(wchar_t* p) { CORBA::wstring_free(p); }
+
+/// The copy of a member, element by element for a C array.
+template <class T>
+inline void copy_value(T& to, const T& from) {
+    to = from;
+}
+template <class T, size_t S>
+inline void copy_value(T (&to)[S], const T (&from)[S]) {
+    for (size_t i = 0; i < S; ++i) {
+        copy_value(to[i], from[i]);
+    }
+}
 
 }  // namespace classic
 }  // namespace zerodds

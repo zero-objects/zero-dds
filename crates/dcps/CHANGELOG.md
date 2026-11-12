@@ -38,6 +38,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- The security builtin stack has the local `ParticipantBuiltinTopicData`
+  before `install_security_stack` makes it reachable for the receive path.
+  A handshake begun in between sent a request with an empty `c.pdata`,
+  which the peer refused on every resend ("c.pdata: no
+  PID_PARTICIPANT_GUID"): the pair never authenticated. On the Linux test
+  host under CPU load, `security_matrix_e2e
+  matrix_origin_authentication_kinds`: 3 of 144 runs before, 0 of 150 after.
 - Discovery asks the routing table once per destination and keeps the answer
   5 s (`RouteAnswers`), instead of opening a UDP socket per announced UDPv4
   locator for every pair of endpoints it matches (OPEN-ITEMS 114). In a ring

@@ -1530,6 +1530,10 @@ pub struct PosixShmTransport {
     /// Set by [`Self::interrupt_recv`]: the next or the waiting `recv`
     /// returns `Timeout` at once. Process-local, not in the segment.
     interrupted: core::sync::atomic::AtomicBool,
+    /// Set by the waiter from before its last look at `interrupted` until
+    /// its park has returned. [`Self::interrupt_recv`] wakes until it is
+    /// clear or the flag is taken. Process-local as well.
+    parking: core::sync::atomic::AtomicBool,
 }
 
 impl Drop for PosixShmTransport {
@@ -1846,6 +1850,7 @@ impl PosixShmTransport {
             padding_counter: core::sync::atomic::AtomicU64::new(0),
             corrupt_frame_counter: core::sync::atomic::AtomicU64::new(0),
             interrupted: core::sync::atomic::AtomicBool::new(false),
+            parking: core::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -1855,10 +1860,19 @@ impl PosixShmTransport {
     /// what bounds the stop, and can be long: a receive thread with a 1 ms
     /// timeout woke a thousand times a second with nothing to receive.
     pub fn interrupt_recv(&self) {
-        self.interrupted.store(true, Ordering::Release);
+        self.interrupted.store(true, Ordering::SeqCst);
         // The waiter parks on `head`; a wake without a change of `head`
         // releases it to re-check, and it finds the flag.
         self.wake_ring();
+        // The flag is not the word the waiter parks on, so one wake is not
+        // enough: a waiter that looked at the flag before the store and
+        // parks after the wake sleeps on, with no timeout for good. It
+        // announces that span in `parking`; the wake is repeated until the
+        // waiter has left the span or taken the flag.
+        while self.parking.load(Ordering::SeqCst) && self.interrupted.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_micros(50));
+            self.wake_ring();
+        }
     }
 
     /// Whether a consumer has the segment open, from the owner's side. An
@@ -2172,13 +2186,19 @@ impl PosixShmTransport {
                     message: "shm owner terminated",
                 });
             }
-            if self.interrupted.swap(false, Ordering::AcqRel) {
+            // Announced before the look at the flag: `interrupt_recv` stores
+            // the flag and then reads `parking`, so one of the two sees the
+            // other (see there).
+            self.parking.store(true, Ordering::SeqCst);
+            if self.interrupted.swap(false, Ordering::SeqCst) {
+                self.parking.store(false, Ordering::SeqCst);
                 return Err(RecvError::Timeout);
             }
             let remaining = match deadline {
                 Some(d) => {
                     let now = Instant::now();
                     if now >= d {
+                        self.parking.store(false, Ordering::SeqCst);
                         return Err(RecvError::Timeout);
                     }
                     Some(d - now)
@@ -2186,6 +2206,7 @@ impl PosixShmTransport {
                 None => None,
             };
             park(head_word, expected, remaining);
+            self.parking.store(false, Ordering::SeqCst);
         }
     }
 
@@ -3063,6 +3084,48 @@ mod tests {
         assert!(waited < Duration::from_secs(5), "waited {waited:?}");
         owner.send(&Locator::shm(id(239)), b"after").unwrap();
         assert_eq!(&consumer.recv().unwrap().data[..], b"after");
+    }
+
+    /// `interrupt_recv` ends a receive loop without a timeout wherever the
+    /// loop is: before its look at the flag, between that look and the
+    /// park, or parked. With one wake, a loop between the look and the park
+    /// slept on for good.
+    #[test]
+    fn shm_4_4_interrupt_recv_reaches_a_recv_about_to_park() {
+        use std::sync::atomic::AtomicBool;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = cfg_tmp(tmp.path(), 4096);
+        cfg.recv_timeout = None;
+        let _owner = PosixShmTransport::open_owner(id(222), id(223), cfg.clone()).unwrap();
+        let consumer =
+            std::sync::Arc::new(PosixShmTransport::open_consumer(id(223), id(222), cfg).unwrap());
+        for round in 0..2000u32 {
+            let stop = std::sync::Arc::new(AtomicBool::new(false));
+            let (done_tx, done_rx) = std::sync::mpsc::channel();
+            let (waiting, stopped) = (
+                std::sync::Arc::clone(&consumer),
+                std::sync::Arc::clone(&stop),
+            );
+            let t = std::thread::spawn(move || {
+                while !stopped.load(Ordering::Relaxed) {
+                    let _ = waiting.recv();
+                }
+                let _ = done_tx.send(());
+            });
+            // A different point of the loop each round.
+            for _ in 0..(round % 64) * 40 {
+                std::hint::spin_loop();
+            }
+            stop.store(true, Ordering::Relaxed);
+            consumer.interrupt_recv();
+            assert!(
+                done_rx.recv_timeout(Duration::from_secs(5)).is_ok(),
+                "round {round}: the receive loop did not end"
+            );
+            t.join().unwrap();
+            // A flag the loop did not take is not left for the next round.
+            consumer.interrupted.store(false, Ordering::SeqCst);
+        }
     }
 
     /// §5.4: two users that look the segment up in different flink

@@ -143,6 +143,10 @@ struct Options {
     /// `--ros2`: admit ROS 2 dialect (unqualified member types that differ
     /// only in case from the member name, e.g., `Pose pose;`).
     ros2: bool,
+    /// `--case-sensitive`: identifiers are compared with regard to case,
+    /// as `idlc -f case-sensitive` of Cyclone DDS does; a name collides
+    /// only with its own spelling, and a keyword is its own spelling only.
+    case_sensitive: bool,
     /// Report warnings as errors, for a build that wants a clean file.
     deny_warnings: bool,
     /// `format --check`: say which files are not canonical, change none.
@@ -197,6 +201,7 @@ impl Options {
         if self.ros2 {
             dialect.ros2 = true;
         }
+        dialect.case_sensitive = self.case_sensitive;
         dialect
     }
 }
@@ -262,6 +267,10 @@ struct GenerateRequest {
     /// of the XCDR2 binding, with `--csharp-naming`, `--csharp-platform` and
     /// `--csharp-corba-module`.
     csharp_idl4: Option<zerodds_lang_rules::emit::idl4_csharp::Options>,
+    /// `--cpp-mapping idl4`: the IDL4 to C++ Language Mapping 1.0 instead
+    /// of the DDS-PSM-Cxx binding, with `--cpp-platform`, `--cpp-standard`
+    /// and `--cpp-corba-module`. The header's name is set per file.
+    cpp_idl4: Option<zerodds_lang_rules::emit::idl4_cpp::Options>,
     /// `--rpc-mapping <basic|enhanced|enhanced-empty>`: which of the two
     /// service mappings of DDS-RPC 1.0 §7.5.1 the topic types of an
     /// `interface` are written for. [`ServiceMapping::Basic`] when not
@@ -408,6 +417,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         form: Form::Text,
         strict: false,
         ros2: false,
+        case_sensitive: false,
         deny_warnings: false,
         format_check: false,
         format_write: false,
@@ -446,6 +456,10 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut generate_csharp_platform: Option<zerodds_lang_rules::emit::idl4_csharp::Platform> =
         None;
     let mut generate_csharp_corba_module = false;
+    let mut generate_cpp_idl4 = false;
+    let mut generate_cpp_platform: Option<zerodds_lang_rules::emit::idl4_cpp::Platform> = None;
+    let mut generate_cpp_standard: Option<zerodds_lang_rules::emit::idl4_cpp::Standard> = None;
+    let mut generate_cpp_corba_module = false;
     // `dlrl`'s own flags, the same reason `generate`'s accumulate outside
     // `options` first.
     let mut dlrl_lang: Option<Vec<Language>> = None;
@@ -459,6 +473,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--json" => options.form = Form::Json,
             "--strict" => options.strict = true,
             "--ros2" => options.ros2 = true,
+            "--case-sensitive" => options.case_sensitive = true,
             "--idl-profile" => {
                 let value = iter
                     .next()
@@ -692,12 +707,48 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                     "native" => zerodds_lang_rules::adapter::cpp::CppMapping::Native,
                     "psm" => zerodds_lang_rules::adapter::cpp::CppMapping::Psm,
                     "classic" => zerodds_lang_rules::adapter::cpp::CppMapping::Classic,
+                    // IDL4 to C++ 1.0: the language mapping itself, one
+                    // header and no codec.
+                    "idl4" => {
+                        generate_cpp_idl4 = true;
+                        zerodds_lang_rules::adapter::cpp::CppMapping::default()
+                    }
                     other => {
                         return Err(format!(
-                            "--cpp-mapping: `{other}` is not native, psm or classic"
+                            "--cpp-mapping: `{other}` is not native, psm, classic or idl4"
                         ));
                     }
                 };
+            }
+            "--cpp-platform" if command == Command::Generate => {
+                let value = iter
+                    .next()
+                    .ok_or("--cpp-platform: the option takes a value")?;
+                generate_cpp_platform = Some(
+                    zerodds_lang_rules::emit::idl4_cpp::Platform::from_name(value).ok_or_else(
+                        || format!("--cpp-platform: `{value}` is neither dds nor corba"),
+                    )?,
+                );
+            }
+            // §7.1.3: C++11 is the minimum; Annex C gives the rules for
+            // C++98 and C++03.
+            "--cpp-standard" if command == Command::Generate => {
+                let value = iter
+                    .next()
+                    .ok_or("--cpp-standard: the option takes a value")?;
+                generate_cpp_standard = Some(
+                    zerodds_lang_rules::emit::idl4_cpp::Standard::from_name(value).ok_or_else(
+                        || {
+                            format!(
+                                "--cpp-standard: `{value}` is none of c++98, c++03, c++11, \
+                                 c++14, c++17, c++20, c++23"
+                            )
+                        },
+                    )?,
+                );
+            }
+            "--cpp-corba-module" if command == Command::Generate => {
+                generate_cpp_corba_module = true;
             }
             "--rust-map" if command == Command::Generate => {
                 let value = iter.next().ok_or("--rust-map: the option takes a value")?;
@@ -765,6 +816,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             | "--csharp-naming"
             | "--csharp-platform"
             | "--csharp-corba-module"
+            | "--cpp-platform"
+            | "--cpp-standard"
+            | "--cpp-corba-module"
             | "--rust-map"
             | "--strip-enum-prefix"
             | "--rust-naming") => {
@@ -875,6 +929,34 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                 "--csharp-corba-module applies to --csharp-platform corba",
             ));
         }
+        if generate_cpp_idl4 && !languages.contains(&Language::Cpp) {
+            return Err(String::from(
+                "--cpp-mapping idl4 applies to --lang c++ (or all); no C++ output was asked for",
+            ));
+        }
+        if (generate_cpp_platform.is_some()
+            || generate_cpp_standard.is_some()
+            || generate_cpp_corba_module)
+            && !generate_cpp_idl4
+        {
+            return Err(String::from(
+                "--cpp-platform, --cpp-standard and --cpp-corba-module apply to \
+                 --cpp-mapping idl4",
+            ));
+        }
+        if generate_cpp_corba_module
+            && generate_cpp_platform != Some(zerodds_lang_rules::emit::idl4_cpp::Platform::Corba)
+        {
+            return Err(String::from(
+                "--cpp-corba-module applies to --cpp-platform corba",
+            ));
+        }
+        let cpp_idl4 = generate_cpp_idl4.then(|| zerodds_lang_rules::emit::idl4_cpp::Options {
+            platform: generate_cpp_platform.unwrap_or_default(),
+            standard: generate_cpp_standard.unwrap_or_default(),
+            corba_module: generate_cpp_corba_module,
+            ..zerodds_lang_rules::emit::idl4_cpp::Options::default()
+        });
         let csharp_idl4 =
             generate_csharp_idl4.then(|| zerodds_lang_rules::emit::idl4_csharp::Options {
                 naming: generate_csharp_naming.unwrap_or_default(),
@@ -905,6 +987,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             java_mapping: generate_java_mapping.unwrap_or_default(),
             java_idl4,
             csharp_idl4,
+            cpp_idl4,
             rpc_mapping: generate_rpc_mapping,
         });
     }
@@ -1171,6 +1254,61 @@ fn run_one(options: &Options, unit: &Unit, record: &mut BuildRecord) -> Tally {
     }
 }
 
+/// Whether `language` is generated as a language mapping of this request
+/// (`--java-mapping idl4`, `--csharp-mapping idl4`, `--cpp-mapping idl4`):
+/// types and interfaces, and no codec.
+fn is_language_mapping(request: &GenerateRequest, language: Language) -> bool {
+    match language {
+        Language::Java => request.java_idl4.is_some(),
+        Language::CSharp => request.csharp_idl4.is_some(),
+        Language::Cpp => request.cpp_idl4.is_some(),
+        _ => false,
+    }
+}
+
+/// The files of a language mapping, `None` for a language that carries a
+/// codec. Java: a file per class under the package directories; C#: a
+/// file per declaration under the namespace directories; C++: one header
+/// named after the IDL file.
+fn language_mapping(
+    request: &GenerateRequest,
+    language: Language,
+    ast: &zerodds_ast::Ast,
+    stem: &str,
+) -> Option<Result<Vec<generate::Generated>, String>> {
+    let files: Result<Vec<(String, String)>, String> = match language {
+        Language::Java => {
+            let idl4 = request.java_idl4.as_ref()?;
+            zerodds_lang_rules::emit::idl4_java::generate(ast, idl4)
+                .map(|files| files.into_iter().map(|f| (f.path, f.text)).collect())
+                .map_err(|error| format!("java (idl4) — {error}"))
+        }
+        Language::CSharp => {
+            let idl4 = request.csharp_idl4.as_ref()?;
+            zerodds_lang_rules::emit::idl4_csharp::generate(ast, idl4)
+                .map(|files| files.into_iter().map(|f| (f.path, f.text)).collect())
+                .map_err(|error| format!("csharp (idl4) — {error}"))
+        }
+        Language::Cpp => {
+            let idl4 = request.cpp_idl4.as_ref()?;
+            let options = zerodds_lang_rules::emit::idl4_cpp::Options {
+                header: format!("{stem}.hpp"),
+                ..idl4.clone()
+            };
+            zerodds_lang_rules::emit::idl4_cpp::generate(ast, &options)
+                .map(|files| files.into_iter().map(|f| (f.path, f.text)).collect())
+                .map_err(|error| format!("c++ (idl4) — {error}"))
+        }
+        _ => return None,
+    };
+    Some(files.map(|files| {
+        files
+            .into_iter()
+            .map(|(name, text)| generate::Generated { name, text })
+            .collect()
+    }))
+}
+
 /// Write `ast` out as `options.generate`'s language, beside its
 /// diagnostics.
 ///
@@ -1195,19 +1333,49 @@ fn run_generate(
         return tally;
     };
 
+    let stem = std::path::Path::new(&unit.path)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("generated");
+    // A language mapping (`--java-mapping idl4`, `--csharp-mapping idl4`,
+    // `--cpp-mapping idl4`) writes types and interfaces and no codec. It
+    // maps `any`, value types and object references, so it takes the
+    // model as the IDL declares it, before the declarations without a
+    // wire form are left out for the languages that carry a codec.
+    let mut generated = Vec::new();
+    for language in &request.languages {
+        match language_mapping(request, *language, ast, stem) {
+            None => {}
+            Some(Ok(files)) => generated.extend(files),
+            Some(Err(error)) => {
+                eprintln!("error: {}: {error}", unit.path);
+                tally.errors += 1;
+                return tally;
+            }
+        }
+    }
+    let codec_requested = request
+        .languages
+        .iter()
+        .any(|language| !is_language_mapping(request, *language));
+
     // DDS-XTypes 1.3 §7.3.1.1.1: a construct outside the building blocks
     // is ignored or warned about, "rather than halting with an error". A
     // declaration that holds `any`, `ValueBase`, `native` or an object
     // reference has no type identifier and no wire form, so it is left
     // out of the generated code and the file's other declarations are
     // generated.
-    let left_out = match ast.drop_outside_profile(zerodds_ast::Profile::XTypes13) {
-        Ok(left_out) => left_out,
-        Err(error) => {
-            eprintln!("error: {}: {error}", unit.path);
-            tally.errors += 1;
-            return tally;
+    let left_out = if codec_requested {
+        match ast.drop_outside_profile(zerodds_ast::Profile::XTypes13) {
+            Ok(left_out) => left_out,
+            Err(error) => {
+                eprintln!("error: {}: {error}", unit.path);
+                tally.errors += 1;
+                return tally;
+            }
         }
+    } else {
+        Vec::new()
     };
     let ast = &*ast;
     if !left_out.is_empty() {
@@ -1254,10 +1422,6 @@ fn run_generate(
         map_length_with_delimiter: settings.map_length_with_delimiter,
     };
 
-    let stem = std::path::Path::new(&unit.path)
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("generated");
     // Build a preamble string naming the dialect and each axis flag.
     let dialect_info = if dialect.is_default() && request.axis_overrides.is_empty() {
         None
@@ -1276,7 +1440,6 @@ fn run_generate(
         }
         Some(info)
     };
-    let mut generated = Vec::new();
     // The mapping is a scope on this thread: it decides names in every function that spells a
     // C++ type path, and `generate::files` is one of them.
     let _mapping = zerodds_lang_rules::adapter::cpp::CppMappingScope::enter(request.cpp_mapping);
@@ -1285,40 +1448,8 @@ fn run_generate(
         zerodds_lang_rules::adapter::cst::RustEnumPrefixScope::enter(request.strip_enum_prefix);
     let _rust_naming = zerodds_lang_rules::rust_names::RustNamingScope::enter(request.rust_naming);
     for language in &request.languages {
-        // `--java-mapping idl4`: the language mapping, a file per class
-        // under the package directories, and no codec.
-        if *language == Language::Java
-            && let Some(idl4) = &request.java_idl4
-        {
-            match zerodds_lang_rules::emit::idl4_java::generate(ast, idl4) {
-                Ok(files) => generated.extend(files.into_iter().map(|file| generate::Generated {
-                    name: file.path,
-                    text: file.text,
-                })),
-                Err(error) => {
-                    eprintln!("error: {}: java (idl4) — {error}", unit.path);
-                    tally.errors += 1;
-                    return tally;
-                }
-            }
-            continue;
-        }
-        // `--csharp-mapping idl4`: the language mapping, a file per
-        // declaration under the namespace directories, and no codec.
-        if *language == Language::CSharp
-            && let Some(idl4) = &request.csharp_idl4
-        {
-            match zerodds_lang_rules::emit::idl4_csharp::generate(ast, idl4) {
-                Ok(files) => generated.extend(files.into_iter().map(|file| generate::Generated {
-                    name: file.path,
-                    text: file.text,
-                })),
-                Err(error) => {
-                    eprintln!("error: {}: csharp (idl4) — {error}", unit.path);
-                    tally.errors += 1;
-                    return tally;
-                }
-            }
+        // Written above, from the model before anything was left out.
+        if is_language_mapping(request, *language) {
             continue;
         }
         // The Java mapping is in force for this one call: the
@@ -1595,6 +1726,9 @@ OPTIONS:\n    \
              (clause 9): plain-corba, minimum-corba, ccm, ccm-gis, plain-dds, \
              extensible-dds, rpc-over-dds\n    \
               --ros2             admit ROS 2 dialect (unqualified member types like `Pose pose;`)\n    \
+             --case-sensitive   compare identifiers with regard to case, as Cyclone DDS's \
+             `idlc -f case-sensitive`: `module shape` beside `struct Shape` is no collision \
+             (not OMG IDL 4.2 §7.2.3)\n    \
               --json             machine-readable diagnostics\n    \
              --deny-warnings    exit non-zero when anything was reported\n    \
              --default-extensibility <final|appendable|mutable>\n                       what an aggregate whose source said nothing is taken to be (default: the specification's appendable). A source that did say still wins\n    \
@@ -1646,12 +1780,19 @@ OPTIONS:\n    \
              --rpc-mapping <M>  generate only: the service mapping of DDS-RPC 1.0 §7.5.1 an \
              `interface` is written for — basic (default), enhanced, or enhanced-empty (the \
              Enhanced mapping with `@Empty` structures for an operation with nothing to carry)\n    \
-             --cpp-mapping <native|psm|classic>  generate only: how --lang c++ spells topic \
+             --cpp-mapping <native|psm|classic|idl4>  generate only: how --lang c++ spells topic \
              types — psm (default; DDS-PSM-Cxx 1.0 §7.4 and §8.1: classes with accessors, \
              dds::core::optional, std::map, …, over the same codec), native (public \
              fields, the types the codec reads and writes; what the wire codec gates and the \
-             endpoint SDKs ask for) or classic (the OMG IDL to C++ 1.3 mapping in C++03, \
-             over the same codec)\n    \
+             endpoint SDKs ask for), classic (the OMG IDL to C++ 1.3 mapping in C++03, \
+             over the same codec) or idl4 (the IDL4 to C++ Language Mapping 1.0, one header \
+             <file>.hpp over runtime/cpp/include/omg/types.hpp, without the codec)\n    \
+             --cpp-platform <dds|corba>  with --cpp-mapping idl4: the platform of Annex A \
+             (default: dds; corba applies A.1 over omg/corba.hpp)\n    \
+             --cpp-standard <c++11|c++03>  with --cpp-mapping idl4: c++11 (default; also \
+             c++14 to c++23) is clause 7, c++03 (or c++98) the compatibility rules of Annex C\n    \
+             --cpp-corba-module  with --cpp-platform corba: also write the C++ of the CORBA \
+             module an included orb.idl declares, which the ORB's runtime otherwise provides\n    \
              --rust-map <entries|btree-map>  generate --lang rust only: how an IDL map is \
              held — entries (default; the MapEntry sequence of XTypes 1.3 §7.5.1.3.6) or \
              btree-map (a BTreeMap, entries in ascending key order)\n    \
@@ -1938,6 +2079,102 @@ mod tests {
                     "a.idl",
                 ][..],
                 "--csharp-platform corba",
+            ),
+        ] {
+            let error = options(args).expect_err("refused");
+            assert!(error.contains(says), "{error}");
+        }
+    }
+
+    /// `--cpp-mapping idl4` selects the IDL4 to C++ Language Mapping 1.0,
+    /// `--cpp-platform` the platform of Annex A, `--cpp-standard` clause 7
+    /// (C++11 and later) or the rules of Annex C (C++98, C++03).
+    #[test]
+    fn idl4cpp_7_1_3_the_idl4_mapping_its_platform_and_standard_are_selectable() {
+        use zerodds_lang_rules::emit::idl4_cpp::{Platform, Standard};
+        let got = options(&[
+            "generate",
+            "--lang",
+            "c++",
+            "--cpp-mapping",
+            "idl4",
+            "--cpp-platform",
+            "corba",
+            "--cpp-standard",
+            "c++03",
+            "--cpp-corba-module",
+            "a.idl",
+        ])
+        .expect("valid");
+        let idl4 = got
+            .generate
+            .expect("a generate request")
+            .cpp_idl4
+            .expect("the IDL4 mapping");
+        assert_eq!(idl4.platform, Platform::Corba);
+        assert_eq!(idl4.standard, Standard::Cxx03);
+        assert!(idl4.corba_module);
+        let got = options(&[
+            "generate",
+            "--lang",
+            "c++",
+            "--cpp-mapping",
+            "idl4",
+            "a.idl",
+        ])
+        .expect("valid");
+        let idl4 = got.generate.expect("a request").cpp_idl4.expect("idl4");
+        assert_eq!(idl4.platform, Platform::Dds);
+        assert_eq!(idl4.standard, Standard::Cxx11);
+        let got = options(&["generate", "--lang", "c++", "a.idl"]).expect("valid");
+        assert!(got.generate.expect("a request").cpp_idl4.is_none());
+        for (args, says) in [
+            (
+                &[
+                    "generate",
+                    "--lang",
+                    "c++",
+                    "--cpp-standard",
+                    "c++03",
+                    "a.idl",
+                ][..],
+                "--cpp-mapping idl4",
+            ),
+            (
+                &[
+                    "generate",
+                    "--lang",
+                    "java",
+                    "--cpp-mapping",
+                    "idl4",
+                    "a.idl",
+                ][..],
+                "--lang c++",
+            ),
+            (
+                &[
+                    "generate",
+                    "--lang",
+                    "c++",
+                    "--cpp-mapping",
+                    "idl4",
+                    "--cpp-standard",
+                    "c++26x",
+                    "a.idl",
+                ][..],
+                "--cpp-standard",
+            ),
+            (
+                &[
+                    "generate",
+                    "--lang",
+                    "c++",
+                    "--cpp-mapping",
+                    "idl4",
+                    "--cpp-corba-module",
+                    "a.idl",
+                ][..],
+                "--cpp-platform corba",
             ),
         ] {
             let error = options(args).expect_err("refused");
