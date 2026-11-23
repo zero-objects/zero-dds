@@ -55,6 +55,7 @@ pub mod dds_port;
 pub mod definitions;
 pub mod discovery;
 pub mod entity_repr;
+pub mod federation;
 pub mod handshake;
 pub mod profiles;
 pub mod server;

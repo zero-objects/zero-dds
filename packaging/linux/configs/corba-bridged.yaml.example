@@ -2,7 +2,7 @@
 # Configuration of zerodds-corba-bridged.
 # Spec: zerodds-corba-bridge-1.0 §3 (schema), §11 (deployment).
 #
-# Read by crates/corba-dds-bridge/src/bridge_daemon.rs
+# Read by crates/corba-dds-bridge/src/bridge_daemon/config.rs
 # (DaemonConfig::from_config) over the shared layers: this file,
 # corba-bridged.d/, include:, the environment beneath, --set above. An
 # unknown key in a known section or a value of the wrong type stops the
@@ -14,6 +14,7 @@ log_level: info
 
 corba:
   orb_id: "zerodds-corba-bridge"
+  idl_dir: "/var/lib/zerodds/corba-bridge"   # the IDL generated from idl_file
   iiop:
     bind: "0.0.0.0:6833"
     advertise_host: "127.0.0.1"       # host in the IORs when bind is a wildcard
@@ -25,17 +26,25 @@ corba:
     bind: "0.0.0.0:6834"
     cert_file: "/etc/zerodds/certs/corba-bridged.crt"
     key_file:  "/etc/zerodds/certs/corba-bridged.key"
-    ca_file:   "/etc/zerodds/certs/corba-ca.pem"   # client certificates
-    require_client_cert: false
+    ca_file:   "/etc/zerodds/certs/corba-ca.pem"   # asks for and checks client certificates
+    require_client_cert: false        # true: a session without one fails
+    required: false                   # true: SSLIOP only; plain IIOP forwards
   ior:
-    naming_service: ""                # corbaname:/corbaloc: URL; empty = do not rebind
+    naming_service: ""                # corbaname:/corbaloc:/rir: URL; empty = do not rebind
     publish_to_naming: false          # true rebinds every mapping's IOR into naming_service
     naming_retry_ms: 30000            # total retry budget while the NameService is not up yet
     ior_file: "/var/lib/zerodds/corba-bridge.ior"
+    # naming_ssliop:                  # a naming_service on ssliop:/tls:
+    #   ca_file: "/etc/zerodds/certs/naming-ca.pem"
+    #   cert_file: "/etc/zerodds/certs/corba-bridged-naming.crt"
+    #   key_file: "/etc/zerodds/certs/corba-bridged-naming.key"
+    # initial_references:             # what a rir: URL names
+    #   NameService: "corbaloc::naming.example:2809/NameService"
   naming:
-    serve: false                      # host a NameService in-process, sharing this transport: not built
+    serve: false                      # a NameService on this daemon's own listener
+    persist_file: ""                  # its graph across restarts; empty = in memory
   csiv2:
-    enabled: false                    # true: every request's SAS EstablishContext is evaluated
+    enabled: false                    # true: GSSUP or a client certificate is required
     target_supports: []               # e.g. [principal_name] to allow identity assertion
     gssup:
       password_file: "/etc/zerodds/corba-bridged-gssup.passwd"
@@ -44,7 +53,7 @@ corba:
 acl:
   default_deny: false
   rules:
-    - subject: "*"                    # or mtls:<SHA-256 of the client certificate>
+    - subject: "*"                    # or a DN, mtls:<SHA-256>, gssup:<username>
       allow_invoke: ["IDL:fin/*"]
 
 metrics:
@@ -62,11 +71,21 @@ mappings:
       dds_type: "fin::Portfolio::UpdateRequest"
     reply_topic:
       dds_name: "fin::Portfolio::UpdateReply"
-    correlation_id: "request_id"      # the first member; nothing else is read
+    correlation_id: "request_id"      # name of the first member; another needs idl_file
+    # idl_file: "/etc/zerodds/idl/Portfolio.idl"   # the IDL of the interface: the
+    #   types of the topics are generated from it into corba.idl_dir (Spec
+    #   §5.2); then without dds_type
     timeout_ms: 5000                  # no reply by then: CORBA::TIMEOUT
     qos:
       reliability: "reliable"
-      durability: "volatile"
+      durability: "volatile"          # transient_local: replies kept per request
+      history:
+        kind: "keep_last"             # keep_last | keep_all
+        depth: 1
+      # lifespan_ms: 30000            # of the samples and the kept replies
+      # deadline_ms: 2000             # a reply topic without a sample: TRANSIENT
+      # liveliness_lease_ms: 10000
+      # partition: ["site-a"]
   - repo_id:   "IDL:fin/PortfolioListener:1.0"
     operation: "on_update"
     direction: "dds_to_corba"
@@ -74,3 +93,14 @@ mappings:
       dds_name: "fin::Portfolio::Update"
     targets:
       - "corbaloc:iiop:1.2@listener.example:2809/PortfolioListener"
+    # target_object_keys: refused at start (an object key names no host)
+
+# Participants beside the one of `domain` (Spec §1 L6): an SSLIOP session
+# whose client certificate a tenant names is bound to it.
+# tenants:
+#   - name: "plant-a"
+#     domain: 7
+#     subjects: ["CN=plant-a,O=Example"]
+#     mappings:
+#       - repo_id: "IDL:fin/PlantStatus:1.0"
+#         operation: "status"

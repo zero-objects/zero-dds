@@ -6,7 +6,7 @@ zerodds-ws-bridged \- DDS to WebSocket bridge daemon
 [\fB\-\-config\fR \fIFILE\fR]
 [\fB\-\-listen\fR \fIADDR\fR]
 [\fB\-\-domain\fR \fIID\fR]
-[\fB\-\-topic\fR \fINAME\fR]...
+[\fB\-\-topic\fR \fINAME\fR[:\fIWS_PATH\fR]]...
 [\fB\-\-log\-level\fR \fILEVEL\fR]
 [\fB\-\-metrics\fR \fIADDR\fR]
 [\fB\-V\fR | \fB\-\-version\fR]
@@ -43,13 +43,29 @@ Path to the YAML configuration. See
 .TP
 .BR \-\-listen =\fIADDR\fR
 Bind address. Default:
-.IR 0.0.0.0:8080 .
+.IR 127.0.0.1:8080 .
 .TP
 .BR \-\-domain =\fIID\fR
 DDS domain id. Default: 0.
 .TP
-.BR \-\-topic =\fINAME\fR
-Single-topic override (repeatable).
+.BR \-\-topic =\fINAME\fR[:\fIWS_PATH\fR]
+One more topic entry (repeatable): the DDS topic
+.IR NAME ,
+and behind the single
+.I :
+that is not part of a
+.I ::
+the path of its WebSocket endpoint, which begins with
+.IR / .
+Without
+.I WS_PATH
+the path is
+.IR /topics/<slug-of-name> .
+.I \-\-topic Chat::Message:/chat
+serves
+.I Chat::Message
+at
+.IR /chat .
 .TP
 .BR \-\-tls\-cert =\fIFILE\fR
 TLS cert (PEM); enables
@@ -66,12 +82,19 @@ Override the configured log level. One of
 .IR trace ", " debug ", " info ", " warn ", " error .
 Default:
 .IR info .
+The log is one JSON object per line on stdout, with
+.IR timestamp ", " level ", " event
+and the fields of the event, such as
+.IR connection_id ", " topic ", " bytes ", " peer ", " latency_us ;
+a frame in or out is an event of level
+.IR debug .
+An error that ends the start is written to stderr as well.
 .TP
 .BR \-\-metrics =\fIADDR\fR
 Prometheus scrape endpoint.
 .TP
 .BR \-V ", " \-\-version
-Version info.
+Print the program name and the version of the crate.
 .TP
 .BR \-h ", " \-\-help
 Print full option synopsis.
@@ -88,18 +111,49 @@ file, syntax error or include cycle.
 .SH SIGNALS
 .TP
 .B SIGTERM
-Graceful shutdown (drain in-flight WS frames, unregister DDS readers).
+Graceful shutdown within
+.B shutdown_drain_ms
+(default 30 s): no new connection, the samples the daemon holds reach the
+clients, every connection gets
+.I {"op":"shutdown"}
+and a Close frame with status 1001, then the DDS entities are removed and the
+process exits 0.
 .TP
 .B SIGHUP
 Reads the configuration again: the TLS certificate and key files at their
 configured paths, the auth settings and the topic ACL apply from then on
-(the certificate to new connections). Changed TLS file paths, topics,
-listen address or domain need a restart and are logged. A configuration
+(the certificate to new connections; a connection keeps its session).
+Changed TLS file paths, topics, limits, origin, metrics,
+max_send_queue_per_connection, max_burst_samples, ping_interval_ms,
+shutdown_drain_ms, catalog_on_connect, tenants (other than the acl of a tenant's topic), listen address or
+domain need a restart and are logged; a changed
+log_level applies at once. A configuration
 that does not load changes nothing.
+.SH WINDOWS SERVICE
+Started by the service control manager, the daemon runs as the service
+.BR ZeroDDSWSBridge :
+start pending until it serves, then running; the stop and shutdown
+controls are SIGTERM,
+.B sc.exe control ZeroDDSWSBridge paramchange
+is SIGHUP; when it ends, the service is stopped with the exit status below.
+Started from a console, Ctrl+C, Ctrl+Break and the closing of the console
+are SIGTERM.
 .SH ENVIRONMENT
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optional OTLP endpoint, such as http://localhost:4318.
+Optional OTLP endpoint, such as http://localhost:4318. When it is set, the
+daemon sends OTLP/HTTP/JSON spans to its
+.I /v1/traces
+every 5 s and at the end of a shutdown: one trace per WebSocket connection
+with the root
+.BR ws.connection ,
+a
+.B ws.frame.in
+per message of the client (with the child
+.B dds.write
+when it wrote into DDS) and a
+.B ws.frame.out
+per message of the daemon.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -112,10 +166,10 @@ Configuration error.
 Bind error \(em address in use.
 .TP
 .B 3
-DDS discovery error.
+DDS error \(em the participant does not start.
 .TP
 .B 4
-TLS error.
+TLS error \(em the certificate or the key does not load.
 .SH FILES
 .TP
 .I /etc/zerodds/ws-bridged.yaml
@@ -123,15 +177,6 @@ Suggested deployment path, loaded only when selected with
 .BR \-\-config .
 Documented in
 .BR zerodds-ws-bridged.yaml (5).
-.TP
-.I /var/log/zerodds/ws-bridged.log
-Log target when
-.I logging.destination
-is
-.IR file:... .
-.TP
-.I /var/lib/zerodds/
-Persistent state (route shadows, durable WS session ids).
 .SH SEE ALSO
 .BR zerodds-ws-bridged.yaml (5),
 .BR zerodds-mqtt-bridged (1),

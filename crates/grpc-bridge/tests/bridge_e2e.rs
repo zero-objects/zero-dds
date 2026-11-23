@@ -5,6 +5,20 @@
 //
 // Spec: `docs/specs/zerodds-grpc-bridge-1.0.md` §12.2.
 
+//! The daemon as a subprocess between a client and a DDS participant of the
+//! test (spec §12.2). Two tests drive it with a hand-written HTTP/2 client;
+//! the `grpcbridge_12_2_*` tests use `grpcurl` as the client, with the
+//! descriptors from the reflection service alone, and a DDS DataReader or
+//! DataWriter in the test process on a leased domain. Those are `#[ignore]`
+//! in the crate tier and run in the integration pillar's job
+//! `integration-bridges-vendor-grpc`, which installs `grpcurl`
+//! (`tests/integration/provision.sh grpcurl`); a missing `grpcurl` fails
+//! them:
+//! ```bash
+//! cargo nextest run -p zerodds-grpc-bridge --test bridge_e2e --run-ignored all
+//! ```
+
+#![cfg(feature = "std")]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -20,11 +34,17 @@
     missing_docs
 )]
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
+use zerodds_dcps::runtime::{DcpsRuntime, UserReaderConfig, UserSample, UserWriterConfig};
 
 use zerodds_hpack::{Encoder as HpackEncoder, HeaderField};
 use zerodds_http2::{Flags, FrameHeader, FrameType, encode_frame};
@@ -280,6 +300,10 @@ fn grpcbridge_2_http2_unknown_service_yields_status_5() {
             name: ":path".into(),
             value: "/no.such.Svc/X".into(),
         },
+        HeaderField {
+            name: "content-type".into(),
+            value: "application/grpc".into(),
+        },
     ];
     let payload2 = enc.encode(&headers);
     write_frame(
@@ -317,4 +341,327 @@ fn grpcbridge_2_http2_unknown_service_yields_status_5() {
         }
     }
     assert!(got_status_5, "expected NotFound (5) for unknown service");
+}
+
+// ---- §12.2 with grpcurl and a DDS participant of the test ------------------
+
+/// The topic the `grpcbridge_12_2_*` daemons map, and its service.
+const TOPIC: &str = "Chat::Message";
+const SERVICE: &str = "zerodds.chat.v1.ChatMessageStream";
+
+/// Fails the test when `grpcurl` is not on the PATH.
+fn require_grpcurl() {
+    assert!(
+        Command::new("grpcurl").arg("-version").output().is_ok(),
+        "`grpcurl` is not on the PATH (tests/integration/provision.sh grpcurl)"
+    );
+}
+
+/// A daemon of this build on `domain` and a port of its own, `Chat::Message`
+/// mapped both ways, with `extra` arguments; ready once it logged its
+/// listener (a probing connect would reach it as a connection without a
+/// preface).
+fn spawn_on(domain: i32, extra: &[&str]) -> (DaemonGuard, String) {
+    let port = pick_port();
+    let mut child = Command::new(daemon_binary())
+        .args([
+            "--bind",
+            &format!("127.0.0.1:{port}"),
+            "--domain",
+            &domain.to_string(),
+            "--topic",
+            &format!("{TOPIC}=ChatMessageStream"),
+            "--idle-timeout-ms",
+            "60000",
+        ])
+        .args(extra)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn zerodds-grpc-bridged");
+    // Spec §8.1: the JSON log is on stdout.
+    let stdout = child.stdout.take().expect("a piped stdout");
+    let mut lines = BufReader::new(stdout).lines();
+    let listening = lines
+        .by_ref()
+        .take(40)
+        .map_while(Result::ok)
+        .find(|line| line.contains("\"event\":\"listening\""));
+    assert!(
+        listening.is_some(),
+        "the daemon did not report its listener on 127.0.0.1:{port}"
+    );
+    // Keep draining, or the daemon blocks once the pipe fills.
+    std::thread::spawn(move || lines.for_each(drop));
+    (DaemonGuard { child }, format!("127.0.0.1:{port}"))
+}
+
+/// A DDS participant of the test on `domain`.
+fn dds_peer(domain: i32) -> Arc<DcpsRuntime> {
+    let mut prefix = [0u8; 12];
+    prefix[..4].copy_from_slice(&std::process::id().to_be_bytes());
+    prefix[4..8].copy_from_slice(&domain.to_be_bytes());
+    prefix[8] = 0x12;
+    prefix[11] = 0x2e;
+    DcpsRuntime::start(
+        domain,
+        zerodds_rtps::wire_types::GuidPrefix::from_bytes(prefix),
+        zerodds_dcps::runtime::RuntimeConfig::default(),
+    )
+    .unwrap()
+}
+
+/// The reliable DataReader of `TOPIC` on `rt` with the bridge's type name,
+/// once it matched the daemon's DataWriter.
+fn dds_reader(rt: &DcpsRuntime) -> mpsc::Receiver<UserSample> {
+    let (reader, rx) = rt
+        .register_user_reader(UserReaderConfig {
+            topic_name: TOPIC.into(),
+            type_name: "ZeroDdsBridgeBytes".into(),
+            reliable: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rt.user_reader_matched_count(reader) < 1 {
+        assert!(
+            Instant::now() < deadline,
+            "the daemon's DataWriter did not match"
+        );
+        rt.wait_match_event(Duration::from_millis(200));
+    }
+    rx
+}
+
+/// The next Alive sample of `rx`: its representation identifier and its
+/// CDR bytes.
+fn next_alive(rx: &mpsc::Receiver<UserSample>) -> ([u8; 2], Vec<u8>) {
+    loop {
+        match rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a sample from the daemon")
+        {
+            UserSample::Alive {
+                payload,
+                representation_identifier,
+                ..
+            } => return (representation_identifier, payload.to_vec()),
+            _ => continue,
+        }
+    }
+}
+
+/// CDR bytes with every octet value, so that a byte the bridge changed,
+/// dropped or added shows.
+fn every_octet(seed: u8) -> Vec<u8> {
+    (0..=255u8).map(|b| b.wrapping_add(seed)).collect()
+}
+
+/// Runs `grpcurl` and returns its stdout, failing on a non-zero exit.
+fn grpcurl(args: &[&str]) -> String {
+    let out = Command::new("grpcurl")
+        .args(args)
+        .output()
+        .expect("spawn grpcurl");
+    assert!(
+        out.status.success(),
+        "grpcurl {args:?}: status={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// §12.2: grpcurl's client-streaming `Publish` of two Samples, encoded from
+/// the descriptors the reflection service serves, reaches the DDS reader of
+/// the test octet for octet: the encapsulation header of `cdr_payload` is
+/// the representation identifier of the DDS sample (here `CDR2_LE`), the
+/// rest its CDR bytes; the PublishAck names the sequence number of the
+/// second sample.
+#[test]
+#[ignore = "needs grpcurl; runs in integration-bridges-vendor-grpc"]
+fn grpcbridge_12_2_grpcurl_publish_reaches_the_dds_reader_byte_exact() {
+    require_grpcurl();
+    let lease = zerodds_test_domains::lease_domain();
+    let (_daemon, addr) = spawn_on(lease.id(), &["--reflection"]);
+    let dds = dds_peer(lease.id());
+    let rx = dds_reader(&dds);
+    let (first, second) = (every_octet(0), every_octet(0x80));
+    let cdr = |body: &[u8]| {
+        let mut c = vec![0x00, 0x07, 0x00, 0x00];
+        c.extend_from_slice(body);
+        B64.encode(c)
+    };
+    let request = format!(
+        "{{\"cdrPayload\":\"{}\"}} {{\"cdrPayload\":\"{}\"}}",
+        cdr(&first),
+        cdr(&second)
+    );
+    let ack = grpcurl(&[
+        "-plaintext",
+        "-d",
+        &request,
+        &addr,
+        &format!("{SERVICE}/Publish"),
+    ]);
+    assert!(ack.contains("\"sequenceNumber\": \"2\""), "{ack}");
+    assert_eq!(next_alive(&rx), ([0x00, 0x07], first));
+    assert_eq!(next_alive(&rx), ([0x00, 0x07], second));
+    dds.shutdown();
+}
+
+/// §12.2: a sample a DataWriter of the test writes (XCDR2, big endian)
+/// reaches grpcurl's server-streaming `Subscribe` octet for octet:
+/// `cdr_payload` is the encapsulation header `CDR2_BE` and the CDR bytes,
+/// with the topic and the type name.
+#[test]
+#[ignore = "needs grpcurl; runs in integration-bridges-vendor-grpc"]
+fn grpcbridge_12_2_a_dds_sample_reaches_grpcurl_subscribe_byte_exact() {
+    require_grpcurl();
+    let lease = zerodds_test_domains::lease_domain();
+    let (_daemon, addr) = spawn_on(lease.id(), &["--reflection"]);
+    let dds = dds_peer(lease.id());
+    let w = dds
+        .register_user_writer(UserWriterConfig {
+            topic_name: TOPIC.into(),
+            type_name: "ZeroDdsBridgeBytes".into(),
+            reliable: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let mut client = Command::new("grpcurl")
+        .args([
+            "-plaintext",
+            "-max-time",
+            "20",
+            "-d",
+            "{}",
+            &addr,
+            &format!("{SERVICE}/Subscribe"),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn grpcurl");
+    let (tx, lines) = mpsc::channel();
+    let out = client.stdout.take().expect("a piped stdout");
+    std::thread::spawn(move || {
+        for line in BufReader::new(out).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    // The stream's DataReader exists once grpcurl's call is open.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while dds.user_writer_matched_count(w) < 1 {
+        assert!(
+            Instant::now() < deadline,
+            "the DataReader of grpcurl's Subscribe did not match"
+        );
+        dds.wait_match_event(Duration::from_millis(200));
+    }
+    // The representation of the samples to come, set after the match as
+    // the daemon sets it per Publish.
+    dds.set_user_writer_data_rep_override(
+        w,
+        Some(vec![
+            zerodds_rtps::publication_data::data_representation::XCDR2,
+        ]),
+    )
+    .unwrap();
+    dds.set_user_writer_byte_order_override(w, true).unwrap();
+    let body = every_octet(0x33);
+    dds.write_user_sample_borrowed(w, &body).unwrap();
+    let mut message = Vec::new();
+    while let Ok(line) = lines.recv_timeout(Duration::from_secs(10)) {
+        let end = line.trim() == "}";
+        message.push(line);
+        if end {
+            break;
+        }
+    }
+    let _ = client.kill();
+    let _ = client.wait();
+    let field = |name: &str| {
+        message
+            .iter()
+            .find_map(|l| {
+                l.trim()
+                    .strip_prefix(&format!("\"{name}\": \""))
+                    .map(|v| v.trim_end_matches(',').trim_end_matches('"').to_string())
+            })
+            .unwrap_or_else(|| panic!("no {name} in {message:?}"))
+    };
+    let mut expected = vec![0x00, 0x06, 0x00, 0x00];
+    expected.extend_from_slice(&body);
+    assert_eq!(B64.decode(field("cdrPayload")).unwrap(), expected);
+    assert_eq!(field("topicName"), TOPIC);
+    assert_eq!(field("typeName"), "ZeroDdsBridgeBytes");
+    dds.shutdown();
+}
+
+/// §12.2 reflection round trip: grpcurl saves the descriptors the
+/// reflection service serves for the service (`-protoset-out`), and a call
+/// built from that file alone reaches a daemon without reflection, whose
+/// `list` grpcurl cannot read; the DDS reader receives the Sample octet for
+/// octet.
+#[test]
+#[ignore = "needs grpcurl; runs in integration-bridges-vendor-grpc"]
+fn grpcbridge_12_2_grpcurl_describe_round_trips_the_service_through_reflection() {
+    require_grpcurl();
+    let lease = zerodds_test_domains::lease_domain();
+    let dir = std::env::temp_dir().join(format!(
+        "zerodds-grpc-12-2-{}-{}",
+        std::process::id(),
+        lease.id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let protoset = dir.join("chat.protoset");
+    let protoset = protoset.to_str().unwrap();
+    {
+        let (_with_reflection, addr) = spawn_on(lease.id(), &["--reflection"]);
+        let described = grpcurl(&[
+            "-plaintext",
+            "-protoset-out",
+            protoset,
+            &addr,
+            "describe",
+            SERVICE,
+        ]);
+        assert!(
+            described.contains(
+                "rpc PublishOne ( .zerodds.chat.v1.Sample ) returns ( .zerodds.chat.v1.PublishAck );"
+            ),
+            "{described}"
+        );
+    }
+    let (_without_reflection, addr) = spawn_on(lease.id(), &[]);
+    let listed = Command::new("grpcurl")
+        .args(["-plaintext", &addr, "list"])
+        .output()
+        .expect("spawn grpcurl");
+    assert!(
+        !listed.status.success(),
+        "the daemon without reflection answered list: {}",
+        String::from_utf8_lossy(&listed.stdout)
+    );
+    let dds = dds_peer(lease.id());
+    let rx = dds_reader(&dds);
+    let body = every_octet(0x5a);
+    let mut cdr = vec![0x00, 0x01, 0x00, 0x00];
+    cdr.extend_from_slice(&body);
+    let ack = grpcurl(&[
+        "-plaintext",
+        "-protoset",
+        protoset,
+        "-d",
+        &format!("{{\"cdrPayload\":\"{}\"}}", B64.encode(&cdr)),
+        &addr,
+        &format!("{SERVICE}/PublishOne"),
+    ]);
+    assert!(ack.contains("\"sequenceNumber\": \"1\""), "{ack}");
+    assert_eq!(next_alive(&rx), ([0x00, 0x01], body));
+    dds.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
 }

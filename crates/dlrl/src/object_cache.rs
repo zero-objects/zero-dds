@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Object cache with identity tracking — DDS 1.4 §B.2 + §B.6.
+//! Object cache with identity tracking.
 //!
-//! Spec §B.2 — `Cache`: central repository for the DLRL objects of a
+//! Not a type of DDS 1.2 §8: an object cache that is older than the
+//! run-time entities of `crate::cache` (DDS 1.2 §8.1.6), kept for its
+//! users. Its `Cache` and `ObjectRoot` are not those of §8.1.6.3.
+//!
+//! Its cache: a central repository for the DLRL objects of a
 //! `DomainParticipant` instance. Unique identity via `ObjectId`
 //! (topic DCPS key + type discriminator).
 //!
-//! Spec §B.6 — `ObjectRoot`: lifecycle state (`NEW`/`MODIFIED`/
+//! Its objects: a lifecycle state (`NEW`/`MODIFIED`/
 //! `DELETED`/`COMMITTED`) + version counter for optimistic
 //! concurrency.
 //!
-//! `WeakObjectRef` (Spec §B.6.4) — weak reference to an object;
+//! `WeakObjectRef` — weak reference to an object;
 //! becomes `None` when the object is removed from the cache.
 
 use alloc::collections::BTreeMap;
@@ -21,7 +25,7 @@ use portable_atomic::{AtomicU64, Ordering};
 
 /// Unique object identity — topic + DCPS key.
 ///
-/// Spec §B.6.1: every DLRL object instance has a topic name plus
+/// every DLRL object instance has a topic name plus
 /// a key (CDR-encoded BLOB).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectId {
@@ -39,7 +43,7 @@ impl ObjectId {
     }
 }
 
-/// Lifecycle state of a DLRL object. Spec §B.6.2.
+/// Lifecycle state of a DLRL object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ObjectState {
     /// `NEW` — object created in the cache but not yet committed.
@@ -52,7 +56,7 @@ pub enum ObjectState {
     Committed,
 }
 
-/// Object entry in the cache. Spec §B.6.
+/// Object entry in the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectRef {
     /// Identity.
@@ -62,11 +66,11 @@ pub struct ObjectRef {
     /// Lifecycle state.
     pub lifecycle: ObjectState,
     /// Version counter — incremented on every modify.
-    /// Optimistic-concurrency check (Spec §B.7.4).
+    /// Optimistic-concurrency check.
     pub version: u64,
 }
 
-/// Weak reference to an object in the cache. Spec §B.6.4.
+/// Weak reference to an object in the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WeakObjectRef {
     /// Object identity.
@@ -90,7 +94,7 @@ impl WeakObjectRef {
     }
 }
 
-/// Object cache — central identity-tracking container. Spec §B.2.
+/// Object cache — central identity-tracking container.
 #[derive(Debug, Default)]
 pub struct ObjectCache {
     objects: BTreeMap<ObjectId, ObjectRef>,
@@ -116,7 +120,7 @@ impl ObjectCache {
         self.objects.is_empty()
     }
 
-    /// Spec §B.6.3 `register_object` — inserts a new object into the
+    /// `register_object` — inserts a new object into the
     /// cache. If the ID already exists, the state is overwritten and
     /// the version is incremented (`MODIFIED`).
     pub fn register(&mut self, id: ObjectId, state: Vec<u8>) -> ObjectRef {
@@ -145,7 +149,7 @@ impl ObjectCache {
     }
 
     /// Returns a weak reference if the object exists.
-    /// Spec §B.6.4.
+    ///
     #[must_use]
     pub fn weak_ref(&self, id: &ObjectId) -> Option<WeakObjectRef> {
         self.objects.get(id).map(|o| WeakObjectRef {
@@ -156,7 +160,7 @@ impl ObjectCache {
 
     /// Resolves a weak reference. Returns `None` if the object was
     /// removed or the version no longer matches
-    /// (Spec §B.7.4 optimistic-concurrency check).
+    ///.
     #[must_use]
     pub fn resolve(&self, weak: &WeakObjectRef) -> Option<&ObjectRef> {
         self.objects
@@ -164,7 +168,7 @@ impl ObjectCache {
             .filter(|o| o.version == weak.expected_version)
     }
 
-    /// Spec §B.6.5 `mark_deleted` — marks an object for deletion.
+    /// `mark_deleted` — marks an object for deletion.
     /// Actual removal happens on the next `commit_all`.
     pub fn mark_deleted(&mut self, id: &ObjectId) -> bool {
         if let Some(o) = self.objects.get_mut(id) {
@@ -176,7 +180,7 @@ impl ObjectCache {
         }
     }
 
-    /// Spec §B.7.4 `commit_all` — marks all `New`/`Modified` objects
+    /// `commit_all` — marks all `New`/`Modified` objects
     /// as `Committed` and removes `Deleted` objects.
     pub fn commit_all(&mut self) -> usize {
         let mut deleted = 0;
@@ -196,7 +200,7 @@ impl ObjectCache {
         deleted
     }
 
-    /// Spec §B.7.4 `rollback_all` — removes `New` objects, restores
+    /// `rollback_all` — removes `New` objects, restores
     /// `Modified`/`Deleted` back to `Committed` (but not the state
     /// bytes — the caller must hold a snapshot before `register`).
     pub fn rollback_all(&mut self) -> usize {

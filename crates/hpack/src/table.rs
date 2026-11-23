@@ -356,6 +356,38 @@ impl Table {
         self.dynamic.get(dyn_index).cloned()
     }
 
+    /// The size of the entry at the combined index (Spec §4.1: 32 + name
+    /// length + value length), without copying it.
+    #[must_use]
+    pub fn entry_size(&self, index: usize) -> Option<usize> {
+        if index == 0 {
+            return None;
+        }
+        if index <= STATIC_TABLE.len() {
+            let e = STATIC_TABLE[index - 1];
+            return Some(32 + e.name.len() + e.value.len());
+        }
+        self.dynamic
+            .get(index - STATIC_TABLE.len() - 1)
+            .map(HeaderField::size)
+    }
+
+    /// The name of the entry at the combined index.
+    #[must_use]
+    pub fn name(&self, index: usize) -> Option<String> {
+        if index == 0 {
+            return None;
+        }
+        if index <= STATIC_TABLE.len() {
+            return Some(alloc::string::ToString::to_string(
+                STATIC_TABLE[index - 1].name,
+            ));
+        }
+        self.dynamic
+            .get(index - STATIC_TABLE.len() - 1)
+            .map(|h| h.name.clone())
+    }
+
     /// Searches for a header-field match. Returns `(index, full_match)`.
     /// `full_match=true`: name + value match.
     /// `full_match=false`: only the name matches.

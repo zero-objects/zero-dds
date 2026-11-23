@@ -1,0 +1,51 @@
+// DDS for Lightweight CCM 1.1 (formal/2012-02-01), Annex B (normative):
+// IDL for the DDS-DLRL ports and connectors.
+//
+// The declarations and their comments are the text of the annex.
+//
+// dds_rtf2_dlrl.idl beside this file brings the types of module DDS the
+// annex refers to: the generic DLRL IDL of DDS 1.2 (dds_dlrl.idl of
+// crates/dlrl/idl, which must be on the include path) after the DCPS
+// declarations of dds_rtf2_dcps.idl. This file and ccm_dds.idl (Annex A)
+// compile in one unit, in either order.
+
+#include "dds_rtf2_dlrl.idl"
+
+module CCM_DDS {
+
+local interface CacheOperation {
+      // Cache kind
+      // ----------
+      readonly attribute DDS::CacheUsage cache_usage;
+
+      // Other Cache attributes
+      // ----------------------
+      readonly attribute DDS::ObjectRootSeq     objects;
+      readonly attribute boolean                updates_enabled;
+      readonly attribute DDS::ObjectHomeSeq     homes;
+      readonly attribute DDS::CacheAccessSeq    sub_accesses;
+      readonly attribute DDS::CacheListenerSeq  listeners;
+
+      // Cache update
+      // ------------
+      void refresh( )
+            raises (DDS::DCPSError);
+
+      // Listener management
+      // -------------------
+      void attach_listener (in DDS::CacheListener listener);
+      void detach_listener (in DDS::CacheListener listener);
+
+      // Updates management
+      // ------------------
+      void enable_updates ();
+      void disable_updates ();
+
+      // CacheAccess Management
+      // ----------------------
+      DDS::CacheAccess create_access (in DDS::CacheUsage purpose)
+            raises (DDS::PreconditionNotMet);
+      void delete_access (in DDS::CacheAccess access)
+            raises (DDS::PreconditionNotMet);
+      };
+};

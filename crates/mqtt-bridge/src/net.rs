@@ -10,7 +10,7 @@
 
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::string::String;
+use std::string::{String, ToString};
 use std::time::Duration;
 use std::vec::Vec;
 
@@ -34,6 +34,77 @@ use crate::version::ProtocolVersion;
 /// from a 5-byte header.
 pub const MAX_MQTT_PACKET_SIZE: u32 = 16 * 1024 * 1024;
 
+/// Why [`read_packet_within`] read no packet.
+#[derive(Debug)]
+pub enum PacketReadError {
+    /// The transport failed, timed out or ended.
+    Io(io::Error),
+    /// The Remaining Length is not a Variable Byte Integer of at most four
+    /// octets (§1.5.5, a Malformed Packet).
+    MalformedLength,
+    /// The packet is larger than the limit (§3.1.2.11.4, §3.2.2.3.6:
+    /// Reason Code 0x95 Packet too large). Its body was not read.
+    TooLarge {
+        /// The size the fixed header announces, fixed header included.
+        size: u64,
+    },
+}
+
+impl From<io::Error> for PacketReadError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl core::fmt::Display for PacketReadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "{e}"),
+            Self::MalformedLength => f.write_str("Remaining Length longer than four octets"),
+            Self::TooLarge { size } => write!(f, "packet of {size} octets above the limit"),
+        }
+    }
+}
+
+/// Reads one whole MQTT control packet of at most `max_packet_size`
+/// octets — the total of fixed header, variable header and payload, as
+/// Maximum Packet Size counts it — and returns `(byte0, body)`. A larger
+/// packet is refused before its body is read or allocated.
+///
+/// # Errors
+/// See [`PacketReadError`].
+pub fn read_packet_within<R: Read>(
+    r: &mut R,
+    max_packet_size: u32,
+) -> Result<(u8, Vec<u8>), PacketReadError> {
+    let mut b0 = [0u8; 1];
+    r.read_exact(&mut b0)?;
+    // Remaining Length VBI — up to 4 bytes (§1.5.5, §2.1.4).
+    let mut value: u32 = 0;
+    let mut octets = 0u32;
+    loop {
+        if octets == 4 {
+            return Err(PacketReadError::MalformedLength);
+        }
+        let mut eb = [0u8; 1];
+        r.read_exact(&mut eb)?;
+        value |= u32::from(eb[0] & 0x7F) << (7 * octets);
+        octets += 1;
+        if eb[0] & 0x80 == 0 {
+            break;
+        }
+    }
+    let size = 1 + u64::from(octets) + u64::from(value);
+    if size > u64::from(max_packet_size) {
+        return Err(PacketReadError::TooLarge { size });
+    }
+    let mut body = std::vec![0u8; value as usize];
+    if value > 0 {
+        r.read_exact(&mut body)?;
+    }
+    Ok((b0[0], body))
+}
+
 /// Reads one whole MQTT control packet from `r`, returning `(byte0, body)`
 /// where `body` is the variable-header + payload (Remaining Length bytes).
 ///
@@ -41,30 +112,14 @@ pub const MAX_MQTT_PACKET_SIZE: u32 = 16 * 1024 * 1024;
 /// I/O error, a malformed Remaining Length VBI, or a Remaining Length
 /// above [`MAX_MQTT_PACKET_SIZE`].
 pub fn read_packet<R: Read>(r: &mut R) -> io::Result<(u8, Vec<u8>)> {
-    let mut b0 = [0u8; 1];
-    r.read_exact(&mut b0)?;
-    // Remaining Length VBI — up to 4 bytes (§2.1.4).
-    let mut mult: u32 = 1;
-    let mut value: u32 = 0;
-    for _ in 0..4 {
-        let mut eb = [0u8; 1];
-        r.read_exact(&mut eb)?;
-        value += u32::from(eb[0] & 0x7F) * mult;
-        if eb[0] & 0x80 == 0 {
-            break;
-        }
-        mult *= 128;
-    }
-    if value > MAX_MQTT_PACKET_SIZE {
-        return Err(io::Error::other(std::format!(
-            "MQTT Remaining Length {value} exceeds MAX_MQTT_PACKET_SIZE ({MAX_MQTT_PACKET_SIZE})"
-        )));
-    }
-    let mut body = std::vec![0u8; value as usize];
-    if value > 0 {
-        r.read_exact(&mut body)?;
-    }
-    Ok((b0[0], body))
+    // The cap is on the Remaining Length; the fixed header adds at most 5.
+    read_packet_within(r, MAX_MQTT_PACKET_SIZE + 5).map_err(|e| match e {
+        PacketReadError::Io(e) => e,
+        PacketReadError::MalformedLength => io::Error::other(e.to_string()),
+        PacketReadError::TooLarge { size } => io::Error::other(std::format!(
+            "MQTT packet of {size} octets exceeds MAX_MQTT_PACKET_SIZE ({MAX_MQTT_PACKET_SIZE}) plus its fixed header"
+        )),
+    })
 }
 
 /// Frames a packet: `byte0`, the VBI Remaining Length of `body`, then `body`.
@@ -330,6 +385,7 @@ fn codec(e: crate::codec::CodecError) -> io::Error {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -364,6 +420,28 @@ mod tests {
     // body is read/allocated. Mirrors the established
     // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` guard.
     // -------------------------------------------------------------
+
+    #[test]
+    fn mqtt5_1_5_5_a_remaining_length_of_five_octets_is_malformed() {
+        let framed = [0x30, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
+        let res = read_packet_within(&mut std::io::Cursor::new(framed), u32::MAX);
+        assert!(
+            matches!(res, Err(PacketReadError::MalformedLength)),
+            "{res:?}"
+        );
+    }
+
+    #[test]
+    fn mqtt5_3_1_2_11_4_a_packet_above_the_limit_is_refused_by_its_total_size() {
+        // 1 + 1 + 8 octets: allowed at 10, refused at 9.
+        let framed = frame_packet(byte0(ControlPacketType::Publish, 0), &[0u8; 8]).unwrap();
+        assert!(read_packet_within(&mut std::io::Cursor::new(&framed), 10).is_ok());
+        let res = read_packet_within(&mut std::io::Cursor::new(&framed), 9);
+        assert!(
+            matches!(res, Err(PacketReadError::TooLarge { size: 10 })),
+            "{res:?}"
+        );
+    }
 
     #[test]
     fn read_packet_rejects_oversized_remaining_length_cleanly() {

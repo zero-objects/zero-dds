@@ -93,20 +93,32 @@ impl DomainParticipantFactory {
         &THE_PARTICIPANT_FACTORY
     }
 
-    fn track(&self, p: &DomainParticipant) {
+    /// Registers a new participant and enables it when `autoenable` (the
+    /// factory's ENTITY_FACTORY as its creation read it) says so.
+    fn track(&self, p: &DomainParticipant, autoenable: bool) {
         if let Ok(mut reg) = self.participants.lock() {
             reg.entry(p.domain_id()).or_default().push(p.downgrade());
         }
-        self.autoenable(p);
+        Self::autoenable(p, autoenable);
+    }
+
+    /// The factory's `autoenable_created_entities`, read once per
+    /// creation: the same value decides whether the runtime announces the
+    /// participant (`RuntimeConfig::discoverable`) and whether
+    /// [`Self::autoenable`] enables it, so a [`Self::set_qos`] during the
+    /// creation gives a participant that follows either the old or the new
+    /// value, not one half of each.
+    fn creation_autoenable(&self) -> bool {
+        self.get_qos().autoenable_created_entities
     }
 
     /// Spec §2.2.3.20: "The setting of `autoenable_created_entities` to
     /// TRUE indicates that the factory `create_<entity>` operation will
     /// automatically enable the created entity." The factory is the
     /// participant's factory, so its own [`DomainParticipantFactoryQos`]
-    /// decides.
-    fn autoenable(&self, p: &DomainParticipant) {
-        if self.get_qos().autoenable_created_entities {
+    /// decides, as [`Self::creation_autoenable`] read it.
+    fn autoenable(p: &DomainParticipant, on: bool) {
+        if on {
             p.entity_state().enable();
         }
     }
@@ -126,12 +138,13 @@ impl DomainParticipantFactory {
         qos: impl Into<QosArg<DomainParticipantQos>>,
     ) -> Result<DomainParticipant> {
         let qos = self.resolve(qos);
+        let autoenable = self.creation_autoenable();
         // DDS 1.4 §2.2.3.1 UserDataQosPolicy → SPDP-Beacon PID_USER_DATA.
         // A participant this factory does not enable on creation does not
         // announce itself before its `enable` (§2.2.2.1.1.7).
         let config = RuntimeConfig {
             user_data: qos.user_data.value.clone(),
-            discoverable: self.get_qos().autoenable_created_entities,
+            discoverable: autoenable,
             ..RuntimeConfig::from_standard_paths().map_err(|error| {
                 crate::error::DdsError::Configuration {
                     message: error.to_string(),
@@ -139,7 +152,7 @@ impl DomainParticipantFactory {
             })?
         };
         let p = DomainParticipant::new_with_runtime(domain_id, qos, config)?;
-        self.track(&p);
+        self.track(&p, autoenable);
         Ok(p)
     }
 
@@ -173,6 +186,7 @@ impl DomainParticipantFactory {
         mut config: RuntimeConfig,
     ) -> Result<DomainParticipant> {
         let qos = self.resolve(qos);
+        let autoenable = self.creation_autoenable();
         // DDS 1.4 §2.2.3.1: the QoS is the authority for PID_USER_DATA. A
         // config built from files has none, and dropping the QoS value here
         // would announce an empty one.
@@ -180,9 +194,9 @@ impl DomainParticipantFactory {
             config.user_data = qos.user_data.value.clone();
         }
         // See `create_participant`.
-        config.discoverable &= self.get_qos().autoenable_created_entities;
+        config.discoverable &= autoenable;
         let p = DomainParticipant::new_with_runtime(domain_id, qos, config)?;
-        self.track(&p);
+        self.track(&p, autoenable);
         Ok(p)
     }
 
@@ -195,8 +209,9 @@ impl DomainParticipantFactory {
         domain_id: DomainId,
         qos: impl Into<QosArg<DomainParticipantQos>>,
     ) -> DomainParticipant {
+        let autoenable = self.creation_autoenable();
         let p = DomainParticipant::new(domain_id, self.resolve(qos));
-        self.track(&p);
+        self.track(&p, autoenable);
         p
     }
 

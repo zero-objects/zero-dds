@@ -22,10 +22,13 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc", "zerodds-corba-csiv2/std", "zerodds-corba-iiop/std"]
-alloc = ["zerodds-corba-csiv2/alloc", "zerodds-corba-iiop/alloc"]
+std = ["alloc", "zerodds-corba-csiv2/std", "zerodds-corba-iiop/std", "zerodds-corba-giop/std"]
+alloc = ["zerodds-corba-csiv2/alloc", "zerodds-corba-iiop/alloc", "zerodds-corba-giop/alloc"]
 
 [dependencies]
 zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 zerodds-corba-csiv2 = { version = "1.0.0-rc.7", path = "../corba-csiv2", default-features = false }
 zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", default-features = false }
+# Table 7.2 (CORBA 3.3 Part 2 §7.9): which component tags a profile of
+# an IIOP version carries. Already a dependency of zerodds-corba-iiop.
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-features = false }

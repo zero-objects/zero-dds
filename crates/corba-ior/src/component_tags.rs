@@ -89,6 +89,74 @@ pub enum ComponentId {
 }
 
 impl ComponentId {
+    /// The row of Table 7.2 (CORBA 3.3 Part 2 §7.9) the tag belongs to;
+    /// `None` for the tags the table does not list (`TAG_POLICIES`,
+    /// `TAG_COMPLETE_OBJECT_KEY`, `TAG_ENDPOINT_ID_POSITION`,
+    /// `TAG_LOCATION_POLICY`, the DCE tags and every other tag).
+    #[must_use]
+    pub const fn feature(self) -> Option<zerodds_corba_giop::Feature> {
+        use zerodds_corba_giop::Feature as F;
+        Some(match self {
+            Self::OrbType => F::TagOrbType,
+            Self::CodeSets => F::TagCodeSets,
+            Self::AlternateIiopAddress => F::TagAlternateIiopAddress,
+            Self::AssociationOptions => F::TagAssociationOption,
+            Self::SecName => F::TagSecName,
+            Self::Spkm1SecMech
+            | Self::Spkm2SecMech
+            | Self::KerberosV5SecMech
+            | Self::CsiEcmaSecretSecMech
+            | Self::CsiEcmaHybridSecMech
+            | Self::CsiEcmaPublicSecMech => F::TagSecMech,
+            Self::SslSecTrans => F::TagSslSecTrans,
+            Self::GenericSecMech => F::TagGenericSecMech,
+            Self::FirewallTrans => F::TagFirewallTrans,
+            Self::SccpContactInfo => F::TagSccpContactInfo,
+            Self::JavaCodebase => F::TagJavaCodebase,
+            Self::TransactionPolicy => F::TagTransactionPolicy,
+            Self::MessageRouters => F::TagMessageRouters,
+            Self::OtsPolicy => F::TagOtsPolicy,
+            Self::InvPolicy => F::TagInvPolicy,
+            Self::CsiSecMechList => F::TagCsiSecMechList,
+            Self::NullTag => F::TagNullTag,
+            Self::SeciopSecTrans => F::TagSeciopSecTrans,
+            Self::TlsSecTrans => F::TagTlsSecTrans,
+            Self::ActivityPolicy => F::TagActivityPolicy,
+            Self::RmiCustomMaxStreamFormat => F::RmiCustomMaxStreamFormat,
+            Self::Group | Self::GroupIiop => F::GroupFeatures,
+            Self::InetSecTrans => F::TagInetSecTrans,
+            Self::Policies
+            | Self::CompleteObjectKey
+            | Self::EndpointIdPosition
+            | Self::LocationPolicy
+            | Self::DceStringBinding
+            | Self::DceBindingName
+            | Self::DceNoPipes
+            | Self::DceSecMech
+            | Self::Other(_) => return None,
+        })
+    }
+
+    /// Table 7.2: whether a profile of IIOP `major.minor` carries the tag
+    /// as part of its version; `None` for the tags the table does not
+    /// list. No tag is part of IIOP 1.0, whose profile has no components.
+    #[must_use]
+    pub const fn support(self, major: u8, minor: u8) -> Option<zerodds_corba_giop::Support> {
+        let version = zerodds_corba_giop::Version::new(major, minor);
+        if !zerodds_corba_giop::feature::support(
+            zerodds_corba_giop::Feature::IorComponentsInIiopProfile,
+            version,
+        )
+        .is_valid()
+        {
+            return Some(zerodds_corba_giop::Support::No);
+        }
+        match self.feature() {
+            Some(f) => Some(zerodds_corba_giop::feature::support(f, version)),
+            None => None,
+        }
+    }
+
     /// Raw `unsigned long` value.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
@@ -185,6 +253,53 @@ impl ComponentId {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corba_p2_7_9_component_tags_follow_table_7_2() {
+        use zerodds_corba_giop::Support;
+        // IIOP 1.0 has no components at all.
+        for tag in [
+            ComponentId::OrbType,
+            ComponentId::CodeSets,
+            ComponentId::Other(77),
+        ] {
+            assert_eq!(tag.support(1, 0), Some(Support::No), "{tag:?}");
+        }
+        assert_eq!(ComponentId::CodeSets.support(1, 1), Some(Support::Yes));
+        assert_eq!(
+            ComponentId::AlternateIiopAddress.support(1, 1),
+            Some(Support::No)
+        );
+        assert_eq!(
+            ComponentId::AlternateIiopAddress.support(1, 2),
+            Some(Support::Yes)
+        );
+        assert_eq!(ComponentId::JavaCodebase.support(1, 1), Some(Support::No));
+        assert_eq!(
+            ComponentId::CsiSecMechList.support(1, 2),
+            Some(Support::Optional)
+        );
+        assert_eq!(
+            ComponentId::CsiSecMechList.support(1, 3),
+            Some(Support::Yes)
+        );
+        assert_eq!(
+            ComponentId::KerberosV5SecMech.support(1, 1),
+            Some(Support::Yes)
+        );
+        assert_eq!(ComponentId::Group.support(1, 2), Some(Support::No));
+        assert_eq!(
+            ComponentId::GroupIiop.support(1, 4),
+            Some(Support::Optional)
+        );
+        assert_eq!(
+            ComponentId::RmiCustomMaxStreamFormat.support(1, 4),
+            Some(Support::Optional)
+        );
+        // Tags without a row are not tied to a version.
+        assert_eq!(ComponentId::Policies.support(1, 2), None);
+        assert_eq!(ComponentId::Other(0x4a43_0000).support(1, 2), None);
+    }
 
     #[test]
     fn well_known_component_tag_values_match_spec() {

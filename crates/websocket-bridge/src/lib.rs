@@ -30,18 +30,28 @@
 //! - [`encode`] / [`decode`] / [`CodecError`] — wire codec including
 //!   payload length encoding (7-bit / 7+16-bit / 7+64-bit) and
 //!   mask application.
-//! - [`apply_mask`] / [`generate_masking_key`] /
-//!   [`MaskingKeyProvider`] / [`InsecureSplitmixProvider`] /
-//!   [`ClosureMaskingKeyProvider`] — XOR-Masking (§5.3).
+//! - [`apply_mask`] / `generate_masking_key` / `OsRngProvider` (both with
+//!   `std`: the operating system's random source) / [`MaskingKeyProvider`]
+//!   / [`ClosureMaskingKeyProvider`] / [`EntropyError`] — XOR masking and
+//!   its keys (§5.3, §10.3).
+//! - [`Receiver`] / [`Sender`] / [`Event`] / [`Failure`] / [`Limits`] —
+//!   one end of a connection after the handshake: validation of every
+//!   frame, reassembly, `permessage-deflate`, the closing handshake and
+//!   the close code of each kind of invalid data (§5 to §8, §10.7).
 //! - [`CloseCode`] / [`ClosePayload`] / [`encode_close_payload`] /
 //!   [`decode_close_payload`] — Close-Frame-Codec (§7.4).
 //! - [`ClientHandshake`] / [`ServerHandshake`] /
 //!   [`compute_accept`] / [`parse_client_request`] /
 //!   [`build_server_response`] / [`render_server_response`] /
 //!   [`HandshakeError`] — opening handshake (§4).
+//! - [`OriginPolicy`] / [`Origin`] / [`OriginPolicyError`] — the origins a
+//!   server expects and the check of the `Origin` field against them
+//!   (§10.2, RFC 6454).
 //! - [`PermessageDeflateParams`] / [`parse_offer`] / [`render_accept`]
 //!   / [`append_tail`] / [`strip_tail`] / [`DEFLATE_TAIL`] /
-//!   [`NegotiationError`] — RFC 7692 permessage-deflate negotiation.
+//!   [`NegotiationError`] — RFC 7692 permessage-deflate negotiation; the
+//!   module [`permessage_deflate`] holds both sides of it and, with `std`,
+//!   the DEFLATE transformation of the message payload (§7.2).
 //! - [`WebSocketUri`] / [`parse_websocket_uri`] / [`default_port`] /
 //!   [`is_local_loopback`] / [`resource_name`] / [`UriError`] —
 //!   `ws://` / `wss://` URI parser (§3).
@@ -85,6 +95,7 @@ extern crate alloc;
 
 pub mod close;
 pub mod codec;
+pub mod connection;
 #[cfg(feature = "daemon")]
 pub mod daemon;
 pub mod frame;
@@ -92,21 +103,23 @@ pub mod handshake;
 pub mod masking;
 pub mod message;
 pub mod negotiation;
+pub mod origin;
 pub mod permessage_deflate;
 pub mod uri;
 pub mod utf8;
 
 pub use close::{CloseCode, ClosePayload, decode_close_payload, encode_close_payload};
-pub use codec::{CodecError, decode, encode};
+pub use codec::{CodecError, FrameHeader, decode, decode_with_limit, encode, peek_header};
+pub use connection::{Event, Failure, Limits, Receiver, Sender};
 pub use frame::{Frame, Opcode};
 pub use handshake::{
     ClientHandshake, HandshakeError, ServerHandshake, build_server_response, compute_accept,
     parse_client_request, render_server_response,
 };
-pub use masking::{
-    ClosureMaskingKeyProvider, InsecureSplitmixProvider, MaskingKeyProvider, apply_mask,
-    generate_masking_key,
-};
+pub use masking::{ClosureMaskingKeyProvider, EntropyError, MaskingKeyProvider, apply_mask};
+#[cfg(feature = "std")]
+pub use masking::{OsRngProvider, generate_masking_key};
+pub use origin::{Origin, OriginPolicy, OriginPolicyError};
 pub use permessage_deflate::{
     DEFLATE_TAIL, NegotiationError, PermessageDeflateParams, append_tail, parse_offer,
     render_accept, strip_tail,

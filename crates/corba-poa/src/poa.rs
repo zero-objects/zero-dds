@@ -21,6 +21,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use std::sync::Mutex;
 
+use zerodds_corba_giop::AlignedBody;
 use zerodds_corba_giop::object_ops::{self, ObjectOpReply};
 use zerodds_wire::Endianness;
 
@@ -264,6 +265,11 @@ impl Poa {
     /// `dispatch` — processes a request according to the current
     /// policy combination and returns the reply bytes.
     ///
+    /// `request_body` is the body at its offset in the GIOP message and
+    /// `endianness` the byte order of that message; the servant reads
+    /// the arguments there ([`Servant::invoke`]) and writes the reply
+    /// body in that byte order. CORBA 3.3 Part 2 §9.4, §9.4.2.1.
+    ///
     /// Mode matrix:
     ///
     /// | Retention | RequestProcessing | Behavior |
@@ -281,7 +287,7 @@ impl Poa {
         &self,
         oid: &ObjectId,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         // Spec §11.3.5: with an INACTIVE manager the request is
@@ -342,7 +348,7 @@ impl Poa {
     fn invoke_servant(
         s: &dyn Servant,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         match s.dispatch_object_operation(operation, request_body, endianness) {
@@ -351,7 +357,7 @@ impl Poa {
             Some(ObjectOpReply::InterfaceRepositoryUnavailable) => {
                 Err(PoaError::InterfaceRepositoryUnavailable)
             }
-            None => Ok(s.invoke(operation, request_body)),
+            None => Ok(s.invoke(operation, request_body, endianness)),
         }
     }
 
@@ -374,7 +380,7 @@ impl Poa {
         &self,
         oid: &ObjectId,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         let aom = self.aom_lock()?;
@@ -388,7 +394,7 @@ impl Poa {
         &self,
         oid: &ObjectId,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         {
@@ -411,7 +417,7 @@ impl Poa {
         &self,
         oid: &ObjectId,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         // 1. AOM lookup.
@@ -446,7 +452,7 @@ impl Poa {
     fn dispatch_default_only(
         &self,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         let default = self
@@ -463,7 +469,7 @@ impl Poa {
         &self,
         oid: &ObjectId,
         operation: &str,
-        request_body: &[u8],
+        request_body: &AlignedBody,
         endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         let loc = {
@@ -511,6 +517,11 @@ mod tests {
     use crate::servant::EchoServant;
     use crate::servant_manager::{ServantActivator, ServantLocator, ServantLocatorCookie};
 
+    /// A body at offset 0 of its message.
+    fn at0(bytes: &[u8]) -> AlignedBody {
+        AlignedBody::new(bytes, 0)
+    }
+
     fn echo_servant() -> Box<dyn Servant> {
         Box::new(EchoServant {
             repo_id: "IDL:demo/Echo:1.0".into(),
@@ -550,7 +561,7 @@ mod tests {
         let oid = child.activate_object(echo_servant()).unwrap();
         assert_eq!(
             child
-                .dispatch(&oid, "ping", &[7, 8], Endianness::Big)
+                .dispatch(&oid, "ping", &at0(&[7, 8]), Endianness::Big)
                 .unwrap(),
             alloc::vec![7, 8]
         );
@@ -573,7 +584,7 @@ mod tests {
         let poa = Poa::new(root_config(PolicySet::default())).unwrap();
         let oid = poa.activate_object(echo_servant()).unwrap();
         let reply = poa
-            .dispatch(&oid, "ping", &[1, 2], Endianness::Big)
+            .dispatch(&oid, "ping", &at0(&[1, 2]), Endianness::Big)
             .unwrap();
         assert_eq!(reply, alloc::vec![1, 2]);
     }
@@ -600,23 +611,76 @@ mod tests {
         let e = Endianness::Big;
 
         let body = encode_is_a_body("IDL:demo/Echo:1.0", e);
-        let reply = poa.dispatch(&oid, "_is_a", &body, e).unwrap();
+        let reply = poa.dispatch(&oid, "_is_a", &at0(&body), e).unwrap();
         assert!(decode_bool(&reply, e));
 
         let body = encode_is_a_body("IDL:omg.org/CORBA/Object:1.0", e);
-        let reply = poa.dispatch(&oid, "_is_a", &body, e).unwrap();
+        let reply = poa.dispatch(&oid, "_is_a", &at0(&body), e).unwrap();
         assert!(decode_bool(&reply, e));
 
         let body = encode_is_a_body("IDL:demo/Nope:1.0", e);
-        let reply = poa.dispatch(&oid, "_is_a", &body, e).unwrap();
+        let reply = poa.dispatch(&oid, "_is_a", &at0(&body), e).unwrap();
         assert!(!decode_bool(&reply, e));
 
-        let reply = poa.dispatch(&oid, "_non_existent", &[], e).unwrap();
+        let reply = poa.dispatch(&oid, "_non_existent", &at0(&[]), e).unwrap();
         assert!(!decode_bool(&reply, e));
 
-        let reply = poa.dispatch(&oid, "_repository_id", &[], e).unwrap();
+        let reply = poa.dispatch(&oid, "_repository_id", &at0(&[]), e).unwrap();
         let mut r = zerodds_wire::Reader::new(&reply, e);
         assert_eq!(r.read_string().unwrap(), "IDL:demo/Echo:1.0");
+    }
+
+    /// A servant that reads an octet and a `long long` and answers both.
+    #[derive(Debug)]
+    struct AfterOctet;
+
+    impl Servant for AfterOctet {
+        fn primary_interface(&self) -> String {
+            "IDL:demo/Aligned:1.0".into()
+        }
+
+        fn invoke(&self, _: &str, body: &AlignedBody, e: Endianness) -> Vec<u8> {
+            let mut r = body.reader(e);
+            let mut w = zerodds_wire::Writer::new(e);
+            if let (Ok(tag), Ok(value)) = (r.read_u8(), r.read_i64()) {
+                w.write_u8(tag);
+                w.write_i64(value);
+            }
+            w.finish()
+        }
+    }
+
+    /// CORBA 3.3 Part 2 §9.4.2.1: a GIOP 1.0/1.1 request body follows
+    /// the header without padding, and CDR aligns an 8-octet argument
+    /// from the message start. `Poa::dispatch` hands the servant the
+    /// body at its offset and the message's byte order: the `long long`
+    /// after an octet comes out as written at offsets 4 apart; read from
+    /// the body's first octet it would not.
+    #[test]
+    fn corba_p2_9_4_2_1_a_servant_reads_a_long_long_at_the_body_offset() {
+        const VALUE: i64 = 0x0102_0304_0506_0708;
+        let poa = Poa::new(root_config(PolicySet::default())).unwrap();
+        let oid = poa.activate_object(Box::new(AfterOctet)).unwrap();
+        for e in [Endianness::Big, Endianness::Little] {
+            for offset in [8usize, 12, 13, 15] {
+                let mut w = zerodds_corba_giop::body_writer(offset, e);
+                w.write_u8(0x5a);
+                w.write_i64(VALUE);
+                let bytes = zerodds_corba_giop::finish_body(w, offset);
+                let reply = poa
+                    .dispatch(&oid, "after_octet", &AlignedBody::new(&bytes, offset), e)
+                    .unwrap();
+                let mut r = zerodds_wire::Reader::new(&reply, e);
+                assert_eq!(r.read_u8().unwrap(), 0x5a, "offset {offset}");
+                assert_eq!(r.read_i64().unwrap(), VALUE, "offset {offset}");
+                // The same octets at offset 0: the value is not where
+                // the servant looks.
+                let at_zero = poa.dispatch(&oid, "after_octet", &at0(&bytes), e).unwrap();
+                let mut r = zerodds_wire::Reader::new(&at_zero, e);
+                let misread = r.read_u8().is_ok() && r.read_i64().is_ok_and(|v| v == VALUE);
+                assert_eq!(misread, offset % 8 == 0, "offset {offset}");
+            }
+        }
     }
 
     /// `_non_existent` on an `ObjectId` the AOM never activated answers
@@ -629,10 +693,10 @@ mod tests {
         let oid = ObjectId::system_id(9999);
         let e = Endianness::Big;
 
-        let reply = poa.dispatch(&oid, "_non_existent", &[], e).unwrap();
+        let reply = poa.dispatch(&oid, "_non_existent", &at0(&[]), e).unwrap();
         assert!(decode_bool(&reply, e));
 
-        let err = poa.dispatch(&oid, "ping", &[], e).unwrap_err();
+        let err = poa.dispatch(&oid, "ping", &at0(&[]), e).unwrap_err();
         assert_eq!(err, PoaError::ObjectNotActive);
     }
 
@@ -647,7 +711,7 @@ mod tests {
         poa.activate_object_with_id(my_id.clone(), echo_servant())
             .unwrap();
         let reply = poa
-            .dispatch(&my_id, "echo", &[42], Endianness::Big)
+            .dispatch(&my_id, "echo", &at0(&[42]), Endianness::Big)
             .unwrap();
         assert_eq!(reply, alloc::vec![42]);
     }
@@ -662,7 +726,9 @@ mod tests {
         .unwrap();
         poa.set_default_servant(echo_servant());
         let oid: ObjectId = b"unknown".as_slice().into();
-        let reply = poa.dispatch(&oid, "ping", &[7], Endianness::Big).unwrap();
+        let reply = poa
+            .dispatch(&oid, "ping", &at0(&[7]), Endianness::Big)
+            .unwrap();
         assert_eq!(reply, alloc::vec![7]);
     }
 
@@ -675,7 +741,7 @@ mod tests {
         }))
         .unwrap();
         let err = poa
-            .dispatch(&ObjectId::system_id(1), "ping", &[], Endianness::Big)
+            .dispatch(&ObjectId::system_id(1), "ping", &at0(&[]), Endianness::Big)
             .unwrap_err();
         assert_eq!(err, PoaError::NoServant);
     }
@@ -698,10 +764,14 @@ mod tests {
         .unwrap();
         poa.set_servant_manager(ServantManager::Activator(Arc::new(FixedActivator)));
         let oid: ObjectId = b"x".as_slice().into();
-        let reply = poa.dispatch(&oid, "ping", &[1], Endianness::Big).unwrap();
+        let reply = poa
+            .dispatch(&oid, "ping", &at0(&[1]), Endianness::Big)
+            .unwrap();
         assert_eq!(reply, alloc::vec![1]);
         // The second dispatch should come from the AOM.
-        let reply2 = poa.dispatch(&oid, "ping", &[2], Endianness::Big).unwrap();
+        let reply2 = poa
+            .dispatch(&oid, "ping", &at0(&[2]), Endianness::Big)
+            .unwrap();
         assert_eq!(reply2, alloc::vec![2]);
     }
 
@@ -756,7 +826,8 @@ mod tests {
         })));
         for _ in 0..3 {
             let oid: ObjectId = b"any".as_slice().into();
-            poa.dispatch(&oid, "ping", &[], Endianness::Big).unwrap();
+            poa.dispatch(&oid, "ping", &at0(&[]), Endianness::Big)
+                .unwrap();
         }
         assert_eq!(pre.load(Ordering::Relaxed), 3);
         assert_eq!(post.load(Ordering::Relaxed), 3);
@@ -777,7 +848,7 @@ mod tests {
         poa.activate_object_with_id(oid.clone(), echo_servant())
             .unwrap();
         let err = poa
-            .dispatch(&oid, "ping", &[], Endianness::Big)
+            .dispatch(&oid, "ping", &at0(&[]), Endianness::Big)
             .unwrap_err();
         assert!(matches!(err, PoaError::BadInvocationOrder(_)));
     }
@@ -793,7 +864,7 @@ mod tests {
         };
         let poa = Poa::new(cfg).unwrap();
         let err = poa
-            .dispatch(&ObjectId::system_id(1), "ping", &[], Endianness::Big)
+            .dispatch(&ObjectId::system_id(1), "ping", &at0(&[]), Endianness::Big)
             .unwrap_err();
         assert_eq!(err, PoaError::AdapterInactive);
     }
@@ -810,7 +881,7 @@ mod tests {
         };
         let poa = Poa::new(cfg).unwrap();
         let err = poa
-            .dispatch(&ObjectId::system_id(1), "ping", &[], Endianness::Big)
+            .dispatch(&ObjectId::system_id(1), "ping", &at0(&[]), Endianness::Big)
             .unwrap_err();
         assert!(matches!(err, PoaError::ObjAdapter(_)));
     }

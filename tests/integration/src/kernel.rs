@@ -148,6 +148,44 @@ pub fn unix_socket_paths(pid: u32) -> BTreeSet<String> {
     paths
 }
 
+/// A Unix domain stream socket of a process, from `/proc/net/unix`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnixStreamSocket {
+    /// The path it is bound to; an accepted connection carries the path of
+    /// its listening socket.
+    pub path: String,
+    /// It listens (`__SO_ACCEPTCON`, flag `0x10000`).
+    pub listening: bool,
+    /// It is connected (state `03`, `SS_CONNECTED`).
+    pub connected: bool,
+}
+
+/// The bound Unix domain stream sockets (`SOCK_STREAM`, type `0001`) process
+/// `pid` holds (`/proc/net/unix`).
+#[must_use]
+pub fn unix_stream_sockets(pid: u32) -> Vec<UnixStreamSocket> {
+    let mine = socket_inodes(pid);
+    let Ok(text) = std::fs::read_to_string("/proc/net/unix") else {
+        return Vec::new();
+    };
+    text.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() < 8 || cols[4] != "0001" {
+                return None;
+            }
+            let inode = cols[6].parse::<u64>().ok()?;
+            let flags = u32::from_str_radix(cols[3], 16).ok()?;
+            mine.contains(&inode).then(|| UnixStreamSocket {
+                path: cols[7].to_owned(),
+                listening: flags & 0x1_0000 != 0,
+                connected: cols[5] == "03",
+            })
+        })
+        .collect()
+}
+
 /// The files under `/dev/shm` process `pid` has mapped
 /// (`/proc/<pid>/maps`).
 #[must_use]

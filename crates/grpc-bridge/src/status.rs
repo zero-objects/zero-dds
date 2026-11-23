@@ -168,6 +168,41 @@ mod tests {
         assert_eq!(Status::from_code(255), None);
     }
 
+    /// Spec §12.1 `grpc_status`: `from_code` and `code` are inverse over
+    /// every octet a `grpc-status` value can carry: each of 0 to 16 maps
+    /// to its status and back, no other octet maps to one.
+    #[test]
+    fn grpcbridge_12_1_status_code_and_from_code_are_inverse() {
+        let mut known = 0;
+        for v in 0..=u8::MAX {
+            match Status::from_code(v) {
+                Some(s) => {
+                    assert_eq!(s.code(), v);
+                    known += 1;
+                }
+                None => assert!(v > 16, "{v} has no status"),
+            }
+        }
+        assert_eq!(known, 17);
+    }
+
+    /// Spec §12.1 `grpc_status`, §8.2: the names are the `status` label
+    /// of `zerodds_grpc_bridge_rpcs_total`: seventeen distinct values in
+    /// upper case with underscores, as gRPC's table writes them.
+    #[test]
+    fn grpcbridge_12_1_status_names_are_distinct_label_values() {
+        let names: alloc::vec::Vec<&str> = (0..=16u8)
+            .map(|v| Status::from_code(v).expect("a code").name())
+            .collect();
+        for (i, a) in names.iter().enumerate() {
+            assert!(
+                !a.is_empty() && a.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'),
+                "{a}"
+            );
+            assert!(names[i + 1..].iter().all(|b| b != a), "{a} is named twice");
+        }
+    }
+
     #[test]
     fn grpc_responses_ok_is_only_status_with_is_ok_true() {
         assert!(Status::Ok.is_ok());

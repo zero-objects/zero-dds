@@ -46,6 +46,14 @@ case "$orb" in
     done
     g++ "${cf[@]}" "$here/omniorb/naming_client.cc" -o "$out/omniorb_naming_client" \
         -lomniORB4 -lomnithread -lpthread & pids+=($!)
+    # Object URLs (CORBA 3.3 Part 2 §7.6.10): the minor codes of string_to_object.
+    g++ "${cf[@]}" "$here/omniorb/url_minor.cc" -o "$out/omniorb_url_minor" \
+        -lomniORB4 -lomnithread -lpthread & pids+=($!)
+    # ZIOP (CORBA 3.3 Part 2 §12): omniORB's omniZIOP library with zlib.
+    for p in ziop_server ziop_client; do
+      g++ "${cf[@]}" "$here/omniorb/$p.cc" "$work/interopSK.cc" "$work/interopDynSK.cc" \
+          -o "$out/omniorb_$p" -lomniZIOP4 "${lb[@]}" & pids+=($!)
+    done
     for pid in "${pids[@]}"; do wait "$pid"; done
     ;;
   tao)

@@ -78,6 +78,20 @@
 //! `interface` and the class implementing it — name no DLRL base type,
 //! so nothing is missing for that column.
 //!
+//! ## `--lang idl`: the implied IDL
+//!
+//! DDS 1.2 §8.2.2.2 gives the model description as IDL valuetypes, the
+//! application classes deriving from `DDS::ObjectRoot` of the generic
+//! IDL (`crates/dlrl/idl/dds_dlrl.idl`, §8.2.1.2.1), and §8.2.1.2.2 the
+//! IDL each class `Foo` implies: `FooHome`, `FooListener`,
+//! `FooSelection`, the typed collections and the rest. `--lang idl`
+//! finds those valuetypes in the AST ([`application_classes`]) and writes
+//! `<stem>_dlrl.idl`, which includes the model description and declares
+//! the implied IDL of each ([`implied_idl_file`]). This input is not the
+//! pragma dialect: a file without such a valuetype gets no IDL, a file
+//! without pragmas no class of the four languages, and `--lang all`
+//! writes what the file has input for.
+//!
 //! An attribute or key of an IDL enumeration or structure is a different
 //! case: its type is the one `idlc generate` writes for the same file,
 //! which does exist. The C++ header includes `<stem>.hpp` and the
@@ -89,8 +103,8 @@ use std::collections::BTreeMap;
 use zerodds_dlrl::pragma::{DlrlPragma, ParsePragmaError, parse_pragma};
 use zerodds_dlrl_codegen::{
     DlrlTypeInfo, generate_cpp_home, generate_cpp_object, generate_csharp_home,
-    generate_csharp_object, generate_java_home, generate_java_object, generate_ts_class,
-    generate_ts_import, generate_ts_interface,
+    generate_csharp_object, generate_implied_idl, generate_java_home, generate_java_object,
+    generate_ts_class, generate_ts_import, generate_ts_interface,
 };
 use zerodds_idl_cst::Span;
 use zerodds_idl_parse::{Diagnostic, DiagnosticCode};
@@ -109,6 +123,12 @@ pub const LANGUAGES: [Language; 4] = [
     Language::Java,
     Language::TypeScript,
 ];
+
+/// The `--lang` value for the implied IDL of the application classes
+/// (DDS 1.2 §8.2.1.2.2): IDL is not a [`Language`] of the four backends,
+/// and its input is the valuetypes deriving from `DDS::ObjectRoot`, not
+/// the three pragmas. `--lang all` includes it.
+pub const IDL: &str = "idl";
 
 /// Every name `--lang` accepts under `dlrl`, comma-separated, for the
 /// usage text and the error an unknown one gets.
@@ -573,6 +593,106 @@ fn find_structure(
     match (by_simple.next(), by_simple.next()) {
         (Some((id, _, _)), None) => Some(*id),
         _ => None,
+    }
+}
+
+/// The scoped name of the base every application class derives from:
+/// `ObjectRoot` of the generic DLRL IDL, `crates/dlrl/idl/dds_dlrl.idl`
+/// (DDS 1.2 §8.2.1.2.1).
+pub const OBJECT_ROOT: &str = "DDS::ObjectRoot";
+
+/// The application classes of `ast`, by scoped name and in declaration
+/// order: the valuetypes that derive, directly or through other
+/// valuetypes, from [`OBJECT_ROOT`] (DDS 1.2 §8.2.2.2: "application
+/// classes are valuetypes" inheriting from `ObjectRoot`). The model
+/// description that declares them includes `dds_dlrl.idl`. A valuetype of
+/// an `#include`d file counts, as a pragma of one does for the four
+/// languages.
+#[must_use]
+pub fn application_classes(ast: &zerodds_ast::Ast) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (id, node) in ast.types() {
+        if !matches!(node.kind, zerodds_ast::TypeKind::Valuetype { .. }) {
+            continue;
+        }
+        let Ok(name) = scoped_name(ast, id) else {
+            continue;
+        };
+        if name != OBJECT_ROOT && derives_from_object_root(ast, id, 0) && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// Whether one of the base valuetypes of `ty`, at any depth up to
+/// [`MAX_DEPTH`], is [`OBJECT_ROOT`].
+///
+/// zerodds-lint: recursion-depth 64 — one call per base valuetype; the
+/// `depth` argument is checked against `MAX_DEPTH` (64) on entry.
+fn derives_from_object_root(ast: &zerodds_ast::Ast, ty: TypeId, depth: usize) -> bool {
+    if depth >= MAX_DEPTH {
+        return false;
+    }
+    let Ok(node) = ast.type_(ty) else {
+        return false;
+    };
+    let zerodds_ast::TypeKind::Valuetype { bases, .. } = &node.kind else {
+        return false;
+    };
+    bases
+        .iter()
+        .filter_map(zerodds_ast_core::Ref::resolved)
+        .any(|base| {
+            scoped_name(ast, base).is_ok_and(|n| n == OBJECT_ROOT)
+                || derives_from_object_root(ast, base, depth + 1)
+        })
+}
+
+/// The implied IDL of DDS 1.2 §8.2.1.2.2 for `classes` (from
+/// [`application_classes`]), as `<stem>_dlrl.idl`: it includes the model
+/// description it was generated from, which includes `dds_dlrl.idl`, and
+/// declares for each class `Foo` the thirteen constructs `FooSeq`,
+/// `FooListener`, `FooListenerSeq`, `FooSelectionListener`, `FooFilter`,
+/// `FooQuery`, `FooSelection`, `FooSelectionSeq`, `FooHome`, `FooList`,
+/// `FooSet`, `FooStrMap` and `FooIntMap` in the modules of the class
+/// ([`generate_implied_idl`], whose doc names the changes against the
+/// printed text). Compiled with the include directory of the model
+/// description and that of `dds_dlrl.idl`.
+#[must_use]
+pub fn implied_idl_file(classes: &[String], path: &str, stem: &str) -> Generated {
+    let model = std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(path);
+    let guard = format!(
+        "{}_DLRL_IDL",
+        stem.chars()
+            .map(|c| if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            })
+            .collect::<String>()
+    );
+    let mut text = format!(
+        "// Generated by `idlc dlrl` from {path}, idl: the implied IDL of the
+         // application classes (OMG DDS 1.2 §8.2.1.2.2). Do not edit.
+         
+         #ifndef {guard}
+         #define {guard}
+         
+         #include \"{model}\"
+"
+    );
+    for class in classes {
+        text.push('\n');
+        text.push_str(&generate_implied_idl(class));
+    }
+    text.push_str("\n#endif\n");
+    Generated {
+        name: format!("{stem}_dlrl.idl"),
+        text,
     }
 }
 

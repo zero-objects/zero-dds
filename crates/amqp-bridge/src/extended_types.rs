@@ -7,7 +7,8 @@
 //! types (`ubyte`/`ushort`/`uint`/`byte`/`short`/`int`), floating-
 //! point (`float`/`double`), `char`, `decimal32`/`64`/`128`,
 //! `timestamp` and `uuid`, plus the compound types `list`, `map` and
-//! `array` with a DoS cap on the recursion depth.
+//! `array` with a DoS cap on the recursion depth, and the described
+//! types (§1.3.4) with a numeric or a symbolic descriptor (§1.5).
 //!
 //! Cross-Ref: DDS-AMQP-1.0 §7.1 (Type-System-Mapping) + §7.2
 //! (Composite-Type-Mapping).
@@ -21,6 +22,76 @@ use crate::types::{AmqpValue, TypeError, codes};
 // DoS cap for compound recursion (analogous to Spec §3.3.1.4,
 // DDS-AMQP-1.0 §6.1 implementation note).
 const MAX_COMPOUND_DEPTH: usize = 32;
+
+// What one octet of the input pays for: one decoded value. Every element
+// of a list or a map and every array element with octets of its own takes
+// at least one octet of the input, so the memory of a decoded value is
+// bounded by this many octets per octet read. Two things take no octets:
+// the elements of an array whose constructor has none (0x40 to 0x45), and
+// the copy of the shared descriptor each element of an array of described
+// values gets. Both are charged against a spare of this many octets per
+// octet of the outermost list, map or array they are in (`within`,
+// `charge`), which all nested values share: nesting does not multiply it.
+const VALUE_OCTETS: usize = core::mem::size_of::<AmqpExtValue>();
+
+/// Runs `body` with the spare of the outermost compound value: a list, map
+/// or array of `total` octets that is in no other one opens a spare of
+/// `VALUE_OCTETS` per octet; a nested one shares the spare it finds.
+fn within<T>(
+    spare: &mut Option<usize>,
+    total: usize,
+    body: impl FnOnce(&mut Option<usize>) -> Result<T, TypeError>,
+) -> Result<T, TypeError> {
+    let outermost = spare.is_none();
+    if outermost {
+        *spare = Some(total.saturating_mul(VALUE_OCTETS));
+    }
+    let result = body(spare);
+    if outermost {
+        *spare = None;
+    }
+    result
+}
+
+/// Takes `count` times `each` octets from the spare.
+///
+/// # Errors
+/// `LengthTooLarge` when the spare does not hold them.
+fn charge(spare: &mut Option<usize>, count: usize, each: usize) -> Result<(), TypeError> {
+    let cost = count.checked_mul(each).ok_or(TypeError::LengthTooLarge)?;
+    match spare {
+        Some(left) if *left >= cost => {
+            *left -= cost;
+            Ok(())
+        }
+        _ => Err(TypeError::LengthTooLarge),
+    }
+}
+
+/// The octets an array element takes behind the shared constructor
+/// `constructor` (Spec §1.2: the upper half of a format code is its
+/// category): fixed widths 0, 1, 2, 4, 8 and 16 for 0x4 to 0x9, a size of
+/// one octet for 0xa, 0xc and 0xe, of four octets for 0xb, 0xd and 0xf.
+/// `None` when `rest` is too short to say; the element decoder then
+/// reports what is missing.
+fn element_octets(constructor: u8, rest: &[u8]) -> Result<Option<usize>, TypeError> {
+    Ok(match constructor >> 4 {
+        0x4 => Some(0),
+        0x5 => Some(1),
+        0x6 => Some(2),
+        0x7 => Some(4),
+        0x8 => Some(8),
+        0x9 => Some(16),
+        0xa | 0xc | 0xe => rest.first().map(|n| 1 + usize::from(*n)),
+        0xb | 0xd | 0xf => match rest {
+            [a, b, c, d, ..] => {
+                Some(4usize.saturating_add(u32::from_be_bytes([*a, *b, *c, *d]) as usize))
+            }
+            _ => None,
+        },
+        _ => return Err(TypeError::UnsupportedFormatCode(constructor)),
+    })
+}
 
 // ============================================================================
 //  Integer-Tail (ubyte / ushort / uint / byte / short / int).
@@ -326,6 +397,46 @@ pub fn encode_decimal128(bid: [u8; 16]) -> Vec<u8> {
     out
 }
 
+/// Decode decimal32: the four octets behind `0x74`, as they are (the
+/// IEEE 754-2008 decimal32 in the BID encoding, Spec §1.6.13).
+///
+/// # Errors
+/// `Truncated`.
+pub fn decode_decimal32(bytes: &[u8]) -> Result<([u8; 4], usize), TypeError> {
+    if bytes.len() < 5 || bytes[0] != codes::DECIMAL32 {
+        return Err(TypeError::Truncated);
+    }
+    let mut out = [0u8; 4];
+    out.copy_from_slice(&bytes[1..5]);
+    Ok((out, 5))
+}
+
+/// Decode decimal64: the eight octets behind `0x84` (Spec §1.6.14).
+///
+/// # Errors
+/// `Truncated`.
+pub fn decode_decimal64(bytes: &[u8]) -> Result<([u8; 8], usize), TypeError> {
+    if bytes.len() < 9 || bytes[0] != codes::DECIMAL64 {
+        return Err(TypeError::Truncated);
+    }
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&bytes[1..9]);
+    Ok((out, 9))
+}
+
+/// Decode decimal128: the sixteen octets behind `0x94` (Spec §1.6.15).
+///
+/// # Errors
+/// `Truncated`.
+pub fn decode_decimal128(bytes: &[u8]) -> Result<([u8; 16], usize), TypeError> {
+    if bytes.len() < 17 || bytes[0] != codes::DECIMAL128 {
+        return Err(TypeError::Truncated);
+    }
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&bytes[1..17]);
+    Ok((out, 17))
+}
+
 // ============================================================================
 //  Compound: List, Map, Array.
 // ============================================================================
@@ -361,6 +472,13 @@ pub enum AmqpExtValue {
     Float(f32),
     /// Spec §1.6.12
     Double(f64),
+    /// Spec §1.6.13 — the four octets of an IEEE 754-2008 decimal32 in the
+    /// BID encoding, most significant octet first.
+    Decimal32([u8; 4]),
+    /// Spec §1.6.14 — the eight octets of a decimal64.
+    Decimal64([u8; 8]),
+    /// Spec §1.6.15 — the sixteen octets of a decimal128.
+    Decimal128([u8; 16]),
     /// Spec §1.6.16
     Char(char),
     /// Spec §1.6.17
@@ -379,13 +497,29 @@ pub enum AmqpExtValue {
     Map(Vec<(AmqpExtValue, AmqpExtValue)>),
     /// Spec §1.6.24
     Array(Vec<AmqpExtValue>),
-    /// Spec §1.3.4 — a **described type**: `0x00` + descriptor (ulong) + value.
-    /// Used for composite types like `source`/`target`/message sections that
-    /// appear nested inside performative lists.
+    /// Spec §1.3.4 — a **described type**: `0x00` + descriptor + value,
+    /// the descriptor in its numeric form (Spec §1.5). Used for composite
+    /// types like `source`/`target`/message sections that appear nested
+    /// inside performative lists.
+    ///
+    /// A value received with the symbolic descriptor of a type of the
+    /// AMQP 1.0 specification (`amqp:target:list`) decodes to this variant
+    /// with the numeric descriptor of the same type
+    /// ([`crate::descriptors`]): the two name one type (Spec §1.3.3).
     Described {
         /// The descriptor code (e.g. `0x29` for `target`, `0x28` for `source`).
         descriptor: u64,
         /// The described value (typically a `List`).
+        value: alloc::boxed::Box<AmqpExtValue>,
+    },
+    /// Spec §1.3.4 with §1.5 — a described type whose descriptor is a
+    /// symbol outside the AMQP 1.0 specification's own table
+    /// (`<domain>:<name>`, e.g. `example:book:list`): `0x00` + symbol +
+    /// value.
+    DescribedSymbol {
+        /// The symbolic descriptor.
+        descriptor: String,
+        /// The described value.
         value: alloc::boxed::Box<AmqpExtValue>,
     },
 }
@@ -422,6 +556,9 @@ impl AmqpExtValue {
             Self::Long(v) => Ok(crate::types::encode_long(*v)),
             Self::Float(v) => Ok(encode_float(*v)),
             Self::Double(v) => Ok(encode_double(*v)),
+            Self::Decimal32(d) => Ok(encode_decimal32(*d)),
+            Self::Decimal64(d) => Ok(encode_decimal64(*d)),
+            Self::Decimal128(d) => Ok(encode_decimal128(*d)),
             Self::Char(c) => encode_char(*c),
             Self::Timestamp(t) => Ok(encode_timestamp(*t)),
             Self::Uuid(u) => Ok(encode_uuid(*u)),
@@ -438,6 +575,36 @@ impl AmqpExtValue {
                 out.extend_from_slice(&value.encode_at(depth + 1)?);
                 Ok(out)
             }
+            Self::DescribedSymbol { descriptor, value } => {
+                // 0x00 + symbol(descriptor) + encoded value.
+                let mut out = alloc::vec![0x00u8];
+                out.extend_from_slice(&crate::types::encode_symbol(descriptor)?);
+                out.extend_from_slice(&value.encode_at(depth + 1)?);
+                Ok(out)
+            }
+        }
+    }
+
+    /// Puts `value` under `descriptor`, a decoded descriptor value (Spec
+    /// §1.5): a `ulong` is the numeric form; a `symbol` of the AMQP 1.0
+    /// specification's table is the numeric form of the same type, any
+    /// other symbol stays symbolic.
+    ///
+    /// # Errors
+    /// `ReservedDescriptor` for a descriptor of any other type, which
+    /// §1.5 reserves.
+    fn describe(descriptor: Self, value: Self) -> Result<Self, TypeError> {
+        let value = alloc::boxed::Box::new(value);
+        match descriptor {
+            Self::Ulong(descriptor) => Ok(Self::Described { descriptor, value }),
+            Self::Symbol(symbol) => Ok(match crate::descriptors::code_of(&symbol) {
+                Some(descriptor) => Self::Described { descriptor, value },
+                None => Self::DescribedSymbol {
+                    descriptor: symbol,
+                    value,
+                },
+            }),
+            _ => Err(TypeError::ReservedDescriptor),
         }
     }
 
@@ -503,10 +670,14 @@ impl AmqpExtValue {
     /// # Errors
     /// see [`TypeError`].
     pub fn decode(bytes: &[u8]) -> Result<(Self, usize), TypeError> {
-        Self::decode_at(bytes, 0)
+        Self::decode_at(bytes, 0, &mut None)
     }
 
-    fn decode_at(bytes: &[u8], depth: usize) -> Result<(Self, usize), TypeError> {
+    fn decode_at(
+        bytes: &[u8],
+        depth: usize,
+        spare: &mut Option<usize>,
+    ) -> Result<(Self, usize), TypeError> {
         if depth > MAX_COMPOUND_DEPTH {
             return Err(TypeError::LengthTooLarge);
         }
@@ -515,21 +686,12 @@ impl AmqpExtValue {
         }
         let code = bytes[0];
         match code {
-            // Described type (§1.3.4): 0x00 + descriptor(ulong) + value.
+            // Described type (§1.3.4): 0x00 + descriptor + value. The
+            // descriptor is a ulong or a symbol (§1.5).
             0x00 => {
-                let (desc, dn) = crate::types::decode_value(&bytes[1..])?;
-                let descriptor = match desc {
-                    AmqpValue::Ulong(u) => u,
-                    _ => return Err(TypeError::UnsupportedFormatCode(code)),
-                };
-                let (value, vn) = Self::decode_at(&bytes[1 + dn..], depth + 1)?;
-                Ok((
-                    Self::Described {
-                        descriptor,
-                        value: alloc::boxed::Box::new(value),
-                    },
-                    1 + dn + vn,
-                ))
+                let (descriptor, dn) = Self::decode_at(&bytes[1..], depth + 1, spare)?;
+                let (value, vn) = Self::decode_at(&bytes[1 + dn..], depth + 1, spare)?;
+                Ok((Self::describe(descriptor, value)?, 1 + dn + vn))
             }
             codes::NULL => Ok((Self::Null, 1)),
             codes::BOOLEAN_TRUE => Ok((Self::Boolean(true), 1)),
@@ -568,6 +730,9 @@ impl AmqpExtValue {
             }
             codes::FLOAT => decode_float(bytes).map(|(v, n)| (Self::Float(v), n)),
             codes::DOUBLE => decode_double(bytes).map(|(v, n)| (Self::Double(v), n)),
+            codes::DECIMAL32 => decode_decimal32(bytes).map(|(v, n)| (Self::Decimal32(v), n)),
+            codes::DECIMAL64 => decode_decimal64(bytes).map(|(v, n)| (Self::Decimal64(v), n)),
+            codes::DECIMAL128 => decode_decimal128(bytes).map(|(v, n)| (Self::Decimal128(v), n)),
             codes::CHAR => decode_char(bytes).map(|(v, n)| (Self::Char(v), n)),
             codes::TIMESTAMP => decode_timestamp(bytes).map(|(v, n)| (Self::Timestamp(v), n)),
             codes::UUID => decode_uuid(bytes).map(|(v, n)| (Self::Uuid(v), n)),
@@ -596,9 +761,9 @@ impl AmqpExtValue {
                 }
             }
             codes::LIST0 => Ok((Self::List(Vec::new()), 1)),
-            codes::LIST8 | codes::LIST32 => decode_list(bytes, depth),
-            codes::MAP8 | codes::MAP32 => decode_map(bytes, depth),
-            codes::ARRAY8 | codes::ARRAY32 => decode_array(bytes, depth),
+            codes::LIST8 | codes::LIST32 => decode_list(bytes, depth, spare),
+            codes::MAP8 | codes::MAP32 => decode_map(bytes, depth, spare),
+            codes::ARRAY8 | codes::ARRAY32 => decode_array(bytes, depth, spare),
             other => Err(TypeError::UnsupportedFormatCode(other)),
         }
     }
@@ -647,7 +812,11 @@ fn encode_list(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeErro
     }
 }
 
-fn decode_list(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), TypeError> {
+fn decode_list(
+    bytes: &[u8],
+    depth: usize,
+    spare: &mut Option<usize>,
+) -> Result<(AmqpExtValue, usize), TypeError> {
     if bytes.is_empty() {
         return Err(TypeError::Truncated);
     }
@@ -682,14 +851,16 @@ fn decode_list(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), Type
     if count > total.saturating_sub(body_start) {
         return Err(TypeError::Truncated);
     }
-    let mut items = Vec::with_capacity(count);
-    let mut cur = body_start;
-    for _ in 0..count {
-        let (v, n) = AmqpExtValue::decode_at(&bytes[cur..total], depth + 1)?;
-        items.push(v);
-        cur += n;
-    }
-    Ok((AmqpExtValue::List(items), total))
+    within(spare, total, |spare| {
+        let mut items = Vec::with_capacity(count);
+        let mut cur = body_start;
+        for _ in 0..count {
+            let (v, n) = AmqpExtValue::decode_at(&bytes[cur..total], depth + 1, spare)?;
+            items.push(v);
+            cur += n;
+        }
+        Ok((AmqpExtValue::List(items), total))
+    })
 }
 
 // ----- map -----
@@ -729,7 +900,11 @@ fn encode_map(
     }
 }
 
-fn decode_map(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), TypeError> {
+fn decode_map(
+    bytes: &[u8],
+    depth: usize,
+    spare: &mut Option<usize>,
+) -> Result<(AmqpExtValue, usize), TypeError> {
     if bytes.is_empty() {
         return Err(TypeError::Truncated);
     }
@@ -761,23 +936,76 @@ fn decode_map(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), TypeE
     if count > total.saturating_sub(body_start) {
         return Err(TypeError::Truncated);
     }
-    let mut entries = Vec::with_capacity(count / 2);
-    let mut cur = body_start;
-    for _ in 0..count / 2 {
-        let (k, kn) = AmqpExtValue::decode_at(&bytes[cur..total], depth + 1)?;
-        cur += kn;
-        let (v, vn) = AmqpExtValue::decode_at(&bytes[cur..total], depth + 1)?;
-        cur += vn;
-        entries.push((k, v));
-    }
-    Ok((AmqpExtValue::Map(entries), total))
+    within(spare, total, |spare| {
+        let mut entries = Vec::with_capacity(count / 2);
+        let mut cur = body_start;
+        for _ in 0..count / 2 {
+            let (k, kn) = AmqpExtValue::decode_at(&bytes[cur..total], depth + 1, spare)?;
+            cur += kn;
+            let (v, vn) = AmqpExtValue::decode_at(&bytes[cur..total], depth + 1, spare)?;
+            cur += vn;
+            entries.push((k, v));
+        }
+        Ok((AmqpExtValue::Map(entries), total))
+    })
 }
 
 // ----- array -----
 
-fn encode_array(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeError> {
-    if items.is_empty() {
-        return Err(TypeError::LengthTooLarge); // array MUST have ≥1 element to know constructor
+/// The constructor the elements of an array share and the octets of each
+/// element behind it (Spec §1.6.24, Figure 1.6; the constructor of Figure
+/// 1.3: `format-code / %x00 descriptor constructor`).
+///
+/// zerodds-lint: recursion-depth 32 (one level per descriptor of the
+/// element type; bounded by `MAX_COMPOUND_DEPTH`)
+fn array_parts(items: &[AmqpExtValue], depth: usize) -> Result<(Vec<u8>, Vec<Vec<u8>>), TypeError> {
+    if depth > MAX_COMPOUND_DEPTH {
+        return Err(TypeError::LengthTooLarge);
+    }
+    let Some(first) = items.first() else {
+        // An array without elements still has a constructor (Figure 1.6).
+        // The value does not keep the one it was read with, and no element
+        // is there to give one: null, which says nothing of a type.
+        return Ok((alloc::vec![codes::NULL], Vec::new()));
+    };
+    // Described elements: the descriptor is part of the constructor and
+    // written once; the elements are the described values without it.
+    let descriptor = match first {
+        AmqpExtValue::Described { descriptor, .. } => Some(crate::types::encode_ulong(*descriptor)),
+        AmqpExtValue::DescribedSymbol { descriptor, .. } => {
+            Some(crate::types::encode_symbol(descriptor)?)
+        }
+        _ => None,
+    };
+    if let Some(descriptor) = descriptor {
+        let mut inner = Vec::with_capacity(items.len());
+        for item in items {
+            let same = match (first, item) {
+                (
+                    AmqpExtValue::Described { descriptor: a, .. },
+                    AmqpExtValue::Described { descriptor: b, .. },
+                ) => a == b,
+                (
+                    AmqpExtValue::DescribedSymbol { descriptor: a, .. },
+                    AmqpExtValue::DescribedSymbol { descriptor: b, .. },
+                ) => a == b,
+                _ => false,
+            };
+            let (AmqpExtValue::Described { value, .. }
+            | AmqpExtValue::DescribedSymbol { value, .. }) = item
+            else {
+                return Err(TypeError::UnsupportedFormatCode(0x00));
+            };
+            if !same {
+                return Err(TypeError::UnsupportedFormatCode(0x00));
+            }
+            inner.push((**value).clone());
+        }
+        let (inner_constructor, elements) = array_parts(&inner, depth + 1)?;
+        let mut constructor = alloc::vec![0x00u8];
+        constructor.extend_from_slice(&descriptor);
+        constructor.extend_from_slice(&inner_constructor);
+        return Ok((constructor, elements));
     }
     // Spec §1.6.24: one constructor for every element. The compact
     // encodings of one type differ with the value (uint0, smalluint and
@@ -800,14 +1028,23 @@ fn encode_array(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeErr
     let Some(&constructor_byte) = encoded[0].first() else {
         return Err(TypeError::LengthTooLarge);
     };
-    let mut body = Vec::new();
-    body.push(constructor_byte);
+    let mut elements = Vec::with_capacity(encoded.len());
     for enc in &encoded {
-        // Skip the constructor byte for subsequent elements (Spec §1.2.4).
+        // Each element without its constructor (Spec §1.2.4). A described
+        // element among plain ones begins with 0x00 and is refused here.
         if enc.first() != Some(&constructor_byte) {
             return Err(TypeError::UnsupportedFormatCode(constructor_byte));
         }
-        body.extend_from_slice(&enc[1..]);
+        elements.push(enc[1..].to_vec());
+    }
+    Ok((alloc::vec![constructor_byte], elements))
+}
+
+fn encode_array(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeError> {
+    let (constructor, elements) = array_parts(items, depth)?;
+    let mut body = constructor;
+    for element in &elements {
+        body.extend_from_slice(element);
     }
     let count = items.len();
     let use_short = body.len() <= 254 && count <= u8::MAX as usize;
@@ -835,7 +1072,11 @@ fn encode_array(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeErr
     }
 }
 
-fn decode_array(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), TypeError> {
+fn decode_array(
+    bytes: &[u8],
+    depth: usize,
+    spare: &mut Option<usize>,
+) -> Result<(AmqpExtValue, usize), TypeError> {
     if bytes.is_empty() {
         return Err(TypeError::Truncated);
     }
@@ -859,27 +1100,70 @@ fn decode_array(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), Typ
     if bytes.len() < total || body_start >= total {
         return Err(TypeError::Truncated);
     }
-    let constructor_byte = bytes[body_start];
-    // `count` is a wire-supplied element count (ARRAY8/ARRAY32), not yet
-    // validated against the bytes actually available for the body. Reject
-    // before allocating: every element needs >= 1 body byte beyond the
-    // shared constructor (mirrors `crates/cdr/src/composite.rs`'s
-    // `len > reader.remaining()` guard).
-    if count > total.saturating_sub(body_start + 1) {
-        return Err(TypeError::Truncated);
-    }
-    // Reconstruct each element by prepending the constructor byte to its
-    // payload before passing to decode_at.
-    let mut items = Vec::with_capacity(count);
-    let mut cur = body_start + 1;
-    for _ in 0..count {
-        let mut elem = alloc::vec![constructor_byte];
-        elem.extend_from_slice(&bytes[cur..total]);
-        let (v, n) = AmqpExtValue::decode_at(&elem, depth + 1)?;
-        items.push(v);
-        cur += n - 1; // -1 for the prepended constructor byte
-    }
-    Ok((AmqpExtValue::Array(items), total))
+    within(spare, total, |spare| {
+        // The element constructor (Spec §1.2, Figure 1.3): a format code,
+        // or 0x00, a descriptor and the constructor of the described
+        // value; a described value can itself be described.
+        let mut cur = body_start;
+        let mut descriptors = Vec::new();
+        while bytes[cur] == 0x00 {
+            if descriptors.len() >= MAX_COMPOUND_DEPTH {
+                return Err(TypeError::LengthTooLarge);
+            }
+            let (descriptor, n) =
+                AmqpExtValue::decode_at(&bytes[cur + 1..total], depth + 1, spare)?;
+            descriptors.push(descriptor);
+            cur += 1 + n;
+            if cur >= total {
+                return Err(TypeError::Truncated);
+            }
+        }
+        let constructor_byte = bytes[cur];
+        cur += 1;
+        // `count` is a wire-supplied element count (ARRAY8/ARRAY32), not
+        // yet validated against the bytes actually available for the body.
+        // Reject before allocating: an element with octets needs >= 1 body
+        // byte beyond the shared constructor (mirrors
+        // `crates/cdr/src/composite.rs`'s `len > reader.remaining()`
+        // guard). The elements of a constructor without octets (null,
+        // true, false, uint0, ulong0, list0: 0x40 to 0x45) take none; they
+        // are charged against the spare of the outermost compound value.
+        if matches!(constructor_byte, 0x40..=0x45) {
+            charge(spare, count, VALUE_OCTETS)?;
+        } else if count > total.saturating_sub(cur) {
+            return Err(TypeError::Truncated);
+        }
+        // Each element is put under a copy of every descriptor of the
+        // constructor: a box per descriptor, and the symbol of a symbolic
+        // one. The input holds the descriptors once.
+        let per_element = descriptors.iter().fold(0usize, |sum, d| {
+            let symbol = match d {
+                AmqpExtValue::Symbol(s) => s.len(),
+                _ => 0,
+            };
+            sum.saturating_add(VALUE_OCTETS).saturating_add(symbol)
+        });
+        charge(spare, count, per_element)?;
+        // Each element is its constructor and its own octets, whose number
+        // the constructor states.
+        let mut items = Vec::with_capacity(count);
+        let mut elem = Vec::new();
+        for _ in 0..count {
+            let rest = &bytes[cur..total];
+            let own =
+                element_octets(constructor_byte, rest)?.map_or(rest.len(), |n| n.min(rest.len()));
+            elem.clear();
+            elem.push(constructor_byte);
+            elem.extend_from_slice(&rest[..own]);
+            let (mut v, n) = AmqpExtValue::decode_at(&elem, depth + 1, spare)?;
+            cur += n - 1; // -1 for the prepended constructor byte
+            for descriptor in descriptors.iter().rev() {
+                v = AmqpExtValue::describe(descriptor.clone(), v)?;
+            }
+            items.push(v);
+        }
+        Ok((AmqpExtValue::Array(items), total))
+    })
 }
 
 // ============================================================================
@@ -979,6 +1263,181 @@ mod tests {
         assert_eq!((d64[0], d64.len()), (0x84, 9));
         let d128 = encode_decimal128([9; 16]);
         assert_eq!((d128[0], d128.len()), (0x94, 17));
+    }
+
+    /// §1.6.13: a received decimal32 is its four octets, in the order of
+    /// the wire. The octets are the BID encoding of 1.5 (coefficient 15,
+    /// exponent -1: biased exponent 100 in bits 30 to 23), from IEEE
+    /// 754-2008 §3.5.2.
+    #[test]
+    fn amqp10_1_6_13_a_decimal32_is_read_back_octet_for_octet() {
+        wire(
+            AmqpExtValue::Decimal32([0x32, 0x00, 0x00, 0x0f]),
+            &[0x74, 0x32, 0x00, 0x00, 0x0f],
+        );
+        assert_eq!(
+            decode_decimal32(&[0x74, 0x32, 0x00, 0x00, 0x0f, 0xff]),
+            Ok(([0x32, 0x00, 0x00, 0x0f], 5)),
+            "an octet behind the value is not part of it"
+        );
+        // A decimal32 as one field among others keeps the fields behind it.
+        let list = [0xc0, 0x08, 0x02, 0x74, 0x32, 0x00, 0x00, 0x0f, 0x50, 0x07];
+        assert_eq!(
+            AmqpExtValue::decode(&list).expect("decode"),
+            (
+                AmqpExtValue::List(alloc::vec![
+                    AmqpExtValue::Decimal32([0x32, 0x00, 0x00, 0x0f]),
+                    AmqpExtValue::Ubyte(7)
+                ]),
+                list.len()
+            )
+        );
+    }
+
+    /// §1.6.14: a received decimal64 is its eight octets (here 1.5:
+    /// biased exponent 397, coefficient 15).
+    #[test]
+    fn amqp10_1_6_14_a_decimal64_is_read_back_octet_for_octet() {
+        let bid = [0x31, 0xa0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f];
+        let mut octets = alloc::vec![0x84];
+        octets.extend_from_slice(&bid);
+        wire(AmqpExtValue::Decimal64(bid), &octets);
+        assert_eq!(decode_decimal64(&octets), Ok((bid, 9)));
+    }
+
+    /// §1.6.15: a received decimal128 is its sixteen octets (here 1.5:
+    /// biased exponent 6175, coefficient 15).
+    #[test]
+    fn amqp10_1_6_15_a_decimal128_is_read_back_octet_for_octet() {
+        let mut bid = [0u8; 16];
+        bid[0] = 0x30;
+        bid[1] = 0x3e;
+        bid[15] = 0x0f;
+        let mut octets = alloc::vec![0x94];
+        octets.extend_from_slice(&bid);
+        wire(AmqpExtValue::Decimal128(bid), &octets);
+        assert_eq!(decode_decimal128(&octets), Ok((bid, 17)));
+    }
+
+    /// §1.6.13 to §1.6.15: a decimal with fewer octets than its width is
+    /// refused, by the value decoder and by the three functions; so is
+    /// another format code.
+    #[test]
+    fn amqp10_1_6_13_a_cut_decimal_is_refused() {
+        for (code, width) in [(0x74u8, 4usize), (0x84, 8), (0x94, 16)] {
+            let mut octets = alloc::vec![code];
+            octets.extend(core::iter::repeat_n(0x11u8, width - 1));
+            assert_eq!(
+                AmqpExtValue::decode(&octets),
+                Err(TypeError::Truncated),
+                "{code:#x}"
+            );
+            octets.push(0x11);
+            assert_eq!(
+                AmqpExtValue::decode(&octets).map(|(_, n)| n),
+                Ok(width + 1),
+                "{code:#x}"
+            );
+        }
+        assert_eq!(
+            decode_decimal32(&[0x74, 1, 2, 3]),
+            Err(TypeError::Truncated)
+        );
+        assert_eq!(
+            decode_decimal32(&[0x72, 1, 2, 3, 4]),
+            Err(TypeError::Truncated)
+        );
+        assert_eq!(decode_decimal64(&[0x84; 8]), Err(TypeError::Truncated));
+        assert_eq!(decode_decimal64(&[0x82; 9]), Err(TypeError::Truncated));
+        assert_eq!(decode_decimal128(&[0x94; 16]), Err(TypeError::Truncated));
+        assert_eq!(decode_decimal128(&[0x98; 17]), Err(TypeError::Truncated));
+    }
+
+    /// §1.5 with §1.3.4: a described value with a symbolic descriptor is
+    /// 0x00, the symbol, the value. A symbol outside the specification's
+    /// table stays the symbol.
+    #[test]
+    fn amqp10_1_5_a_symbolic_descriptor_is_read() {
+        let mut octets = alloc::vec![0x00, 0xa3, 0x11];
+        octets.extend_from_slice(b"example:book:list");
+        octets.extend_from_slice(&[0xc0, 0x03, 0x01, 0x50, 0x07]);
+        wire(
+            AmqpExtValue::DescribedSymbol {
+                descriptor: "example:book:list".into(),
+                value: alloc::boxed::Box::new(AmqpExtValue::List(alloc::vec![
+                    AmqpExtValue::Ubyte(7)
+                ])),
+            },
+            &octets,
+        );
+        // sym32 is the same symbol.
+        let mut wide = alloc::vec![0x00, 0xb3, 0x00, 0x00, 0x00, 0x11];
+        wide.extend_from_slice(b"example:book:list");
+        wide.extend_from_slice(&[0x40]);
+        assert_eq!(
+            AmqpExtValue::decode(&wide).expect("decode"),
+            (
+                AmqpExtValue::DescribedSymbol {
+                    descriptor: "example:book:list".into(),
+                    value: alloc::boxed::Box::new(AmqpExtValue::Null),
+                },
+                wide.len()
+            )
+        );
+    }
+
+    /// §1.3.3 with §1.5: the symbolic descriptor of a type of the
+    /// specification names the type its numeric descriptor names: a
+    /// target sent as `amqp:target:list` is the target sent as 0x29.
+    #[test]
+    fn amqp10_1_5_a_symbol_of_the_specification_is_its_numeric_descriptor() {
+        let mut by_symbol = alloc::vec![0x00, 0xa3, 0x10];
+        by_symbol.extend_from_slice(b"amqp:target:list");
+        by_symbol.extend_from_slice(&[0xc0, 0x04, 0x01, 0xa1, 0x01, b'q']);
+        let by_code = [0x00, 0x53, 0x29, 0xc0, 0x04, 0x01, 0xa1, 0x01, b'q'];
+        let (from_symbol, n) = AmqpExtValue::decode(&by_symbol).expect("by symbol");
+        assert_eq!(n, by_symbol.len());
+        let (from_code, _) = AmqpExtValue::decode(&by_code).expect("by code");
+        assert_eq!(from_symbol, from_code);
+        assert_eq!(
+            from_symbol,
+            AmqpExtValue::Described {
+                descriptor: 0x29,
+                value: alloc::boxed::Box::new(AmqpExtValue::List(alloc::vec![AmqpExtValue::Str(
+                    "q".into()
+                )])),
+            }
+        );
+    }
+
+    /// §1.5: a descriptor that is neither a symbol nor a ulong is
+    /// reserved, and refused by name: a string (the example of Figure
+    /// 1.2), a uint, a described descriptor.
+    #[test]
+    fn amqp10_1_5_a_descriptor_of_another_type_is_refused_as_reserved() {
+        let mut string = alloc::vec![0x00, 0xa1, 0x03];
+        string.extend_from_slice(b"URL");
+        string.extend_from_slice(&[0xa1, 0x01, b'x']);
+        assert_eq!(
+            AmqpExtValue::decode(&string),
+            Err(TypeError::ReservedDescriptor)
+        );
+        assert_eq!(
+            AmqpExtValue::decode(&[0x00, 0x52, 0x29, 0x40]),
+            Err(TypeError::ReservedDescriptor),
+            "a uint descriptor"
+        );
+        assert_eq!(
+            AmqpExtValue::decode(&[0x00, 0x00, 0x53, 0x01, 0x53, 0x02, 0x40]),
+            Err(TypeError::ReservedDescriptor),
+            "a described descriptor"
+        );
+        // A descriptor without a value behind it.
+        assert_eq!(
+            AmqpExtValue::decode(&[0x00, 0x53, 0x29]),
+            Err(TypeError::Truncated)
+        );
+        assert_eq!(AmqpExtValue::decode(&[0x00]), Err(TypeError::Truncated));
     }
 
     /// §1.6.16: a UTF-32BE code point after 0x73.
@@ -1096,9 +1555,9 @@ mod tests {
         }
         assert!(current.encode().is_err());
         let bytes = AmqpExtValue::Ubyte(7).encode().unwrap();
-        assert!(AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH).is_ok());
+        assert!(AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH, &mut None).is_ok());
         assert!(matches!(
-            AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH + 1),
+            AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH + 1, &mut None),
             Err(TypeError::LengthTooLarge)
         ));
     }
@@ -1200,6 +1659,246 @@ mod tests {
         ])
         .encode();
         assert!(r.is_err());
+        let described = |descriptor: u64, v: u8| AmqpExtValue::Described {
+            descriptor,
+            value: alloc::boxed::Box::new(AmqpExtValue::Ubyte(v)),
+        };
+        assert!(
+            AmqpExtValue::Array(alloc::vec![described(1, 1), described(2, 1)])
+                .encode()
+                .is_err(),
+            "two descriptors"
+        );
+        assert!(
+            AmqpExtValue::Array(alloc::vec![described(1, 1), AmqpExtValue::Ubyte(1)])
+                .encode()
+                .is_err(),
+            "a described and a plain element"
+        );
+        assert!(
+            AmqpExtValue::Array(alloc::vec![AmqpExtValue::Ubyte(1), described(1, 1)])
+                .encode()
+                .is_err(),
+            "a plain and a described element"
+        );
+    }
+
+    /// §1.6.24 with §1.2 (Figure 1.3, `constructor = format-code / %x00
+    /// descriptor constructor`): the constructor of an array of described
+    /// values is 0x00, the descriptor and the constructor of the value,
+    /// written once; each element is the octets of its value.
+    #[test]
+    fn amqp10_1_6_24_an_array_of_described_values_shares_descriptor_and_constructor() {
+        let described = |v: u16| AmqpExtValue::Described {
+            descriptor: 0x99,
+            value: alloc::boxed::Box::new(AmqpExtValue::Ushort(v)),
+        };
+        wire(
+            AmqpExtValue::Array(alloc::vec![described(1), described(2), described(3)]),
+            // array8, size 11, count 3; constructor 0x00 smallulong 0x99
+            // ushort; three ushorts.
+            &[
+                0xe0, 0x0b, 0x03, 0x00, 0x53, 0x99, 0x60, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03,
+            ],
+        );
+        // A symbolic descriptor, and elements whose compact encodings
+        // differ (smalluint and uint): the wide one, once.
+        let by_symbol = |v: u32| AmqpExtValue::DescribedSymbol {
+            descriptor: "x:y".into(),
+            value: alloc::boxed::Box::new(AmqpExtValue::Uint(v)),
+        };
+        wire(
+            AmqpExtValue::Array(alloc::vec![by_symbol(1), by_symbol(300)]),
+            &[
+                0xe0, 0x10, 0x02, 0x00, 0xa3, 0x03, b'x', b':', b'y', 0x70, 0, 0, 0, 1, 0, 0, 0x01,
+                0x2c,
+            ],
+        );
+        // A described value of a described value: both descriptors in the
+        // constructor, the outer one first.
+        let twice = |v: u8| AmqpExtValue::Described {
+            descriptor: 1,
+            value: alloc::boxed::Box::new(AmqpExtValue::Described {
+                descriptor: 2,
+                value: alloc::boxed::Box::new(AmqpExtValue::Ubyte(v)),
+            }),
+        };
+        wire(
+            AmqpExtValue::Array(alloc::vec![twice(7), twice(8)]),
+            &[
+                0xe0, 0x0a, 0x02, 0x00, 0x53, 0x01, 0x00, 0x53, 0x02, 0x50, 0x07, 0x08,
+            ],
+        );
+        // A descriptor without the constructor of its value.
+        assert_eq!(
+            AmqpExtValue::decode(&[0xe0, 0x04, 0x01, 0x00, 0x53, 0x99]),
+            Err(TypeError::Truncated)
+        );
+        // A reserved descriptor in the constructor.
+        assert_eq!(
+            AmqpExtValue::decode(&[0xe0, 0x06, 0x01, 0x00, 0x52, 0x99, 0x50, 0x07]),
+            Err(TypeError::ReservedDescriptor)
+        );
+    }
+
+    /// §1.6.24: the elements of a constructor without octets (null 0x40)
+    /// are counted, not read; the empty array is its constructor alone.
+    #[test]
+    fn amqp10_1_6_24_an_array_of_nulls_is_its_count() {
+        wire(
+            AmqpExtValue::Array(alloc::vec![AmqpExtValue::Null, AmqpExtValue::Null]),
+            &[0xe0, 0x02, 0x02, 0x40],
+        );
+        assert_eq!(
+            AmqpExtValue::decode(&[0xe0, 0x02, 0x00, 0xa3]).expect("empty"),
+            (AmqpExtValue::Array(Vec::new()), 4)
+        );
+        // The empty array is written with the null constructor: the value
+        // does not keep the one it was read with.
+        assert_eq!(
+            AmqpExtValue::Array(Vec::new()).encode().expect("empty"),
+            [0xe0, 0x02, 0x00, 0x40]
+        );
+        assert_eq!(
+            AmqpExtValue::decode(&[0xe0, 0x02, 0x00, 0x40]).expect("empty"),
+            (AmqpExtValue::Array(Vec::new()), 4)
+        );
+        // More elements without octets than the array has octets.
+        let mut huge = alloc::vec![0xf0];
+        huge.extend_from_slice(&5u32.to_be_bytes());
+        huge.extend_from_slice(&u32::MAX.to_be_bytes());
+        huge.push(0x40);
+        assert_eq!(AmqpExtValue::decode(&huge), Err(TypeError::LengthTooLarge));
+        // As many as it has octets: array32 of ten octets, ten nulls.
+        let array_of_nulls = |count: u32| {
+            let mut octets = alloc::vec![0xf0];
+            octets.extend_from_slice(&5u32.to_be_bytes());
+            octets.extend_from_slice(&count.to_be_bytes());
+            octets.push(0x40);
+            octets
+        };
+        assert_eq!(
+            AmqpExtValue::decode(&array_of_nulls(10)).expect("ten nulls"),
+            (AmqpExtValue::Array(alloc::vec![AmqpExtValue::Null; 10]), 10)
+        );
+        assert_eq!(
+            AmqpExtValue::decode(&array_of_nulls(11)),
+            Err(TypeError::LengthTooLarge)
+        );
+    }
+
+    /// §1.6.24: elements without octets are bounded over the whole value,
+    /// not per array. An array of arrays of nulls decodes to no more
+    /// elements than the outermost array has octets, however the count is
+    /// spread over the inner arrays.
+    #[test]
+    fn amqp10_1_6_24_nested_arrays_of_nulls_share_one_bound() {
+        // array32 of `outer` elements, each an array32 {count `inner`,
+        // constructor null}: nine octets per element.
+        let nested = |outer: u32, inner: u32| {
+            let mut body = alloc::vec![0xf0]; // the element constructor
+            for _ in 0..outer {
+                body.extend_from_slice(&5u32.to_be_bytes());
+                body.extend_from_slice(&inner.to_be_bytes());
+                body.push(0x40);
+            }
+            let mut octets = alloc::vec![0xf0];
+            octets.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
+            octets.extend_from_slice(&outer.to_be_bytes());
+            octets.extend_from_slice(&body);
+            octets
+        };
+        // 910 octets asking for 6 553 600 nulls.
+        let bomb = nested(100, 65_536);
+        assert_eq!(bomb.len(), 910);
+        assert_eq!(AmqpExtValue::decode(&bomb), Err(TypeError::LengthTooLarge));
+        // The same inside a list, as a field of a frame body is.
+        let mut in_list = alloc::vec![0xd0];
+        in_list.extend_from_slice(&(bomb.len() as u32 + 4).to_be_bytes());
+        in_list.extend_from_slice(&1u32.to_be_bytes());
+        in_list.extend_from_slice(&bomb);
+        assert_eq!(
+            AmqpExtValue::decode(&in_list),
+            Err(TypeError::LengthTooLarge)
+        );
+        // 100 inner arrays of 9 nulls: 900 nulls from 910 octets.
+        let (value, used) = AmqpExtValue::decode(&nested(100, 9)).expect("within the bound");
+        assert_eq!(used, 910);
+        let AmqpExtValue::Array(inner) = value else {
+            panic!("an array");
+        };
+        assert_eq!(inner.len(), 100);
+        assert!(
+            inner
+                .iter()
+                .all(|a| *a == AmqpExtValue::Array(alloc::vec![AmqpExtValue::Null; 9]))
+        );
+        // 100 inner arrays of 10 nulls are 1000, more than 910.
+        assert_eq!(
+            AmqpExtValue::decode(&nested(100, 10)),
+            Err(TypeError::LengthTooLarge)
+        );
+        // A second value decoded after a refused one starts with its own
+        // bound.
+        assert!(AmqpExtValue::decode(&nested(1, 9)).is_ok());
+    }
+
+    /// §1.6.24: the descriptor of an array of described values is in the
+    /// input once and in every decoded element. A long symbolic descriptor
+    /// times many short elements is refused; the octets of the outermost
+    /// value bound the copies.
+    #[test]
+    fn amqp10_1_6_24_the_copies_of_a_shared_descriptor_are_bounded() {
+        let described = |symbol_len: usize, count: usize| {
+            // constructor: 0x00, sym32 of `symbol_len` octets, uint.
+            let mut body = alloc::vec![0x00, 0xb3];
+            body.extend_from_slice(&(symbol_len as u32).to_be_bytes());
+            body.extend(core::iter::repeat_n(b'x', symbol_len));
+            body.push(0x70);
+            body.extend(core::iter::repeat_n(7u8, 4 * count));
+            let mut octets = alloc::vec![0xf0];
+            octets.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
+            octets.extend_from_slice(&(count as u32).to_be_bytes());
+            octets.extend_from_slice(&body);
+            octets
+        };
+        // 4 000 elements under a 4 000 octet symbol: 16 000 000 octets of
+        // copies from an input of about 20 000.
+        let bomb = described(4_000, 4_000);
+        assert_eq!(bomb.len(), 20_016);
+        assert_eq!(AmqpExtValue::decode(&bomb), Err(TypeError::LengthTooLarge));
+        // A descriptor of ordinary length passes.
+        let (value, _) = AmqpExtValue::decode(&described(17, 4_000)).expect("ordinary");
+        let AmqpExtValue::Array(items) = value else {
+            panic!("an array");
+        };
+        assert_eq!(items.len(), 4_000);
+        assert_eq!(
+            items[3_999],
+            AmqpExtValue::DescribedSymbol {
+                descriptor: "x".repeat(17),
+                value: alloc::boxed::Box::new(AmqpExtValue::Uint(0x0707_0707)),
+            }
+        );
+    }
+
+    /// §1.6.24: each element is read from its own octets. An array of a
+    /// million one-octet elements decodes in time linear in its length.
+    #[test]
+    fn amqp10_1_6_24_a_long_array_is_read_element_by_element() {
+        let count = 1_000_000usize;
+        let mut octets = alloc::vec![0xf0];
+        octets.extend_from_slice(&(count as u32 + 5).to_be_bytes());
+        octets.extend_from_slice(&(count as u32).to_be_bytes());
+        octets.push(0x50);
+        octets.extend(core::iter::repeat_n(9u8, count));
+        let (value, used) = AmqpExtValue::decode(&octets).expect("decode");
+        assert_eq!(used, octets.len());
+        let AmqpExtValue::Array(items) = value else {
+            panic!("an array");
+        };
+        assert_eq!(items.len(), count);
+        assert_eq!(items[count - 1], AmqpExtValue::Ubyte(9));
     }
 
     /// §1.6.24: more than 255 elements is `array32` 0xf0.

@@ -150,7 +150,24 @@ pub trait Resource {
 with a fresh `otid` (counter-based), `commit`/`rollback` end it via the
 `Terminator`. `rollback_only` marks the transaction; a subsequent `commit`
 MUST then return `RolledBack`. `Coordinator::register_resource` is only allowed in
-`Active` status.
+`Active` status. `Coordinator::timeout` returns the timeout in seconds (0: none)
+the transaction was begun with; it is the `timeout` of the `PropagationContext`
+the coordinator builds (§2).
+
+`TransactionCurrent` is `CosTransactions::Current` as the local interface of
+CORBA 3.3 Part 3 §6.13.2.2. It has no object reference: it is never marshalled,
+and `ORB::object_to_string` refuses it (`MARSHAL` minor 4). The ORB holds one
+and hands it out as the initial reference `"TransactionCurrent"`
+(`TRANSACTION_CURRENT_INITIAL_REFERENCE`). One `TransactionCurrent` is shared by
+every thread; behind it each thread has a `Current` of its own, created without
+a transaction the first time the thread uses it (`TransactionCurrent::with`).
+A transaction begun on one thread is not seen by another thread, and two
+`TransactionCurrent` objects never share a thread's context.
+`TransactionCurrent::set_timeout(seconds)` (OTS `Current::set_timeout`, 0: no
+timeout) sets the timeout of the transactions the calling thread begins next
+and of those every thread begins whose `Current` is created after the call; a
+`Current` another thread already has keeps its timeout. A transaction already
+begun keeps the timeout it was begun with.
 
 ## §4 Conformance
 
@@ -169,6 +186,7 @@ An **OTS-conformant** ZeroDDS module:
 | §2 PropagationContext | `corba-cos-transactions/src/propagation.rs` — `PropagationContext`, `TransIdentity`, `TRANSACTION_SERVICE_CONTEXT_ID` |
 | §3 2-phase commit | `corba-cos-transactions/src/two_phase.rs` — `Vote`, `Resource`, `coordinate_commit` |
 | §3.3 Orchestration | `corba-cos-transactions/src/transaction.rs` — `Current`, `Coordinator`, `Terminator`, `Control`, `Status` |
+| §3.3 `TransactionCurrent` | `corba-cos-transactions/src/current.rs` — `TransactionCurrent`, `TRANSACTION_CURRENT_INITIAL_REFERENCE`, `CURRENT_REPOSITORY_ID`; the initial reference in `corba-ccm/src/orb_core.rs` (`orb_init`) |
 
 ## §6 Tests
 

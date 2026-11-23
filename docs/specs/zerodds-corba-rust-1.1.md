@@ -43,9 +43,33 @@ Portable Interceptors (§8).
 ## §3 Interface mapping
 
 For each `interface I { ... };` a trait, an `IStub` (client) and
-`dispatch_i` (server skeleton) are emitted. The stub marshals in-args into the
-GIOP request body, calls via `CorbaConnection::invoke`, and decodes return +
-out/inout from the reply (same order).
+`dispatch_i` (server skeleton) are emitted. The stub calls
+`CorbaConnection::invoke` with a `MarshalArgs` closure that writes the in- and
+inout-args into the GIOP request body, and decodes return + out/inout from the
+reply (same order). The connection calls the closure once the request header
+is known, with a writer whose alignment counts from the start of the message:
+a GIOP 1.0/1.1 body follows the header without padding (CORBA 3.3 Part 2
+§9.4.2.1), so the place of an 8-octet argument depends on the header. An
+operation without in- or inout-args passes `no_arguments`.
+
+The skeleton is `dispatch_i(servant: &dyn I, operation: &str, body:
+&AlignedBody, endianness: Endianness) -> SkeletonResult`. `AlignedBody` holds
+the request body with its offset in the message; the skeleton reads the
+arguments with `AlignedBody::reader`, aligned from the message start.
+
+A reply body is written from an eight-aligned origin (offset 0) and goes
+on a multiple of 8 in the message. Under GIOP 1.2 and later the reply
+header pads the body to 8 (CORBA 3.3 Part 2 §9.4.3). Under GIOP 1.0 and
+1.1 the body follows the reply header without padding, at a multiple of 4
+that the service contexts decide; when it would fall on 4 modulo 8,
+`CorbaServer` adds the service context `PADDING_CONTEXT_ID` (0x5A445041,
+ASCII `ZDPA`, a ZeroDDS vendor id after §7.7.1) with four zero octets,
+which moves the body by twelve octets onto a multiple of 8
+(`Reply::place_body_at_eight`, after the last other service context). A
+receiver ignores a service context it does not know (§7.7.2). The stub
+reads a reply body from offset 0: a reply of another ORB under GIOP 1.0
+or 1.1 whose body does not stand on a multiple of 8 is read with its
+8-octet values misaligned.
 
 ### §3.1 Operation mapping
 
@@ -131,6 +155,9 @@ For an `@ami` interface, the codegen emits the implied-IDL AMI mapping:
 
 Both run over `AsyncCorbaChannel` (§9), which the transport (`AmiClient`)
 implements — the same layering as `CorbaConnection` for the synchronous side.
+The reply reaches the handler and the poller as an `AsyncReply`, the body at
+its offset in the reply message; the generated code reads it through
+`AlignedBody::reader` (CORBA 3.3 Part 2 §9.4.3).
 
 ## §6 Asynchronous Method Handling (§22.9)
 
@@ -150,34 +177,146 @@ dispatch extracts the object key from `KeyAddr`/`ProfileAddr`/`ReferenceAddr` (�
 
 ## §8 Portable Interceptors (§16)
 
-`RequestInfo` carries `request_id`/`operation` + request/reply ServiceContext
-lists (`add/get_request_service_context`, `add/get_reply_service_context`) +
-`forward_reference`. `ClientRequestInterceptor`/`ServerRequestInterceptor` have
-the named points (`send_request`/`receive_reply`/… or
-`receive_request_service_contexts`/`send_reply`/…). `ServiceContextInjector` is
-the spec-clean way to attach OTS (id 0), CSIv2 (id 15) or codeset contexts
-— as a registered interceptor instead of hard-coded in the transport.
+`zerodds_corba_ccm::portable_interceptor` (re-exported in `orb_extensions`).
+`ClientRequestInterceptor` (`send_request`, `send_poll`, `receive_reply`,
+`receive_exception`, `receive_other`) and `ServerRequestInterceptor`
+(`receive_request_service_contexts`, `receive_request`, `send_reply`,
+`send_exception`, `send_other`); every point returns
+`Result<(), InterceptorError>` — a system exception or `ForwardRequest`.
+`InterceptorRegistry` runs them with the flow-stack rules of CORBA 3.3 Part 1
+§16.4: starting points in registration order, ending points in reverse order
+for the interceptors whose starting point completed, a raised exception or
+forward changes the ending point of the rest. `RequestInfo` carries
+`request_id`, `operation`, `response_expected`, `sync_scope`, `reply_status`,
+`forward_reference`, the request and reply service contexts
+(`add_*_service_context(id, data, replace)`, BAD_INV_ORDER minor 15 for a
+duplicate without `replace`; `get_*_service_context`, BAD_PARAM minor 26 for
+an absent id) and the request scope slots; an attribute read outside its
+interception points is BAD_INV_ORDER minor 14. `arguments`, `exceptions`,
+`contexts`, `operation_context` and `result` raise NO_RESOURCES minor 1 at the
+points Tables 16.1 and 16.2 admit them: this binding passes encoded CDR. On the
+server, `InterceptorRegistry::server_start` runs
+`receive_request_service_contexts` and `server_receive_request` runs
+`receive_request`; between them the transport copies the request scope slots
+into the thread scope of the servant (§16.5.4.5), and after the servant the
+thread scope back into the request scope. `IorInfo` knows the profile ids of
+the adapter's references (`add_ior_component_to_profile` with another id is
+BAD_PARAM minor 29) and the policy types of the registered factories
+(`get_effective_policy` is `None` for a known type without a policy,
+INV_POLICY minor 3 for an unknown type). Interceptors are registered by an
+`OrbInitializer` (`register_orb_initializer`); `orb_init` runs `pre_init` and
+`post_init`, which return `Result<(), InitializerError>`: an error abandons
+the ORB and `orb_init` raises the system exception, INITIALIZE for a user
+exception. In `post_init` the `add_*_interceptor` operations and
+`allocate_slot_id` raise BAD_INV_ORDER minor 26; while the initializers run,
+`PiCurrent::get_slot`/`set_slot` raise BAD_INV_ORDER minor 14 (§16.9.2.14);
+`OrbInitInfo::register_initial_reference` has the semantics of
+`ORB::register_initial_reference`. `IiopCorbaConnection::with_orb` and
+`CorbaServer::set_orb` run requests through the ORB's interceptors; a
+`ForwardRequest` or a `LOCATION_FORWARD` reply sends the request to the new
+target. `ServiceContextInjector` attaches OTS (id 0), CSIv2 (id 15) or codeset
+contexts as a registered interceptor.
+
+Received service contexts reach the server interceptors and
+`CorbaServer::on_request_contexts` whatever their id and the GIOP version of
+the request; none raises an exception (CORBA 3.3 Part 2 §7.7.2). The contexts
+`IiopCorbaConnection` originates follow Table 7.2 for the GIOP version of the
+request: the codeset context from 1.1 on and first in the list, the SAS
+context and `INVOCATION_POLICIES` from 1.2 on; a request with CSIv2
+credentials below GIOP 1.2 is refused with NO_PERMISSION. A context an
+interceptor adds with the id of one of these takes its place in the list.
+`CorbaServer` sends `INVOCATION_POLICIES` only in GIOP 1.2 replies.
+`IiopCorbaConnection::invoke_passing_contexts` sends the contexts of a bridged
+request and returns the reply contexts; the MIOP gateway forwards object
+operations with it. `OrbInitInfo::codec_factory` and the initial reference
+`CodecFactory` give `zerodds_corba_ccm::iop_codec::CodecFactory` (Part 2
+§7.8): `ENCODING_CDR_ENCAPS` 1.0 to 1.4, big-endian encapsulations read in
+both byte orders, `wchar` and `wstring` in their GIOP 1.2 form, and a type
+Table 7.2 ties to a later GIOP version raises `InvalidTypeForEncoding`.
 
 ## §9 Runtime API
 
 ```rust
-pub struct ObjectReference { pub type_id: String, pub iiop_profile: Vec<u8> }
+pub struct ObjectReference {
+    pub type_id: String,
+    // The first TAG_INTERNET_IOP profile body, encapsulated; empty when
+    // the reference has none.
+    pub iiop_profile: Vec<u8>,
+    // Client-side policy overrides (CORBA 3.3 Part 1 §8.3.9): the policy
+    // type and the value as an encapsulated `any`. Not part of the IOR:
+    // `encode` does not write them, `decode` returns none. The IIOP
+    // connection takes the ZIOP policies of an invocation from them before
+    // the thread and the ORB overrides.
+    pub policy_overrides: Vec<PolicyOverride>,
+    // Every profile of the IOR in its order when it holds more or other
+    // profiles than the one in `iiop_profile`, or that one profile with
+    // empty data (CORBA 3.3 Part 2 §7.6.3, Full IOR conformance); empty
+    // otherwise. `encode` writes them back unchanged; a reference without
+    // profiles is written with none (nil).
+    pub profiles: Vec<RawProfile>,
+}
+pub struct RawProfile { pub tag: u32, pub data: Vec<u8> }
+pub struct PolicyOverride { pub policy_type: u32, pub value: Vec<u8> }
 
 pub enum CorbaException {
-    SystemException { minor: u32, message: &'static str },
-    UserException { repository_id: String, body: Vec<u8>, endianness: Endianness },
+    System(SystemException),   // zerodds_corba_rt::SystemException
+    UserException { repository_id: String, body: AlignedBody, endianness: Endianness },
+}
+// `body` is the whole user exception (repository id, then the members) at
+// its offset in the reply message (CORBA 3.3 Part 2 §9.4.3): a GIOP 1.0/1.1
+// reply of another ORB may put it on 4 modulo 8, and the members align from
+// the message start. Stubs read it through `AlignedBody::reader`; a body a
+// servant writes from its first octet has offset 0. A server writes the body
+// of a user exception it passes on at the same offset modulo 8; a GIOP 1.2
+// reply cannot carry a body written for 4 modulo 8 and goes out as MARSHAL
+// COMPLETED_YES.
+
+pub struct SystemException {   // CORBA 3.3 Part 1 §8.12
+    pub kind: SystemExceptionKind,   // the 39 standard system exceptions
+    pub minor: u32,                  // VMCID (high 20 bits) + code
+    pub completed: CompletionStatus, // COMPLETED_YES / _NO / _MAYBE
 }
 
 pub enum SkeletonResult { Reply(Vec<u8>), Exception(CorbaException), BadOperation }
 
+// A system exception goes on the wire with its own repository id
+// (`IDL:omg.org/CORBA/<NAME>:1.0`), minor code and completion status, and
+// is read back with the same identity. A repository id that names no
+// standard system exception is read as UNKNOWN minor 0x4f4d0002 with the
+// completion status kept (§8.12.2). Generated stubs and skeletons raise
+// MARSHAL with COMPLETED_NO before the operation ran (request marshalling,
+// argument unmarshalling) and COMPLETED_YES after it (reply marshalling,
+// reply unmarshalling); an undeclared user exception from a servant goes
+// out as UNKNOWN minor 0x4f4d0001 COMPLETED_YES; BadOperation goes out as
+// BAD_OPERATION minor 0x4f4d0002.
+
+// The arguments of a request: writes them into the body writer the
+// connection hands over, at the body's offset in the message. Called again
+// for a request that goes out again with another header (a forward, another
+// addressing disposition); an error is the invocation's exception.
+pub type MarshalArgs<'a> = dyn Fn(&mut Writer) -> Result<(), CorbaException> + 'a;
+pub fn no_arguments(w: &mut Writer) -> Result<(), CorbaException>;
+// A body already marshaled at `offset` (a bridge passes a received body on):
+// written as it is where the new body starts at the same offset modulo 8,
+// anywhere when empty, elsewhere MARSHAL COMPLETED_NO.
+pub fn marshaled_body(body: &[u8], offset: usize) -> impl Fn(&mut Writer) -> Result<(), CorbaException>;
+
 pub trait CorbaConnection {            // synchronous
-    fn invoke(&self, target, op, e, payload) -> Result<(Vec<u8>, Endianness), CorbaException>;
-    fn invoke_oneway(&self, target, op, e, payload) -> Result<(), CorbaException>;
+    fn invoke(&self, target, op, e, args: &MarshalArgs) -> Result<(Vec<u8>, Endianness), CorbaException>;
+    fn invoke_oneway(&self, target, op, e, args: &MarshalArgs) -> Result<(), CorbaException>;
+    // The reply body at its offset in the reply message; the generated
+    // stubs read the reply through it. The default answers the body of
+    // `invoke` at offset 0.
+    fn invoke_aligned(&self, target, op, e, args: &MarshalArgs) -> Result<(AlignedBody, Endianness), CorbaException>;
 }
 
+// The outcome of an asynchronous invocation: the reply body at its offset
+// in the reply message and the reply's byte order, or the exception.
+pub type AsyncReply = Result<(AlignedBody, Endianness), CorbaException>;
+
 pub trait AsyncCorbaChannel {          // asynchronous (AMI, §5)
-    fn send(&mut self, op, payload, cb) -> Result<u32, CorbaException>;
-    fn send_poll(&mut self, op, payload) -> Result<u32, CorbaException>;
+    fn send(&mut self, op, args: &MarshalArgs, cb) -> Result<u32, CorbaException>;
+    fn send_poll(&mut self, op, args: &MarshalArgs) -> Result<u32, CorbaException>;
     fn get_reply(&mut self, request_id) -> Result<AsyncReply, CorbaException>;
     fn perform_work(&mut self) -> Result<u32, CorbaException>;
     fn perform_all(&mut self) -> Result<(), CorbaException>;
@@ -189,7 +328,74 @@ pub trait ValueMarshal: ValueBase { fn marshal_state(&self, w: &mut BufferWriter
 
 There is no `SkeletonResult::NotYetWired` stub — the wire is fully wired.
 Transport implementations (`IiopCorbaConnection`, `AmiClient`, `AmhEndpoint`,
-`BiDirEndpoint`) live in `zerodds-corba-interop`.
+`BiDirEndpoint`) live in `zerodds-corba-interop`. `AmiClient` calls the
+`MarshalArgs` of a request when it sends it, once for a body offset of 0 and
+once for 4 modulo 8 (the header of a request it sends ends on a multiple of
+4), and keeps both for a resend after `LOCATION_FORWARD` or
+`NEEDS_ADDRESSING_MODE`; an exception of the arguments at one of the two
+offsets is raised by the request that goes out at that offset. `BiDirEndpoint::invoke` takes a body written from
+offset 0: Bi-Directional GIOP is GIOP 1.2, whose body starts on a multiple of
+8. The server dispatchers of `CorbaServer`, `BiDirEndpoint` and the MIOP
+`Goa`, and `AmhRequest::body`, carry the body as `AlignedBody`. So do the
+replies on the client side: `CorbaConnection::invoke_aligned`, the
+`AsyncReply` of `AmiClient` (the generated `sendc_` callbacks and pollers read
+it with `AlignedBody::reader`), `BiDirEndpoint::collect_reply` and
+`BiDirEndpoint::invoke`; the DII `Request::invoke` keeps the offset and the
+byte order of its result (`Request::result_body`, `result_endianness`). A
+GIOP 1.0/1.1 reply body follows the reply header without padding (CORBA 3.3
+Part 2 §9.4.3), so another ORB may put it on four modulo eight. A user
+exception a servant passes on goes out in a reply of the exception's own byte
+order and on its own offset modulo 8.
+
+Object location (CORBA 3.3 Part 2 §9.6, §9.4.3.2, §9.4.6). The client
+transports resend a request transparently: after `LOCATION_FORWARD` or
+`LOCATION_FORWARD_PERM` to the IOR of the reply body (at most 16 forwards per
+invocation, then TRANSIENT `COMPLETED_NO`), after `NEEDS_ADDRESSING_MODE` to
+the same target addressed as `ProfileAddr` or `ReferenceAddr` (an agent
+asking for the disposition it just got is TRANSIENT `COMPLETED_NO`).
+`IiopCorbaConnection` records a `_PERM` forward per original reference
+(`forwarded_reference`) and starts later invocations there; when the recorded
+target cannot be reached, or answers TRANSIENT, COMM_FAILURE or
+OBJECT_NOT_EXIST with `COMPLETED_NO`, the record is dropped and the invocation
+restarts at the original reference.
+
+Profiles and addresses (CORBA 3.3 Part 2 §7.6.3, §7.6.6.2). `IiopCorbaConnection`
+(requests and `locate`) and `AmiClient::connect` try the `TAG_INTERNET_IOP`
+profiles of a reference in the order of the IOR and, in each, the address of
+the profile body and then its `TAG_ALTERNATE_IIOP_ADDRESS` addresses, until a
+connection opens; an SSLIOP profile is reached at its host and SSL port, a
+UIOP profile at its socket path. A reference without a readable IIOP profile
+raises IMP_LIMIT minor 1, one whose addresses cannot be reached TRANSIENT
+minor 2, both `COMPLETED_NO`. A `ReferenceAddr` target carries every profile
+of the IOR and the index of the profile the request went over.
+`IiopCorbaConnection::locate` sends a
+`LocateRequest` and answers `LocateOutcome::Here(reference)` or
+`LocateOutcome::Unknown`, following `OBJECT_FORWARD(_PERM)` and
+`LOC_NEEDS_ADDRESSING_MODE` and raising the exception of
+`LOC_SYSTEM_EXCEPTION`. `CorbaServer::forward(key, reference, permanent)`
+makes the server a location agent for `key` (`LOCATION_FORWARD(_PERM)` to
+requests, `OBJECT_FORWARD(_PERM)` to `LocateRequest`s, `_PERM` only in GIOP
+1.2); `stop_forwarding(key)` ends it. Servers take the object key from all
+three addressing dispositions and answer a target without a readable IIOP
+profile with `NEEDS_ADDRESSING_MODE` (`LOC_NEEDS_ADDRESSING_MODE`) asking for
+`KeyAddr`.
+
+GIOP versions (CORBA 3.3 Part 2 §7.9, §9.4.1, §9.7): the server reads and
+writes GIOP 1.0 to 1.4 (`Version::MAX`; 1.3 and 1.4 use the 1.2 formats)
+and answers in the version of the request; a message of a higher minor
+version is answered with a `MessageError` of version 1.4, then the
+connection closes. The client sends the version of the target's IIOP
+profile, at most 1.4. References carry IIOP 1.2 profiles
+(`DEFAULT_PROFILE_VERSION`) unless `CorbaServer::set_profile_version`
+sets 1.1 to 1.4 (BAD_PARAM otherwise); a reference whose host is an IPv6
+address is written as IIOP 1.4 (Table 7.2), its `host` field holding the
+address without the brackets of the URL form (`[::1]` is written `::1`,
+`IiopProfileBody::for_endpoint`). The default is 1.2 because
+JacORB 3.9 does not call through a 1.4 profile and omniORB 4.3.3 refuses
+one in a reply (measured on the Linux test host).
+`CorbaServer::set_component_reference(key, component)` makes `_component`
+on `key` answer with the component's reference (Part 3 §6.4.3.1); without
+it the dispatcher answers the nil reference.
 
 ## §10 Repository ID format
 
@@ -218,7 +424,7 @@ A **conformant** codegen + runtime:
 | §5 AMI codegen | `corba-rust/src/ami_emit.rs`; `AsyncCorbaChannel` in `corba-rust/src/runtime.rs` |
 | §6 AMH | `corba-interop/src/runtime.rs` — `AmhEndpoint`, `AmhResponseHandler` |
 | §7 Bidirectional | `corba-interop/src/runtime.rs` — `BiDirEndpoint` |
-| §8 Interceptors | `corba-ccm/src/orb_extensions.rs` — `RequestInfo`, `InterceptorRegistry` |
+| §8 Interceptors | `corba-ccm/src/portable_interceptor.rs` — `RequestInfo`, `InterceptorRegistry`, `OrbInitializer` |
 | §9 Runtime | `corba-rust/src/runtime.rs`; transport `corba-interop/src/runtime.rs` |
 
 ## §13 Conformance tests

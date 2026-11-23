@@ -86,6 +86,16 @@ struct LoopPeer {
     }
 };
 
+// The writer of the two tests against a loop peer: its batches, its single
+// frames and the acks it polls all go through `peer`.
+struct PeerWriter : AsyncWriter {
+    explicit PeerWriter(LoopPeer& peer)
+        : AsyncWriter([&peer](const std::vector<Bytes>& b) { for (auto& f : b) peer.on_frame(f); },
+                      [&peer](const Bytes& f) { peer.on_frame(f); },
+                      [&peer](std::uint8_t* buf, std::size_t cap) { return peer.poll(buf, cap); },
+                      object_id(0x001, OBJK_DATAWRITER), 512) {}
+};
+
 // 1) window overflow — fill the 16-sample window with the gate closed, then open
 //    it and require every one of the 24 samples to be delivered.
 static void test_window_overflow_no_loss() {
@@ -93,11 +103,7 @@ static void test_window_overflow_no_loss() {
     LoopPeer peer(false);
     std::size_t drops = 0;
     {
-        AsyncWriter w(
-            [&](const std::vector<Bytes>& b) { for (auto& f : b) peer.on_frame(f); },
-            [&](const Bytes& f) { peer.on_frame(f); },
-            [&](std::uint8_t* buf, std::size_t cap) { return peer.poll(buf, cap); },
-            object_id(0x001, OBJK_DATAWRITER), 512);
+        PeerWriter w(peer);
 
         for (int i = 0; i < n; ++i) {
             std::uint8_t s = static_cast<std::uint8_t>(i);
@@ -132,11 +138,7 @@ static void test_oversized_no_head_of_line_block() {
     LoopPeer peer(true);  // acks flow immediately
     std::size_t drops = 0;
     {
-        AsyncWriter w(
-            [&](const std::vector<Bytes>& b) { for (auto& f : b) peer.on_frame(f); },
-            [&](const Bytes& f) { peer.on_frame(f); },
-            [&](std::uint8_t* buf, std::size_t cap) { return peer.poll(buf, cap); },
-            object_id(0x001, OBJK_DATAWRITER), 512);
+        PeerWriter w(peer);
 
         std::vector<std::uint8_t> huge(MAX_PAYLOAD + 10, 0x7);
         CHECK(w.enqueue(huge.data(), huge.size()));  // ring accepts it; sender rejects

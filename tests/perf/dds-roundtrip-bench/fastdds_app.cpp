@@ -215,6 +215,12 @@ void apply_security(DomainParticipantQos& pqos) {
 // same host, and then delivers through shared memory, not the UDPv4
 // transport the other stacks are measured on. Seen in the speed setup: with
 // KEEP_ALL and max_samples 100 000 the writer asked for a 6.58 GB segment.
+// ZERODDS_BENCH_FASTDDS_DATA_SHARING=auto leaves Fast DDS's default in
+// place, for a measurement of what it changes. Measured on the Linux test
+// host (self pair, RELIABLE, KEEP_LAST 64, 2000 echoes, three runs in turn,
+// median p50): off 41.4 us at 0 octets and 43.4 us at 8192, AUTO 34.9 and
+// 39.4 us. The self-pair table of the website before 2026-11-13 was
+// measured with AUTO.
 //
 // With RESOURCE_LIMITS set (the speed setup), the history allocates per
 // sample as it goes (DYNAMIC_REUSABLE_MEMORY_MODE): the default
@@ -224,7 +230,9 @@ void apply_security(DomainParticipantQos& pqos) {
 // The other stacks allocate by the size written.
 template <class Qos>
 void apply_bench_qos(Qos& qos, const bench::QosSpec& q) {
-    if (resolve_transport() != BenchTransport::SHM) qos.data_sharing().off();
+    const char* sharing = std::getenv("ZERODDS_BENCH_FASTDDS_DATA_SHARING");
+    const bool keep_default = sharing != nullptr && std::string(sharing) == "auto";
+    if (resolve_transport() != BenchTransport::SHM && !keep_default) qos.data_sharing().off();
     if (q.has_limits()) {
         qos.endpoint().history_memory_policy = eprosima::fastdds::rtps::DYNAMIC_REUSABLE_MEMORY_MODE;
     }

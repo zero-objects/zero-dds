@@ -1510,6 +1510,7 @@ impl ReliableReader {
                 non_standard_payload: data.non_standard_flag && !opened,
                 destination: None,
                 destination_readers: None,
+                filter_outcomes: None,
             },
         ) {
             self.cache_full_count = self.cache_full_count.saturating_add(1);

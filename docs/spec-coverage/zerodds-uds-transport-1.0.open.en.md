@@ -7,12 +7,12 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §5.1 Volume mount as the permission boundary
 
-**Status:** `partial` — the process boundary is shown, the container boundary is not: no test starts two containers with a mounted volume and actually exercises the UID-mapping and SELinux questions. The missing evidence is carried as open item §5.2.
+**Status:** `partial` — the permission model, the keys and the runtime wiring are built and measured on the Linux test host across a real UID boundary (as root, which starts the two processes under other UIDs), and so is the volume under Docker and under Podman with a user namespace per container (§5.2). Not measured: the SELinux label; it needs a host with SELinux in enforcing mode on which the container tests of §5.2 run (their mounts carry `:z`).
 
-## §5.2 Evidence across a real container boundary
+## §6.1 Linux and macOS
 
-**Status:** `open` — no test starts two containers with a mounted volume and different UID mappings.
+**Status:** `partial` — Linux measured on the Linux test host. macOS measured on a Mac (macOS 26.2, arm64): `cargo nextest run --profile merge -p zerodds-transport-uds --all-targets` 56 tests green, without a sandbox and in that of `ci/macos-loopback.sb`, as the job runs them; the sockets of the tests lie under `/tmp`, so their path lengths are measured. Runner 8 (`TMPDIR` `/var/folders/80/<30>/T/`, 49 bytes) ran the job `merge-macos-transport-uds` in pipeline 9916: 55 tests, 53 green; the two failures, `uds_3_5_stream_a_connection_without_the_hello_or_ending_inside_a_frame_is_counted` (§3.5) and `uds_5_1_base_dir_mode_is_applied_to_a_created_dir` (the sandbox above), are fixed. Open: a green run of that job on runner 8.
 
 ## §6.2 Windows
 
-**Status:** `open` — on Windows the crate compiles to an empty library (`crates/transport-uds/src/lib.rs`: `#![cfg(unix)]`). Windows offers sockets of the family `AF_UNIX` since Windows 10 (build 17063) (Microsoft's statement, not checked here); the transport does not use them.
+**Status:** `partial` — built. Measured on the Linux test host: the stream mode (§3.5), the runtime in mode `stream` and `contract_transport_uds` with `same-host-uds` (7 tests, 6 of them compiled and green on Linux). Compiled for `x86_64-pc-windows-gnu`: `cargo clippy --target x86_64-pc-windows-gnu -p zerodds-transport-uds --all-targets -- -D warnings` and `cargo clippy --target x86_64-pc-windows-gnu -p zerodds-dcps --features same-host-uds --all-targets -- -D warnings` without findings. Not run on Windows: the jobs `platform-windows-transport-uds` (the transport) and `platform-windows-dcps-uds` (the runtime's UDS arm: the default `stream`, `datagram` failing the start, the event `transport.uds.bind_failed` with the mode) need the Windows runner and a pipeline that starts them; whether the second job fits the build of `zerodds-dcps` under `same-host-uds` into 5 minutes is not measured. The statements about Windows (only `SOCK_STREAM`, permissions through the file's ACL, `SO_SNDTIMEO`, the error codes of a missing path) come from Microsoft's documentation and are not measured.

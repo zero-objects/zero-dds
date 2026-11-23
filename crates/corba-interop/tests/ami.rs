@@ -11,10 +11,11 @@
 //! Plus the exception path (system exception → `Err` in the callback/poller).
 
 use std::sync::{Arc, Mutex};
+use zerodds_corba_rust::marshaled_body;
 
 use zerodds_corba_interop::runtime::{AmiClient, CorbaServer, object_reference};
 use zerodds_corba_rust::SkeletonResult;
-use zerodds_wire::{Endianness, Reader, Writer};
+use zerodds_wire::{Endianness, Writer};
 
 fn long(v: i32) -> Vec<u8> {
     let mut w = Writer::new(Endianness::Big);
@@ -27,8 +28,9 @@ fn two_longs(a: i32, b: i32) -> Vec<u8> {
     w.write_u32(b as u32);
     w.finish()
 }
-fn decode_long(reply: &[u8], e: Endianness) -> i32 {
-    Reader::new(reply, e).read_u32().unwrap() as i32
+/// The `long` of a reply body, read at its offset in the reply.
+fn decode_long(reply: &zerodds_corba_rust::AlignedBody, e: Endianness) -> i32 {
+    reply.reader(e).read_u32().unwrap() as i32
 }
 
 /// Provides an `add(a,b) -> a+b` server (unknown ops → BAD_OPERATION), connects
@@ -37,7 +39,7 @@ fn with_adder<F: FnOnce(&mut AmiClient)>(f: F) {
     let server = CorbaServer::new();
     server.register(b"Adder", |op, body, e| {
         if op == "add" {
-            let mut r = Reader::new(body, e);
+            let mut r = body.reader(e);
             let a = r.read_u32().unwrap() as i32;
             let b = r.read_u32().unwrap() as i32;
             let mut w = Writer::new(e);
@@ -74,7 +76,7 @@ fn corbarust_5_ami_callback_multiple_outstanding() {
             let id = client
                 .send(
                     "add",
-                    &two_longs(a, b),
+                    &marshaled_body(&two_longs(a, b), 0),
                     Box::new(move |reply| {
                         let (body, e) = reply.expect("no exception");
                         sink.lock().unwrap().push((0, decode_long(&body, e)));
@@ -98,8 +100,12 @@ fn corbarust_5_ami_callback_multiple_outstanding() {
 #[test]
 fn corbarust_5_ami_polling_get_reply() {
     with_adder(|client| {
-        let id1 = client.send_poll("add", &two_longs(7, 8)).unwrap();
-        let id2 = client.send_poll("add", &two_longs(40, 2)).unwrap();
+        let id1 = client
+            .send_poll("add", &marshaled_body(&two_longs(7, 8), 0))
+            .unwrap();
+        let id2 = client
+            .send_poll("add", &marshaled_body(&two_longs(40, 2), 0))
+            .unwrap();
         // Fetch replies in reverse order — correlation by request_id.
         let r2 = client.get_reply(id2).unwrap().expect("ok");
         assert_eq!(decode_long(&r2.0, r2.1), 42);
@@ -118,14 +124,16 @@ fn corbarust_5_ami_mixed_callback_and_polling() {
         client
             .send(
                 "add",
-                &two_longs(1, 1),
+                &marshaled_body(&two_longs(1, 1), 0),
                 Box::new(move |reply| {
                     let (body, e) = reply.expect("ok");
                     *sink.lock().unwrap() = Some(decode_long(&body, e));
                 }),
             )
             .unwrap();
-        let pid = client.send_poll("add", &two_longs(5, 5)).unwrap();
+        let pid = client
+            .send_poll("add", &marshaled_body(&two_longs(5, 5), 0))
+            .unwrap();
 
         // get_reply drives perform_work — the callback reply is collected along with it.
         let pr = client.get_reply(pid).unwrap().expect("ok");
@@ -146,7 +154,7 @@ fn corbarust_5_ami_exception_path() {
         client
             .send(
                 "nonexistent",
-                &long(0),
+                &marshaled_body(&long(0), 0),
                 Box::new(move |reply| {
                     *sink.lock().unwrap() = reply.is_err();
                 }),
@@ -155,7 +163,9 @@ fn corbarust_5_ami_exception_path() {
         client.perform_all().unwrap();
         assert!(*got_err.lock().unwrap(), "callback must get Err");
 
-        let pid = client.send_poll("nonexistent", &long(0)).unwrap();
+        let pid = client
+            .send_poll("nonexistent", &marshaled_body(&long(0), 0))
+            .unwrap();
         assert!(
             client.get_reply(pid).unwrap().is_err(),
             "poller must return Err"

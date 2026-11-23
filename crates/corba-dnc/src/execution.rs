@@ -41,7 +41,7 @@ pub enum AppState {
 }
 
 /// `DomainApplicationManager` — D&C §9.1.2.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DomainApplicationManager {
     plan: DeploymentPlan,
     state: AppState,

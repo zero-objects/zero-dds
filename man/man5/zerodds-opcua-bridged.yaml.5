@@ -20,6 +20,14 @@ a known section (e.g. an unrecognized
 .BR opcua.server. \fIkey\fR )
 stops the start with the file and line named; an unrecognized top-level key
 is a WARN line on stderr and otherwise ignored \(em watch the WARN log.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed, so
+keys and passwords belong in the environment, not in the file.
+.PP
+The sections of
+.BR opcua :
+.BR idl ", " gateway_config ", " server ", " client ", " pubsub .
 .SH KEYS
 .SS Top level
 .TP
@@ -78,7 +86,7 @@ requires
 and
 .BR private_key_pem ,
 and the build feature
-.BR crypto ;
+.IR crypto ;
 the start refuses otherwise.
 .TP
 .B certificate_der
@@ -96,15 +104,61 @@ The one trusted client's RSA public key,
 PEM \(em a separate file from the certificate above; this daemon has no
 X.509 parser to split one certificate into both (\(sc7.1 of the spec file).
 .TP
-.B historical.topics
-List of Historical Access entries (Spec \(sc9.3.4.4). Each entry:
-.I dds_topic
+.B security_groups
+The SecurityGroups whose keys this daemon makes and hands out as a
+Security Key Service (Part 14 \(sc8; build features
+.IR crypto " and " pubsub-security ).
+Each entry:
+.B security_group_id
+(unique),
+.B policy
+(\c
+.IR aes128-ctr " | " aes256-ctr " | " aes256-gcm ),
+.B key_lifetime_ms
+(default 3600000),
+.B max_future_key_count
+(default 3),
+.B max_past_key_count
+(default 1),
+.B key_subjects
+(the users that may get the keys with
+.IR GetSecurityKeys ,
+over an encrypted channel) and
+.B admin_subjects
+(the users that may call
+.IR InvalidateKeys " and " ForceKeyRotation ,
+over a signed channel).
+.TP
+.B roles
+The users of the well-known roles of a Security Key Service (Part 14
+\(sc8.8; build features
+.IR crypto " and " pubsub-security ),
+each a list of user names:
+.B security_key_server_admin
+(may add and remove SecurityGroups and their folders with
+.IR AddSecurityGroup ", " RemoveSecurityGroup ", " AddSecurityGroupFolder " and " RemoveSecurityGroupFolder ,
+and invalidate or rotate the keys of every group; with a user here the
+daemon is a Security Key Service even without
+.BR security_groups ),
+.B security_key_server_access
+(may get the keys of every group) and
+.B security_key_server_push
+(may push keys with
+.I SetSecurityKeys
+for every connection with
+.BR "key_source: push" ).
+.TP
+.B historical
+Section with one key,
+.BR topics :
+a list of Historical Access entries (Spec \(sc9.3.4.4). Each entry:
+.B dds_topic
 (must match a
 .I dds_to_ua_connection
 topic \(em a name matching none, or matching only a
 .IR ua_to_dds_connection ", is a load-time error)"
 and
-.I depth
+.B depth
 (the per-leaf retention bound, an integer of at least 1). Every leaf of the
 named topic is marked historizing (\c
 .IR Historizing " = " true ", the " HistoryRead " " AccessLevel
@@ -126,12 +180,18 @@ e.g.
 .IR opc.tcp://plc.local:4840 .
 .TP
 .B nodes
-List of
-.IR node_id " (canonical " ns=N;i=NNN " or " ns=N;s=NAME " form; " g= " / " b=
+List of entries with
+.B node_id
+(canonical
+.IR ns=N;i=NNN " or " ns=N;s=NAME " form; " g= " / " b=
 are not supported),
-.IR dds_topic ", " dds_type " (default: " dds_topic ")," field_path
+.BR dds_topic ,
+.B dds_type
+(default: the value of
+.BR dds_topic ),
+.B field_path
 (default: empty \(em the whole, scalar sample) and
-.I keyed
+.B keyed
 (default false).
 .RE
 .SS opcua.pubsub
@@ -161,36 +221,89 @@ Numeric PublisherId. Default
 .TP
 .B publishers
 DDS \(-> UADP entries:
-.IR dds_topic ", " dds_type ", " keyed ", " writer_group_id ", " dataset_writer_id ", " dataset_name " (default: " dds_topic ")," publish_interval_ms
+.BR dds_topic ", " dds_type ", " keyed ", " writer_group_id ", " dataset_writer_id ,
+.B dataset_name
+(default: the value of
+.BR dds_topic )
+and
+.B publish_interval_ms
 (default 1000).
 .TP
 .B subscribers
 UADP \(-> DDS entries:
-.IR dds_topic ", " dds_type ", " keyed ", " dataset_name " (default: " dds_topic ")," fields
+.BR dds_topic ", " dds_type ", " keyed ,
+.B dataset_name
+(default: the value of
+.BR dds_topic )
+and
+.B fields
 (required \(em the remote Publisher's own field order).
 .TP
 .B security
 Part 14 \(sc8 UADP message security (build feature
 .BR pubsub-security ).
 Omit entirely for cleartext UADP. Fields:
-.I policy
+.B policy
 (\c
 .IR aes128-ctr " | " aes256-ctr " | " aes256-gcm ),
-.IR security_group_id ", " token_id
-(default 1), and
-.IR signing_key ", " encrypting_key ", " key_nonce
+.B security_group_id
+and
+.B key_source
+(\c
+.IR static " (default) | " local " | " sks " | " push ),
+where the keys come from (Part 14 \(sc5.4.5):
+.RS
+.TP
+.I static
+One key that does not rotate:
+.B token_id
+(default 1) and
+.BR signing_key ", " encrypting_key ", " key_nonce
 (hex-encoded;
-.I signing_key
+.B signing_key
 empty for
 .IR aes256-gcm ,
-whose integrity comes from the GCM tag). A single static current key,
-not a live
+whose integrity comes from the GCM tag). A hex-decoded key whose length
+disagrees with its policy is refused at load time.
+.TP
+.I local
+The keys of this daemon's own SecurityGroup of
+.B security_group_id
+(see
+.BR opcua.server.security_groups ).
+.TP
+.I sks
+Pulled with
 .I GetSecurityKeys
-/SKS rotation exchange \(em rotate by reloading config with a new
-key/\c
-.IR token_id .
-A hex-decoded key whose length disagrees with its policy is refused at
-load time.
+from the Security Key Service in
+.BR sks :
+.BR endpoint_url ,
+.B channel_policy
+(\c
+.IR basic256sha256 " (default) | " aes128_sha256_rsaoaep " | " aes256_sha256_rsapss ;
+the call is made over a SecureChannel that encrypts),
+.BR certificate_der ", " private_key_pem
+(this daemon's),
+.BR server_certificate_der ", " server_public_key_pem
+(the SKS's),
+.BR username ", " password ", " user_token_policy_id
+(default
+.IR user )
+and
+.B requested_key_count
+(default 3). The keys are pulled again at half their lifetime and when a
+message names a token there is no key for; they rotate as the SKS says.
+.TP
+.I push
+Pushed with
+.I SetSecurityKeys
+by the session of
+.B push_subject
+over an encrypted channel.
+.PP
+Until the first keys are there, the connection publishes and reads
+nothing.
+.RE
 .RE
 .SS acl
 .TP
@@ -203,8 +316,11 @@ denied when
 is true, allowed when false.
 .TP
 .B rules
-List of
-.IR subject ", " allow_read " (list of DDS topic names)," allow_write .
+List of entries with
+.BR subject ,
+.B allow_read
+(list of DDS topic names) and
+.BR allow_write .
 Two layers are enforced: topic exposure at start time (a topic no rule
 names is not materialized/registered at all, for any client, when any
 rule exists or
@@ -228,7 +344,7 @@ accepts the Anonymous
 .B users
 List of UserName credentials this daemon's server accepts at
 ActivateSession:
-.IR username ", " password ", " policy_id
+.BR username ", " password ", " policy_id
 (default
 .IR user ).
 A user's own

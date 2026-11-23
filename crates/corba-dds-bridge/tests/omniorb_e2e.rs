@@ -345,3 +345,168 @@ fn corbabridge_7_1_omniorb_over_ssliop_passes_the_acl_with_the_allowed_certifica
     );
     assert_eq!(with_bob, "never EXCEPTION NO_PERMISSION", "bob does not");
 }
+
+/// §12.3: a CORBA client of one vendor and a DDS backend of another behind
+/// the bridge — omniORB calls `Calc::add`, the bridge writes the request in
+/// the layout of §4.3, a Cyclone DDS program (`tests/cyclone/calc_backend.c`,
+/// its types from `tests/cyclone/CalcDds.idl` through idlc) takes it and
+/// answers in XCDR1, omniORB gets 42.
+#[test]
+#[ignore = "needs omniidl, g++, libomniORB4 and Cyclone DDS (idlc, libddsc) (Linux test host)"]
+fn corbabridge_12_3_an_omniorb_client_reaches_a_cyclone_dds_backend() {
+    let dir = workdir("omniorb-cyclone");
+    build(&dir);
+    let cyclone_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cyclone");
+    for file in ["CalcDds.idl", "backend.h", "calc_backend.c"] {
+        std::fs::copy(cyclone_src.join(file), dir.join(file)).unwrap();
+    }
+    common::build_step(Command::new("idlc").arg("CalcDds.idl").current_dir(&dir));
+    common::build_step(
+        Command::new("cc")
+            .args([
+                "-o",
+                "calc_backend",
+                "calc_backend.c",
+                "CalcDds.c",
+                "-I.",
+                "-lddsc",
+            ])
+            .current_dir(&dir),
+    );
+
+    let lease = common::lease();
+    let iiop_port = common::free_port();
+    let ior_file = dir.join("bridge.ior");
+    let yaml = format!(
+        "domain: {d}\n\
+         corba:\n  iiop:\n    bind: \"127.0.0.1:{iiop_port}\"\n  ior:\n    ior_file: \"{ior}\"\n\
+         mappings:\n\
+         \x20 - repo_id: \"IDL:zerodds_test/Calc:1.0\"\n    operation: add\n    request_topic:\n      dds_name: Calc_add_Request\n      dds_type: \"CalcDds::AddRequest\"\n    reply_topic:\n      dds_name: Calc_add_Reply\n      dds_type: \"CalcDds::AddReply\"\n    timeout_ms: 3000\n",
+        d = lease.id(),
+        ior = ior_file.display(),
+    );
+    let bridge = Bridge::start(&yaml, &ior_file);
+    let mut backend = ChildGuard(
+        Command::new(dir.join("calc_backend"))
+            .args([lease.id().to_string(), "5".into()])
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("calc_backend"),
+    );
+    let mut lines = BufReader::new(backend.0.stdout.take().unwrap()).lines();
+    assert_eq!(lines.next().unwrap().unwrap(), "ready");
+    // Until the bridge's endpoints and Cyclone's have matched.
+    let mut answer = String::new();
+    for _ in 0..5 {
+        let out = common::output(
+            Command::new(dir.join("calc_client"))
+                .arg(&ior_file)
+                .args(["-ORBclientCallTimeOutPeriod", "15000"]),
+        );
+        answer = out.lines().next().unwrap_or_default().to_string();
+        if answer == "add 42" {
+            break;
+        }
+    }
+    bridge.stop();
+    assert_eq!(
+        answer, "add 42",
+        "omniORB through the bridge to Cyclone DDS"
+    );
+}
+
+/// §5.2: the bridge reads the IDL of the interface (`idl_file`), generates
+/// the DDS types of the operation into `corba.idl_dir`, Cyclone DDS's idlc
+/// compiles that file and a Cyclone DDS program built on it
+/// (`tests/cyclone/div_backend.c`) answers. An omniORB client built from
+/// the same IDL gets the result with its out argument, the user exception
+/// with its members and the one without: the sample names the exception by
+/// its `exception_kind`, the bridge writes the GIOP form.
+#[test]
+#[ignore = "needs omniidl, g++, libomniORB4 and Cyclone DDS (idlc, libddsc) (Linux test host)"]
+fn corbabridge_5_2_cyclone_dds_builds_the_generated_types_and_raises_a_user_exception() {
+    let dir = workdir("omniorb-typed");
+    let idl = src().join("Div.idl");
+    common::build_step(
+        Command::new("omniidl")
+            .args(["-bcxx", "-C"])
+            .arg(&dir)
+            .arg(&idl),
+    );
+    common::build_step(
+        Command::new("g++")
+            .arg("-std=c++17")
+            .arg("-I")
+            .arg(&dir)
+            .arg(src().join("div_client.cc"))
+            .arg(dir.join("DivSK.cc"))
+            .args(["-lomniORB4", "-lomnithread", "-o"])
+            .arg(dir.join("div_client")),
+    );
+
+    let lease = common::lease();
+    let iiop_port = common::free_port();
+    let ior_file = dir.join("bridge.ior");
+    let idl_dir = dir.join("generated");
+    let yaml = format!(
+        "domain: {d}\n\
+         corba:\n  idl_dir: \"{out}\"\n  iiop:\n    bind: \"127.0.0.1:{iiop_port}\"\n  ior:\n    ior_file: \"{ior}\"\n\
+         mappings:\n\
+         \x20 - repo_id: \"IDL:zerodds_test/Divider:1.0\"\n    operation: divide\n    idl_file: \"{idl}\"\n    request_topic:\n      dds_name: Div_Request\n    reply_topic:\n      dds_name: Div_Reply\n    timeout_ms: 20000\n",
+        d = lease.id(),
+        out = idl_dir.display(),
+        ior = ior_file.display(),
+        idl = idl.display(),
+    );
+    let bridge = Bridge::start(&yaml, &ior_file);
+
+    // The backend is built on what the bridge wrote.
+    for file in ["backend.h", "div_backend.c"] {
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/cyclone")
+                .join(file),
+            idl_dir.join(file),
+        )
+        .unwrap();
+    }
+    common::build_step(Command::new("idlc").arg("Div.idl").current_dir(&idl_dir));
+    common::build_step(
+        Command::new("cc")
+            .args([
+                "-o",
+                "div_backend",
+                "div_backend.c",
+                "Div.c",
+                "-I.",
+                "-lddsc",
+            ])
+            .current_dir(&idl_dir),
+    );
+    let mut backend = ChildGuard(
+        Command::new(idl_dir.join("div_backend"))
+            .args([lease.id().to_string(), "15".into()])
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("div_backend"),
+    );
+    let mut lines = BufReader::new(backend.0.stdout.take().unwrap()).lines();
+    assert_eq!(lines.next().unwrap().unwrap(), "ready");
+    // Until the bridge's endpoints and Cyclone's have matched.
+    let mut answer = String::new();
+    for _ in 0..5 {
+        answer = common::output(
+            Command::new(dir.join("div_client"))
+                .arg(&ior_file)
+                .args(["-ORBclientCallTimeOutPeriod", "15000"]),
+        );
+        if answer.starts_with("divide 3 1") {
+            break;
+        }
+    }
+    bridge.stop();
+    assert_eq!(
+        answer, "divide 3 1\nDivideByZero 7 no denominator\nUnsupported\n",
+        "omniORB through the bridge to Cyclone DDS on the generated types"
+    );
+}

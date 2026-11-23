@@ -116,11 +116,11 @@ Workspace-Version aller Crates: `1.0.0-rc.7`, Edition 2024, `rust-version = "1.9
 - Features: `std`, `alloc`, `recvmmsg-batch` (Standard; Modul nur unter Linux), `inspect`, `safety`.
 
 ### `zerodds-transport-tcp` — `crates/transport-tcp`
-- Zweck: RTPS über TCP mit Längenpräfix-Framing und optionalem 16-Byte-Handshake (herstellerspezifisch).
-- Einstieg: `TcpTransport`, `TcpTransportError` (`tcp_transport.rs:272`), `accept_one`, Framing (`framing.rs`), `BindConnectionRequest/Response` (`handshake.rs`).
+- Zweck: RTPS über TCP in zwei Dialekten, einer je Transport. Dialekt `zerodds` (Vorgabe): Längenpräfix-Framing und 16-Byte-Handshake, Pflicht auf beiden Seiten. Dialekt `rtps`: kein Handshake und kein Längenpräfix, jede Nachricht ist durch die `messageLength` ihrer HeaderExtension abgegrenzt (DDSI-RTPS 2.5 §8.3.3). Framing, Handshake und Connection-Pool sind ZeroDDS-eigen.
+- Einstieg: `TcpTransport`, `TcpDialect`, `TcpTransportError` (`tcp_transport.rs`), `with_dialect`, `accept_one`, `serve`, Framing (`framing.rs`), Stream aus RTPS-Nachrichten (`rtps_stream.rs`), `BindConnectionRequest/Response` (`handshake.rs`).
 - Abhängig von: `rtps`, `transport`. Genutzt von: `dcps` (`UserTransportKind::TcpV4/TcpV6`), `tools/bench-suite`.
 - Features: `std` (Standard), `alloc`.
-- Spec: DDSI-RTPS 2.5 §9.4 (Locator-Arten `TCPv4 = 4`, `TCPv6 = 8`), `docs/spec-coverage/zerodds-tcp-transport-1.0.md`.
+- Spec: ZeroDDS TCP Transport 1.0, `docs/spec-coverage/zerodds-tcp-transport-1.0.md`. DDSI-RTPS 2.5 legt keine Abbildung auf TCP und keine Locator-Art für TCP fest; die Arten liegen im Herstellerbereich von §9.3.2.4 (`0x01F0_0004`, `0x01F0_0005`; mit `transport.tcp_locator_kinds: fast-dds` 4 und 8).
 
 ### `zerodds-transport-shm` — `crates/transport-shm`
 - Zweck: Prozessübergreifendes Shared Memory über `shm_open`/`mmap` mit lock-freiem Single-Producer-Single-Consumer-Ring; 1:1 und rollenasymmetrisch (Owner/Consumer).
@@ -206,10 +206,10 @@ Workspace-Version aller Crates: `1.0.0-rc.7`, Edition 2024, `rust-version = "1.9
 - Features: `std` (Standard), `alloc`.
 
 ### `zerodds-time-service` — `crates/time-service`
-- Zweck: OMG Time Service 1.1 (`formal/2002-05-07`): Datentypen, UTO, TIO, `TimeService`. `TimerEventService` ist ausgenommen (benötigt einen CORBA-Event-Channel, laut Doku-Kommentar).
-- Einstieg: `TimeT`, `UtcT`, `IntervalT`, `TdfT` (`time_base.rs`), `Uto` (`uto.rs`), `Tio` (`tio.rs`), `TimeService`, `TimeUnavailable` (`service.rs`).
-- Abhängig von: nichts. Genutzt von: keinem Paket im Workspace.
-- Features: `std` (Standard), `alloc`.
+- Zweck: OMG Time Service 1.1 (`formal/2002-05-07`): Datentypen, UTO, TIO, `TimeService`, der Timer Event Service (CosTimerEvent) und die Verwaltung und sichere Zeit nach App. A und App. B.
+- Einstieg: `TimeT`, `UtcT`, `IntervalT`, `TdfT`, `local_tdf` (`time_base.rs`), `Uto` (`uto.rs`), `Tio` (`tio.rs`), `TimeService`, `TimeUnavailable` (`service.rs`), `BadParam`, `DataConversion` (`exception.rs`), `TimerEventService`, `TimerEventHandler`, `TimerEventT` (`timer_event.rs`), `TimeServant`, `RemoteTimePolicy` (`servant.rs`), `TimeServer` (`server.rs`), `TimeAdmin`, `AdminAuthorizer`, `AuditSink`, `AuditRecord` (`admin.rs`), `SecureTimeSource`, `SourceReading`, `SyncProtection`, `SourceDesignation` (`secure.rs`), `TimeServiceProxy` (`proxy.rs`).
+- Abhängig von: `jiff` (Feature `std`), `zerodds-corba-cos-event` (Feature `timer-event`), `zerodds-wire`, `zerodds-corba-giop`, `zerodds-corba-iiop`, `zerodds-corba-ior` (Feature `serve`). Genutzt von: `zerodds-dcps` (`time_source.rs`, `KernelClock`), `zerodds-security-logging` (Feature `time-service`, `time_audit.rs`).
+- Features: `std` (Standard; mit ihm `admin.rs`), `alloc`, `timer-event` (Standard), `serve` (CosTime als CORBA-Objekte über IIOP, `proxy.rs`).
 
 ## Beobachtung
 
@@ -243,7 +243,7 @@ Workspace-Version aller Crates: `1.0.0-rc.7`, Edition 2024, `rust-version = "1.9
 
 ### `zerodds-dlrl` — `crates/dlrl`
 - Zweck: DLRL (DDS 1.4 §2.1.3, Annex B): objektorientierter Cache über DCPS mit Identität, Beziehungen, Transaktionen.
-- Einstieg: `ObjectCache`, `ObjectRef`, `WeakObjectRef` (`object_cache.rs`), `parse_pragma`, `DlrlPragma` (`pragma.rs`), `Query` (`query.rs`), Beziehungen (`relationship.rs`), Abonnements (`subscription.rs`), Transaktionen (`transaction.rs`), Metamodell (`metamodel.rs`).
+- Einstieg: `ObjectCache`, `ObjectRef`, `WeakObjectRef` (`object_cache.rs`), `parse_pragma`, `DlrlPragma` (`pragma.rs`), `QueryExpression` (`criterion.rs`, DDS 1.2 Annex B), `DlrlException` (`error.rs`), Objektmodell mit Klassen, Attributen und Relationen `Model`, `ClassModel`, `Relation` (`model.rs`), strukturelles Mapping auf DCPS-Topics `Mapping`, `ClassMappingSpec` (`mapping.rs`), Zeilen eines Objekts `Row`, `ObjectData` (`rows.rs`), `DlrlOid` (`types.rs`), Abonnements (`subscription.rs`), Transaktionen (`transaction.rs`), Metamodell (`metamodel.rs`).
 - Abhängig von: keinem ZeroDDS-Crate. Genutzt von: `dlrl-codegen`.
 - Features: `std` (Standard), `alloc`.
 

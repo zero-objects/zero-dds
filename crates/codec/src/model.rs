@@ -91,16 +91,36 @@ pub fn model<T: DdsTypeInfo>() -> Result<&'static Model, ModelError> {
 pub fn model_of(desc: &'static TypeDesc) -> Result<&'static Model, ModelError> {
     type Models = HashMap<usize, Result<&'static Model, ModelError>>;
     static MODELS: OnceLock<Mutex<Models>> = OnceLock::new();
-    let models = MODELS.get_or_init(|| Mutex::new(HashMap::new()));
+    // The model this thread asked for last: a reader or a writer of one
+    // type asks for the same one per sample, and the map behind its lock
+    // cost a hash and the lock each time (measured: 3.7 % of a process
+    // reading 1 kB samples lent).
+    std::thread_local! {
+        static LAST: core::cell::Cell<(usize, Option<&'static Model>)> =
+            const { core::cell::Cell::new((0, None)) };
+    }
     let key = core::ptr::from_ref(desc).addr();
+    if let (last, Some(model)) = LAST.get()
+        && last == key
+    {
+        return Ok(model);
+    }
+    let models = MODELS.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(found) = models.lock().map_err(|_| poisoned(desc.name))?.get(&key) {
+        if let Ok(model) = found {
+            LAST.set((key, Some(*model)));
+        }
         return found.clone();
     }
     // Built outside the lock: a build reaches no other type's model, but it
     // is the expensive part and nothing else need wait for it.
     let built = build(desc).map(|model| &*Box::leak(Box::new(model)));
     let mut models = models.lock().map_err(|_| poisoned(desc.name))?;
-    models.entry(key).or_insert(built).clone()
+    let kept = models.entry(key).or_insert(built).clone();
+    if let Ok(model) = &kept {
+        LAST.set((key, Some(*model)));
+    }
+    kept
 }
 
 fn poisoned(name: &str) -> ModelError {

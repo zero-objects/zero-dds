@@ -143,20 +143,121 @@ can be transferred between them, so connections cannot each own a private
 caller-installed closure, with the writing session's identity, before it
 ever reaches the AddressSpace. `zerodds-opcua-bridged` installs one that
 enforces `acl.rules[].subject` per session (§7.2) — the first synchronous
-per-session check this daemon has had; the actual DDS-forwarding path for
-a successful write is still the poll loop (§6.2), unchanged.
+per-session check this daemon has had. `Server::set_write_commit` hands a
+Write the AddressSpace accepted to a second closure, whose status is the
+status of the Write; the daemon writes into DDS in it (§6.2).
 
 ### §4.3 Part 14 UADP
 
 One `Publisher`/`Subscriber` pair per configured `opcua.pubsub.connections[]`
 entry, over `UdpTransport` (unicast/multicast UDP). Message security
 (`SecurityGroup`/SKS, feature `pubsub-security`) is wired via
-`opcua.pubsub.connections[].security`: a single static current key
-(`policy`, `security_group_id`, `token_id`, `signing_key`/`encrypting_key`/
-`key_nonce` as hex) — not a live `GetSecurityKeys`/SKS rotation exchange;
-an operator rotates the key by reloading config with a new key/`token_id`.
-A hex-decoded key whose length disagrees with its policy is refused at
-load time.
+`opcua.pubsub.connections[].security` (`policy`, `security_group_id`,
+`key_source`). The keys come from one of four sources (Part 14 §5.4.5):
+
+- `static`: one key (`token_id`, `signing_key`/`encrypting_key`/`key_nonce`
+  as hex) that does not rotate; a key whose length disagrees with its
+  policy is refused at load time.
+- `local`: the daemon's own SecurityGroup (below).
+- `sks`: pulled with `GetSecurityKeys` (Part 14 §8.3.2) from a Security Key
+  Service over a SecureChannel that encrypts, with `StartingTokenId` 0;
+  pulled again at half the key lifetime, after a failure every 5 s, and at
+  once when a received message names a token there is no key for. The
+  next key becomes current after `TimeToNextKey` (counted from the
+  answer), each further one a `KeyLifetime` later; a fetched list is
+  matched with the keys at hand by its `FirstTokenId`.
+- `push`: pushed with `SetSecurityKeys` (Part 14 §9.1.3.3, `i=17364`) by
+  the session of `push_subject` over an encrypted channel.
+
+The `DataSetMetaData` a subscriber reads a DataSet by (Part 14 §6.2.3.2)
+describes each field with the built-in type it is transferred as (an
+enumeration Int32, a structure, a union, a bitmask, a `map` and a `Decimal`
+ExtensionObject, a collection of collections Variant), its DataType,
+ValueRank and ArrayDimensions (§5.3) and a `DataSetFieldId` of its own, the
+same for the same field of the same DataSet at every start (two 64-bit
+FNV-1a hashes of the DataSet's and the field's names); its `namespaces` are
+the server's ApplicationUri and the daemon's namespace URI (indices 1 and
+2), its `structureDataTypes` and `enumDataTypes` the descriptions of the
+DataTypes the fields use, with `KeyValuePair` for a `map` (§6.2.3.2.2:
+DataTypes of namespace 0 that are no built-in types are described too). A
+field that names no part of the type refuses the connection at start.
+
+Until the first keys are there a connection publishes and reads nothing
+(the PreOperational state of §5.4.5.3). A subscriber keeps the previous
+key besides the current and the future ones.
+
+With the build features `crypto` and `pubsub-security` the daemon is a
+Security Key Service for the SecurityGroups of
+`opcua.server.security_groups` (Part 14 §8): it makes the keys from the
+operating system's random source, the first with token 1, keeps
+`max_future_key_count` future and `max_past_key_count` past keys, and
+rotates on the schedule of `key_lifetime_ms`. Its server has the
+`PublishSubscribe` Object (`i=14443`, a component of the Server Object)
+with `GetSecurityKeys` (`i=15215`) and `GetSecurityGroup` (`i=15440`), the
+`SecurityGroups` folder (`i=15443`) and an Object of `SecurityGroupType`
+for each group with its five Properties and the Methods `InvalidateKeys`
+and `ForceKeyRotation`; the Methods have their `InputArguments` and
+`OutputArguments`. `GetSecurityKeys` answers `Bad_SecurityModeInsufficient`
+over a channel that does not encrypt, `Bad_UserAccessDenied` to a user not
+in `key_subjects`, `Bad_NotFound` for an unknown group, and returns at most
+`max_future_key_count` + 1 keys. `InvalidateKeys` and `ForceKeyRotation`
+need a signed channel and a user in `admin_subjects`.
+
+The `SecurityGroups` folder is a `SecurityGroupFolderType` (§8.5) with
+`AddSecurityGroup` (`i=15444`), `RemoveSecurityGroup` (`i=15447`),
+`AddSecurityGroupFolder` (`i=25434`), `RemoveSecurityGroupFolder`
+(`i=25437`) and `SupportedSecurityPolicyUris` (`i=25439`: AES-256-CTR, the
+default, AES-128-CTR, AES-256-GCM); a folder added has the four Methods
+too (`SecurityGroupFolder:<path>/<Method>`). `AddSecurityGroup` needs a
+signed channel; a `KeyLifetime` of 0 is one hour, others are held to 1 s
+to 30 days, a `MaxFutureKeyCount` of 0 is 3, both counts are held to 64,
+an empty `SecurityPolicyUri` is the default and an unknown one
+`Bad_InvalidArgument`; the group asked for again is returned with
+`Good_DataIgnored`, another of its name is `Bad_NodeIdExists`.
+`RemoveSecurityGroup` (signed) answers `Bad_NodeIdUnknown` for an unknown
+node and `Bad_NodeIdInvalid` for one that is no SecurityGroup of the
+folder; `AddSecurityGroupFolder` answers `Bad_BrowseNameDuplicated` for a
+name the folder has, and `RemoveSecurityGroupFolder` removes the folder,
+its folders and their groups. Groups and folders added at run time are not
+kept across a restart.
+
+The users of the roles of §8.8 are `opcua.server.roles`:
+`security_key_server_admin` may call the folder Methods and
+`InvalidateKeys`/`ForceKeyRotation` of every group (a user here makes the
+daemon an SKS without configured groups), `security_key_server_access` may
+call `GetSecurityKeys` for every group, `security_key_server_push` may
+call `SetSecurityKeys` for every connection with `key_source: push`. The
+per-group `key_subjects`/`admin_subjects` and the per-connection
+`push_subject` are custom roles of one group or connection. The role
+Objects of OPC 10000-18 are not in the AddressSpace, and
+`SessionlessInvoke` (§5.4.5.4) is not built.
+
+The SKS pushes keys to targets (§8.6, §8.7). `KeyPushTargets` (`i=25440`,
+`PubSubKeyPushTargetFolderType`) has `AddPushTarget` (`i=25441`),
+`RemovePushTarget` (`i=25444`), `AddPushTargetFolder` (`i=25446`) and
+`RemovePushTargetFolder` (`i=25449`); a folder added has them too. A target
+(`KeyPushTarget:<ApplicationUri>`, `PubSubKeyPushTargetType`) has the
+eight Properties of Table 221 and `ConnectSecurityGroups`,
+`DisconnectSecurityGroups`, `TriggerKeyUpdate`; a connected group is the
+target of a `HasPushedSecurityGroup` reference (`i=25345`). The methods
+need a user of `security_key_server_admin`, the target and group methods
+a signed channel. `AddPushTarget` refuses a `SecurityPolicyUri` that is no
+SecureChannel policy of the daemon, a `RequestedKeyCount` below 3, a
+`RetryInterval` that is not positive and a `UserTokenType` other than
+Anonymous (the SKS has no secret for another token to give; §8.6.1 makes
+Anonymous the default, authorized by the application identity of the
+SKS). A thread pushes: when a group is connected, on `TriggerKeyUpdate`,
+then at half the shortest `KeyLifetime` of the target's groups, after an
+error after `RetryInterval`. A push asks the target's endpoint for its
+endpoints, takes the SignAndEncrypt one of the policy, fails when its
+ApplicationUri is not the target's, reads the public key from the
+endpoint's certificate, opens a SignAndEncrypt SecureChannel with the
+certificate and the private key of the daemon's own server
+(`opcua.server.certificate_der`, `private_key_pem`) and an anonymous
+session, and calls `SetSecurityKeys` per group with the current key and
+`RequestedKeyCount` − 1 future keys (as many as the group keeps). The time
+goes into `LastPushExecutionTime` or `LastPushErrorTime`. Targets added at
+run time are not kept across a restart.
 
 ## §5 Topic mapping
 
@@ -165,20 +266,35 @@ load time.
 A topic's DDS type is never a compiled Rust type here. `opcua.idl` files
 are compiled (`zerodds-idl-compose`) into a model; a `DynamicType` for the
 type a config entry names is turned into a `CompleteTypeObject`
-(`zerodds_types::from_ast::complete_type_object`) and then a
+(`zerodds_types::from_ast::complete_type_object`), with the
+`CompleteTypeObject`s of the types it refers to by hash (a structure, a
+union or an enumeration as a member, `dependency_type_objects`), and then a
 `zerodds_dcps::serialized_type::SerializedTypeSupport` — the same
 reflective decoder/encoder `crates/xrce-agent`'s daemon and
 `crates/routing-service` use for a topic with no compiled type. This is the
 "types via TypeObject/TypeLookup" path.
 
-A second, **opportunistic** path exists: `crate::dds_bridge::
-resolve_discovered` looks a SEDP-discovered remote endpoint's
-`TypeIdentifier` up in the runtime's own TypeLookup registry
-(`DcpsRuntime::type_lookup_server`), which is filled by
-`DcpsRuntime::register_type_object` and by a `getTypes` reply the runtime
-received for some other reason. This daemon does **not** itself drive a
-live cross-participant `getTypes` RPC exchange for a topic whose type is
-otherwise unknown — see §6.2.
+A type that no `opcua.idl` file declares comes from the remote endpoints
+of the topic, over TypeLookup (DDS-XTypes 1.3 §7.6.3.3). Such a topic — a
+`dds_to_ua_connection`, a `ua_to_dds_connection`, a node of
+`opcua.client.servers[]` or a PubSub publisher or subscriber — waits; the
+daemon says so at start (`warn`) and once a minute while it waits
+(`info`). Every 500 ms it looks at the remote endpoints of the topic
+(publications and subscriptions alike): one that announces a complete
+`TypeIdentifier` (the complete half of `PID_TYPE_INFORMATION`, XTypes 1.3
+§7.6.3.2.2; the minimal half has no member names) is asked for the type
+with `getTypes` and for its dependencies with `getTypeDependencies`, again
+after 5 s without the type. Once the runtime's TypeLookup registry holds
+the type and every type it depends on, the topic is built as it would have
+been at start: its AddressSpace nodes, its DDS reader or writer and its
+job; the endpoints of the daemon name the type as the gateway file does.
+A remote endpoint that announces no type gives none.
+
+The endpoints of the daemon announce their own type: the
+`CompleteTypeObject`s of the type go to the runtime's TypeLookup registry
+before the endpoint is announced, and the endpoint announces the type's
+`TypeIdentifier`, so that a peer that does not know the type can ask the
+daemon for it.
 
 ### §5.2 AddressSpace shape (§9.3)
 
@@ -196,6 +312,14 @@ same root. Both are additive to the default `Topic:<name>` reachability,
 never a replacement of it; an empty `<browse_path>` segment is likewise a
 load-time error, never a log line.
 
+The server has the `Server` Object (`i=2253`, Part 5 §8.3.2), organized
+by `Objects`, with its `ServerArray` (`i=2254`) and `NamespaceArray`
+(`i=2255`): the OPC UA namespace, the ApplicationUri
+`urn:zerodds:opcua-server`, and at index 2 the daemon's namespace
+`urn:zerodds:opcua-bridge`, the one of every NodeId and DataType it
+creates. The other components of `ServerType` (Part 5 §6.3.1) are not
+built.
+
 A `dds_to_ua_connection` leaf's `AccessLevel` is `CurrentRead` only, so a
 foreign client's `Write` against it fails `Bad_NotWritable` rather than
 succeeding with no effect. A `ua_to_dds_connection` leaf is `CurrentRead |
@@ -205,28 +329,153 @@ CurrentWrite`.
 
 Primitives, strings (narrow and wide — `wchar`/`wstring` map to
 `UInt16`/`String`, mirroring `dds_to_ua::walker`'s type-level mapping),
-enumerations (as their ordinal), bitmasks (as a bit-position-packed
-integer), nested structs, `map<K,V>` (one leaf per entry, path-named
-`<field>.<key>`; a map-of-struct decomposes further, same as any nested
-aggregate), and arrays/sequences of any of the above are mapped, both
-directions.
+enumerations, bitmasks, nested structs, unions, `map<K,V>` (one leaf per
+entry, path-named `<field>.<key>`; a map-of-struct decomposes further, same
+as any nested aggregate), and arrays/sequences of any of the above are
+mapped, both directions.
 
-An array/sequence of a struct/union, a `bitset`, `fixed<P,S>` and
-`float128` (`long double`) are **not** mapped to a live Value — reported
-by path (never silently dropped) and left as a browsable, valueless node.
-For the first, Gateway 1.0 §9.2.5's own "array of struct is one array
-Variable, not decomposed" design boundary applies, and `VariantValue` has
-no aggregate case to hold one anyway; for the other three, no OPC-UA
-builtin `VariantValue` case fits at all (Part 6 §5.1.2's type table has no
-row for any of them) — inferred from that absence, not a specific Gateway
-1.0 §9.2 clause this crate has the text of.
+**DataTypes (Gateway 1.0 §9.2).** Every structure, union, enumeration and
+bitmask a topic's type uses is a DataType node: `<Name>DataType`, a subtype
+of `Structure` (`i=22`), `Union` (`i=12756`), `Enumeration` (`i=29`) or
+`OptionSet` (`i=12755`), with its `DataTypeDefinition` (OPC 10000-3
+§5.8.3): a `StructureDefinition` for a structure (a field per member in the
+order of the members; `StructureWithOptionalFields` when a member is
+`@optional`) and for a union (a field per case, `StructureType` `Union`),
+an `EnumDefinition` for an enumeration and for a bitmask (for a bitmask the
+`Value` of a field is the number of its bit, §8.52). A structured DataType
+has its `Default Binary` encoding node (`HasEncoding`, type
+`DataTypeEncodingType`), whose NodeId is the TypeId of its
+ExtensionObjects. An enumeration has the `EnumValues` Property
+(`EnumValueType[]`, Table 9.7), a bitmask the `OptionSetValues` Property, an
+entry per position of its bound with the name of the flag there or
+`UndefinedPosition_<position>` (Table 9.11; OPC 10000-3 1.05.06 Table 16
+asks for a null text at an undefined position, the Gateway for this name,
+and the daemon follows the Gateway). A structure also has
+`<Name>VariableType` (Table 9.16), a subtype of `BaseDataVariableType` with
+a component Variable per member, `ModellingRule` `Optional` for an
+`@optional` member and `Mandatory` for every other. The NodeIds are
+`DataType:<scoped name>`, `DataType:<scoped name>/DefaultBinary`,
+`VariableType:<scoped name>` in the daemon's namespace; two different types
+of one scoped name refuse the topic that brings the second (its values would
+carry the first one's TypeId). The namespace-0 types the DataTypes are
+subtypes of (`BaseDataType`, `Structure`, `Enumeration`, `OptionSet`,
+`Union`, `BaseVariableType`, `BaseDataVariableType`) are nodes of the
+AddressSpace, so that a client that loads the DataTypeDefinitions of a
+server by browsing `HasSubtype` from `Structure` finds them.
 
-A `map` key that a write introduces and no prior sample ever had is
-reported as an unmatched path (the same mechanism any shape-drift already
-uses) rather than materializing a new node/field live —
-`AddressSpace`/`PublishedDataSet` build their node/field set once, from
-the topic's Table-9 default; dynamic node/field creation is a tracked
-follow-up, not implemented.
+Every Variable of a topic has the `DataType`, `ValueRank` and
+`ArrayDimensions` of its DDS type (Gateway Table 9.2 for the primitive
+types, the generated DataType for a structure, union, enumeration or
+bitmask, `ValueRank` the number of dimensions of an array, `1` with
+`ArrayDimensions` `[bound]` or `[0]` for a sequence) and a `HasTypeDefinition`
+reference: `<Name>VariableType` for a structure, `BaseDataVariableType` for
+every other (Tables 9.8, 9.12, 9.21). A `map` member is a Variable, not the
+Object of Gateway Table 9.40: OPC 10000-3 §7.7 lets only an Object or an
+ObjectType have an Object as a component, and a map member is a component
+of a structure Variable. Its DataType is `KeyValuePair` (`i=14533`), an
+array: an entry's key is a QualifiedName of the text the entry's Variable is
+named by (Table 9.41), its value a Variant. A structure field of a map type
+is the same array.
+
+**Values.** A leaf's Value is its member's value in the built-in type of its
+DataType; an enumeration is its Int32 value (Table 9.8). A bitmask is its
+`OptionSet` (Table 9.12): `Value` and `ValidBits`, each as many octets as
+the bound needs, bit `n` in bit `n % 8` (from the least significant) of
+octet `n / 8`; a bit is valid when the bitmask names a flag at it. A Write
+of a bitmask sets the valid bits written and keeps the others ("new value =
+(value & validBits) | (current value & ~validBits)", OPC 10000-3 §8.40); a
+valid bit at a position without a flag is refused. The Gateway's "length
+equal to the bound" of the two ByteStrings is read as the number of bits;
+§8.40 sizes them in octets.
+
+The Value of an aggregate Variable is the whole of what is under it
+(Gateway 1.0 §9.2.4.1.1, Table 9.19): a structure, a union or a bitset is
+an ExtensionObject of its DataType in its `Default Binary` encoding (OPC
+10000-6 §5.2.6: the fields in the order of the definition; §5.2.7: first a
+UInt32 mask with a bit per optional field, set when the sample has it;
+§5.2.8: the UInt32 switch, the position of the active case counted from 1,
+0 when no case is active, then the case); an array or a sequence of
+structures or unions is the array of their ExtensionObjects, each element
+Variable its own; a `map` is the array of its `KeyValuePair`s. Inside a
+structure an array of several dimensions is the inline matrix of §5.2.5
+(Table 28: the dimensions, then the values); the one-dimensional form an
+encoder before OPC 10000-6 1.05 writes (the count of all elements, then the
+values) is read too, where the count differs from the number of
+dimensions. A union's discriminator is the leaf
+`SwitchField` (the discriminator's value in its own type); the case a
+sample does not hold, like an `@optional` member it does not have, keeps
+its nodes and reads `Bad_NoData`.
+
+A Write of an aggregate Variable of a `ua_to_dds_connection` replaces that
+part of the sample with the value written (an ExtensionObject of another
+DataType, or one that does not decode, is refused); a Write of a leaf
+replaces the member. A Write to a case of a union that is not active makes
+it the active one, with the case's first label as the discriminator (for
+the default case, the smallest non-negative value no other case names); a
+Write of `SwitchField` selects the case of the discriminator written. A
+Write to a member of an `@optional` member the sample does not have makes
+it present. The sample written to DDS is the one written last with the
+change in it; every Variable of the topic then shows that sample.
+
+`long double` is a `ByteString` of 16 octets (Gateway 1.0 §9.2.1: "to
+store the Float128 value, the length of the equivalent ByteString shall be
+16"), the binary128 value least significant octet first, the order of the
+numbers in the OPC UA binary encoding; the Gateway names no order. A
+`bitset` is the structure of its named bitfields, one leaf each
+(`<field>.<bitfield>`), a number of the bitfield's holder type: the one
+the IDL names, or a Boolean for one bit, a Byte up to 8, a UInt16, UInt32
+or UInt64 above; its DataType is a `Structure` of those fields. Gateway 1.0
+has no clause for a bitset. Both directions.
+
+An array or a sequence of structures or unions has one Variable per
+element (Gateway 1.0 §9.2.5.1.2.3, §9.2.5.2.2.3), named
+`<TypeName>_<index>` (for an array of several dimensions the position in
+each, `<TypeName>_1_2_3`), an ordered component (`HasOrderedComponent`) of
+the collection's Variable, with the element's members under it. The
+elements of an array are there from the start; a sequence gets an
+element's Variable when a sample brings the element, and an element a
+later sample no longer has keeps its node and reads `Bad_NoData`. A Write
+to a member of an element of structures changes that member; it adds no
+element. A Variant written to an array or a sequence of scalars replaces
+the collection; an array takes as many values as it has elements, an array
+of several dimensions in the order of the serialized elements, the last
+dimension fastest.
+
+An array or a sequence whose elements are collections (arrays, sequences,
+`map`s) has one Variable per element (Gateway 1.0 §9.2.5.2.2.5), named
+after the collection, `<SequenceName>_<index>` (the position in each
+dimension for an array of several), an ordered component of the
+collection's Variable; the element Variable is what its own type makes it
+(an array leaf, a `map` with its entries, a collection of structures with
+its elements). The Gateway's Object for the outer collection is a
+Variable here, for the reason a `map` is (OPC 10000-3 §7.7). OPC UA has no
+array of arrays: the outer Variable's DataType is `BaseDataType` with the
+collection's ValueRank, it has no Value of its own (the Variant model of
+the daemon holds no Variant in a Variant), and in a structure field each
+element is a Variant holding the inner collection (OPC 10000-6 §5.2.6,
+a field of an abstract DataType).
+
+`fixed<P,S>` is an OPC UA `Decimal` (OPC 10000-6 §5.1.10): an
+ExtensionObject of the Decimal DataType (`i=50`) whose body is the Int16
+scale `S` and the unscaled value in the fewest two's complement octets,
+least significant first. A Decimal written to such a leaf is rescaled to
+`S`; one with more fraction digits than `S` holds or more than `P` digits
+is refused. Gateway 1.0 has no clause for `fixed`.
+
+A `map` key that a DDS sample brings and that has no node yet gets its
+nodes when the sample is applied: a Variable named by the key, a component
+of the map member's node, with the NodeId
+`Topic:<name>/Value/<member>.<key>`, and for a struct value the members
+under it. The node stays when a later sample no longer has the key; its
+Value is then the last one. A topic gets nodes for at most 4096 entries
+while the daemon runs and for keys of at most 256 octets; a key past
+either bound is reported as an unmatched path. In a `PublishedDataSet`
+the key is a field appended at the end (so is any other path the type's
+default sample did not have: a member of another union branch, an
+optional member), the DataSetWriter advertises a new `MinorVersion`
+(Part 14 §6.2.3.2.5) and sends a key frame next; a DataSet grows to at
+most 4096 fields. A client cannot introduce a key through a Write: OPC UA
+writes to nodes that exist, and the daemon does not serve AddNodes.
 
 ### §5.4 Historical access (§9.3.4)
 
@@ -251,8 +500,9 @@ fixed.
 ### §6.1 DDS → OPC UA (§9)
 
 Every `dds_to_ua_connection` topic gets a DDS reader; each received sample
-is decoded, flattened to named leaf values, and applied to the AddressSpace
-via `AddressSpace::set_value`. Best-effort delivery — a sample that never
+is decoded, flattened to named leaf values and the values of its aggregate
+Variables (§5.3), and applied to the AddressSpace via
+`AddressSpace::set_value`. Best-effort delivery — a sample that never
 matches the reader (e.g. QoS-incompatible) never reaches a value, same as
 any DDS DataReader.
 
@@ -264,16 +514,17 @@ Two independent mechanisms:
    first passes `Server::set_write_hook`'s installed closure (§4.2), which
    enforces `acl.rules[].subject` against the writing session's real
    identity (§7.2) — a denial is `Bad_UserAccessDenied`, synchronously,
-   before the AddressSpace is ever touched. A write the hook allows still
-   reaches DDS the same way it always has: a `ua_to_dds_connection` leaf's
-   current Value is polled every 100 ms against its last-seen value
-   (`crate::daemon::server`'s pump loop); a change is re-encoded and
-   written into DDS. This remains **poll-based**, not synchronous — an
-   *allowed* write's result (the client's own Write response) is still not
-   contingent on the DDS write actually landing; a DDS write failure is
-   logged, never silently swallowed, but the OPC-UA client that wrote is
-   not told about it. This narrower limitation (only about the DDS side of
-   an already-authorized write) remains, named, not fixed in this pass.
+   before the AddressSpace is ever touched. A write the hook allows and
+   the AddressSpace accepts is written into DDS before the client is
+   answered (`Server::set_write_commit`): the changed Variables of the
+   `ua_to_dds_connection`, leaves and aggregate Variables, are put into the
+   sample written last (§5.3), which is encoded and written, and the status
+   of the Write is the outcome. A value that does not encode for the topic's type
+   or that DDS does not take is answered `Bad_CommunicationError`, logged
+   with its topic, and taken back out of the AddressSpace, so that a Read
+   shows the value before it. A value the daemon itself puts into such a
+   leaf is still found by the pump loop, which compares every leaf with its
+   last-seen value every 100 ms.
 2. **This daemon browses/subscribes a configured foreign OPC-UA server as a
    client** (`opcua.client.servers[]`), one `Client`/`TcpTransport`/
    Subscription per entry, one MonitoredItem per configured node; each
@@ -322,9 +573,11 @@ certificate/issued-token bytes hex-encoded.
 
 ### §8.1 Logging
 
-`log_level` (`trace`/`debug`/`info`/`warn`/`error`) to stderr; every skip,
-decode failure and DDS-write failure is logged by name (topic/path), never
-silent.
+`log_level` (`trace`/`debug`/`info`/`warn`/`error`) to stderr: a line is
+written when its level reaches `log_level`, as
+`[zerodds-opcua-bridged] <level>: <message>`. Every skip (`warn`), decode
+failure and DDS-write failure (`error`) is logged by name (topic/path),
+never silent.
 
 ### §8.2 Prometheus metrics
 
@@ -480,10 +733,14 @@ the XML `<node_id>`/`<browse_path>` override (§5.2), historical access
 (§5.4), per-session Write ACL (§4.2/§7.2), PubSub message security
 (§4.3), OTLP spans (§8.3), `wchar`/`wstring`/`map` value mapping (§5.3),
 a secured-SecureChannel e2e test with real certificates (§12.2), and an
-open62541 daemon-level interop measurement (§12.3/§10). Still open: an
-array/sequence of a struct/union, `bitset`, `fixed<P,S>` and `float128`
-have no live-value mapping (§5.3, a design boundary, not a gap to close);
-dynamic per-map-key node/field creation is not implemented (§5.3); the
-poll-based DDS-forwarding path for an *authorized* Write is unchanged
-(§6.2); PubSub message security is a static key, not a live SKS rotation
-exchange (§4.3).
+open62541 daemon-level interop measurement (§12.3/§10). Still open: the
+SecurityGroups added at run time and KeyPushTargets of the SKS
+(§4.3). Closed since: the DataTypes, VariableTypes and DataType attributes of Gateway 1.0
+§9.2 and the Value of the aggregate Variables, unions, `@optional` members
+arrays of several dimensions and collections of collections (§5.3), the members a Write does not name
+keep the value written last (§6.2), a type with a structure, a union or an
+enumeration as a member gets its type support (§5.1), the answer to an authorized Write is the outcome of
+the write into DDS (§6.2), `log_level` filters the log (§8.1), a map key a
+sample brings gets its node and its DataSet field (§5.3), a type in no IDL
+file comes over TypeLookup (§5.1), and the PubSub keys come from a Security
+Key Service, the daemon's own or another, and rotate (§4.3).

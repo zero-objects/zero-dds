@@ -1,6 +1,6 @@
 # `zerodds-dlrl`
 
-DDS Data-Local-Reconstruction-Layer (DLRL) — DDS 1.4 §2.2 + §B
+DDS Data Local Reconstruction Layer (DLRL) — DDS 1.2 §8 and Annex B
 
 Part of [**ZeroDDS**](../../README.md). Safety classification: **STANDARD**.
 

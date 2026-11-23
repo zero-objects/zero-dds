@@ -16,13 +16,16 @@
 
 #![allow(dead_code)]
 
-use std::io::{BufRead, BufReader};
+#[path = "child_lines.rs"]
+mod child_lines;
+
 use std::net::TcpListener;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+use child_lines::child_lines;
 
 /// How long a node may take to print its startup line.
 const STARTUP: Duration = Duration::from_secs(20);
@@ -118,6 +121,17 @@ impl RabbitNode {
     /// When `rabbitmq-server` is missing or does not report its startup
     /// within 20 s; the panic carries the node's output.
     pub fn start() -> Self {
+        Self::start_with(&[], |_| String::new())
+    }
+
+    /// [`Self::start`] with the `plugins` enabled and the configuration
+    /// lines `conf` returns for the node's directory (written to
+    /// `conf.d/10-test.conf` before the node starts): a test that needs a
+    /// TLS listener or another authentication mechanism says so here.
+    ///
+    /// # Panics
+    /// As [`Self::start`].
+    pub fn start_with(plugins: &[&str], conf: impl FnOnce(&Path) -> String) -> Self {
         // The server script itself: Debian's /usr/sbin wrapper switches to
         // the `rabbitmq` user, who cannot write this test's directory.
         let server = find(&["rabbitmq-server"], &["/usr/lib/rabbitmq/bin"])
@@ -132,7 +146,15 @@ impl RabbitNode {
         let dir = node_base().join(format!("zerodds-rabbit-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("conf.d")).expect("node directory");
-        std::fs::write(dir.join("enabled_plugins"), "[].\n").expect("enabled_plugins");
+        std::fs::write(
+            dir.join("enabled_plugins"),
+            format!("[{}].\n", plugins.join(",")),
+        )
+        .expect("enabled_plugins");
+        let lines = conf(&dir);
+        if !lines.is_empty() {
+            std::fs::write(dir.join("conf.d").join("10-test.conf"), lines).expect("conf.d");
+        }
         let port = free_port();
         let epmd_port = free_port();
         let node = format!("zd{}x{n}@localhost", std::process::id());
@@ -159,30 +181,7 @@ impl RabbitNode {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = command.spawn().expect("spawn rabbitmq-server");
-        let (tx, rx) = mpsc::channel::<String>();
-        for stream in [
-            child
-                .stdout
-                .take()
-                .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
-            child
-                .stderr
-                .take()
-                .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let tx = tx.clone();
-            std::thread::spawn(move || {
-                for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                    if tx.send(line).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
-        drop(tx);
+        let rx = child_lines(&mut child);
         let node = Self {
             child: Some(child),
             port,

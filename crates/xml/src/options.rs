@@ -197,6 +197,13 @@ impl Ctx {
         Ok(())
     }
 
+    /// `true` under [`VendorForms::Accept`]: for a value whose reading
+    /// differs between DDS-XML 1.0 and the vendor form, where both are
+    /// legal (the spaces around a string value, DDS4CCM 1.1 §7.4.2.1).
+    pub(crate) fn accepts_vendor_forms(&self) -> bool {
+        self.options.vendor_forms == VendorForms::Accept
+    }
+
     /// A vendor form found at `path`: `found` is what the document has,
     /// `spec_form` what DDS-XML 1.0 writes.
     ///
@@ -208,19 +215,63 @@ impl Ctx {
         found: &str,
         spec_form: &str,
     ) -> Result<(), crate::XmlError> {
+        self.report_vendor_form(
+            path,
+            alloc::format!(
+                "{found} is not a DDS-XML 1.0 form; the specification writes {spec_form}"
+            ),
+            alloc::format!(
+                "{found} is a vendor form, read as given; the specification writes {spec_form}"
+            ),
+        )
+    }
+
+    /// A number in a form that Table 7.1 of DDS-XML 1.0 §7.1.4 (and of
+    /// DDS4CCM 1.1 §7.4.2.1) gives the IDL type of the field, and that the
+    /// schema type of the field in DDS-XML 1.0 leaves out: the hexadecimal
+    /// form in a type with decimal digits only, a negative Long in
+    /// `xs:nonNegativeInteger`. The text and the schema of DDS-XML 1.0
+    /// disagree; the default reading follows the schema. `found` is what the
+    /// document has, `schema_form` what the schema type takes.
+    ///
+    /// # Errors
+    /// [`crate::XmlError::VendorForm`] under [`VendorForms::Refuse`].
+    pub(crate) fn table_7_1_form_outside_schema(
+        &mut self,
+        path: &str,
+        found: &str,
+        schema_form: &str,
+    ) -> Result<(), crate::XmlError> {
+        self.report_vendor_form(
+            path,
+            alloc::format!(
+                "{found} is a form of Table 7.1 (DDS-XML 1.0 §7.1.4, DDS4CCM 1.1 §7.4.2.1) \
+                 that the schema of DDS-XML 1.0 leaves out of this field; the schema writes \
+                 {schema_form}"
+            ),
+            alloc::format!(
+                "{found} is a form of Table 7.1 (DDS-XML 1.0 §7.1.4, DDS4CCM 1.1 §7.4.2.1) \
+                 outside the schema type of this field, read as given; the schema writes \
+                 {schema_form}"
+            ),
+        )
+    }
+
+    fn report_vendor_form(
+        &mut self,
+        path: &str,
+        refused: String,
+        accepted: String,
+    ) -> Result<(), crate::XmlError> {
         match self.options.vendor_forms {
             VendorForms::Refuse => Err(crate::XmlError::VendorForm(alloc::format!(
-                "{path}: {found} is not a DDS-XML 1.0 form; the specification writes \
-                 {spec_form} (ReadOptions::vendor_forms accepts the vendor form)"
+                "{path}: {refused} (ReadOptions::vendor_forms accepts the vendor form)"
             ))),
             VendorForms::Accept => {
                 self.diagnostics.push(Diagnostic {
                     path: String::from(path),
                     kind: DiagnosticKind::VendorForm,
-                    message: alloc::format!(
-                        "{found} is a vendor form, read as given; the specification writes \
-                         {spec_form}"
-                    ),
+                    message: accepted,
                 });
                 Ok(())
             }

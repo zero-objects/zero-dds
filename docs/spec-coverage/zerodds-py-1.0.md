@@ -355,7 +355,7 @@ RTPS-native) und pure-`ctypes` (Distro-Package, Zero-Build).
 **Repo:** `crates/py/src/ffi.rs` für den PyO3-Pfad,
 `crates/py/python/zerodds/loader.py` für den `ctypes`-Pfad. Die beiden
 teilen nur Wire-Format und Domain-ID: `loader.py` importiert
-`_core` nicht und läuft ohne Rust-Toolchain, `ffi.rs` kennt
+`_core` nicht und läuft ohne Rust-Toolchain, `crates/py/src/ffi.rs` kennt
 `libzerodds` nicht.
 
 **Tests:** `crates/py/python/tests/test_loader_smoke.py::py_1_2_1_loader_factory_singleton`,

@@ -15,8 +15,37 @@ spiegelt DDS-Topics auf Topics eines MQTT-5-Brokers und umgekehrt.
 Implementiert
 .IR docs/specs/zerodds-mqtt-bridge-1.0.md .
 Spricht mit jedem MQTT-5-Broker (Mosquitto, EMQX, HiveMQ) über TCP/TLS,
-verbindet sich mit exponentiellem Back-off automatisch neu, unterstützt MQTT-QoS
-je Route (0/1/2), Retain, MessageExpiry, ContentType und UserProperties.
+MQTT 3.1.1 als Kompatibilitätsmodus, versucht den Broker beim Start und
+nach einer verlorenen Verbindung mit exponentiellem Back-off erneut
+.RB ( mqtt.reconnect ;
+eine Verbindung, die der Broker mit DISCONNECT 0x8E Session taken over
+beendet hat, erst nach
+.BR max_delay_ms ),
+unterstützt MQTT-QoS je Topic (0/1/2), Retain, Message Expiry Interval,
+Content Type und User Properties sowie einen Teilnehmer und eine
+Broker-Verbindung je Tenant.
+.PP
+Das Log ist JSON auf stdout, ein Objekt je Zeile mit
+.BR timestamp ,
+.BR level ,
+.BR event
+und den Feldern des Ereignisses
+.RB ( mqtt_topic ,
+.BR dds_topic ,
+.BR bytes ,
+.BR mqtt_qos ,
+.BR latency_us ,
+.BR connect_state ,
+.BR tenant ,
+\&...), geschrieben, wenn seine Stufe
+.B log_level
+erreicht; ein Fehler, der den Start beendet, geht zusätzlich auf stderr.
+Unter Linux arbeitet der Daemon mit
+.BR systemd (1)
+über Type=notify zusammen, unter macOS mit
+.BR launchd (8);
+unter Windows läuft er als Dienst
+.BR ZeroDDSMQTTBridge .
 .SH OPTIONEN
 .TP
 .BR \-\-config =\fIDATEI\fR
@@ -65,7 +94,11 @@ Log-Stufe überschreiben. Eine von
 .IR trace ", " debug ", " info ", " warn ", " error .
 .TP
 .BR \-\-metrics =\fIADR\fR
-Listen-Adresse für Prometheus.
+Listen-Adresse für Prometheus; die Familien
+.B zerodds_mqtt_bridge_*
+aus
+.BR zerodds-mqtt-bridged.yaml (5)
+.BR metrics .
 .TP
 .BR \-V ", " \-\-version
 Versionsangabe.
@@ -86,15 +119,60 @@ aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
 .B SIGTERM
 geordnetes Beenden,
 .B SIGHUP
-liest die Konfiguration neu: Die Topic-ACL gilt ab dann, ein entzogenes
-Leserecht stoppt die Samples dieses Topics sofort; Sitzungen bleiben bestehen.
-Geänderte Topics, Broker-Adresse oder Client-ID, Broker-TLS,
-Authentifizierungsmodus oder Domäne brauchen einen Neustart und werden
-protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+liest die Konfiguration neu: Die Topic-ACL und das Subjekt gelten ab dann,
+ein entzogenes Recht stoppt die Samples dieses Topics sofort; Sitzungen
+bleiben bestehen. Die Zugangsdaten von
+.B auth
+gelten für die nächste Broker-Verbindung, wenn
+.B auth.mode
+und
+.B auth.enhanced.method
+gleich bleiben; haben sie sich geändert, authentifiziert sich eine Verbindung
+mit Enhanced Authentication mit ihnen neu (MQTT 5.0 AUTH 0x19), ein Reload,
+der sie nicht ändert, schickt kein AUTH. Das TLS-Material des Brokers
+.RB ( mqtt.tls.ca_file ,
+.BR cert_file ,
+.BR key_file ,
+neu gelesen), der Servername und das ALPN-Angebot gelten für die nächste
+Broker-Verbindung; die stehende Verbindung behält ihre. TLS-Material, das
+nicht lädt, lehnt den Reload ab. Geänderte Topics, Broker-Adresse oder
+Client-ID,
+.BR mqtt.tls.enabled ,
+Authentifizierungsmodus oder -methode oder Domäne brauchen einen Neustart
+und werden protokolliert; ein geändertes
+.B log_level
+gilt sofort. Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH WINDOWS-DIENST
+Vom Dienststeuerungs-Manager gestartet, läuft der Daemon als Dienst
+.BR ZeroDDSMQTTBridge :
+startend, bis er bedient, dann laufend; die Steuerbefehle Stop und
+Shutdown wirken wie SIGTERM,
+.B sc.exe control ZeroDDSMQTTBridge paramchange
+wie SIGHUP; endet er, ist der Dienst mit dem Exit-Status unten gestoppt.
+Der Dienst hat kein stdout: sein Log wird an
+.I %PROGRAMDATA%\eZeroDDS\elogs\emqtt\-bridged.log
+angehängt (C:\eProgramData, wenn die Variable nicht gesetzt ist); eine
+Datei, die sich nicht öffnen lässt, beendet den Start mit Exit-Status 1.
+Aus einer Konsole gestartet, wirken Strg+C, Strg+Pause und das Schließen
+der Konsole wie SIGTERM, und das Log bleibt auf stdout.
 .SH UMGEBUNGSVARIABLEN
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318. Ist er gesetzt,
+schickt der Daemon OTLP/HTTP/JSON-Spans an dessen
+.I /v1/traces
+alle 5 s und am Ende eines Shutdowns: ein Trace je PUBLISH-Roundtrip, die
+Wurzel
+.B mqtt.publish
+(ein PUBLISH des Daemons bis zum PUBACK oder PUBCOMP des Brokers, ab dem
+Sample oder, beim Replay-Puffer nach einem Reconnect, ab dem Replay; oder
+ein PUBLISH des Brokers bis zum Ende seiner Behandlung) mit dem Kind
+.B dds.write
+für jeden DDS-Write eines PUBLISH des Brokers. Ein PUBLISH des Daemons hat
+kein
+.BR dds.write ;
+der Katalog, die Berichte und was eine fortgesetzte Sitzung erneut
+sendet, sind kein Span.
 .TP
 .B MQTT_PASSWORD
 Das Broker-Passwort; die Einstellung
@@ -104,24 +182,41 @@ Das Broker-Passwort; die Einstellung
 .SH EXIT-STATUS
 .TP
 .B 0
-Normales Beenden (SIGTERM/SIGINT).
+Normales Beenden (SIGTERM/SIGINT, auch während der Start sich verbindet).
 .TP
 .B 1
-Konfigurationsfehler.
+Konfigurationsfehler, auch Auth-Einstellungen, die nicht zu ihrem Modus
+passen (etwa ein anonymes
+.B none
+zu einem Broker, der nicht auf der Loopback-Schnittstelle liegt), ein
+.BR mqtt.session_dir ,
+das der Daemon nicht anlegen oder beschreiben kann, oder ein
+Sitzungszustand, den ein anderer Prozess hält.
 .TP
 .B 2
-Fehler beim Verbinden mit dem Broker.
+Fehler beim Verbinden mit dem Broker: nicht erreichbar innerhalb von
+.B mqtt.connect_timeout_secs
+(auch ein Broker, der den TLS-Handshake nicht rechtzeitig beantwortet oder
+die Verbindung währenddessen schließt), oder eine Ablehnung im CONNACK
+außer denen von 5.
 .TP
 .B 3
 Fehler bei der DDS-Discovery.
 .TP
 .B 4
-TLS-Fehler.
+TLS-Fehler: TLS-Material, das nicht lädt
+.RB ( mqtt.tls.ca_file ", " cert_file ", " key_file ),
+oder ein abgelehnter Handshake: Das Zertifikat des Brokers ist nicht
+vertrauenswürdig oder nicht für seinen Namen, oder es gibt kein gemeinsames
+Protokoll.
 .TP
 .B 5
-Authentifizierungsfehler.
+Authentifizierungsfehler: CONNACK 0x86, 0x87, 0x8A oder 0x8C;
+MQTT-3.1.1-Return-Code 4 oder 5; eine Enhanced Authentication, deren
+Clientseite scheitert (eine SCRAM-Server-Signatur, die die Prüfung nicht
+besteht).
 .SH DATEIEN
-.I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log .
+.I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log ", " /var/lib/zerodds/mqtt-bridge/ .
 .SH SIEHE AUCH
 .BR zerodds-mqtt-bridged.yaml (5),
 .BR mosquitto (8).

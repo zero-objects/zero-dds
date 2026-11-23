@@ -54,18 +54,21 @@ Zeigt die Übersicht der Optionen.
 .SH SIGNALE
 SIGTERM beendet den Daemon.
 SIGHUP lädt neu, was sich ohne Neustart neu laden lässt:
-.BR log_level ,
-.BR limits.* ,
-.BR session_timeout_secs " und "
-.B discovery.enabled
-(der Thread des Discovery-Responders wird passend gestoppt oder gestartet).
-Ein geänderter Eintrag in
+.BR limits.max_clients ,
+.BR limits.max_objects_per_client " und "
+.BR session_timeout_secs .
+Jeder andere geänderte Schlüssel, darunter
 .BR listeners: ,
-.BR type_files: " oder "
-.B xml_profile_files:
-wird protokolliert und bis zum Neustart ignoriert \(em einen lauschenden
-Socket im Betrieb neu zu binden oder die TypeObject-Menge unter laufenden
-Sitzungen auszutauschen, würde riskieren, diese still zu verwaisen. Eine
+.BR type_files: ,
+.BR xml_profile_files: ,
+.B heartbeat.*
+und
+.BR upstream.* ,
+wird im Protokoll genannt und bis zum Neustart ignoriert \(em einen
+lauschenden Socket im Betrieb neu zu binden, die TypeObject-Menge oder die
+Verbindung zum Upstream-Agent unter laufenden Sitzungen auszutauschen oder
+den HEARTBEAT bestehender Streams zu ändern, würde riskieren, diese still zu
+verwaisen. Eine
 Konfiguration, die nicht lädt, ändert nichts; der Daemon läuft mit der letzten
 guten Konfiguration weiter und protokolliert, warum das Neuladen abgelehnt
 wurde.

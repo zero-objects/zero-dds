@@ -12,7 +12,8 @@ shm`), the same type, the same sample sizes and the same QoS:
   (`RoundtripBench::Roundtrip`, @final, a uint32 sequence number, a
   uint64 time stamp and a `sequence<octet, 65536>`); ZeroDDS runs as the same
   C++ app over its C API (row `zerodds`) and as `zerodds_perf`, the Rust API
-  (row `zerodds-rust`, crates/dcps/examples/zerodds_perf.rs);
+  (row `zerodds-rust`, crates/dcps/examples/zerodds_perf.rs; row
+  `zerodds-rust-loan` with a reader that takes with a loan);
 * `tput`: one writer writes one sample over and over for WRITE_SECS, one
   reader takes in its listener; written and received samples, rate, CPU per
   sample of each process over its own measurement window;
@@ -76,6 +77,11 @@ QOS_NAMES = {"be": "besteffort", "rel": "reliable"}
 ROWS = {
     "zerodds": {"app": "zerodds-roundtrip", "settle": 1.0},
     "zerodds-rust": {"perf": True, "settle": 1.0},
+    # The same writer; the reader takes with a loan and reads a type whose
+    # fields borrow from the received octets (`DataReader::take_loan`,
+    # crates/codec/examples/zerodds_perf_loan.rs), where `zerodds-rust`
+    # takes the decoded, owned sample. Throughput cells only.
+    "zerodds-rust-loan": {"perf": True, "settle": 1.0, "sub_bin": "zerodds_perf_loan"},
     "cyclone": {"app": "cyclone-roundtrip", "settle": 1.0},
     "fastdds": {"app": "fastdds-roundtrip", "settle": 1.0},
     "rti": {"app": "rti-roundtrip", "settle": 1.0},
@@ -124,7 +130,7 @@ def cells_of(row, kinds):
     if "lat" in kinds and not ROWS[row].get("perf"):
         for size in SIZES:
             out.append(("lat", "rel", size))
-    if ROWS[row].get("perf"):
+    if ROWS[row].get("perf") and not ROWS[row].get("sub_bin"):
         # `ref-be` separately: under these conditions the rc.7 and main
         # reader stalls in one take of the full cache (100 000 samples,
         # 47 s on the Linux test host) and the cell ends in sub-timeout.
@@ -208,13 +214,26 @@ def load1():
         return -1.0
 
 
-def udp_rcvbuf_errors():
-    """RcvbufErrors of /proc/net/snmp: datagrams the kernel dropped for a
-    full socket receive buffer (this network namespace)."""
+def udp_counter(name):
+    """A counter of the `Udp:` lines of /proc/net/snmp (this network
+    namespace); -1 where there is none."""
     lines = [l.split() for l in read("/proc/net/snmp").splitlines() if l.startswith("Udp:")]
-    if len(lines) >= 2 and "RcvbufErrors" in lines[0]:
-        return int(lines[1][lines[0].index("RcvbufErrors")])
+    if len(lines) >= 2 and name in lines[0]:
+        return int(lines[1][lines[0].index(name)])
     return -1
+
+
+def udp_rcvbuf_errors():
+    """RcvbufErrors: datagrams the kernel dropped for a full socket receive
+    buffer."""
+    return udp_counter("RcvbufErrors")
+
+
+def udp_out_datagrams():
+    """OutDatagrams: datagrams sent. Over a cell of `--transport shm` it
+    says which way the samples went: a stack that carries them in shared
+    memory sends its discovery and little else."""
+    return udp_counter("OutDatagrams")
 
 
 def busy_processes():
@@ -294,6 +313,8 @@ def cell_env(args, row, kind, qos, size, domain):
 def app_cmd(args, row, *mode):
     spec = ROWS[row]
     if spec.get("perf"):
+        if mode[0] == "sub" and spec.get("sub_bin"):
+            return [str(Path(args.perf_bin).parent / spec["sub_bin"]), *mode]
         return [args.perf_bin, *mode]
     cmd = [str(Path(args.build) / spec["app"]), *mode]
     if spec.get("opendds"):
@@ -499,7 +520,8 @@ def cmd_run(args):
                 domain_seq += 1
                 logs = logs_root / f"{row}-{kind}-{qos}-{size}-r{run}"
                 logs.mkdir(parents=True, exist_ok=True)
-                before = {"load1": load1(), "udp": udp_rcvbuf_errors(), "t": time.time()}
+                before = {"load1": load1(), "udp": udp_rcvbuf_errors(),
+                          "out": udp_out_datagrams(), "t": time.time()}
                 res = run_cell(args, row, kind, qos, size, domain, logs)
                 line = {
                     "type": "cell",
@@ -514,6 +536,7 @@ def cmd_run(args):
                     "load1": before["load1"],
                     "seconds": round(time.time() - before["t"], 1),
                     "udp_rcvbuf_errors": udp_rcvbuf_errors() - before["udp"],
+                    "udp_out_datagrams": udp_out_datagrams() - before["out"],
                     **res,
                 }
                 out.write(json.dumps(line) + "\n")

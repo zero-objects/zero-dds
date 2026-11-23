@@ -1,0 +1,66 @@
+// OMG Time Service 1.1 (formal/02-05-07), Appendix C.1: the modules
+// TimeBase and CosTime, as the omniORB client of tests/omniorb_e2e.rs
+// compiles them. The parameter `uto` of compare_time and time_to_interval
+// is `other` here: IDL identifiers that differ only in case collide, and
+// omniidl rejects `in UTO uto`. Parameter names do not travel in GIOP.
+
+#ifndef COSTIME_IDL
+#define COSTIME_IDL
+
+#pragma prefix "omg.org"
+
+module TimeBase {
+    typedef unsigned long long TimeT;
+    typedef TimeT InaccuracyT;
+    typedef short TdfT;
+    struct UtcT {
+        TimeT time;
+        unsigned long inacclo;
+        unsigned short inacchi;
+        TdfT tdf;
+    };
+    struct IntervalT {
+        TimeT lower_bound;
+        TimeT upper_bound;
+    };
+};
+
+module CosTime {
+    enum TimeComparison { TCEqualTo, TCLessThan, TCGreaterThan, TCIndeterminate };
+    enum ComparisonType { IntervalC, MidC };
+    enum OverlapType { OTContainer, OTContained, OTOverlap, OTNoOverlap };
+
+    exception TimeUnavailable {};
+
+    interface TIO;
+
+    interface UTO {
+        readonly attribute TimeBase::TimeT time;
+        readonly attribute TimeBase::InaccuracyT inaccuracy;
+        readonly attribute TimeBase::TdfT tdf;
+        readonly attribute TimeBase::UtcT utc_time;
+        UTO absolute_time();
+        TimeComparison compare_time(in ComparisonType comparison_type, in UTO other);
+        TIO time_to_interval(in UTO other);
+        TIO interval();
+    };
+
+    interface TIO {
+        readonly attribute TimeBase::IntervalT time_interval;
+        OverlapType spans(in UTO time, out TIO overlap);
+        OverlapType overlaps(in TIO interval, out TIO overlap);
+        UTO time();
+    };
+
+    interface TimeService {
+        UTO universal_time() raises(TimeUnavailable);
+        UTO secure_universal_time() raises(TimeUnavailable);
+        UTO new_universal_time(in TimeBase::TimeT time,
+                               in TimeBase::InaccuracyT inaccuracy,
+                               in TimeBase::TdfT tdf);
+        UTO uto_from_utc(in TimeBase::UtcT utc);
+        TIO new_interval(in TimeBase::TimeT lower, in TimeBase::TimeT upper);
+    };
+};
+
+#endif

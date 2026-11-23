@@ -39,6 +39,20 @@ impl Parser<'_> {
             {
                 self.parse_valuetype();
             }
+            // CIDL, CORBA 3.3 Part 3 §8.3 (2): the PSDL declarations and
+            // the composition. Their keywords exist only under
+            // `Dialect::cidl` (`Parser::mark_cidl_keywords`).
+            TokenKind::Abstract
+                if matches!(
+                    self.peek(1),
+                    TokenKind::Storagetype | TokenKind::Storagehome
+                ) =>
+            {
+                self.parse_abstract_storage();
+            }
+            TokenKind::Storagetype => self.parse_storagetype(),
+            TokenKind::Storagehome => self.parse_storagehome(),
+            TokenKind::Composition => self.parse_composition(),
             TokenKind::Interface | TokenKind::Local | TokenKind::Abstract => {
                 self.parse_interface();
             }
@@ -382,7 +396,7 @@ impl Parser<'_> {
     }
 
     /// `(in T a, out U b)`, including the parentheses.
-    fn parse_parameter_list(&mut self) {
+    pub(crate) fn parse_parameter_list(&mut self) {
         if !self.expect(TokenKind::LParen, "`(` opening the parameter list") {
             return;
         }
@@ -1292,7 +1306,7 @@ impl Parser<'_> {
     }
 
     /// A `raises`, `getraises` or `setraises` clause.
-    fn parse_raises_clause(&mut self) {
+    pub(crate) fn parse_raises_clause(&mut self) {
         self.start(CstKind::RaisesClause);
         self.bump();
         if self.eat(TokenKind::LParen) {

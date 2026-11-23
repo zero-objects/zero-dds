@@ -116,6 +116,13 @@ impl Coordinator {
         self.resources.borrow().len()
     }
 
+    /// The timeout of this transaction in seconds (0: none), as `begin`
+    /// set it.
+    #[must_use]
+    pub fn timeout(&self) -> u32 {
+        self.timeout
+    }
+
     /// `otid_t` of this transaction.
     #[must_use]
     pub fn otid(&self) -> &Otid {
@@ -237,6 +244,12 @@ impl Current {
             counter: 0,
             default_timeout,
         }
+    }
+
+    /// OTS `Current::set_timeout`: the timeout in seconds (0: none) of the
+    /// transactions `begin` starts from now on.
+    pub fn set_default_timeout(&mut self, seconds: u32) {
+        self.default_timeout = seconds;
     }
 
     /// Begins a new transaction and makes it active in the context.

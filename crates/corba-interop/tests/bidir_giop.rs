@@ -21,15 +21,16 @@ use zerodds_corba_giop::{
 use zerodds_corba_iiop::{BiDirIiopListenPoint, Connection};
 use zerodds_corba_interop::runtime::BiDirEndpoint;
 use zerodds_corba_rust::SkeletonResult;
-use zerodds_wire::{Endianness, Reader, Writer};
+use zerodds_wire::{Endianness, Writer};
 
 fn u32_body(v: u32) -> Vec<u8> {
     let mut w = Writer::new(Endianness::Big);
     w.write_u32(v);
     w.finish()
 }
-fn read_u32(b: &[u8], e: Endianness) -> u32 {
-    Reader::new(b, e).read_u32().unwrap()
+/// The `unsigned long` of a reply body, read at its offset.
+fn read_u32(b: &zerodds_corba_rust::AlignedBody, e: Endianness) -> u32 {
+    b.reader(e).read_u32().unwrap()
 }
 
 /// Connects two endpoints over a real loopback TCP pair: originator
@@ -59,7 +60,7 @@ fn corbarust_7_acceptor_callbacks_originator_over_shared_connection() {
     // Originator hosts a callback object; acceptor a normal object.
     client.register(b"ClientCB", |op, body, e| {
         if op == "notify" {
-            SkeletonResult::Reply(u32_body(read_u32(body, e) + 1))
+            SkeletonResult::Reply(u32_body(body.reader(e).read_u32().unwrap() + 1))
         } else {
             SkeletonResult::BadOperation
         }
@@ -102,7 +103,7 @@ fn corbarust_7_acceptor_callbacks_originator_over_shared_connection() {
 fn corbarust_7_out_of_order_reply_demux() {
     let (mut client, mut server) = bidir_pair(vec![]);
     server.register(b"Echo", |_op, body, _e| {
-        SkeletonResult::Reply(body.to_vec())
+        SkeletonResult::Reply(body.bytes().to_vec())
     });
 
     let id_a = client.invoke_async(b"Echo", "a", &u32_body(10)).unwrap();
@@ -124,7 +125,7 @@ fn corbarust_7_out_of_order_reply_demux() {
 fn corbarust_7_sync_invoke_convenience() {
     let (mut client, mut server) = bidir_pair(vec![]);
     server.register(b"Sq", |_op, body, e| {
-        SkeletonResult::Reply(u32_body(read_u32(body, e).pow(2)))
+        SkeletonResult::Reply(u32_body(body.reader(e).read_u32().unwrap().pow(2)))
     });
 
     let id = client.invoke_async(b"Sq", "square", &u32_body(9)).unwrap();
@@ -178,4 +179,44 @@ fn locate_request_is_answered_instead_of_dropped() {
         locate(&mut client, 2, b"no-such-object"),
         LocateStatusType::UnknownObject
     );
+}
+
+/// CORBA 3.3 Part 2 §9.4.1, §9.4.3: an object of the endpoint passes on a
+/// user exception it received in the other byte order than the request's.
+/// Its body cannot be read in another byte order: the endpoint writes the
+/// reply in the exception's byte order, and the caller reads the
+/// repository id and the member.
+#[test]
+fn corba_p2_9_4_3_a_bidir_user_exception_goes_out_in_its_own_byte_order() {
+    let (mut client, mut server) = bidir_pair(vec![]);
+    server.register(b"Relay", |_op, _body, e| {
+        let other = match e {
+            Endianness::Big => Endianness::Little,
+            Endianness::Little => Endianness::Big,
+        };
+        let mut w = Writer::new(other);
+        w.write_string("IDL:Boom:1.0");
+        w.write_u32(7);
+        SkeletonResult::Exception(zerodds_corba_rust::CorbaException::UserException {
+            repository_id: "IDL:Boom:1.0".into(),
+            body: zerodds_corba_rust::AlignedBody::new(&w.finish(), 0),
+            endianness: other,
+        })
+    });
+    let id = client.invoke_async(b"Relay", "boom", &[]).unwrap();
+    server.serve_one().unwrap();
+    let Err(zerodds_corba_rust::CorbaException::UserException {
+        repository_id,
+        body,
+        endianness,
+    }) = client.collect_reply(id)
+    else {
+        panic!("a user exception");
+    };
+    assert_eq!(repository_id, "IDL:Boom:1.0");
+    // The originator's requests are big-endian.
+    assert_eq!(endianness, Endianness::Little);
+    let mut r = body.reader(endianness);
+    assert_eq!(r.read_string().unwrap(), "IDL:Boom:1.0");
+    assert_eq!(r.read_u32().unwrap(), 7);
 }

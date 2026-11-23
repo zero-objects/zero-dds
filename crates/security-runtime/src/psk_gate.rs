@@ -41,24 +41,6 @@ fn poisoned<T>(_: PoisonError<T>) -> SecurityGateError {
     ))
 }
 
-/// The flags octet of the SRTPS_PREFIX of `bytes`, behind the RTPS Header and
-/// the HeaderExtension, if there is one; `None` for a message without one.
-fn srtps_prefix_flags(bytes: &[u8]) -> Option<u8> {
-    let mut at = 20;
-    if bytes.get(at) == Some(&0x00) {
-        // HeaderExtension: id, flags (E), octetsToNextHeader.
-        let flags = *bytes.get(at + 1)?;
-        let len = [*bytes.get(at + 2)?, *bytes.get(at + 3)?];
-        let len = if flags & 0x01 != 0 {
-            u16::from_le_bytes(len)
-        } else {
-            u16::from_be_bytes(len)
-        };
-        at += 4 + usize::from(len);
-    }
-    (bytes.get(at) == Some(&0x33)).then(|| bytes.get(at + 1).copied())?
-}
-
 impl SharedSecurityGate {
     /// Enables the protection with a pre-shared key: `config` is the
     /// configuration of `DDS:Crypto:PSK` (its DomainId and DomainTag are
@@ -83,7 +65,7 @@ impl SharedSecurityGate {
     /// SRTPS_PREFIX sets the PreSharedKeyFlag (Table 7).
     #[must_use]
     pub fn is_psk_protected(bytes: &[u8]) -> bool {
-        srtps_prefix_flags(bytes).is_some_and(|flags| flags & 0x04 != 0)
+        zerodds_security_rtps::srtps_psk_flag(bytes) == Some(true)
     }
 
     fn psk_plugin(&self) -> Result<Arc<PskCryptoPlugin>, SecurityGateError> {

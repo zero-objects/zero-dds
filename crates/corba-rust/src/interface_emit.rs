@@ -36,8 +36,59 @@ use crate::emitter::Ctx;
 use crate::error::{CorbaRustError, Result};
 use crate::type_map::{read_of, rust_type_for, write_of};
 
-/// Inline Rust literal for a CORBA MARSHAL system exception.
-pub(crate) const MARSHAL_EXC: &str = "zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: \"CORBA MARSHAL: CDR error\" }";
+/// Inline Rust literal for a CORBA MARSHAL system exception raised
+/// before the operation ran (request marshalling in the stub, argument
+/// unmarshalling in the skeleton): `COMPLETED_NO` (CORBA 3.3 Part 1
+/// §8.12.2).
+pub(crate) const MARSHAL_EXC: &str = "zerodds_corba_rust::CorbaException::system(zerodds_corba_rust::SystemExceptionKind::Marshal, 0u32, zerodds_corba_rust::CompletionStatus::No)";
+
+/// Inline Rust literal for a CORBA MARSHAL system exception raised
+/// after the operation ran (reply marshalling in the skeleton, reply
+/// unmarshalling in the stub): `COMPLETED_YES`.
+pub(crate) const MARSHAL_EXC_REPLY: &str = "zerodds_corba_rust::CorbaException::system(zerodds_corba_rust::SystemExceptionKind::Marshal, 0u32, zerodds_corba_rust::CompletionStatus::Yes)";
+
+/// The arguments a stub hands to its connection when the operation has
+/// no `in` or `inout` parameter.
+pub(crate) const NO_ARGUMENTS: &str = "&zerodds_corba_rust::no_arguments";
+
+/// Opens the closure `__args` (`zerodds_corba_rust::MarshalArgs`) that
+/// writes a request's arguments: the connection calls it with the body
+/// writer at the body's place in the message (CORBA 3.3 Part 2
+/// §9.4.2), the writes inside go to `__w`, that writer, and
+/// [`close_marshal_args`] hands it back. A refused write is `MARSHAL`,
+/// `COMPLETED_NO`.
+pub(crate) fn open_marshal_args(out: &mut String, indent: &str, endianness: &str) {
+    out.push_str(&format!(
+        "{indent}let __args = |__body: &mut zerodds_wire::Writer| -> ::core::result::Result<(), zerodds_corba_rust::CorbaException> {{\n"
+    ));
+    out.push_str(&format!(
+        "{indent}    let mut __w = ::core::mem::replace(__body, zerodds_wire::Writer::new({endianness}));\n"
+    ));
+}
+
+/// Closes the closure [`open_marshal_args`] opened.
+pub(crate) fn close_marshal_args(out: &mut String, indent: &str) {
+    out.push_str(&format!(
+        "{indent}    *__body = __w;\n{indent}    ::core::result::Result::Ok(())\n{indent}}};\n"
+    ));
+}
+
+/// Whether `op` has an `in` or `inout` parameter, which goes into the
+/// request body.
+pub(crate) fn has_request_arguments(ctx: &Ctx<'_>, op: &OperationNode) -> Result<bool> {
+    for param in &op.params {
+        let param = ctx
+            .ast
+            .param(*param)
+            .map_err(|_| CorbaRustError::StaleHandle {
+                what: "a parameter",
+            })?;
+        if matches!(param.direction, ParamDirection::In | ParamDirection::InOut) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 /// Emits the trait, the stub and the skeleton of one interface.
 pub fn emit_interface(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode>) -> Result<()> {
@@ -419,10 +470,10 @@ fn emit_op_stub_impl(
     let comma = if params.is_empty() { "" } else { ", " };
     let raises = raises_of(ctx, op);
     let has_raises = !raises.is_empty();
-    let marshal_err = if has_raises {
-        format!("{owner}Error::System({MARSHAL_EXC})")
+    let reply_err = if has_raises {
+        format!("{owner}Error::System({MARSHAL_EXC_REPLY})")
     } else {
-        MARSHAL_EXC.to_string()
+        MARSHAL_EXC_REPLY.to_string()
     };
     let wrap_sys = |inner: &str| -> String {
         if has_raises {
@@ -436,34 +487,41 @@ fn emit_op_stub_impl(
     ));
 
     // 1. `in` and `inout` arguments into the request body, in
-    //    declaration order.
+    //    declaration order, written where the connection places the
+    //    body.
     out.push_str("        let __e = zerodds_wire::Endianness::Big;\n");
-    out.push_str("        let mut __w = zerodds_wire::Writer::new(__e);\n");
-    for param in &op.params {
-        let param = ctx
-            .ast
-            .param(*param)
-            .map_err(|_| CorbaRustError::StaleHandle {
-                what: "a parameter",
-            })?;
-        let name = &param.name;
-        match param.direction {
-            ParamDirection::In => {
-                let write = write_of(ctx.ast, &param.type_, "__w", name)?;
-                out.push_str(&format!("        {}\n", write.statement(&marshal_err)));
+    let args = if has_request_arguments(ctx, op)? {
+        open_marshal_args(out, "        ", "__e");
+        for param in &op.params {
+            let param = ctx
+                .ast
+                .param(*param)
+                .map_err(|_| CorbaRustError::StaleHandle {
+                    what: "a parameter",
+                })?;
+            let name = &param.name;
+            match param.direction {
+                ParamDirection::In => {
+                    let write = write_of(ctx.ast, &param.type_, "__w", name)?;
+                    out.push_str(&format!("            {}\n", write.statement(MARSHAL_EXC)));
+                }
+                ParamDirection::InOut => {
+                    let write = write_of(ctx.ast, &param.type_, "__w", &format!("(*{name})"))?;
+                    out.push_str(&format!("            {}\n", write.statement(MARSHAL_EXC)));
+                }
+                ParamDirection::Out => {}
             }
-            ParamDirection::InOut => {
-                let write = write_of(ctx.ast, &param.type_, "__w", &format!("(*{name})"))?;
-                out.push_str(&format!("        {}\n", write.statement(&marshal_err)));
-            }
-            ParamDirection::Out => {}
         }
-    }
+        close_marshal_args(out, "        ");
+        "&__args"
+    } else {
+        NO_ARGUMENTS
+    };
 
     if op.oneway {
         let invocation = wrap_sys("__oe");
         out.push_str(&format!(
-            "        self.connection.invoke_oneway(&self.object_ref, \"{method}\", __e, &__w.finish()).map_err(|__oe| {invocation})?;\n"
+            "        self.connection.invoke_oneway(&self.object_ref, \"{method}\", __e, {args}).map_err(|__oe| {invocation})?;\n"
         ));
         out.push_str("        ::core::result::Result::Ok(())\n        }\n");
         return Ok(());
@@ -471,7 +529,7 @@ fn emit_op_stub_impl(
 
     if has_raises {
         out.push_str(&format!(
-            "        let (__reply, __re) = match self.connection.invoke(&self.object_ref, \"{method}\", __e, &__w.finish()) {{\n"
+            "        let (__reply, __re) = match self.connection.invoke_aligned(&self.object_ref, \"{method}\", __e, {args}) {{\n"
         ));
         out.push_str("            ::core::result::Result::Ok(__v) => __v,\n");
         out.push_str(
@@ -480,18 +538,17 @@ fn emit_op_stub_impl(
         for raise in &raises {
             let repo = ctx.exception_repository_id(raise);
             out.push_str(&format!("                if __rid == \"{repo}\" {{\n"));
-            out.push_str(
-                "                    let mut __xr = zerodds_wire::Reader::new(&__body, __xe);\n",
-            );
+            // CORBA 3.3 Part 2 §9.4.3: the body is read at its offset in
+            // the reply message, where the members' alignment counts from.
+            out.push_str("                    let mut __xr = __body.reader(__xe);\n");
             // The repository id is consumed first: it positions the
-            // reader at the members, whose alignment counts from the
-            // start of the body.
+            // reader at the members.
             out.push_str("                    let _ = __xr.read_string();\n");
             let members = exception_members(ctx, raise)?;
             for (member, type_) in &members {
                 let read = read_of(ctx.ast, type_, "__xr")?;
                 out.push_str(&format!(
-                    "                    let __m_{member} = match {read} {{ ::core::result::Result::Ok(__v) => __v, ::core::result::Result::Err(_) => return ::core::result::Result::Err({owner}Error::System({MARSHAL_EXC})) }};\n"
+                    "                    let __m_{member} = match {read} {{ ::core::result::Result::Ok(__v) => __v, ::core::result::Result::Err(_) => return ::core::result::Result::Err({owner}Error::System({MARSHAL_EXC_REPLY})) }};\n"
                 ));
             }
             let fields = members
@@ -514,17 +571,19 @@ fn emit_op_stub_impl(
         out.push_str("        };\n");
     } else {
         out.push_str(&format!(
-            "        let (__reply, __re) = self.connection.invoke(&self.object_ref, \"{method}\", __e, &__w.finish())?;\n"
+            "        let (__reply, __re) = self.connection.invoke_aligned(&self.object_ref, \"{method}\", __e, {args})?;\n"
         ));
     }
-    out.push_str("        let mut __r = zerodds_wire::Reader::new(&__reply, __re);\n");
+    // CORBA 3.3 Part 2 §9.4.3: the reply body is read at its offset in
+    // the reply message, where its CDR alignment counts from.
+    out.push_str("        let mut __r = __reply.reader(__re);\n");
 
     // 2. The reply: the return value if there is one, then `out` and
     //    `inout` in declaration order.
     if let Some(type_) = &op.return_type {
         let read = read_of(ctx.ast, type_, "__r")?;
         out.push_str(&format!(
-            "        let __ret = {read}.map_err(|_| {marshal_err})?;\n"
+            "        let __ret = {read}.map_err(|_| {reply_err})?;\n"
         ));
     }
     for param in &op.params {
@@ -538,7 +597,7 @@ fn emit_op_stub_impl(
             let read = read_of(ctx.ast, &param.type_, "__r")?;
             let name = &param.name;
             out.push_str(&format!(
-                "        *{name} = {read}.map_err(|_| {marshal_err})?;\n"
+                "        *{name} = {read}.map_err(|_| {reply_err})?;\n"
             ));
         }
     }
@@ -561,13 +620,12 @@ fn emit_attr_stub_impl(out: &mut String, ctx: &Ctx<'_>, id: Id<AttributeNode>) -
         "    fn {name}(&self) -> ::core::result::Result<{type_}, zerodds_corba_rust::CorbaException> {{\n"
     ));
     out.push_str("        let __e = zerodds_wire::Endianness::Big;\n");
-    out.push_str("        let __w = zerodds_wire::Writer::new(__e);\n");
     out.push_str(&format!(
-        "        let (__reply, __re) = self.connection.invoke(&self.object_ref, \"_get_{name}\", __e, &__w.finish())?;\n"
+        "        let (__reply, __re) = self.connection.invoke_aligned(&self.object_ref, \"_get_{name}\", __e, {NO_ARGUMENTS})?;\n"
     ));
-    out.push_str("        let mut __r = zerodds_wire::Reader::new(&__reply, __re);\n");
+    out.push_str("        let mut __r = __reply.reader(__re);\n");
     out.push_str(&format!(
-        "        ::core::result::Result::Ok({read}.map_err(|_| {MARSHAL_EXC})?)\n"
+        "        ::core::result::Result::Ok({read}.map_err(|_| {MARSHAL_EXC_REPLY})?)\n"
     ));
     out.push_str("    }\n");
 
@@ -577,10 +635,11 @@ fn emit_attr_stub_impl(out: &mut String, ctx: &Ctx<'_>, id: Id<AttributeNode>) -
             "    fn set_{name}(&self, value: {type_}) -> ::core::result::Result<(), zerodds_corba_rust::CorbaException> {{\n"
         ));
         out.push_str("        let __e = zerodds_wire::Endianness::Big;\n");
-        out.push_str("        let mut __w = zerodds_wire::Writer::new(__e);\n");
-        out.push_str(&format!("        {}\n", write.statement(MARSHAL_EXC)));
+        open_marshal_args(out, "        ", "__e");
+        out.push_str(&format!("            {}\n", write.statement(MARSHAL_EXC)));
+        close_marshal_args(out, "        ");
         out.push_str(&format!(
-            "        self.connection.invoke(&self.object_ref, \"_set_{name}\", __e, &__w.finish())?;\n"
+            "        self.connection.invoke(&self.object_ref, \"_set_{name}\", __e, &__args)?;\n"
         ));
         out.push_str("        ::core::result::Result::Ok(())\n");
         out.push_str("    }\n");
@@ -642,7 +701,7 @@ fn emit_interface_skeleton(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode
     out.push_str("/// Encodes return + out/inout into the reply body (same order).\n");
     let lower = name.to_lowercase();
     out.push_str(&format!(
-        "pub fn dispatch_{lower}(servant: &dyn {name}, operation: &str, __payload: &[u8], __endianness: zerodds_wire::Endianness) -> zerodds_corba_rust::SkeletonResult {{\n"
+        "pub fn dispatch_{lower}(servant: &dyn {name}, operation: &str, __payload: &zerodds_corba_rust::AlignedBody, __endianness: zerodds_wire::Endianness) -> zerodds_corba_rust::SkeletonResult {{\n"
     ));
     // CORBA 3.3 Part 2 §15.4.2: `_interface`/`_is_a`/`_non_existent`/
     // `_not_existent`/`_domain_managers`/`_component`/`_repository_id`
@@ -664,9 +723,24 @@ fn emit_interface_skeleton(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode
     Ok(())
 }
 
-/// The expression a skeleton arm returns when marshalling refuses.
+/// The expression a skeleton arm returns when the arguments do not
+/// unmarshal: the operation never ran.
 fn marshal_failure() -> String {
     format!("zerodds_corba_rust::SkeletonResult::Exception({MARSHAL_EXC})")
+}
+
+/// The expression a skeleton arm returns when the reply does not
+/// marshal: the operation ran.
+fn reply_marshal_failure() -> String {
+    format!("zerodds_corba_rust::SkeletonResult::Exception({MARSHAL_EXC_REPLY})")
+}
+
+/// The expression a skeleton arm returns when the servant raised a user
+/// exception the operation does not declare: `UNKNOWN` with standard
+/// minor code 1, the operation ran (CORBA 3.3 Part 1 §8.12.3.1; Annex
+/// A.6: UNKNOWN 1, "Unlisted user exception received by client").
+fn unlisted_user_exception() -> &'static str {
+    "zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::omg(zerodds_corba_rust::SystemExceptionKind::Unknown, 1u32, zerodds_corba_rust::CompletionStatus::Yes))"
 }
 
 fn emit_op_skeleton_arm(
@@ -679,8 +753,9 @@ fn emit_op_skeleton_arm(
     let op = operation_of(ctx, id)?;
     let method = &op.name;
     let failure = marshal_failure();
+    let reply_failure = reply_marshal_failure();
     out.push_str(&format!("        \"{method}\" => {{\n"));
-    out.push_str("            let mut __r = zerodds_wire::Reader::new(__payload, __endianness);\n");
+    out.push_str("            let mut __r = __payload.reader(__endianness);\n");
     let mut call_args: Vec<String> = Vec::new();
     for param in &op.params {
         let param = ctx
@@ -729,7 +804,7 @@ fn emit_op_skeleton_arm(
             let write = write_of(ctx.ast, type_, "__w", "__ret")?;
             out.push_str(&format!(
                 "                    {}\n",
-                write.guarded(&failure)
+                write.guarded(&reply_failure)
             ));
         } else {
             out.push_str("                    let _ = __ret;\n");
@@ -745,7 +820,7 @@ fn emit_op_skeleton_arm(
                 let write = write_of(ctx.ast, &param.type_, "__w", &param.name)?;
                 out.push_str(&format!(
                     "                    {}\n",
-                    write.guarded(&failure)
+                    write.guarded(&reply_failure)
                 ));
             }
         }
@@ -781,11 +856,11 @@ fn emit_op_skeleton_arm(
                 let write = write_of(ctx.ast, &type_, "__xw", &format!("__exc.{member}"))?;
                 out.push_str(&format!(
                     "                        {}\n",
-                    write.guarded(&failure)
+                    write.guarded(&reply_failure)
                 ));
             }
             out.push_str(&format!(
-                "                        zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::UserException {{ repository_id: \"{repo}\".to_string(), body: __xw.finish(), endianness: __endianness }})\n"
+                "                        zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::UserException {{ repository_id: \"{repo}\".to_string(), body: zerodds_corba_rust::AlignedBody::new(&__xw.finish(), 0), endianness: __endianness }})\n"
             ));
             out.push_str("                    }\n");
         }
@@ -794,7 +869,10 @@ fn emit_op_skeleton_arm(
         // still has to be total. An operation that raises them all
         // leaves the wildcard nothing, and rustc reports it unreachable.
         if owner_raises.iter().any(|raise| !raises.contains(raise)) {
-            out.push_str(&format!("                    _ => {failure},\n"));
+            out.push_str(&format!(
+                "                    _ => {},\n",
+                unlisted_user_exception()
+            ));
         }
         out.push_str("                },\n");
     }
@@ -806,6 +884,7 @@ fn emit_attr_skeleton_arm(out: &mut String, ctx: &Ctx<'_>, id: Id<AttributeNode>
     let attr = attribute_of(ctx, id)?;
     let name = &attr.name;
     let failure = marshal_failure();
+    let reply_failure = reply_marshal_failure();
     let write = write_of(ctx.ast, &attr.type_, "__w", "__ret")?;
 
     out.push_str(&format!("        \"_get_{name}\" => {{\n"));
@@ -814,7 +893,7 @@ fn emit_attr_skeleton_arm(out: &mut String, ctx: &Ctx<'_>, id: Id<AttributeNode>
     out.push_str("                    let mut __w = zerodds_corba_rust::runtime::reply_writer(__endianness);\n");
     out.push_str(&format!(
         "                    {}\n",
-        write.guarded(&failure)
+        write.guarded(&reply_failure)
     ));
     out.push_str("                    zerodds_corba_rust::SkeletonResult::Reply(__w.finish())\n");
     out.push_str("                }\n");
@@ -824,9 +903,7 @@ fn emit_attr_skeleton_arm(out: &mut String, ctx: &Ctx<'_>, id: Id<AttributeNode>
     if !attr.readonly {
         let read = read_of(ctx.ast, &attr.type_, "__r")?;
         out.push_str(&format!("        \"_set_{name}\" => {{\n"));
-        out.push_str(
-            "            let mut __r = zerodds_wire::Reader::new(__payload, __endianness);\n",
-        );
+        out.push_str("            let mut __r = __payload.reader(__endianness);\n");
         out.push_str(&format!(
             "            let __value = match {read} {{ Ok(__v) => __v, Err(_) => return {failure} }};\n"
         ));

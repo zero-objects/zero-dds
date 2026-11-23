@@ -25,7 +25,7 @@ Related pages: [README.en.md](README.en.md) · [architecture.en.md](architecture
 | `zerodds-security-permissions` | Access control: parser for governance and permissions XML, CMS/PKCS#7 verification (`cms`), topic wildcards `*`/`?`, delegation check, PSK access | §9.4 |
 | `zerodds-security-crypto` | Cryptographic: AES-128-GCM (kind 0x01, default), AES-256-GCM (0x02), HMAC-SHA256 authentication only (0x03, for `SIGN`), receiver-specific MACs, session keys | §8.5, §10.5 |
 | `zerodds-security-rtps` | Wire format: `SEC_PREFIX`/`SEC_BODY`/`SEC_POSTFIX`, `SRTPS_PREFIX`/`SRTPS_POSTFIX`, RTPS header AAD | §7.3.6, §9.5 |
-| `zerodds-security-logging` | Logging plugins: `StderrLoggingPlugin`, `JsonLinesLoggingPlugin`, `SyslogLoggingPlugin` (RFC 5424 UDP, `LOCAL0`), `FanOutLoggingPlugin` | §8.6 |
+| `zerodds-security-logging` | Logging plugins: `StderrLoggingPlugin`, `JsonLinesLoggingPlugin`, `SyslogLoggingPlugin` (RFC 5424 UDP, `LOCAL0`), `FanOutLoggingPlugin`; with feature `time-service` `JsonLinesLoggingPlugin` is the `AuditSink` of the OMG Time Service (`time_audit.rs`) | §8.6 |
 | `zerodds-security-runtime` | Wiring: `SecurityGate`/`SharedSecurityGate`, `GovernancePolicyEngine`, `SecurityProfile`, `SecurityBundle`, peer capabilities, data tagging, anti-squatter, `<peer_class>` matching | – |
 
 Key agreement, checked in `crates/security-runtime/src/qos_properties.rs` (`kx_suite_from_properties`): when unspecified, `ECDHE-CEUM+P256`; permitted: `ECDHE-CEUM+P384` and `X25519`; everything else is rejected. On the wire, `security-pki` sends `ECDH+prime256v1-CEUM` (per doc comment, based on captures from Cyclone DDS and Fast DDS).
@@ -193,13 +193,13 @@ In the configuration report (`--check-config`), every value whose path contains 
 | `zerodds-grpc-bridged` | `grpc.tls.*`, `client_ca_file`, `require_client_cert` | `none`, `bearer`, `jwt`, `mtls`, checked per call | per topic `acl.publish`/`acl.subscribe` | yes (TLS, auth, ACL) |
 | `zerodds-mqtt-bridged` | `mqtt.tls.*` to the broker (`ca_file`, `cert_file`, `key_file`, `server_name`) | `none`, `bearer`, `sasl`, `sasl_plain`, `mtls` (`crates/mqtt-bridge/src/daemon/config.rs:294`) | `acl.default_deny`, `acl.rules[].subject`, `allow_publish`, `allow_subscribe` | yes |
 | `zerodds-coap-bridged` | `coap.dtls.*` (certificate or `psk[].identity`/`secret_hex`, `cipher_suites`), `oscore.*` (RFC 8613) | `none`, `bearer`, `jwt`, `mtls` (`crates/coap-bridge/src/daemon/config.rs:376`) | `acl.rules[].allow_post` (write), `allow_observe` (read); subject = PSK identity or certificate DN | yes |
-| `zerodds-amqp-bridged` | `amqp.tls.*`, `verify_hostname` (only `true`), `alpn` | SASL to the broker: `amqp.sasl.mechanism` = `PLAIN`, `SCRAM-SHA-256`, `EXTERNAL`, `ANONYMOUS`, `XOAUTH2` (`crates/amqp-endpoint/src/bridge_daemon.rs:349`) | `acl.rules[].topic`, `read`, `write` (SASL subjects) | yes (`crates/amqp-endpoint/src/daemon_runtime.rs`) |
+| `zerodds-amqp-bridged` | `amqp.tls.*`, `verify_hostname` (only `true`), `alpn` | SASL to the broker: `amqp.sasl.mechanism` = `PLAIN`, `SCRAM-SHA-256`, `EXTERNAL`, `ANONYMOUS`, `XOAUTH2` (`crates/amqp-endpoint/src/bridge_daemon/config.rs:314`) | `acl.rules[].topic`, `read`, `write` (SASL subjects) | yes (`crates/amqp-endpoint/src/daemon_runtime.rs`) |
 | `zerodds-corba-bridged` | `corba.ssliop.*` (`bind`, `cert_file`, `key_file`, `ca_file`, `require_client_cert`) | no `auth.mode`; subject from the client certificate | `acl.rules[].subject`, `allow_invoke` (repository IDs with `*`) | yes (ACL, SSLIOP) |
 
 CoAP specifics:
 
 - `dtls` and `oscore` are Cargo features of `zerodds-coap-bridge` and are not in the default (`crates/coap-bridge/Cargo.toml`). A build without the feature aborts startup if `coap.dtls.enabled: true` or `oscore.enabled: true` is set (`crates/coap-bridge/src/daemon/server.rs:377`, `:417`).
-- DTLS 1.2 via `webrtc-dtls`, marked as experimental in the code (ADR 0011).
+- DTLS 1.2 on OpenSSL 3.2 or later (`zerodds-dtls-openssl`, ADR 0014): PSK, raw public keys (RFC 7250, RFC 6920 names in `coap.dtls.rpk_trusted`) and certificates; the subject of a raw public key is `rpk:` with its `ni` URI.
 - `oscore.enabled: true` without `master_secret_hex` aborts startup (per the example configuration).
 
 CORBA specifics: `corba.csiv2.enabled: true` and `corba.ior.publish_to_naming: true` are rejected because they are not built (per `packaging/linux/configs/corba-bridged.yaml.example`).
@@ -236,7 +236,7 @@ Tests: `crates/{websocket-bridge,mqtt-bridge,coap-bridge,grpc-bridge,amqp-endpoi
 1. Place the daemon's certificate and key in `/etc/zerodds/certs/`, owner `zerodds`.
 2. Enable transport protection in the daemon YAML (`tls.enabled: true`; for CoAP `coap.dtls.enabled: true` with the build feature `dtls`; for CORBA `corba.ssliop.enabled: true`).
 3. For mTLS, set the client CA (`tls.client_ca_file`, `grpc.tls.client_ca_file` + `require_client_cert`, `corba.ssliop.ca_file` + `require_client_cert`) and `auth.mode: mtls`.
-4. Otherwise choose an auth mode: `bearer` with `auth.bearer_token` (value via the environment, e.g. `${WS_BRIDGE_TOKEN}`), `jwt` with `auth.jwt.public_key` and `issuer`/`audience`/`required_claim`, `sasl` (MQTT) with `auth.sasl_users`.
+4. Otherwise choose an auth mode: `bearer` with `auth.bearer_token` (value via the environment, e.g. `${WS_BRIDGE_TOKEN}`), `jwt` with `auth.jwt.public_key` and `issuer`/`audience`/`required_claim`, for the MQTT daemon, which is the broker's client, `password`, `mtls` or `enhanced` (SCRAM-SHA-256, OAUTHBEARER) with its own credentials.
 5. Create an ACL for each topic. With `auth.mode` other than `none`, a topic without a rule is rejected. Subjects: user name, JWT `sub`, `*group:<g>*`, mTLS DN (`CN=…,O=…`) or `mtls:<sha256>`.
 6. Check the configuration: `zerodds-<x>-bridged --config /etc/zerodds/<x>-bridged.yaml --check-config` (secrets appear as `***`).
 7. Bind the metrics endpoint only to `127.0.0.1` (default in the examples).

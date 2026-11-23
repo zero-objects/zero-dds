@@ -141,6 +141,13 @@ mod tests {
             .preinvoke(&ObjectId::system_id(1), "RootPOA", "ping")
             .unwrap();
         assert_eq!(cookie, alloc::vec![0xab, 0xcd]);
-        assert_eq!(s.invoke("ping", &[1]), alloc::vec![1]);
+        assert_eq!(
+            s.invoke(
+                "ping",
+                &zerodds_corba_giop::AlignedBody::new(&[1], 0),
+                zerodds_wire::Endianness::Big
+            ),
+            alloc::vec![1]
+        );
     }
 }

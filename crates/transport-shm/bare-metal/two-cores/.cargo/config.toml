@@ -1,0 +1,7 @@
+[build]
+target = "aarch64-unknown-none"
+
+# Two Cortex-A53 cores; core 1 starts powered off and core 0 starts it over
+# PSCI. `-semihosting` lets the program end QEMU with its exit code.
+[target.aarch64-unknown-none]
+runner = "qemu-system-aarch64 -M virt -cpu cortex-a53 -smp 2 -m 128M -nographic -nic none -semihosting -kernel"

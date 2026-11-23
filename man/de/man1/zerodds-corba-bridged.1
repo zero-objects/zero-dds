@@ -26,7 +26,8 @@ jedes Requests gegen eine GSSUP-Passwortdatei geprüft (CORBA 3.4 Teil 2
 .B NO_PERMISSION
 mit angehängtem SAS-
 .BR ContextError ,
-zusätzlich zu SSLIOP-Client-Zertifikaten und der ACL.
+ebenso ein Request ohne GSSUP-Anmeldedaten und ohne geprüftes
+Client-Zertifikat.
 Mit
 .BR corba.ior.publish_to_naming
 wird die IOR jeder Zuordnung beim Start per
@@ -39,8 +40,16 @@ eingetragen und bei einem sauberen Ende per
 .B unbind
 entfernt.
 .B corba.naming.serve
-(ein NameService im selben Prozess, der den Transport dieses Daemons
-mitbenutzt) ist nicht gebaut.
+stellt einen NameService auf dem Listener dieses Daemons bereit. Mit
+.B corba.ssliop.required
+sind die Objekte nur über SSLIOP erreichbar; ein Client über einfaches
+IIOP wird weitergeleitet. Jeder Eintrag von
+.B tenants
+ist ein eigener DDS-Teilnehmer, gebunden an die SSLIOP-Sitzungen, deren
+Client-Zertifikat er nennt. Jeder Austausch ist eine JSON-Zeile auf stderr
+und, mit
+.BR OTEL_EXPORTER_OTLP_ENDPOINT ,
+ein Span mit seinen Kindern.
 Implementiert
 .IR docs/specs/zerodds-corba-bridge-1.0.md .
 .SH OPTIONEN
@@ -88,6 +97,8 @@ Eine weitere Zuordnung, wiederholbar.
 .BR \-\-dump\-iors
 Gibt eine Zeile je Zuordnung aus,
 .IR "repo_id operation IOR:..." ,
+die eines Mandanten als
+.IR "@mandant repo_id operation IOR:..." ,
 und beendet sich.
 .TP
 .BR \-\-log\-level =\fISTUFE\fR
@@ -113,15 +124,21 @@ SIGTERM und SIGINT beenden den Daemon: Requests, die dann ankommen, bekommen
 .BR TRANSIENT ,
 offene Requests bekommen höchstens 30 s lang ihre Antwort oder ihr
 .BR TIMEOUT ,
-dann bekommt jede Verbindung CloseConnection.
+dann bekommt jede Verbindung CloseConnection; mit
+.B corba.ior.publish_to_naming
+werden die Namen vorher ausgetragen.
 SIGHUP liest die Konfiguration neu: Die ACL und das SSLIOP-Zertifikat gelten ab
-dann (das Zertifikat für neue Verbindungen); geänderte Zuordnungen, Binds oder
-Domäne brauchen einen Neustart und werden protokolliert. Eine Konfiguration,
+dann für jeden Teilnehmer (das Zertifikat für neue Verbindungen); geänderte
+Zuordnungen, Binds, Domäne oder Mandanten brauchen einen Neustart und werden
+protokolliert. Eine Konfiguration,
 die nicht lädt, ändert nichts.
 .SH UMGEBUNGSVARIABLEN
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318: der Span
+.I giop.request
+jedes Austauschs mit seinen Kindern
+.IR dds.publish ", " dds.subscribe " und " giop.reply .
 .TP
 .B ZERODDS_CORBA_ADVERTISE_HOST
 Der Host, den die IORs nennen, wenn
@@ -133,7 +150,9 @@ eine Wildcard-Adresse ist; die Einstellung
 Standard
 .IR 127.0.0.1 .
 .SH EXIT-STATUS
-0 normales Ende, 1 Konfiguration, 2 Bind, 3 DDS, 4 TLS.
+0 normales Ende, 1 Konfiguration, 2 Bind, 3 DDS (ein Teilnehmer, der nicht
+startet), 4 TLS, 5 NameService (er antwortet nicht innerhalb von
+.BR corba.ior.naming_retry_ms ).
 .SH DATEIEN
 .IR /etc/zerodds/corba-bridged.yaml ,
 die Datei, die

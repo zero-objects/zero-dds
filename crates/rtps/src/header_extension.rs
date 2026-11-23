@@ -666,6 +666,81 @@ impl HeaderExtension {
         Ok(())
     }
 
+    /// `message` with a HeaderExtension that states its length: what a
+    /// stream transport needs to find the end of the message (§8.3.3, "a
+    /// stream-oriented transport (like TCP) would need to include the
+    /// length in the RTPS HeaderExtension in order to identify the
+    /// boundary of the RTPS message"). A message without a HeaderExtension
+    /// gets one behind the RTPS header (§8.3.7.3) that carries only the
+    /// messageLength, little-endian, eight octets; a message with one
+    /// keeps its fields and gets the messageLength added or set. The
+    /// messageLength is the length of the returned message (§8.3.7.5),
+    /// and a messageChecksum the extension carries is computed anew over
+    /// it (§8.3.7.4).
+    ///
+    /// # Errors
+    /// `UnexpectedEof` for a message shorter than the RTPS header,
+    /// `ValueOutOfRange` for one that does not begin with `RTPS`, whose
+    /// protocol version is below 2.5 (the submessage id 0x00 is the
+    /// HeaderExtension from 2.5 on) or that is longer than `u32::MAX`; the
+    /// errors of [`Self::decode`] for a HeaderExtension that does not
+    /// decode.
+    pub fn with_message_length(message: &[u8]) -> Result<Vec<u8>, WireError> {
+        const HEADER: usize = crate::header::RtpsHeader::WIRE_SIZE;
+        if message.len() < HEADER {
+            return Err(WireError::UnexpectedEof {
+                needed: HEADER,
+                offset: message.len(),
+            });
+        }
+        if &message[..4] != b"RTPS" {
+            return Err(WireError::ValueOutOfRange {
+                message: "not an RTPS message",
+            });
+        }
+        if (message[4], message[5]) < (2, 5) {
+            return Err(WireError::ValueOutOfRange {
+                message: "a HeaderExtension needs protocol version 2.5",
+            });
+        }
+        let carried =
+            message.len() >= HEADER + 4 && message[HEADER] == SUBMESSAGE_ID_HEADER_EXTENSION;
+        let (mut he, old_end) = if carried {
+            let he = Self::decode(&message[HEADER..])?;
+            // `decode` has checked that the body is there.
+            let len_bytes = [message[HEADER + 2], message[HEADER + 3]];
+            let octets = if message[HEADER + 1] & HE_FLAG_E != 0 {
+                u16::from_le_bytes(len_bytes)
+            } else {
+                u16::from_be_bytes(len_bytes)
+            } as usize;
+            (he, HEADER + 4 + octets)
+        } else {
+            let he = Self {
+                little_endian: true,
+                ..Self::new()
+            };
+            (he, HEADER)
+        };
+        // The encoded size does not depend on the value.
+        he.message_length = Some(MESSAGE_LENGTH_INVALID);
+        let size = he.encode()?.len();
+        let total = message.len() - (old_end - HEADER) + size;
+        he.message_length = Some(
+            u32::try_from(total).map_err(|_| WireError::ValueOutOfRange {
+                message: "message longer than u32::MAX",
+            })?,
+        );
+        let mut out = Vec::with_capacity(total);
+        out.extend_from_slice(&message[..HEADER]);
+        out.extend_from_slice(&he.encode()?);
+        out.extend_from_slice(&message[old_end..]);
+        if he.checksum.kind() != ChecksumKind::None {
+            Self::seal_message(&mut out)?;
+        }
+        Ok(out)
+    }
+
     /// Decodes a complete HE submessage (header + body) from
     /// `bytes`. Checks the SubmessageId.
     ///
@@ -1280,6 +1355,98 @@ mod tests {
         assert_eq!(pid_strip(0x4015), 0x0015);
         assert_eq!(pid_strip(0x8015), 0x0015);
         assert_eq!(pid_strip(0x0015), 0x0015);
+    }
+
+    /// An RTPS 2.5 header of vendor 01 F0 with the GuidPrefix 1 to 12.
+    fn rtps_header() -> Vec<u8> {
+        let mut m = vec![b'R', b'T', b'P', b'S', 2, 5, 0x01, 0xF0];
+        m.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        m
+    }
+
+    /// §8.3.3, §9.4.5.2: a message without a HeaderExtension gets one
+    /// directly behind the header: id 0x00, flags E|L, octetsToNextHeader 4,
+    /// messageLength = the length of the whole message, little-endian. The
+    /// submessages behind it are unchanged, and the datagram decoder takes
+    /// the result.
+    #[test]
+    fn rtps_8_3_3_with_message_length_puts_the_length_behind_the_header() {
+        // INFO_TS (0x09), E flag, 8 octets.
+        let info_ts = [0x09, 0x01, 8, 0, 1, 0, 0, 0, 2, 0, 0, 0];
+        let mut message = rtps_header();
+        message.extend_from_slice(&info_ts);
+        let out = HeaderExtension::with_message_length(&message).unwrap();
+        assert_eq!(out.len(), 20 + 8 + 12);
+        assert_eq!(out[..20], message[..20]);
+        assert_eq!(out[20..28], [0x00, 0x03, 4, 0, 40, 0, 0, 0]);
+        assert_eq!(out[28..], info_ts);
+        let decoded = crate::datagram::decode_datagram(&out).unwrap();
+        assert!(decoded.invalid_rest.is_none(), "{:?}", decoded.invalid_rest);
+        assert!(!decoded.submessages.is_empty());
+        // The decoder holds the messageLength against the datagram: one
+        // octet more and the message is refused.
+        let mut longer = out.clone();
+        longer.push(0);
+        assert!(crate::datagram::decode_datagram(&longer).is_err());
+        // A message of the header alone: 28 octets.
+        let out = HeaderExtension::with_message_length(&rtps_header()).unwrap();
+        assert_eq!(out[20..], [0x00, 0x03, 4, 0, 28, 0, 0, 0]);
+    }
+
+    /// A message that has a HeaderExtension keeps its fields; the
+    /// messageLength is added or corrected, and the checksum is the one of
+    /// the new message.
+    #[test]
+    fn rtps_8_3_3_with_message_length_keeps_the_fields_of_an_extension() {
+        let he = HeaderExtension {
+            little_endian: false,
+            timestamp: Some(HeTimestamp {
+                seconds: 7,
+                fraction: 9,
+            }),
+            checksum: ChecksumValue::Crc32c(0),
+            ..HeaderExtension::new()
+        };
+        let mut message = rtps_header();
+        message.extend_from_slice(&he.encode().unwrap());
+        message.extend_from_slice(&[0x09, 0x01, 8, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
+        let out = HeaderExtension::with_message_length(&message).unwrap();
+        assert_eq!(out.len(), message.len() + 4);
+        let back = HeaderExtension::decode(&out[20..]).unwrap();
+        assert_eq!(back.message_length, Some(u32::try_from(out.len()).unwrap()));
+        assert_eq!(back.timestamp, he.timestamp);
+        assert!(!back.little_endian);
+        // Big-endian: flags L|T|C0, the length first in the body.
+        assert_eq!(out[21] & HE_FLAG_E, 0);
+        assert_eq!(out[24..28], u32::try_from(out.len()).unwrap().to_be_bytes());
+        assert!(HeaderExtension::verify_message(&out).unwrap());
+        // Already stated, but wrong: corrected, same size.
+        let mut wrong = out.clone();
+        wrong[27] ^= 0x10;
+        assert_eq!(HeaderExtension::with_message_length(&wrong).unwrap(), out);
+        // Stated and right: unchanged.
+        assert_eq!(HeaderExtension::with_message_length(&out).unwrap(), out);
+    }
+
+    /// What cannot carry a HeaderExtension is refused, not passed on.
+    #[test]
+    fn rtps_8_3_3_with_message_length_refuses_what_is_no_rtps_2_5_message() {
+        assert!(matches!(
+            HeaderExtension::with_message_length(&rtps_header()[..19]),
+            Err(WireError::UnexpectedEof { .. })
+        ));
+        let mut other = rtps_header();
+        other[0] = b'X';
+        assert!(matches!(
+            HeaderExtension::with_message_length(&other),
+            Err(WireError::ValueOutOfRange { .. })
+        ));
+        let mut old = rtps_header();
+        old[5] = 4;
+        assert!(matches!(
+            HeaderExtension::with_message_length(&old),
+            Err(WireError::ValueOutOfRange { .. })
+        ));
     }
 
     #[test]

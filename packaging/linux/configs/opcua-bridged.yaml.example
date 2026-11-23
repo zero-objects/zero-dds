@@ -31,6 +31,25 @@ opcua:
     # private_key_pem:                    "/etc/zerodds/certs/opcua-bridged.key.pem"
     # trusted_client_certificate_der:      "/etc/zerodds/certs/client.der"
     # trusted_client_public_key_pem:       "/etc/zerodds/certs/client.pub.pem"
+    # Security Key Service (Part 14 §8; features crypto, pubsub-security).
+    # security_groups:
+    #   - security_group_id: "group-1"
+    #     policy: "aes256-ctr"
+    #     key_lifetime_ms: 3600000
+    #     max_future_key_count: 3
+    #     max_past_key_count: 1
+    #     key_subjects: ["opc-client-1"]
+    #     admin_subjects: ["sks-admin"]
+    # The users of the SKS roles (Part 14 §8.8).
+    # roles:
+    #   security_key_server_admin: ["sks-admin"]
+    #   security_key_server_access: ["opc-client-1"]
+    #   security_key_server_push: []
+    # Historical Access (§5.4) for the leaves of a dds_to_ua_connection topic.
+    # historical:
+    #   topics:
+    #     - dds_topic: "Telemetry"
+    #       depth: 100
 
   # Gateway 1.0 §8: this daemon as an OPC-UA client of other servers.
   client:
@@ -64,12 +83,40 @@ opcua:
             dds_type:     "robotics::Command"
             dataset_name: "CommandDataSet"
             fields: ["value"]   # the remote Publisher's own field order
+        # Part 14 §8 message security (feature `pubsub-security`).
+        # key_source: static (the key below), local (this daemon's group),
+        # sks (pulled with GetSecurityKeys), push (SetSecurityKeys).
+        # security:
+        #   policy: "aes256-ctr"
+        #   security_group_id: "group-1"
+        #   key_source: "static"
+        #   push_subject: "sks-admin"
+        #   sks:
+        #     endpoint_url: "opc.tcp://sks.local:4840"
+        #     channel_policy: "basic256sha256"
+        #     certificate_der: "/etc/zerodds/certs/opcua-bridged.der"
+        #     private_key_pem: "/etc/zerodds/certs/opcua-bridged.key.pem"
+        #     server_certificate_der: "/etc/zerodds/certs/sks.der"
+        #     server_public_key_pem: "/etc/zerodds/certs/sks.pub.pem"
+        #     username: "opc-client-1"
+        #     password: "${OPCUA_SKS_PASSWORD}"
+        #     user_token_policy_id: "user"
+        #     requested_key_count: 3
+        #   token_id: 1
+        #   signing_key:    "${OPCUA_PUBSUB_SIGNING_KEY}"
+        #   encrypting_key: "${OPCUA_PUBSUB_ENCRYPTING_KEY}"
+        #   key_nonce:      "${OPCUA_PUBSUB_KEY_NONCE}"
 
-# Which DDS topics this daemon exposes/accepts at all (§7.2). The subject
-# dimension is parsed but not enforced per OPC-UA session — see the man
-# page and zerodds-opcua-bridge-1.0.md §6.2.
+# Which DDS topics this daemon exposes/accepts at all (§7.2). A Write to
+# this daemon's own server is checked against the subject of its session
+# as well (§6.2); the subject of a session is the name of its user.
 acl:
   default_deny: false
+  allow_anonymous: true
+  # users:
+  #   - username: "opc-client-1"
+  #     password: "${OPCUA_CLIENT_1_PASSWORD}"
+  #     policy_id: "user"
   rules:
     - subject: "opc-client-1"
       allow_read:  ["Telemetry"]
@@ -78,3 +125,4 @@ acl:
 metrics:
   enabled: false
   listen: "127.0.0.1:9095"   # GET /metrics
+  # otlp_endpoint: "http://127.0.0.1:4318"

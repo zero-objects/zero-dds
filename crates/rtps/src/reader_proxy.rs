@@ -70,6 +70,11 @@ pub struct ReaderProxy {
     /// `DDS_FILTER` of this reader; `None` is the no-op the spec allows
     /// (§8.2.10.1: "DDS_FILTER may be a noop"): every change passes.
     filter: Option<ChangeFilter>,
+    /// The signature of the reader's content filter
+    /// ([`crate::content_filter_info::filter_signature`]) when the writer
+    /// applies it (DDSI-RTPS 2.5 §8.7.3); the outcome is read from the
+    /// change (`CacheChange::filter_outcomes`).
+    filter_signature: Option<crate::content_filter_info::FilterSignature>,
     /// Highest SN the reader has **already acked**
     /// (from AckNack.reader_sn_state.bitmap_base - 1).
     highest_acked_sn: SequenceNumber,
@@ -145,6 +150,7 @@ impl ReaderProxy {
             is_reliable,
             remote_group_entity_id: EntityId::UNKNOWN,
             filter: None,
+            filter_signature: None,
             // Pre-existing state: nothing acked, nothing sent. SN starts
             // at 1; "0 acked" means "nothing acked" (§8.7.4).
             highest_acked_sn: SequenceNumber(0),
@@ -170,6 +176,29 @@ impl ReaderProxy {
     pub fn with_filter(mut self, filter: ChangeFilter) -> Self {
         self.filter = Some(filter);
         self
+    }
+
+    /// Sets the signature of the content filter the writer applies for
+    /// this reader; `None` when it applies none.
+    pub fn set_filter_signature(
+        &mut self,
+        signature: Option<crate::content_filter_info::FilterSignature>,
+    ) {
+        self.filter_signature = signature;
+    }
+
+    /// The signature of the content filter the writer applies for this
+    /// reader.
+    #[must_use]
+    pub fn filter_signature(&self) -> Option<&crate::content_filter_info::FilterSignature> {
+        self.filter_signature.as_ref()
+    }
+
+    /// Whether the writer filters for this reader, by a `DDS_FILTER` or by
+    /// a content filter signature.
+    #[must_use]
+    pub fn is_filtered(&self) -> bool {
+        self.filter.is_some() || self.filter_signature.is_some()
     }
 
     /// The `DDS_FILTER` of this reader, if it has one.

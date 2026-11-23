@@ -1388,7 +1388,7 @@ geprüft).
 **Spec:** §10.2, S. 85 — implementations MUST support PLAIN,
 ANONYMOUS, EXTERNAL.
 
-**Repo:** `sasl.rs::SaslMechanism::{Plain, Anonymous, External}`.
+**Repo:** `crates/amqp-endpoint/src/sasl.rs::SaslMechanism::{Plain, Anonymous, External}`.
 
 **Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::ddsamqp_2_1_select_outbound_prefers_external`,
 `crates/amqp-endpoint/src/sasl.rs::tests::ddsamqp_2_1_select_outbound_falls_back_to_plain_with_tls`,

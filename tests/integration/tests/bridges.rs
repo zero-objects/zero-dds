@@ -218,7 +218,8 @@ topics:
         "ZERODDS_MQTT_BRIDGED",
         "mqtt-bridged",
         &config,
-        "subscribed to 1 mqtt topic",
+        // zerodds-mqtt-bridge-1.0 §8.1: the JSON line of the subscriptions.
+        r#""event":"subscribed""#,
     );
     dds.wait_for_bridge("mqtt");
 
@@ -338,7 +339,14 @@ topics:
     )
     .unwrap();
     let dds = DdsSide::new(domain);
-    let bridge = daemon("ZERODDS_COAP_BRIDGED", "coap-bridged", &config, "bound on");
+    // The daemon logs one JSON line per event (zerodds-coap-bridge-1.0 §8.1);
+    // the socket is bound with the line of the event `bound`.
+    let bridge = daemon(
+        "ZERODDS_COAP_BRIDGED",
+        "coap-bridged",
+        &config,
+        r#""event":"bound""#,
+    );
     dds.wait_for_bridge("coap");
 
     // CoAP -> DDS: POST with Content-Format 65000, XCDR2 little endian: the
@@ -423,7 +431,12 @@ topics:
     )
     .unwrap();
     let dds = DdsSide::new(domain);
-    let bridge = daemon("ZERODDS_WS_BRIDGED", "ws-bridged", &config, "bound on");
+    let bridge = daemon(
+        "ZERODDS_WS_BRIDGED",
+        "ws-bridged",
+        &config,
+        "\"event\":\"bound\"",
+    );
     dds.wait_for_bridge("websocket");
 
     let sent = inbound();
@@ -515,7 +528,12 @@ topics:
     )
     .unwrap();
     let dds = DdsSide::new(domain);
-    let bridge = daemon("ZERODDS_WS_BRIDGED", "ws-bridged", &config, "bound on");
+    let bridge = daemon(
+        "ZERODDS_WS_BRIDGED",
+        "ws-bridged",
+        &config,
+        "\"event\":\"bound\"",
+    );
     dds.wait_for_bridge("websocket json");
 
     let sent = inbound();

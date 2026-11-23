@@ -54,16 +54,19 @@ Show the option synopsis.
 .SH SIGNALS
 SIGTERM stops the daemon.
 SIGHUP reloads what can be reloaded without a restart:
-.BR log_level ", "
-.BR limits.* ", "
-.BR session_timeout_secs " and "
-.BR discovery.enabled
-(the discovery responder thread is stopped or started to match). A changed
+.BR limits.max_clients ", "
+.BR limits.max_objects_per_client " and "
+.BR session_timeout_secs .
+Every other key that changed, among them
 .BR listeners: ", "
-.BR type_files: " or "
-.B xml_profile_files:
-entry is logged and ignored until restart — live-rebinding a listening
-socket or swapping the TypeObject set under in-flight sessions would risk
+.BR type_files: ", "
+.BR xml_profile_files: ", "
+.B heartbeat.*
+and
+.BR upstream.* ,
+is named in the log and ignored until restart — live-rebinding a listening
+socket, swapping the TypeObject set or the upstream link under in-flight
+sessions, or changing the heartbeat of streams that exist, would risk
 silently orphaning them. A configuration that does not load changes
 nothing; the daemon keeps running on the last good configuration and logs
 why the reload was refused.

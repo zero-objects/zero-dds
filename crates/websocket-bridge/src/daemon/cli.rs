@@ -24,12 +24,13 @@ use std::vec::Vec;
 /// Parsed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
-    /// `--config <FILE>` — path to the YAML config.
     /// `--listen <ADDR>` — override for the bind address.
     pub listen: Option<String>,
     /// `--domain <ID>` — DDS domain id override.
     pub domain: Option<i32>,
-    /// `--topic <NAME[:KEY]>` — single-topic overrides (multiple).
+    /// `--topic <NAME[:WS_PATH]>` — one more topic entry per flag: the DDS
+    /// topic name, and behind a single `:` the path of its WebSocket
+    /// endpoint (§4.2) where it is not the default path.
     pub topics: Vec<String>,
     /// `--tls-cert <FILE>` — TLS cert file (PEM); enables `wss://`.
     pub tls_cert: Option<String>,
@@ -52,25 +53,32 @@ use zerodds_config::cli::Flags;
 
 /// Help text per Spec §2.
 pub const HELP_TEXT: &str = "\
-zerodds-ws-bridged 1.0 — DDS↔WebSocket bridge daemon
+zerodds-ws-bridged — DDS↔WebSocket bridge daemon
 
 USAGE:
     zerodds-ws-bridged [OPTIONS]
 
 OPTIONS:
-    --listen <ADDR>         Bind address (default 0.0.0.0:8080)
+    --config <FILE>         Base file, plus FILE.d/
+    --set <PATH=VALUE>      One value above all files (repeatable)
+    --check-config          Check the configuration, print every value
+                            with its origin, exit (0 valid, 1 invalid,
+                            2 a file that does not load)
+    --listen <ADDR>         Bind address (default 127.0.0.1:8080)
     --domain <ID>           DDS domain id (default 0)
-    --topic <NAME>          Single-topic override (multiple)
+    --topic <NAME[:WS_PATH]>
+                            One more topic (repeatable); WS_PATH is its
+                            path, default /topics/<slug>
     --tls-cert <FILE>       TLS cert (PEM); enables wss://
     --tls-key <FILE>        TLS key (PEM)
     --auth-token <SECRET>   Bearer token auth
     --log-level <LEVEL>     trace/debug/info/warn/error (default info)
-    --metrics <ADDR>        Prometheus scrape endpoint
+    --metrics <ADDR>        Prometheus scrape endpoint (default off)
     --version               Version info
     --help                  Help
 
-Each option above is `--set` of its file key (`--listen X` is
-`--set listen=X`), so it wins over the files. The file is
+Each option from --listen on is `--set` of its file key (`--listen X`
+is `--set listen=X`), so it wins over the files. The file is
 ws-bridged.yaml with ws-bridged.d/ in the system configuration
 directory unless --config names another.
 
@@ -78,14 +86,14 @@ EXIT CODES:
     0   normal shutdown (SIGTERM/SIGINT)
     1   config error
     2   bind error (port in use)
-    3   DDS discovery error
-    4   TLS error
+    3   DDS error (the participant does not start)
+    4   TLS error (certificate or key does not load)
 
 Spec: docs/specs/zerodds-ws-bridge-1.0.md
 ";
 
-/// Version string.
-pub const VERSION_TEXT: &str = "zerodds-ws-bridged 1.0";
+/// The line `--version` prints: the program and the version of its crate.
+pub const VERSION_TEXT: &str = concat!("zerodds-ws-bridged ", env!("CARGO_PKG_VERSION"));
 
 impl CliArgs {
     /// The convenience flags as `PATH=VALUE` assignments, in the order the
@@ -213,6 +221,76 @@ mod tests {
     fn missing_value_rejected() {
         let err = parse(&args(&["--listen"])).unwrap_err();
         assert!(matches!(err, CliError::MissingValue(_)));
+    }
+
+    /// Spec §2: the help names every option and every exit code of the
+    /// specification, and the default of `--listen` is the one the daemon
+    /// starts with.
+    #[test]
+    fn wsbridge_2_the_help_names_the_options_the_exit_codes_and_the_default() {
+        let spec = include_str!("../../../../docs/specs/zerodds-ws-bridge-1.0.md");
+        let section = &spec[spec.find("## §2 CLI surface").expect("§2")..];
+        let block = &section[..section.find("## §3").expect("§3")];
+        let mut options = 0;
+        for line in block.lines() {
+            let Some(rest) = line.trim_start().strip_prefix("--") else {
+                continue;
+            };
+            let name = rest.split([' ', '=']).next().expect("a name");
+            if !line.starts_with("  --") {
+                continue;
+            }
+            options += 1;
+            assert!(
+                HELP_TEXT.contains(&format!("--{name} "))
+                    || HELP_TEXT.contains(&format!("--{name}\n")),
+                "the help does not name --{name}"
+            );
+        }
+        assert_eq!(options, 13, "the options of §2");
+        for code in ["0   normal", "1   config", "2   bind", "3   DDS", "4   TLS"] {
+            assert!(block.contains(code), "§2 names `{code}`");
+            assert!(HELP_TEXT.contains(code), "the help names `{code}`");
+        }
+        let default = crate::daemon::config::DaemonConfig::default_for_dev().listen;
+        assert_eq!(default, "127.0.0.1:8080");
+        assert!(HELP_TEXT.contains(&format!("(default {default})")));
+        assert!(block.contains(&format!("(default {default})")));
+    }
+
+    /// Spec §2: every short form is `--set` of its file key.
+    #[test]
+    fn wsbridge_2_every_short_form_is_a_set_of_its_key() {
+        let p = parse(&args(&[
+            "--listen=[::1]:9",
+            "--domain=7",
+            "--log-level=debug",
+            "--auth-token=t",
+            "--tls-cert=/c.pem",
+            "--tls-key=/k.pem",
+            "--metrics=127.0.0.1:9",
+            "--topic=Chat::Message:/chat",
+            "--topic=Plain",
+        ]))
+        .unwrap();
+        assert_eq!(
+            p.sets(),
+            [
+                "listen=[::1]:9",
+                "domain=7",
+                "log_level=debug",
+                "auth.mode=bearer",
+                "auth.bearer_token=t",
+                "tls.cert_file=/c.pem",
+                "tls.enabled=true",
+                "tls.key_file=/k.pem",
+                "tls.enabled=true",
+                "metrics.listen=127.0.0.1:9",
+                "metrics.enabled=true",
+                "+topics=Chat::Message:/chat",
+                "+topics=Plain",
+            ]
+        );
     }
 
     #[test]

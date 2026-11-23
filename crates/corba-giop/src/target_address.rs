@@ -20,11 +20,15 @@
 //! };
 //! ```
 //!
-//! We model the union variant. The `IOP::TaggedProfile` and `IOR`
-//! types live in `crates/corba-ior/`; to avoid crate cycles, we keep
-//! the data as opaque bytes for Profile/IOR and provide helpers that
-//! `crates/corba-ior/` can use to re-parse the bytes.
+//! The `ProfileAddr` arm carries an `IOP::TaggedProfile`
+//! ([`TargetProfile`]), the `ReferenceAddr` arm an
+//! [`IorAddressingInfo`] with the whole IOR; both are written as the
+//! CDR structs of the IDL, in the byte order and alignment of the
+//! enclosing message, so a foreign ORB reads them (Part 2 §9.4.2.1).
+//! The profile body stays opaque here: `crates/corba-iiop/` decodes an
+//! IIOP profile, `crates/corba-ior/` the rest of the IOR.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use zerodds_wire::{Reader, Writer};
@@ -48,21 +52,96 @@ pub enum AddressingDisposition {
     ReferenceAddr = 2,
 }
 
+impl AddressingDisposition {
+    /// The disposition of a wire `short` (Part 2 §9.4.2.1); the body of
+    /// a `NEEDS_ADDRESSING_MODE` reply (§9.4.3.2) and of a
+    /// `LOC_NEEDS_ADDRESSING_MODE` locate reply (§9.4.6.2) is one.
+    ///
+    /// # Errors
+    /// [`GiopError::UnknownAddressingDisposition`] for any other value.
+    pub fn from_i16(v: i16) -> GiopResult<Self> {
+        match v {
+            0 => Ok(Self::KeyAddr),
+            1 => Ok(Self::ProfileAddr),
+            2 => Ok(Self::ReferenceAddr),
+            #[allow(clippy::cast_sign_loss)]
+            other => Err(GiopError::UnknownAddressingDisposition(other as u16)),
+        }
+    }
+
+    /// Reads a `GIOP::AddressingDisposition` (a `short`).
+    ///
+    /// # Errors
+    /// Buffer read error or an unknown value.
+    pub fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
+        r.align_to(2)?;
+        Self::from_i16(r.read_i16()?)
+    }
+
+    /// Writes the disposition as a `short`.
+    pub fn encode(self, w: &mut Writer) {
+        w.align_to(2);
+        #[allow(clippy::cast_sign_loss)]
+        w.write_u16(self as i16 as u16);
+    }
+}
+
+/// `IOP::TaggedProfile` — `struct { ProfileId tag; sequence<octet>
+/// profile_data; }`; for `TAG_INTERNET_IOP` (0) the data is the
+/// encapsulated `IIOP::ProfileBody`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetProfile {
+    /// `IOP::ProfileId`.
+    pub tag: u32,
+    /// The profile data (an encapsulation for the standard profiles).
+    pub profile_data: Vec<u8>,
+}
+
+impl TargetProfile {
+    fn encode(&self, w: &mut Writer) -> GiopResult<()> {
+        w.align_to(4);
+        w.write_u32(self.tag);
+        write_octets(w, &self.profile_data, "profile_data too long")
+    }
+
+    fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
+        r.align_to(4)?;
+        let tag = r.read_u32()?;
+        let profile_data = read_octets(r)?;
+        Ok(Self { tag, profile_data })
+    }
+}
+
+/// `GIOP::IORAddressingInfo` — `struct { unsigned long
+/// selected_profile_index; IOP::IOR ior; }` with `IOP::IOR` as
+/// `struct { string type_id; sequence<TaggedProfile> profiles; }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IorAddressingInfo {
+    /// Index of the profile the client selected in `profiles`.
+    pub selected_profile_index: u32,
+    /// `IOR::type_id`.
+    pub type_id: String,
+    /// `IOR::profiles`.
+    pub profiles: Vec<TargetProfile>,
+}
+
+impl IorAddressingInfo {
+    /// The profile the client selected.
+    #[must_use]
+    pub fn selected_profile(&self) -> Option<&TargetProfile> {
+        self.profiles.get(self.selected_profile_index as usize)
+    }
+}
+
 /// `TargetAddress`-Union.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetAddress {
     /// `KeyAddr` — opaque object key.
     Key(ObjectKey),
-    /// `ProfileAddr` — opaque `TaggedProfile` bytes (the caller decodes
-    /// them in `crates/corba-ior/`).
-    Profile(Vec<u8>),
-    /// `ReferenceAddr` — `selected_profile_index` + opaque `IOR` bytes.
-    Reference {
-        /// Index into the IOR profile list.
-        selected_profile_index: u32,
-        /// Opaque IOR bytes (the caller decodes them).
-        ior: Vec<u8>,
-    },
+    /// `ProfileAddr` — the transport profile the client selected.
+    Profile(TargetProfile),
+    /// `ReferenceAddr` — the whole IOR and the selected profile index.
+    Reference(IorAddressingInfo),
 }
 
 impl TargetAddress {
@@ -72,7 +151,7 @@ impl TargetAddress {
         match self {
             Self::Key(_) => AddressingDisposition::KeyAddr,
             Self::Profile(_) => AddressingDisposition::ProfileAddr,
-            Self::Reference { .. } => AddressingDisposition::ReferenceAddr,
+            Self::Reference(_) => AddressingDisposition::ReferenceAddr,
         }
     }
 
@@ -81,37 +160,23 @@ impl TargetAddress {
     /// # Errors
     /// Buffer write error.
     pub fn encode(&self, w: &mut Writer) -> GiopResult<()> {
-        // The union discriminator is a `short` (= int16, alignment 2).
-        let disc = self.disposition() as i16;
-        w.align_to(2);
-        // `short` per CDR — the buffer API has write_u16, so we
-        // convert signed→unsigned bit-identically.
-        w.write_u16(disc as u16);
+        self.disposition().encode(w);
         match self {
-            Self::Key(k) => {
-                let n = u32::try_from(k.len())
-                    .map_err(|_| GiopError::Malformed("object_key too long".into()))?;
+            Self::Key(k) => write_octets(w, k, "object_key too long"),
+            Self::Profile(p) => p.encode(w),
+            Self::Reference(info) => {
+                w.align_to(4);
+                w.write_u32(info.selected_profile_index);
+                w.write_string(&info.type_id);
+                let n = u32::try_from(info.profiles.len())
+                    .map_err(|_| GiopError::Malformed("too many profiles".into()))?;
                 w.write_u32(n);
-                w.write_bytes(k);
-            }
-            Self::Profile(bytes) => {
-                let n = u32::try_from(bytes.len())
-                    .map_err(|_| GiopError::Malformed("profile too long".into()))?;
-                w.write_u32(n);
-                w.write_bytes(bytes);
-            }
-            Self::Reference {
-                selected_profile_index,
-                ior,
-            } => {
-                w.write_u32(*selected_profile_index);
-                let n = u32::try_from(ior.len())
-                    .map_err(|_| GiopError::Malformed("ior too long".into()))?;
-                w.write_u32(n);
-                w.write_bytes(ior);
+                for p in &info.profiles {
+                    p.encode(w)?;
+                }
+                Ok(())
             }
         }
-        Ok(())
     }
 
     /// CDR decode.
@@ -119,31 +184,44 @@ impl TargetAddress {
     /// # Errors
     /// Buffer read error or unknown disposition.
     pub fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
-        r.align_to(2)?;
-        let disc = r.read_u16()?;
-        match disc {
-            0 => {
-                let n = r.read_u32()? as usize;
-                let bytes = r.read_bytes(n)?;
-                Ok(Self::Key(bytes.to_vec()))
-            }
-            1 => {
-                let n = r.read_u32()? as usize;
-                let bytes = r.read_bytes(n)?;
-                Ok(Self::Profile(bytes.to_vec()))
-            }
-            2 => {
+        match AddressingDisposition::decode(r)? {
+            AddressingDisposition::KeyAddr => Ok(Self::Key(read_octets(r)?)),
+            AddressingDisposition::ProfileAddr => Ok(Self::Profile(TargetProfile::decode(r)?)),
+            AddressingDisposition::ReferenceAddr => {
+                r.align_to(4)?;
                 let selected_profile_index = r.read_u32()?;
+                let type_id = r.read_string()?;
                 let n = r.read_u32()? as usize;
-                let bytes = r.read_bytes(n)?;
-                Ok(Self::Reference {
+                // A profile takes at least 8 octets (tag + length).
+                if n > r.remaining() / 8 {
+                    return Err(GiopError::Malformed(
+                        "profile count exceeds the message".into(),
+                    ));
+                }
+                let mut profiles = Vec::with_capacity(n);
+                for _ in 0..n {
+                    profiles.push(TargetProfile::decode(r)?);
+                }
+                Ok(Self::Reference(IorAddressingInfo {
                     selected_profile_index,
-                    ior: bytes.to_vec(),
-                })
+                    type_id,
+                    profiles,
+                }))
             }
-            other => Err(GiopError::UnknownAddressingDisposition(other)),
         }
     }
+}
+
+fn write_octets(w: &mut Writer, bytes: &[u8], what: &str) -> GiopResult<()> {
+    let n = u32::try_from(bytes.len()).map_err(|_| GiopError::Malformed(what.into()))?;
+    w.write_u32(n);
+    w.write_bytes(bytes);
+    Ok(())
+}
+
+fn read_octets(r: &mut Reader<'_>) -> GiopResult<Vec<u8>> {
+    let n = r.read_u32()? as usize;
+    Ok(r.read_bytes(n)?.to_vec())
 }
 
 #[cfg(test)]
@@ -173,7 +251,10 @@ mod tests {
 
     #[test]
     fn profile_addr_round_trip() {
-        let t = TargetAddress::Profile(alloc::vec![1, 2, 3]);
+        let t = TargetAddress::Profile(TargetProfile {
+            tag: 0,
+            profile_data: alloc::vec![1, 2, 3],
+        });
         let mut w = Writer::new(Endianness::Little);
         t.encode(&mut w).unwrap();
         let bytes = w.finish();
@@ -184,16 +265,80 @@ mod tests {
 
     #[test]
     fn reference_addr_round_trip() {
-        let t = TargetAddress::Reference {
-            selected_profile_index: 7,
-            ior: alloc::vec![0xff, 0x00, 0xaa],
-        };
+        let t = TargetAddress::Reference(IorAddressingInfo {
+            selected_profile_index: 1,
+            type_id: "IDL:Echo:1.0".into(),
+            profiles: alloc::vec![
+                TargetProfile {
+                    tag: 1,
+                    profile_data: alloc::vec![0xff],
+                },
+                TargetProfile {
+                    tag: 0,
+                    profile_data: alloc::vec![0x00, 0xaa],
+                },
+            ],
+        });
         let mut w = Writer::new(Endianness::Big);
         t.encode(&mut w).unwrap();
         let bytes = w.finish();
         let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = TargetAddress::decode(&mut r).unwrap();
         assert_eq!(decoded, t);
+    }
+
+    #[test]
+    fn corba_p2_9_4_2_1_profile_addr_is_the_tagged_profile_struct() {
+        // union TargetAddress switch (short) { case ProfileAddr:
+        // IOP::TaggedProfile profile; }: the short, two octets of
+        // padding, the ProfileId and the octet sequence; no length of
+        // its own in front of the struct.
+        let t = TargetAddress::Profile(TargetProfile {
+            tag: 0,
+            profile_data: alloc::vec![0xaa, 0xbb],
+        });
+        let mut w = Writer::new(Endianness::Big);
+        t.encode(&mut w).unwrap();
+        assert_eq!(w.finish(), [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn corba_p2_9_4_2_1_reference_addr_is_the_ior_addressing_info_struct() {
+        let t = TargetAddress::Reference(IorAddressingInfo {
+            selected_profile_index: 0,
+            type_id: "IDL:A:1.0".into(),
+            profiles: alloc::vec![TargetProfile {
+                tag: 0,
+                profile_data: alloc::vec![0x01],
+            }],
+        });
+        let mut w = Writer::new(Endianness::Little);
+        t.encode(&mut w).unwrap();
+        let mut expected = alloc::vec![2, 0, 0, 0];
+        expected.extend_from_slice(&0u32.to_le_bytes());
+        expected.extend_from_slice(&10u32.to_le_bytes());
+        expected.extend_from_slice(b"IDL:A:1.0\0");
+        expected.extend_from_slice(&[0, 0]);
+        expected.extend_from_slice(&1u32.to_le_bytes());
+        expected.extend_from_slice(&0u32.to_le_bytes());
+        expected.extend_from_slice(&1u32.to_le_bytes());
+        expected.push(0x01);
+        assert_eq!(w.finish(), expected);
+    }
+
+    #[test]
+    fn a_reference_addr_with_more_profiles_than_octets_is_refused() {
+        let mut w = Writer::new(Endianness::Big);
+        AddressingDisposition::ReferenceAddr.encode(&mut w);
+        w.write_u32(0);
+        w.write_string("IDL:A:1.0");
+        w.write_u32(1_000_000);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
+        assert!(matches!(
+            TargetAddress::decode(&mut r),
+            Err(GiopError::Malformed(_))
+        ));
     }
 
     #[test]

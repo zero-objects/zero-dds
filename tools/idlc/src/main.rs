@@ -9,6 +9,7 @@
 //! zerodds-idlc format     FILE...   the canonical form, to stdout, --check or --write
 //! zerodds-idlc dump-ast   FILE...   the model, as a tree
 //! zerodds-idlc print-deps FILE...   the types each declaration names
+//! zerodds-idlc dump-cidl  FILE.cdl...  the compositions and PSDL declarations of CIDL
 //! zerodds-idlc generate   --lang L [--out DIR] [-I DIR] [--stamp F --depfile F --output-manifest F] FILE...
 //! zerodds-idlc dlrl       --lang L [--out DIR] [-I DIR] [--stamp F --depfile F --output-manifest F] FILE...
 //! ```
@@ -31,7 +32,10 @@
 //! reads for every other command; see that crate's `tests/dialects.rs`
 //! for how the two readings are told apart. `dlrl` covers the four
 //! languages OMG DLRL has no Rust PSM for and this tree does not
-//! otherwise generate for DLRL: C++, C#, Java, TypeScript.
+//! otherwise generate for DLRL: C++, C#, Java, TypeScript. `dlrl --lang
+//! idl` reads the other input of §8.2.2.2, the application classes as
+//! valuetypes deriving from `DDS::ObjectRoot`, and writes their implied
+//! IDL (§8.2.1.2.2).
 //!
 //! ## Dialect
 //!
@@ -106,6 +110,9 @@ enum Command {
     DumpAst,
     /// The types each declaration names.
     PrintDeps,
+    /// The compositions and PSDL declarations of a CIDL file, CORBA 3.3
+    /// Part 3 §8.
+    DumpCidl,
     /// One language's source for the model.
     Generate,
     /// DDS 1.2 §8 DLRL object and home classes, from the three DLRL
@@ -121,6 +128,7 @@ impl Command {
             "format" => Some(Self::Format),
             "dump-ast" => Some(Self::DumpAst),
             "print-deps" => Some(Self::PrintDeps),
+            "dump-cidl" => Some(Self::DumpCidl),
             "generate" => Some(Self::Generate),
             "dlrl" => Some(Self::Dlrl),
             _ => None,
@@ -286,8 +294,12 @@ struct GenerateRequest {
 /// `dialect`/`axis_overrides`.
 #[derive(Debug)]
 struct DlrlRequest {
-    /// The languages to emit: one, or all four for `--lang all`.
+    /// The languages to emit: one, or all four for `--lang all`; none for
+    /// `--lang idl`.
     languages: Vec<Language>,
+    /// `--lang idl` or `--lang all`: the implied IDL of the application
+    /// classes (DDS 1.2 §8.2.1.2.2).
+    implied_idl: bool,
     /// `--stamp FILE`: written once every output of the run is.
     stamp: Option<PathBuf>,
     /// `--depfile FILE`: as [`GenerateRequest::depfile`].
@@ -353,11 +365,14 @@ fn main() -> ExitCode {
             ))
         } else {
             options.dlrl.as_ref().map(|request| {
-                let languages: Vec<String> = request
+                let mut languages: Vec<String> = request
                     .languages
                     .iter()
                     .map(|l| l.as_str().to_string())
                     .collect();
+                if request.implied_idl {
+                    languages.push(dlrl::IDL.to_string());
+                }
                 record.write(
                     request.stamp.as_deref(),
                     request.depfile.as_deref(),
@@ -462,7 +477,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut generate_cpp_corba_module = false;
     // `dlrl`'s own flags, the same reason `generate`'s accumulate outside
     // `options` first.
-    let mut dlrl_lang: Option<Vec<Language>> = None;
+    let mut dlrl_lang: Option<(Vec<Language>, bool)> = None;
     let mut dlrl_stamp: Option<PathBuf> = None;
     let mut dlrl_depfile: Option<PathBuf> = None;
     let mut dlrl_manifest: Option<PathBuf> = None;
@@ -526,15 +541,21 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--lang" if command == Command::Dlrl => {
                 let name = iter.next().ok_or("--lang: the option takes a value")?;
                 dlrl_lang = Some(if name == "all" {
-                    dlrl::LANGUAGES.to_vec()
+                    (dlrl::LANGUAGES.to_vec(), true)
+                } else if name == dlrl::IDL {
+                    (Vec::new(), true)
                 } else {
-                    vec![dlrl::parse_language(name).ok_or_else(|| {
-                        format!(
-                            "--lang: `{name}` is not a language `dlrl` knows — one of {}, or \
-                             all",
-                            dlrl::language_names()
-                        )
-                    })?]
+                    (
+                        vec![dlrl::parse_language(name).ok_or_else(|| {
+                            format!(
+                                "--lang: `{name}` is not a language `dlrl` knows — one of {}, \
+                                 {}, or all",
+                                dlrl::language_names(),
+                                dlrl::IDL
+                            )
+                        })?],
+                        false,
+                    )
                 });
             }
             name @ ("--stamp" | "--depfile" | "--output-manifest")
@@ -992,10 +1013,11 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         });
     }
     if command == Command::Dlrl {
-        let languages = dlrl_lang.ok_or_else(|| {
+        let (languages, implied_idl) = dlrl_lang.ok_or_else(|| {
             format!(
-                "dlrl needs --lang: one of {}, or all",
-                dlrl::language_names()
+                "dlrl needs --lang: one of {}, {}, or all",
+                dlrl::language_names(),
+                dlrl::IDL
             )
         })?;
         if dlrl_depfile.is_some() && dlrl_stamp.is_none() && dlrl_manifest.is_none() {
@@ -1005,6 +1027,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         }
         options.dlrl = Some(DlrlRequest {
             languages,
+            implied_idl,
             stamp: dlrl_stamp,
             depfile: dlrl_depfile,
             manifest: dlrl_manifest,
@@ -1024,6 +1047,15 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
 /// there, a bad range becomes an error node, and the rules that hold over
 /// the good part of a file are worth reporting in the same run rather
 /// than in the next one after a fix.
+/// Whether a file is OMG CIDL. CORBA 3.3 Part 3 §8.1: "A source file
+/// containing specifications written in OMG CIDL must have a “.cdl”
+/// extension."
+fn is_cidl(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension == "cdl")
+}
+
 fn analyse(
     options: &Options,
     unit: &Unit,
@@ -1031,6 +1063,7 @@ fn analyse(
     zerodds_ast::Ast,
     Vec<zerodds_idl_parse::Diagnostic>,
     Vec<String>,
+    zerodds_ast::cidl::CidlModel,
 ) {
     let loader = zerodds_idl_compose::PathLoader::new(options.include_dirs.clone());
     let lowering = if let Some(ref generate) = options.generate {
@@ -1044,7 +1077,10 @@ fn analyse(
         &unit.text,
         &loader,
         zerodds_idl_compose::ComposeOptions {
-            dialect: options.dialect(),
+            dialect: zerodds_idl_parse::Dialect {
+                cidl: is_cidl(&unit.path),
+                ..options.dialect()
+            },
             // `--default-extensibility` wins when given; absent that,
             // `--dialect`'s own answer — not `None`, which is where a
             // dialect whose default reads `@final` (Cyclone, the three
@@ -1099,7 +1135,7 @@ fn analyse(
             profile,
         ));
     }
-    (composed.ast, diagnostics, loader.opened())
+    (composed.ast, diagnostics, loader.opened(), composed.cidl)
 }
 
 /// What a `generate` run read and wrote, for its build-contract files.
@@ -1213,7 +1249,44 @@ fn run_one(options: &Options, unit: &Unit, record: &mut BuildRecord) -> Tally {
     if options.command == Command::Format {
         return run_format(options, unit);
     }
-    let (mut ast, diagnostics, opened) = analyse(options, unit);
+    // CIDL is checked and shown; the CIF that generates executors from a
+    // composition (CORBA 3.3 Part 3 §9) is no backend of this tool, and a
+    // backend handed a CIDL model would generate its PSDL declarations as
+    // the local interfaces the model holds them as.
+    let cidl_unit = is_cidl(&unit.path);
+    if cidl_unit
+        && matches!(
+            options.command,
+            Command::Lint | Command::Generate | Command::Dlrl
+        )
+    {
+        eprintln!(
+            "error: {}: a CIDL file (.cdl) is read by `check`, `dump-ast`, `print-deps` and \
+             `dump-cidl`; `{}` reads OMG IDL (CORBA 3.3 Part 3 §8.1)",
+            unit.path,
+            match options.command {
+                Command::Lint => "lint",
+                Command::Generate => "generate",
+                _ => "dlrl",
+            }
+        );
+        return Tally {
+            errors: 1,
+            warnings: 0,
+        };
+    }
+    if options.command == Command::DumpCidl && !cidl_unit {
+        eprintln!(
+            "error: {}: `dump-cidl` reads a CIDL file, whose name ends in `.cdl` \
+             (CORBA 3.3 Part 3 §8.1)",
+            unit.path
+        );
+        return Tally {
+            errors: 1,
+            warnings: 0,
+        };
+    }
+    let (mut ast, diagnostics, opened, cidl) = analyse(options, unit);
     if matches!(options.command, Command::Generate | Command::Dlrl) {
         for path in core::iter::once(unit.path.clone()).chain(opened.clone()) {
             if !record.inputs.contains(&path) {
@@ -1245,6 +1318,11 @@ fn run_one(options: &Options, unit: &Unit, record: &mut BuildRecord) -> Tally {
         Command::PrintDeps => {
             let tally = report::emit(unit, &diagnostics, options.form);
             print!("{}", dump::dependencies(&ast));
+            tally
+        }
+        Command::DumpCidl => {
+            let tally = report::emit(unit, &diagnostics, options.form);
+            print!("{}", dump::cidl(&cidl));
             tally
         }
         Command::Generate => run_generate(options, unit, &mut ast, &diagnostics, record),
@@ -1539,7 +1617,9 @@ fn write_generated_files(
     }
 }
 
-/// Write DDS 1.2 §8 DLRL object and home classes for `unit`'s pragmas.
+/// Write DDS 1.2 §8 DLRL object and home classes for `unit`'s pragmas,
+/// and with `--lang idl` or `all` the implied IDL of its application
+/// classes (§8.2.1.2.2).
 ///
 /// `diagnostics` is `analyse`'s — parse and lowering — reported first and
 /// combined with `unit`'s own [`dlrl::scan`], the same "report, then stop
@@ -1594,6 +1674,11 @@ fn run_dlrl(
     };
 
     let mut infos = zerodds_dlrl_codegen::collect_type_infos(&pragmas);
+    if request.languages.is_empty() {
+        // `--lang idl`: the pragmas are scanned (a malformed one is still
+        // reported above) but no class of the four languages is written.
+        infos.clear();
+    }
     let key_errors: Vec<zerodds_idl_parse::Diagnostic> =
         dlrl::resolve_member_types(ast, &mut infos)
             .into_iter()
@@ -1610,18 +1695,29 @@ fn run_dlrl(
         tally.merge(report::emit(unit, &key_errors, options.form));
         return tally;
     }
-    if infos.is_empty() {
+    let classes = if request.implied_idl {
+        dlrl::application_classes(ast)
+    } else {
+        Vec::new()
+    };
+    if infos.is_empty() && classes.is_empty() {
         // A run that writes nothing says so, the same reason the summary
         // line at the very end of `main` counts files rather than
         // trusting silence: an author who meant to mark a type and
         // mistyped the pragma tag would otherwise see "0 errors" and a
         // clean exit for a run that generated nothing at all.
+        let mut looked_for = Vec::new();
+        if !request.languages.is_empty() {
+            looked_for
+                .push("no `#pragma DCPS_DATA_TYPE`, `DCPS_DATA_KEY` or `DCPS_DLRL_RELATION` found");
+        }
+        if request.implied_idl {
+            looked_for.push("no valuetype derives from `DDS::ObjectRoot`");
+        }
         let warning = zerodds_idl_parse::Diagnostic::warning(
             zerodds_idl_parse::DiagnosticCode::Unsupported,
             zerodds_idl_cst::Span::new(0, 0),
-            "no `#pragma DCPS_DATA_TYPE`, `DCPS_DATA_KEY` or `DCPS_DLRL_RELATION` found; \
-             `dlrl` writes no file for it"
-                .to_string(),
+            format!("{}; `dlrl` writes no file for it", looked_for.join("; ")),
             "OMG DDS 1.2 §8.2.2",
         );
         tally.merge(report::emit(unit, &[warning], options.form));
@@ -1633,8 +1729,13 @@ fn run_dlrl(
         .and_then(|name| name.to_str())
         .unwrap_or("generated");
     let mut generated = Vec::new();
-    for language in &request.languages {
-        generated.extend(dlrl::files(&infos, *language, &unit.path, stem));
+    if !infos.is_empty() {
+        for language in &request.languages {
+            generated.extend(dlrl::files(&infos, *language, &unit.path, stem));
+        }
+    }
+    if !classes.is_empty() {
+        generated.push(dlrl::implied_idl_file(&classes, &unit.path, stem));
     }
     write_generated_files(
         options,
@@ -1671,7 +1772,18 @@ fn run_dlrl(
 /// goes to stdout and a warning printed ahead of it would end up in the
 /// file a caller redirected it into.
 fn run_format(options: &Options, unit: &Unit) -> Tally {
-    let (_, diagnostics, _) = analyse(options, unit);
+    if is_cidl(&unit.path) {
+        eprintln!(
+            "error: {}: `format` lays out OMG IDL; a CIDL file (.cdl) is read by `check`, \
+             `dump-ast`, `print-deps` and `dump-cidl` (CORBA 3.3 Part 3 §8.1)",
+            unit.path
+        );
+        return Tally {
+            errors: 1,
+            warnings: 0,
+        };
+    }
+    let (_, diagnostics, _, _) = analyse(options, unit);
     let failed = diagnostics
         .iter()
         .any(|d| d.severity == zerodds_idl_parse::Severity::Error);
@@ -1716,9 +1828,11 @@ fn print_help() {
              format        the canonical form, to stdout by default\n    \
              dump-ast      the model, as a tree\n    \
              print-deps    the types each declaration names\n    \
+             dump-cidl     the compositions and PSDL declarations of a CIDL file (.cdl)\n    \
              generate      one language's source for the model\n    \
              dlrl          DDS 1.2 §8 DLRL object and home classes, from the three DLRL \
-             pragmas\n\
+             pragmas; with --lang idl the implied IDL of the valuetypes deriving from \
+             DDS::ObjectRoot\n\
          \n\
 OPTIONS:\n    \
               --strict           OMG IDL 4.2 only; reject every vendor extension\n    \
@@ -1736,7 +1850,7 @@ OPTIONS:\n    \
              --write            format only: rewrite non-canonical files in place\n    \
              --lang <NAME>      generate/dlrl only, required: the language to emit, or `all` \
              — an unknown name lists the valid ones (generate: 21 wire languages; dlrl: cpp, \
-             csharp, java, typescript)\n    \
+             csharp, java, typescript, idl)\n    \
              --out <DIR>        generate/dlrl only: where the file goes (default: the \
              current directory)\n    \
              -I, --include <DIR>  where a quoted #include is searched after the including \
@@ -1845,6 +1959,7 @@ mod tests {
             "format",
             "dump-ast",
             "print-deps",
+            "dump-cidl",
             "generate",
             "dlrl",
         ] {
@@ -1942,6 +2057,7 @@ mod tests {
             ("format", Command::Format),
             ("dump-ast", Command::DumpAst),
             ("print-deps", Command::PrintDeps),
+            ("dump-cidl", Command::DumpCidl),
             ("generate", Command::Generate),
             ("dlrl", Command::Dlrl),
         ] {
@@ -2517,6 +2633,22 @@ mod tests {
         let request = got.dlrl.expect("a dlrl request");
         assert_eq!(request.languages, dlrl::LANGUAGES.to_vec());
         assert!(!request.languages.contains(&Language::Rust));
+        assert!(request.implied_idl, "all includes the implied IDL");
+    }
+
+    /// DDS 1.2 §8.2.1.2.2: `--lang idl` asks for the implied IDL alone;
+    /// a language asks for no implied IDL; the error for a missing
+    /// `--lang` names `idl`.
+    #[test]
+    fn dlrl_8_2_1_2_lang_idl_asks_for_the_implied_idl_alone() {
+        let got = options(&["dlrl", "--lang", "idl", "a.idl"]).expect("valid");
+        let request = got.dlrl.expect("a dlrl request");
+        assert!(request.languages.is_empty());
+        assert!(request.implied_idl);
+        let got = options(&["dlrl", "--lang", "cpp", "a.idl"]).expect("valid");
+        assert!(!got.dlrl.expect("a dlrl request").implied_idl);
+        let error = options(&["dlrl", "a.idl"]).expect_err("--lang is required");
+        assert!(error.contains("idl, or all"), "{error}");
     }
 
     /// `dlrl --lang rust` is a `generate` question — the CLI names the

@@ -24,14 +24,16 @@
 //! Milestone 1 pins the wire to big-endian on both ends; honouring the
 //! request byte-order flag (needed for foreign ORBs) is milestone 2.
 
+pub mod mgm;
+pub mod miop;
 pub mod runtime;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use zerodds_corba_giop::{
-    LocateReply, LocateRequest, Message, Reply, ReplyStatusType, Request, ResponseFlags,
-    ServiceContextList, TargetAddress, Version,
+    AlignedBody, LocateReply, LocateRequest, LocateStatusType, Message, Reply, ReplyStatusType,
+    Request, ResponseFlags, ServiceContextList, TargetAddress, Version,
 };
 use zerodds_corba_iiop::{Acceptor, AcceptorConfig, Connection, IiopError};
 use zerodds_corba_poa::{
@@ -48,6 +50,18 @@ pub fn encode_string_body(s: &str) -> Vec<u8> {
     let mut w = Writer::new(WIRE);
     w.write_string(s);
     w.finish()
+}
+
+/// The arguments of a request whose one argument is the `string` `s`
+/// ([`zerodds_corba_rust::MarshalArgs`]): written where the connection
+/// places the body.
+pub fn string_argument(
+    s: &str,
+) -> impl Fn(&mut Writer) -> Result<(), zerodds_corba_rust::CorbaException> + '_ {
+    move |w: &mut Writer| {
+        w.write_string(s);
+        Ok(())
+    }
 }
 
 /// CDR-decode a single `string` value from a GIOP body.
@@ -68,12 +82,21 @@ impl Servant for EchoServant {
         "IDL:demo/Echo:1.0".to_string()
     }
 
-    fn invoke(&self, operation: &str, request_body: &[u8]) -> Vec<u8> {
+    fn invoke(
+        &self,
+        operation: &str,
+        request_body: &AlignedBody,
+        endianness: Endianness,
+    ) -> Vec<u8> {
         match operation {
             // `Servant::invoke` has no exception path: a body that is not a
             // string gets no reply body, as an unknown operation does.
-            "ping" => match decode_string_body(request_body) {
-                Ok(text) => encode_string_body(&text),
+            "ping" => match request_body.reader(endianness).read_string() {
+                Ok(text) => {
+                    let mut w = Writer::new(endianness);
+                    w.write_string(&text);
+                    w.finish()
+                }
                 Err(_) => Vec::new(),
             },
             _ => Vec::new(),
@@ -102,9 +125,9 @@ pub fn echo_poa(object_key: &[u8]) -> Arc<Poa> {
 }
 
 /// A `SystemExceptionReplyBody` (GIOP §15.4.3.3) for `name`, minor 0,
-/// `COMPLETED_NO`, in [`WIRE`] order.
-fn system_exception_body(name: &str) -> Vec<u8> {
-    let mut w = Writer::new(WIRE);
+/// `COMPLETED_NO`, in the byte order `endianness`.
+fn system_exception_body(name: &str, endianness: Endianness) -> Vec<u8> {
+    let mut w = Writer::new(endianness);
     w.write_string(&format!("IDL:omg.org/CORBA/{name}:1.0"));
     w.write_u32(0); // minor
     w.write_u32(1); // COMPLETED_NO
@@ -141,42 +164,80 @@ const fn poa_error_exception_name(err: &PoaError) -> &'static str {
 /// (GIOP §15.4.5 — a `corbaloc:` client, or any ORB that probes an object's
 /// location before its first real invocation) is answered `OBJECT_HERE`/
 /// `UNKNOWN_OBJECT` via [`Poa::locate`] instead of being dropped.
+///
+/// The servant gets the request body at its offset in the message and
+/// the message's byte order (CORBA 3.3 Part 2 §9.4.2.1); the reply goes
+/// out in the version and byte order of the request, its GIOP 1.0/1.1
+/// body on a multiple of eight (§9.4.3).
 pub fn serve(bind: SocketAddr, poa: Arc<Poa>) -> Result<Acceptor, IiopError> {
     Acceptor::start(AcceptorConfig::new(bind), move |mut conn| {
-        while let Ok(msg) = conn.read_message() {
+        while let Ok((msg, endianness, version)) = conn.read_message_full() {
             match msg {
                 Message::Request(req) => {
-                    let oid: ObjectId = match &req.target {
-                        TargetAddress::Key(k) => k.as_slice().into(),
-                        _ => continue,
+                    // CORBA 3.3 Part 2 §9.4.2.1: the key of any addressing
+                    // disposition; a target without a readable key is asked
+                    // for KeyAddr (§9.4.3.2).
+                    let Some(key) = runtime::target_object_key(&req.target) else {
+                        if req.response_flags.response_expected() {
+                            let reply = runtime::needs_key_addr_reply(req.request_id, endianness);
+                            let _ = conn.write_message(version, endianness, false, &reply);
+                        }
+                        continue;
                     };
-                    let (reply_status, body) =
-                        match poa.dispatch(&oid, &req.operation, &req.body, WIRE) {
-                            Ok(body) => (ReplyStatusType::NoException, body),
-                            Err(err) => (
-                                ReplyStatusType::SystemException,
-                                system_exception_body(poa_error_exception_name(&err)),
-                            ),
-                        };
-                    let reply = Message::Reply(Reply {
+                    let oid: ObjectId = key.as_slice().into();
+                    // §9.4.2.1: CDR aligns the arguments from the message
+                    // start; the body is read at its offset.
+                    let dispatched = req
+                        .body_offset(version, endianness)
+                        .map_err(|_| PoaError::Marshal)
+                        .and_then(|offset| {
+                            poa.dispatch(
+                                &oid,
+                                &req.operation,
+                                &AlignedBody::new(&req.body, offset),
+                                endianness,
+                            )
+                        });
+                    let (reply_status, body) = match dispatched {
+                        Ok(body) => (ReplyStatusType::NoException, body),
+                        Err(err) => (
+                            ReplyStatusType::SystemException,
+                            system_exception_body(poa_error_exception_name(&err), endianness),
+                        ),
+                    };
+                    // oneway: no reply.
+                    if !req.response_flags.response_expected() {
+                        continue;
+                    }
+                    let mut reply = Reply {
                         request_id: req.request_id,
                         reply_status,
                         service_context: ServiceContextList::default(),
                         body,
-                    });
-                    let _ = conn.write_message(Version::V1_2, WIRE, false, &reply);
+                    };
+                    // §9.4.3: the body, written from offset 0, on a
+                    // multiple of eight in GIOP 1.0/1.1 too. A reply that
+                    // does not encode is not sent: the connection ends,
+                    // as in `runtime::CorbaServer`.
+                    if reply.place_body_at_eight(version, endianness).is_err() {
+                        break;
+                    }
+                    let _ = conn.write_message(version, endianness, false, &Message::Reply(reply));
                 }
                 Message::LocateRequest(LocateRequest { request_id, target }) => {
-                    let oid: ObjectId = match &target {
-                        TargetAddress::Key(k) => k.as_slice().into(),
-                        _ => continue,
+                    let reply = match runtime::target_object_key(&target) {
+                        Some(key) => Message::LocateReply(LocateReply {
+                            request_id,
+                            locate_status: poa.locate(&key.as_slice().into()),
+                            body: Vec::new(),
+                        }),
+                        None => Message::LocateReply(LocateReply {
+                            request_id,
+                            locate_status: LocateStatusType::LocNeedsAddressingMode,
+                            body: runtime::key_addr_body(endianness),
+                        }),
                     };
-                    let reply = Message::LocateReply(LocateReply {
-                        request_id,
-                        locate_status: poa.locate(&oid),
-                        body: Vec::new(),
-                    });
-                    let _ = conn.write_message(Version::V1_2, WIRE, false, &reply);
+                    let _ = conn.write_message(version, endianness, false, &reply);
                 }
                 _ => {}
             }

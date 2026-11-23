@@ -44,6 +44,7 @@ std = [
     "dep:zerodds-observability-otlp",
     "dep:zerodds-qos",
     "dep:signal-hook",
+    "dep:ctrlc",
     "dep:zerodds-config",
     "dep:zerodds-dcps",
     "dep:zerodds-rtps",
@@ -98,6 +99,14 @@ zerodds-amqp-0-9-1 = { path = "../amqp-0-9-1" }
 # One DDS domain per test, host-wide (the domain number is the UDP port).
 zerodds-test-domains = { path = "../test-domains" }
 zerodds-test-vendor-reader = { path = "../test-vendor-reader" }
+# Spec §9.2 on Windows: CTRL_C and CTRL_BREAK stop the daemon as SIGINT and
+# SIGTERM do on Unix. ctrlc's handler returns at once, so for the close,
+# logoff and shutdown events Windows ends the process before the drain.
+# (The workspace's `termination` feature adds SIGTERM and SIGHUP on Unix
+# only; this crate uses ctrlc on Windows alone.)
+[target.'cfg(windows)'.dependencies]
+ctrlc = { workspace = true, optional = true }
+
 # SIGTERM-graceful shutdown in DaemonGuard (otherwise SIGKILL → corrupt
 # `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.
 [target.'cfg(unix)'.dev-dependencies]

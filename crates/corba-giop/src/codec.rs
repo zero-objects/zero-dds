@@ -232,6 +232,61 @@ mod tests {
         })
     }
 
+    /// Part 2 §9.4: `RequestHeader_1_3`, `ReplyHeader_1_3`,
+    /// `LocateRequestHeader_1_3`, `LocateReplyHeader_1_3` and
+    /// `FragmentHeader_1_3` are typedefs of their 1.2 forms, and 1.4
+    /// reads with them. Every message type round-trips under 1.3 and 1.4
+    /// in both byte orders, and its body octets equal the 1.2 body octets:
+    /// only the minor version in the header differs.
+    #[test]
+    fn corba_p2_7_9_every_message_round_trips_under_giop_1_3_and_1_4() {
+        use crate::cancel_request::CancelRequest;
+        use crate::close_connection::CloseConnection;
+        use crate::fragment::{Fragment, FragmentHeader};
+        use crate::locate_reply::{LocateReply, LocateStatusType};
+        use crate::locate_request::LocateRequest;
+        use crate::message_error::MessageError;
+        use crate::reply::{Reply, ReplyStatusType};
+        let messages = [
+            sample_request_msg(Version::V1_2),
+            Message::Reply(Reply {
+                request_id: 7,
+                reply_status: ReplyStatusType::LocationForwardPerm,
+                service_context: ServiceContextList::default(),
+                body: alloc::vec![9, 8, 7],
+            }),
+            Message::CancelRequest(CancelRequest { request_id: 7 }),
+            Message::LocateRequest(LocateRequest {
+                request_id: 8,
+                target: TargetAddress::Key(alloc::vec![1, 2]),
+            }),
+            Message::LocateReply(LocateReply {
+                request_id: 8,
+                locate_status: LocateStatusType::ObjectHere,
+                body: alloc::vec::Vec::new(),
+            }),
+            Message::CloseConnection(CloseConnection),
+            Message::MessageError(MessageError),
+            Message::Fragment(Fragment {
+                header: Some(FragmentHeader { request_id: 7 }),
+                body: alloc::vec![5, 5],
+            }),
+        ];
+        for m in &messages {
+            for e in [Endianness::Big, Endianness::Little] {
+                let v12 = encode_message(Version::V1_2, e, false, m).unwrap();
+                for v in [Version::V1_3, Version::V1_4] {
+                    let bytes = encode_message(v, e, false, m).unwrap();
+                    assert_eq!(bytes[5], v.minor);
+                    assert_eq!(bytes[HEADER_SIZE..], v12[HEADER_SIZE..], "{m:?} {v:?}");
+                    let (decoded, rest) = decode_message(&bytes).unwrap();
+                    assert_eq!(&decoded, m);
+                    assert!(rest.is_empty());
+                }
+            }
+        }
+    }
+
     #[test]
     fn round_trip_request_giop_1_0_be() {
         let m = sample_request_msg(Version::V1_0);
@@ -359,6 +414,78 @@ mod tests {
         // pad(2) + principal len(4) + body(1), all from offset 12.
         assert_eq!(*bytes.last().unwrap(), 0xff);
         assert_eq!(bytes.len(), 12 + 33);
+    }
+
+    /// GIOP 1.0 and 1.1 put the body right after the header, so an
+    /// 8-octet argument in it is aligned relative to its offset in the
+    /// message. A servant that reads the decoded body from offset 0 reads
+    /// the wrong octets; read at `body_offset` it gets the value.
+    #[test]
+    fn corba_p2_9_4_2_a_long_long_under_giop_1_0_and_1_1_is_read_at_its_body_offset() {
+        use crate::{AlignedBody, Reply, ReplyStatusType, body_writer, finish_body};
+        const VALUE: i64 = 0x0102_0304_0506_0708;
+        for version in [Version::V1_0, Version::V1_1] {
+            for e in [Endianness::Big, Endianness::Little] {
+                let mut request = Request {
+                    request_id: 1,
+                    response_flags: ResponseFlags::SYNC_WITH_TARGET,
+                    target: TargetAddress::Key(alloc::vec![0xa]),
+                    operation: "x".into(),
+                    requesting_principal: Some(alloc::vec::Vec::new()),
+                    service_context: ServiceContextList::default(),
+                    body: alloc::vec::Vec::new(),
+                };
+                let offset = request.body_offset(version, e).unwrap();
+                // 12 + 32 octets before the body (see
+                // `giop_1_0_body_is_not_padded`); the 3 reserved octets
+                // of 1.1 take the place of padding.
+                assert_eq!(offset, 44, "{version:?}");
+                // An octet, then the long long the client aligned from
+                // the message start.
+                let mut w = body_writer(offset, e);
+                w.write_u8(9);
+                w.write_i64(VALUE);
+                request.body = finish_body(w, offset);
+                let bytes = encode_message(version, e, false, &Message::Request(request)).unwrap();
+                let (Message::Request(got), _) = decode_message(&bytes).unwrap() else {
+                    panic!("a Request");
+                };
+                assert_eq!(got.body_offset(version, e).unwrap(), offset);
+                let body = AlignedBody::new(&got.body, offset);
+                let mut r = body.reader(e);
+                assert_eq!(r.read_u8().unwrap(), 9);
+                assert_eq!(r.read_i64().unwrap(), VALUE);
+                assert_eq!(r.remaining(), 0);
+                // From offset 0 the alignment differs.
+                if !offset.is_multiple_of(8) {
+                    let mut r = zerodds_wire::Reader::new(&got.body, e);
+                    r.read_u8().unwrap();
+                    assert_ne!(r.read_i64().ok(), Some(VALUE));
+                }
+            }
+        }
+        // The reply side and GIOP 1.2, where the body is 8-aligned.
+        let reply = Reply {
+            request_id: 1,
+            reply_status: ReplyStatusType::NoException,
+            service_context: ServiceContextList::default(),
+            body: alloc::vec::Vec::new(),
+        };
+        assert_eq!(
+            reply.body_offset(Version::V1_0, Endianness::Big).unwrap(),
+            24
+        );
+        assert_eq!(
+            reply.body_offset(Version::V1_2, Endianness::Big).unwrap(),
+            24
+        );
+        let m = sample_request_msg(Version::V1_2);
+        let Message::Request(r) = m else { panic!() };
+        assert!(
+            r.body_offset(Version::V1_2, Endianness::Big)
+                .unwrap()
+                .is_multiple_of(8)
+        );
     }
 
     /// The message the decoder rejects has to be rejected for the reason

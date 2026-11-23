@@ -59,5 +59,6 @@ pub use codec::{
 pub use header_aad::{build_rtps_header_aad, build_submessage_aad};
 pub use srtps::{
     PRE_SHARED_KEY_FLAG, RTPS_HEADER_LEN, decode_secured_rtps_message, encode_secured_rtps_message,
-    encode_secured_rtps_message_psk, srtps_psk_flag,
+    encode_secured_rtps_message_psk, is_secured_rtps_message, srtps_prefix_flags,
+    srtps_prefix_offset, srtps_psk_flag,
 };

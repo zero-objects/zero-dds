@@ -22,8 +22,19 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc", "dep:flate2", "dep:zerodds-corba-rust", "zerodds-corba-ir/std", "zerodds-corba-giop/std"]
-alloc = ["zerodds-corba-ir/alloc", "zerodds-corba-giop/alloc"]
+std = [
+    "alloc",
+    "dep:flate2",
+    "dep:zerodds-corba-rust",
+    "dep:zerodds-corba-ior",
+    "dep:zerodds-corba-iiop",
+    "dep:zerodds-corba-cosnaming",
+    "dep:zerodds-corba-cos-transactions",
+    "zerodds-corba-ir/std",
+    "zerodds-corba-giop/std",
+    "zerodds-corba-rt/std",
+]
+alloc = ["zerodds-corba-ir/alloc", "zerodds-corba-giop/alloc", "zerodds-corba-rt/alloc"]
 # `cos-event` pulls in `zerodds-corba-cos-event` as an optional
 # dependency and activates the `EventChannelTimerCallback` adapter
 # (spec OMG Time Service 1.1 §2.2 — a TimerEventHandler is a
@@ -31,6 +42,9 @@ alloc = ["zerodds-corba-ir/alloc", "zerodds-corba-giop/alloc"]
 cos-event = ["std", "dep:zerodds-corba-cos-event"]
 
 [dependencies]
+# CORBA 3.3 Part 3 §8: the CIDL model the IDL frontend lowers a `.cdl`
+# file to; `cidl` re-exports it. no_std + alloc.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
 zerodds-corba-cos-event = { version = "1.0.0-rc.7", path = "../corba-cos-event", optional = true }
 zerodds-corba-ir = { version = "1.0.0-rc.7", path = "../corba-ir", default-features = false }
 # Spec §11 DII wire-up — encode_giop_request produces real
@@ -40,11 +54,26 @@ zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-f
 # ObjectReference + SkeletonResult. No dependency cycle: corba-rust depends only on
 # corba-codegen, not on corba-ccm/corba-iiop.
 zerodds-corba-rust = { version = "1.0.0-rc.7", path = "../corba-rust", optional = true }
+# Part 1 §8.12 system exceptions, the `ObjectReference` of the ORB's
+# initial references, and the TypeCode/any the DynAny of §13 walks.
+zerodds-corba-rt = { version = "1.0.0-rc.7", path = "../corba-rt", default-features = false }
+# Part 1 §8.2.2 / §8.5 — `string_to_object`/`object_to_string` over the
+# IOR, corbaloc and corbaname forms (std; the ORB core is std-only).
+# corba-iiop no longer depends on this crate (the portable interceptors
+# run in the request path of corba-interop), so the edge is one way.
+zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior", optional = true }
+zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", optional = true }
+# `corbaname:` — the stringified CosNaming name and the `resolve` wire.
+zerodds-corba-cosnaming = { version = "1.0.0-rc.7", path = "../corba-cosnaming", optional = true }
+# The ORB's initial reference "TransactionCurrent": the local
+# CosTransactions::Current of CORBA 3.3 Part 3 §6.13.2.2.
+zerodds-corba-cos-transactions = { version = "1.0.0-rc.7", path = "../corba-cos-transactions", optional = true }
 # Spec §13 DynAny — TypeCode-driven iteration over CDR `any`
 # bytes. Uses `Reader`/`Endianness` for primitive walks.
 zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
-# Spec §18 Compression — production codec via flate2 (Zlib/Gzip/
-# Deflate). std-only; gated in code via `#[cfg(feature = "std")]`.
+# CORBA 3.3 Part 1 §18 Compression — the built-in zlib and gzip
+# compressors of `src/compression.rs` (`FlateCompressorFactory`).
+# std-only; gated in code via `#[cfg(feature = "std")]`.
 flate2 = { workspace = true, optional = true }
 
 [dev-dependencies]

@@ -12,7 +12,10 @@
 //! Spec references:
 //!
 //! - **OASIS AMQP 1.0** Part 1 (Types), Part 2 (Transport), Part 3
-//!   (Messaging), Part 4 (Transactions), Part 5 (Security).
+//!   (Messaging), Part 5 (Security); of Part 4 (Transactions) the
+//!   descriptors `0x30` to `0x34` (`descriptors`), whose types and roles
+//!   are in `zerodds-amqp-endpoint` (`transactions`, `txn_resource`,
+//!   `txn`).
 //! - **OMG DDS-AMQP 1.0 (formal/2024-08-01)** §2.3 (Codec Profile),
 //!   §2.4 (Codec-Lite Profile), §6.1 (Direct-Embed Topology), §7
 //!   (type-system mapping), §8 (message-section mapping).
@@ -37,9 +40,16 @@
 //! **Extended Types (`extended_types` module):**
 //!
 //! - [`AmqpExtValue`] — full variant model (primitives +
-//!   compound: list / map / array).
+//!   compound: list / map / array; described values with a numeric or
+//!   a symbolic descriptor).
 //! - Encoder/decoder for ubyte / ushort / uint / byte / short / int /
 //!   float / double / char / decimal32-64-128 / timestamp / uuid.
+//!
+//! **Descriptors (`descriptors` module):**
+//!
+//! - [`descriptors::code_of`] / [`descriptors::symbol_of`] — the
+//!   symbolic and the numeric descriptor of each described type of
+//!   Parts 2, 3, 4 and 5 (Part 1 §1.3.3, §1.5).
 //!
 //! **Frame format (`frame` module):**
 //!
@@ -99,6 +109,7 @@ extern crate alloc;
 
 pub mod codec_profile;
 pub mod codegen;
+pub mod descriptors;
 pub mod extended_types;
 pub mod frame;
 pub mod performatives;
@@ -106,11 +117,11 @@ pub mod sections;
 pub mod types;
 
 pub use extended_types::{
-    AmqpExtValue, decode_byte, decode_char, decode_double, decode_float, decode_int, decode_short,
-    decode_timestamp, decode_ubyte, decode_uint, decode_ushort, decode_uuid, encode_byte,
-    encode_char, encode_decimal32, encode_decimal64, encode_decimal128, encode_double,
-    encode_float, encode_int, encode_short, encode_timestamp, encode_ubyte, encode_uint,
-    encode_ushort, encode_uuid,
+    AmqpExtValue, decode_byte, decode_char, decode_decimal32, decode_decimal64, decode_decimal128,
+    decode_double, decode_float, decode_int, decode_short, decode_timestamp, decode_ubyte,
+    decode_uint, decode_ushort, decode_uuid, encode_byte, encode_char, encode_decimal32,
+    encode_decimal64, encode_decimal128, encode_double, encode_float, encode_int, encode_short,
+    encode_timestamp, encode_ubyte, encode_uint, encode_ushort, encode_uuid,
 };
 pub use frame::{FrameError, FrameHeader, FrameType, decode_frame_header, encode_frame_header};
 pub use performatives::{

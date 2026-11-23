@@ -7,16 +7,12 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §4.4 Event-driven waiting instead of a poll loop
 
-**Status:** `partial` — macOS before 14.4 waits by sleep-poll.
+**Status:** `partial` — built; measured on the Linux test host with the futex and the FIFO (`cargo nextest run --profile merge -p zerodds-transport-shm --all-targets`). The macOS backends (os_sync, ulock, the FIFO on macOS) ran green on a Mac (macOS 26.2, arm64: the same command, 92 tests, in the sandbox of `ci/macos-loopback.sb`); the job `merge-macos-transport-shm` on runner 8 failed in pipeline 9916 on the pair directory (§5.4), its green run there is still to come. A macOS between 10.15 and 14.3, on which ulock is the native backend, has not been measured; on macOS 26 the tests force it. The Windows event backend and the tests written anew per backend have since `3861278cf5e` been compiled with Clippy for `x86_64-pc-windows-gnu` and are green under Wine 10.0 on the Linux test host (§6.2); they have not run on Windows: the job `platform-windows-transport-shm` does that. The FIFO as the native backend of the other Unixes (`native()` in `wait.rs`) is compiled with Clippy for `x86_64-unknown-freebsd`, with libc on the FreeBSD 11 ABI (`RUST_LIBC_UNSTABLE_FREEBSD_VERSION=11`): with libc's default ABI (FreeBSD 12) `nix` 0.23.2, which `shared_memory` 0.12 brings in, does not compile, and so the crate does not compile for FreeBSD. It has not run on such a system; on Linux the tests above run the FIFO as a forced backend.
 
 ## §6.2 Windows
 
-**Status:** `partial` — in nightly 6555 (`windows-smoke`, `81d8500d495`) 39 of 40 `transport-shm` lib tests ran green on Windows; the failing one is §6.3.
+**Status:** `partial` — measured on the Linux test host: `cargo nextest run --profile merge -p zerodds-transport-shm --all-targets` 91 of 91 green; the same run with `--target x86_64-pc-windows-gnu` under Wine 10.0 as the target runner 89 of 90 green (nextest reports one of them as `leaky`); the one is `shm_5_4_a_pair_dir_that_is_a_junction_is_refused`, since Wine's `cmd` makes no junction. The run of the job `platform-windows-dcps-shm` under Wine, `cargo nextest run --profile merge -p zerodds-dcps --features same-host-shm --test contract_transport_shm --target x86_64-pc-windows-gnu`: 5 of 5 green. Wine is not Windows: it frees the name of a removed file only with its last handle and does not report it as marked for deletion (measured; hence `remove_name`). On Windows itself this state has not run: the jobs `platform-windows-transport-shm` and `platform-windows-dcps-shm` run on the Windows CI runner, which this run did not reach. An earlier state of the crate ran there in pipeline 8782 (44 tests green).
 
 ## §6.3 Evidence for the Windows cleanup semantics
 
-**Status:** `partial` — the lock is built and clippy-checked for `x86_64-pc-windows-gnu`; it has not run, the next `windows-smoke` run measures it.
-
-## §6.4 `no_std`
-
-**Status:** `open` — the transport runs with `std` only (`crates/transport-shm/src/lib.rs`: `#[cfg(feature = "std")] pub mod posix`): `shm_open`, `mmap` and `flock` are POSIX calls. A target without POSIX would need a slot store over the memory its platform shares between processes or cores; there is none.
+**Status:** `partial` — both tests green under Wine 10.0 on the Linux test host (§6.2); not run on Windows: the job `platform-windows-transport-shm` on the Windows CI runner measures it, which this run did not reach.

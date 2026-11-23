@@ -43,6 +43,9 @@ pub mod reference_types {
     pub const HAS_PROPERTY: NodeId = NodeId::numeric(0, 46);
     /// `HasComponent`.
     pub const HAS_COMPONENT: NodeId = NodeId::numeric(0, 47);
+    /// `HasOrderedComponent` (Part 3 §7.8), a subtype of `HasComponent`:
+    /// the components have an order, the one they are browsed in.
+    pub const HAS_ORDERED_COMPONENT: NodeId = NodeId::numeric(0, 49);
     /// `HasTypeDefinition` (non-hierarchical).
     pub const HAS_TYPE_DEFINITION: NodeId = NodeId::numeric(0, 40);
 }
@@ -259,7 +262,99 @@ impl MethodOutcome {
     }
 }
 
-type MethodHandler = Box<dyn Fn(&[Variant]) -> MethodOutcome + Send + Sync>;
+type MethodHandler = Box<dyn Fn(&MethodContext, &[Variant]) -> MethodOutcome + Send + Sync>;
+
+/// A Method handler that changes the AddressSpace (a Method that adds or
+/// removes nodes, OPC 10000-14 §8.5.2).
+type MutMethodHandler =
+    Box<dyn Fn(&mut AddressSpace, &MethodContext, &[Variant]) -> MethodOutcome + Send + Sync>;
+
+/// One input or output argument of a Method (Part 3 §8.6 `Argument`), as
+/// the `InputArguments` and `OutputArguments` Properties of the Method
+/// name it (Part 3 §5.7.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Argument {
+    /// `Name`.
+    pub name: String,
+    /// `DataType`: the NodeId of the argument's DataType.
+    pub data_type: NodeId,
+    /// `ValueRank`: `-1` a scalar, `1` a one-dimensional array.
+    pub value_rank: i32,
+}
+
+impl Argument {
+    /// A scalar argument.
+    #[must_use]
+    pub fn scalar(name: &str, data_type: NodeId) -> Self {
+        Self {
+            name: name.into(),
+            data_type,
+            value_rank: -1,
+        }
+    }
+
+    /// A one-dimensional array argument.
+    #[must_use]
+    pub fn array(name: &str, data_type: NodeId) -> Self {
+        Self {
+            name: name.into(),
+            data_type,
+            value_rank: 1,
+        }
+    }
+
+    /// The `Argument` structure as an ExtensionObject in its default
+    /// binary encoding (`Argument_Encoding_DefaultBinary`, `i=298`):
+    /// `Name`, `DataType`, `ValueRank`, `ArrayDimensions` (none),
+    /// `Description` (none).
+    ///
+    /// # Errors
+    /// A name longer than an `Int32` length.
+    pub fn to_extension_object(
+        &self,
+    ) -> Result<zerodds_opcua_gateway::data_value::ExtensionObject, zerodds_opcua_pubsub::EncodeError>
+    {
+        use zerodds_opcua_pubsub::UaEncode;
+        let mut w = zerodds_opcua_pubsub::UaWriter::with_capacity(32);
+        crate::wire::write_string(&mut w, &self.name)?;
+        self.data_type.encode(&mut w)?;
+        w.write_i32(self.value_rank);
+        // ArrayDimensions: the null array.
+        w.write_i32(-1);
+        // Description: a LocalizedText with neither locale nor text.
+        w.write_u8(0);
+        Ok(zerodds_opcua_gateway::data_value::ExtensionObject {
+            type_id: NodeId::numeric(0, 298),
+            body: zerodds_opcua_gateway::data_value::ExtensionObjectBody::ByteString(w.into_vec()),
+        })
+    }
+}
+
+/// What a method handler knows of the call besides its arguments (Part 4
+/// §5.12.2): the identity of the calling session and the security of its
+/// SecureChannel. Methods whose access depends on them (Part 14 §8.3.2
+/// `GetSecurityKeys`: "Encryption is required for this Method") read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodContext {
+    /// The user of the calling session.
+    pub user: crate::identity::ClientUserId,
+    /// The SecureChannel signs its messages.
+    pub signed: bool,
+    /// The SecureChannel encrypts its messages.
+    pub encrypted: bool,
+}
+
+impl MethodContext {
+    /// An anonymous call over a channel without security.
+    #[must_use]
+    pub fn anonymous() -> Self {
+        Self {
+            user: crate::identity::ClientUserId::Anonymous,
+            signed: false,
+            encrypted: false,
+        }
+    }
+}
 
 /// An in-memory AddressSpace: node values + method handlers + a browsable
 /// node/reference graph.
@@ -267,6 +362,7 @@ type MethodHandler = Box<dyn Fn(&[Variant]) -> MethodOutcome + Send + Sync>;
 pub struct AddressSpace {
     values: Vec<(NodeId, DataValue)>,
     methods: Vec<(NodeId, MethodHandler)>,
+    methods_mut: Vec<(NodeId, MutMethodHandler)>,
     nodes: Vec<NodeMeta>,
     references: Vec<ReferenceRecord>,
     /// `(node, max_depth)` — Spec §9.3.4.4's historizing nodes and the
@@ -283,7 +379,7 @@ impl core::fmt::Debug for AddressSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AddressSpace")
             .field("values", &self.values.len())
-            .field("methods", &self.methods.len())
+            .field("methods", &(self.methods.len() + self.methods_mut.len()))
             .field("nodes", &self.nodes.len())
             .field("references", &self.references.len())
             .field("historizing", &self.historizing.len())
@@ -295,8 +391,8 @@ impl core::fmt::Debug for AddressSpace {
 /// subtype of `base` — used for Browse `includeSubtypes`.
 fn is_reference_subtype_of(reference: &NodeId, base: &NodeId) -> bool {
     use reference_types::{
-        HAS_CHILD, HAS_COMPONENT, HAS_PROPERTY, HAS_SUBTYPE, HIERARCHICAL_REFERENCES, ORGANIZES,
-        REFERENCES,
+        HAS_CHILD, HAS_COMPONENT, HAS_ORDERED_COMPONENT, HAS_PROPERTY, HAS_SUBTYPE,
+        HIERARCHICAL_REFERENCES, ORGANIZES, REFERENCES,
     };
     if reference == base || *base == REFERENCES {
         return true;
@@ -306,6 +402,7 @@ fn is_reference_subtype_of(reference: &NodeId, base: &NodeId) -> bool {
             ORGANIZES,
             HAS_CHILD,
             HAS_COMPONENT,
+            HAS_ORDERED_COMPONENT,
             HAS_PROPERTY,
             HAS_SUBTYPE,
         ]
@@ -314,9 +411,17 @@ fn is_reference_subtype_of(reference: &NodeId, base: &NodeId) -> bool {
             || *reference == HIERARCHICAL_REFERENCES;
     }
     if *base == HAS_CHILD {
-        return [HAS_COMPONENT, HAS_PROPERTY, HAS_SUBTYPE]
-            .iter()
-            .any(|n| n == reference);
+        return [
+            HAS_COMPONENT,
+            HAS_ORDERED_COMPONENT,
+            HAS_PROPERTY,
+            HAS_SUBTYPE,
+        ]
+        .iter()
+        .any(|n| n == reference);
+    }
+    if *base == HAS_COMPONENT {
+        return *reference == HAS_ORDERED_COMPONENT;
     }
     false
 }
@@ -428,6 +533,15 @@ impl AddressSpace {
     where
         F: Fn(&[Variant]) -> MethodOutcome + Send + Sync + 'static,
     {
+        self.register_method_with_context(method_id, move |_, args| handler(args))
+    }
+
+    /// Registers (or replaces) a method handler for `method_id` that is
+    /// given the [`MethodContext`] of each call.
+    pub fn register_method_with_context<F>(&mut self, method_id: NodeId, handler: F) -> &mut Self
+    where
+        F: Fn(&MethodContext, &[Variant]) -> MethodOutcome + Send + Sync + 'static,
+    {
         let boxed: MethodHandler = Box::new(handler);
         if let Some(slot) = self.methods.iter_mut().find(|(n, _)| *n == method_id) {
             slot.1 = boxed;
@@ -437,13 +551,294 @@ impl AddressSpace {
         self
     }
 
+    /// Adds the Method `method_id`, a component of `object`, with its
+    /// `InputArguments` and `OutputArguments` Properties (Part 3 §5.7.1;
+    /// a list without arguments has no Property), and registers `handler`
+    /// for it. The Properties are Variables of `Argument[]`, NodeIds in the
+    /// namespace of the Method with the suffixes `/InputArguments` and
+    /// `/OutputArguments` (a numeric Method id gets string ids
+    /// `i=<id>/InputArguments`).
+    pub fn add_method<F>(
+        &mut self,
+        object: &NodeId,
+        method_id: NodeId,
+        browse_name: QualifiedName,
+        inputs: &[Argument],
+        outputs: &[Argument],
+        handler: F,
+    ) -> &mut Self
+    where
+        F: Fn(&MethodContext, &[Variant]) -> MethodOutcome + Send + Sync + 'static,
+    {
+        self.add_method_node(object, &method_id, browse_name, inputs, outputs);
+        self.register_method_with_context(method_id, handler)
+    }
+
+    /// As [`Self::add_method`], for a handler that changes the AddressSpace
+    /// it is called in ([`Self::call_mut`]).
+    pub fn add_method_mut<F>(
+        &mut self,
+        object: &NodeId,
+        method_id: NodeId,
+        browse_name: QualifiedName,
+        inputs: &[Argument],
+        outputs: &[Argument],
+        handler: F,
+    ) -> &mut Self
+    where
+        F: Fn(&mut AddressSpace, &MethodContext, &[Variant]) -> MethodOutcome
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.add_method_node(object, &method_id, browse_name, inputs, outputs);
+        self.methods.retain(|(n, _)| *n != method_id);
+        let boxed: MutMethodHandler = Box::new(handler);
+        if let Some(slot) = self.methods_mut.iter_mut().find(|(n, _)| *n == method_id) {
+            slot.1 = boxed;
+        } else {
+            self.methods_mut.push((method_id, boxed));
+        }
+        self
+    }
+
+    /// The Method node `method_id`, a component of `object`, with its
+    /// `InputArguments` and `OutputArguments` Properties.
+    fn add_method_node(
+        &mut self,
+        object: &NodeId,
+        method_id: &NodeId,
+        browse_name: QualifiedName,
+        inputs: &[Argument],
+        outputs: &[Argument],
+    ) {
+        let display = LocalizedText {
+            locale: None,
+            text: Some(browse_name.name.clone()),
+        };
+        self.add_node(
+            NodeMeta::new(method_id.clone(), NodeClass::Method, browse_name)
+                .with_display_name(display)
+                .with_class_attributes(ClassAttributes::Method(
+                    crate::attributes::MethodAttributes {
+                        executable: true,
+                        user_executable: true,
+                    },
+                )),
+        );
+        self.add_reference(
+            object.clone(),
+            reference_types::HAS_COMPONENT,
+            method_id.clone(),
+        );
+        for (name, arguments) in [("InputArguments", inputs), ("OutputArguments", outputs)] {
+            if arguments.is_empty() {
+                continue;
+            }
+            let values: Vec<VariantValue> = arguments
+                .iter()
+                .filter_map(|a| a.to_extension_object().ok())
+                .map(VariantValue::ExtensionObject)
+                .collect();
+            let property = NodeId::string(
+                method_id.namespace_index,
+                alloc::format!("{}/{name}", method_id.to_canonical_string()),
+            )
+            .unwrap_or_else(|_| NodeId::numeric(method_id.namespace_index, 0));
+            self.add_node(
+                NodeMeta::new(
+                    property.clone(),
+                    NodeClass::Variable,
+                    QualifiedName {
+                        namespace_index: 0,
+                        name: name.into(),
+                    },
+                )
+                .with_display_name(LocalizedText {
+                    locale: None,
+                    text: Some(name.into()),
+                })
+                .with_type_definition(NodeId::numeric(0, 68)),
+            );
+            self.set_value(
+                property.clone(),
+                DataValue::new_value(
+                    Variant {
+                        array_dimensions: alloc::vec![
+                            u32::try_from(values.len()).unwrap_or(u32::MAX)
+                        ],
+                        value: values,
+                    },
+                    0,
+                    0,
+                ),
+            );
+            self.add_reference(method_id.clone(), reference_types::HAS_PROPERTY, property);
+        }
+    }
+
     /// Invokes a registered method, or `None` if no handler exists for it.
     #[must_use]
     pub fn call(&self, method_id: &NodeId, input_arguments: &[Variant]) -> Option<MethodOutcome> {
+        self.call_with_context(&MethodContext::anonymous(), method_id, input_arguments)
+    }
+
+    /// Invokes a registered method for the call described by `context`.
+    #[must_use]
+    pub fn call_with_context(
+        &self,
+        context: &MethodContext,
+        method_id: &NodeId,
+        input_arguments: &[Variant],
+    ) -> Option<MethodOutcome> {
         self.methods
             .iter()
             .find(|(n, _)| n == method_id)
-            .map(|(_, h)| h(input_arguments))
+            .map(|(_, h)| h(context, input_arguments))
+    }
+
+    /// Calls a Method (Part 4 §5.12.2) as [`Self::call_with_context`] does,
+    /// and also a Method of [`Self::add_method_mut`], whose handler may
+    /// change this AddressSpace. A handler that removed its own Method's
+    /// node is not kept.
+    pub fn call_mut(
+        &mut self,
+        context: &MethodContext,
+        method_id: &NodeId,
+        input_arguments: &[Variant],
+    ) -> Option<MethodOutcome> {
+        if let Some(outcome) = self.call_with_context(context, method_id, input_arguments) {
+            return Some(outcome);
+        }
+        let index = self.methods_mut.iter().position(|(n, _)| n == method_id)?;
+        let (id, handler) = self.methods_mut.swap_remove(index);
+        let outcome = handler(self, context, input_arguments);
+        if self.node_meta(&id).is_some() && !self.methods_mut.iter().any(|(n, _)| *n == id) {
+            self.methods_mut.push((id, handler));
+        }
+        Some(outcome)
+    }
+
+    /// Removes `node_id` and, recursively, every node it has as a
+    /// component, an ordered component or a Property or organizes, with
+    /// their values, their Methods and every reference from or to them
+    /// (OPC 10000-14 §8.5.5: "removes recursively all contained ...
+    /// Objects"). Returns the nodes removed.
+    pub fn remove_subtree(&mut self, node_id: &NodeId) -> Vec<NodeId> {
+        use reference_types::{HAS_COMPONENT, HAS_ORDERED_COMPONENT, HAS_PROPERTY, ORGANIZES};
+        let mut doomed = alloc::vec![node_id.clone()];
+        let mut next = 0;
+        while next < doomed.len() {
+            let current = doomed[next].clone();
+            next += 1;
+            for r in &self.references {
+                if r.source == current
+                    && [
+                        HAS_COMPONENT,
+                        HAS_ORDERED_COMPONENT,
+                        HAS_PROPERTY,
+                        ORGANIZES,
+                    ]
+                    .contains(&r.reference_type)
+                    && !doomed.contains(&r.target)
+                {
+                    doomed.push(r.target.clone());
+                }
+            }
+        }
+        self.nodes.retain(|n| !doomed.contains(&n.node_id));
+        self.values.retain(|(n, _)| !doomed.contains(n));
+        self.methods.retain(|(n, _)| !doomed.contains(n));
+        self.methods_mut.retain(|(n, _)| !doomed.contains(n));
+        self.historizing.retain(|(n, _)| !doomed.contains(n));
+        self.references
+            .retain(|r| !doomed.contains(&r.source) && !doomed.contains(&r.target));
+        doomed
+    }
+
+    /// Adds the `Server` Object (ns0;i=2253, Part 5 §8.3.2), organized by
+    /// the `Objects` folder, with its `ServerArray` (i=2254) and
+    /// `NamespaceArray` (i=2255) Properties (Part 5 §6.3.1): the server
+    /// table is this server's ApplicationUri, the namespace table the OPC UA
+    /// namespace, the ApplicationUri, then `namespaces` from index 2 on.
+    /// The other components of `ServerType` are not added here.
+    pub fn ensure_server_object(&mut self, namespaces: &[&str]) -> &mut Self {
+        let objects = NodeId::numeric(0, 85);
+        let server = NodeId::numeric(0, 2253);
+        let qn = |name: &str| QualifiedName {
+            namespace_index: 0,
+            name: name.into(),
+        };
+        if self.node_meta(&objects).is_none() {
+            self.add_node(NodeMeta::new(
+                objects.clone(),
+                NodeClass::Object,
+                qn("Objects"),
+            ));
+        }
+        if self.node_meta(&server).is_none() {
+            let server_type = NodeId::numeric(0, 2004);
+            self.add_node(
+                NodeMeta::new(server.clone(), NodeClass::Object, qn("Server"))
+                    .with_type_definition(server_type.clone()),
+            );
+            self.add_reference(objects, reference_types::ORGANIZES, server.clone());
+            self.add_reference(
+                server.clone(),
+                reference_types::HAS_TYPE_DEFINITION,
+                server_type,
+            );
+        }
+        let mut table: Vec<String> = alloc::vec![
+            String::from("http://opcfoundation.org/UA/"),
+            String::from(crate::server::APPLICATION_URI),
+        ];
+        table.extend(namespaces.iter().map(|uri| String::from(*uri)));
+        for (id, name, values) in [
+            (
+                2254,
+                "ServerArray",
+                alloc::vec![String::from(crate::server::APPLICATION_URI)],
+            ),
+            (2255, "NamespaceArray", table),
+        ] {
+            let node = NodeId::numeric(0, id);
+            let property_type = NodeId::numeric(0, 68);
+            if self.node_meta(&node).is_none() {
+                self.add_node(
+                    NodeMeta::new(node.clone(), NodeClass::Variable, qn(name))
+                        .with_type_definition(property_type.clone())
+                        .with_class_attributes(ClassAttributes::Variable(VariableAttributes {
+                            data_type: NodeId::numeric(0, 12),
+                            value_rank: 1,
+                            array_dimensions: alloc::vec![0],
+                            access_level: access_level::CURRENT_READ,
+                            user_access_level: access_level::CURRENT_READ,
+                            access_level_ex: u32::from(access_level::CURRENT_READ),
+                            ..VariableAttributes::default()
+                        })),
+                );
+                self.add_reference(server.clone(), reference_types::HAS_PROPERTY, node.clone());
+                self.add_reference(
+                    node.clone(),
+                    reference_types::HAS_TYPE_DEFINITION,
+                    property_type,
+                );
+            }
+            let count = u32::try_from(values.len()).unwrap_or(u32::MAX);
+            self.set_value(
+                node,
+                DataValue::new_value(
+                    Variant {
+                        array_dimensions: alloc::vec![count],
+                        value: values.into_iter().map(VariantValue::String).collect(),
+                    },
+                    0,
+                    0,
+                ),
+            );
+        }
+        self
     }
 
     /// Adds (or replaces) a node's browse metadata.
@@ -469,6 +864,19 @@ impl AddressSpace {
             reference_type,
             is_forward: true,
             target,
+        });
+        self
+    }
+
+    /// Removes the reference `source --reference_type--> target`.
+    pub fn remove_reference(
+        &mut self,
+        source: &NodeId,
+        reference_type: &NodeId,
+        target: &NodeId,
+    ) -> &mut Self {
+        self.references.retain(|r| {
+            !(r.source == *source && r.reference_type == *reference_type && r.target == *target)
         });
         self
     }
@@ -905,6 +1313,106 @@ fn u32_array(dimensions: &[u32]) -> Variant {
 
 #[cfg(test)]
 mod tests {
+
+    /// A Method whose handler changes the AddressSpace (OPC 10000-14
+    /// §8.5.2): it adds a node in the call; a removal takes the nodes under
+    /// the removed one and their references.
+    #[test]
+    fn uacs_5_12_2_a_method_adds_and_removes_nodes() {
+        let mut space = AddressSpace::new();
+        let object = NodeId::numeric(1, 1);
+        space.add_node(NodeMeta::new(
+            object.clone(),
+            NodeClass::Object,
+            QualifiedName {
+                namespace_index: 1,
+                name: "Folder".into(),
+            },
+        ));
+        let method = NodeId::numeric(1, 2);
+        space.add_method_mut(
+            &object,
+            method.clone(),
+            QualifiedName {
+                namespace_index: 1,
+                name: "Add".into(),
+            },
+            &[],
+            &[],
+            |space, _, _| {
+                let child = NodeId::numeric(1, 3);
+                space.add_node(NodeMeta::new(
+                    child.clone(),
+                    NodeClass::Object,
+                    QualifiedName {
+                        namespace_index: 1,
+                        name: "Child".into(),
+                    },
+                ));
+                space.add_reference(NodeId::numeric(1, 1), reference_types::HAS_COMPONENT, child);
+                MethodOutcome::good(Vec::new())
+            },
+        );
+        let outcome = space
+            .call_mut(&MethodContext::anonymous(), &method, &[])
+            .expect("method");
+        assert_eq!(outcome.status_code, 0);
+        assert!(space.node_meta(&NodeId::numeric(1, 3)).is_some());
+        // The handler stays for the next call.
+        assert!(
+            space
+                .call_mut(&MethodContext::anonymous(), &method, &[])
+                .is_some()
+        );
+        let removed = space.remove_subtree(&object);
+        assert!(removed.contains(&NodeId::numeric(1, 3)));
+        assert!(removed.contains(&method));
+        assert!(space.node_meta(&NodeId::numeric(1, 3)).is_none());
+        assert!(
+            space
+                .call_mut(&MethodContext::anonymous(), &method, &[])
+                .is_none()
+        );
+        assert!(space.browse(&object, 2, None, false, 0).is_empty());
+    }
+
+    /// OPC 10000-5 §8.3.2 and §6.3.1: the Server Object under Objects, its
+    /// NamespaceArray with the OPC UA namespace, the ApplicationUri and the
+    /// namespaces of the application, its ServerArray the ApplicationUri.
+    #[test]
+    fn uacs_5_8_3_2_the_server_object_names_the_namespaces() {
+        let mut space = AddressSpace::new();
+        space.ensure_server_object(&["urn:example:app"]);
+        let table = space
+            .read_attribute(&NodeId::numeric(0, 2255), attribute_ids::VALUE)
+            .expect("read")
+            .value
+            .expect("value");
+        assert_eq!(
+            table.value,
+            alloc::vec![
+                VariantValue::String("http://opcfoundation.org/UA/".into()),
+                VariantValue::String(crate::server::APPLICATION_URI.into()),
+                VariantValue::String("urn:example:app".into()),
+            ]
+        );
+        let servers = space
+            .read_attribute(&NodeId::numeric(0, 2254), attribute_ids::VALUE)
+            .expect("read")
+            .value
+            .expect("value");
+        assert_eq!(
+            servers.value,
+            alloc::vec![VariantValue::String(crate::server::APPLICATION_URI.into())]
+        );
+        assert!(
+            space
+                .browse(&NodeId::numeric(0, 85), 0, None, false, 0)
+                .iter()
+                .any(|m| m.target.node_id == NodeId::numeric(0, 2253))
+        );
+    }
+
     use super::*;
     use zerodds_opcua_gateway::data_value::VariantValue;
 

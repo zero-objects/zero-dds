@@ -35,7 +35,7 @@
 #![warn(missing_docs)]
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -50,7 +50,8 @@ pub const DEFAULT_OTLP_PORT: u16 = 4318;
 /// Configuration for the exporter.
 #[derive(Clone, Debug)]
 pub struct OtlpConfig {
-    /// OTel collector host.
+    /// OTel collector host: a name, an IPv4 address or an IPv6 address,
+    /// with or without the brackets of a URL (`[::1]`, `::1`).
     pub host: String,
     /// OTel collector port (HTTP).
     pub port: u16,
@@ -58,7 +59,8 @@ pub struct OtlpConfig {
     pub service_name: String,
     /// Service version (e.g. the Cargo version).
     pub service_version: String,
-    /// Connect/Write-Timeout.
+    /// The timeout of the connect (per address of `host`), of each write
+    /// and of each read.
     pub timeout: Duration,
 }
 
@@ -74,6 +76,93 @@ impl Default for OtlpConfig {
     }
 }
 
+/// The environment variable that names the collector (spec §3).
+pub const OTEL_EXPORTER_OTLP_ENDPOINT: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
+
+impl OtlpConfig {
+    /// The configuration of a daemon's exporter from an endpoint written
+    /// `http://host:port`, `https://host:port`, `host:port` or `host`, a
+    /// trailing `/` allowed (spec §3). The text after the last `:` is the
+    /// port; without one, or when it is not a number, the port is 4318.
+    /// The timeout is 5 s.
+    #[must_use]
+    pub fn from_endpoint(service_name: &str, service_version: &str, raw: &str) -> Self {
+        let trimmed = raw
+            .strip_prefix("http://")
+            .or_else(|| raw.strip_prefix("https://"))
+            .unwrap_or(raw)
+            .trim_end_matches('/');
+        let (host, port) = match trimmed.rsplit_once(':') {
+            Some((h, p)) => (h.to_string(), p.parse().unwrap_or(DEFAULT_OTLP_PORT)),
+            None => (trimmed.to_string(), DEFAULT_OTLP_PORT),
+        };
+        Self {
+            host,
+            port,
+            service_name: service_name.into(),
+            service_version: service_version.into(),
+            timeout: Duration::from_secs(5),
+        }
+    }
+
+    /// [`OtlpConfig::from_endpoint`] of the value of
+    /// [`OTEL_EXPORTER_OTLP_ENDPOINT`]; `None` while it is not set.
+    #[must_use]
+    pub fn from_env(service_name: &str, service_version: &str) -> Option<Self> {
+        let raw = std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT).ok()?;
+        Some(Self::from_endpoint(service_name, service_version, &raw))
+    }
+}
+
+/// Starts the thread `thread_name` that flushes `exporter` every
+/// `interval` and once more when `stop` is set (spec §4). The thread looks
+/// at `stop` every `stop_poll` (at most every `interval`) and ends after
+/// that last flush. Export errors are dropped: a collector that is away
+/// does not stop the daemon.
+///
+/// # Errors
+/// The start of the thread.
+pub fn spawn_flush_loop(
+    exporter: std::sync::Arc<OtlpExporter>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    interval: Duration,
+    stop_poll: Duration,
+    thread_name: &str,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
+    use std::sync::atomic::Ordering;
+    std::thread::Builder::new()
+        .name(thread_name.into())
+        .spawn(move || {
+            let step = interval.min(stop_poll);
+            let mut next = std::time::Instant::now() + interval;
+            while !stop.load(Ordering::SeqCst) {
+                std::thread::sleep(step);
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                if std::time::Instant::now() < next {
+                    continue;
+                }
+                next = std::time::Instant::now() + interval;
+                let _ = exporter.flush();
+            }
+            let _ = exporter.flush();
+        })
+}
+
+/// A span attribute with an integer value: an OTLP `AnyValue` with
+/// `intValue`, for an attribute the OpenTelemetry semantic conventions
+/// define as `int` (such as `rpc.grpc.status_code` or `network.peer.port`).
+/// The attributes of [`Span::attributes`] are `stringValue`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IntAttribute {
+    /// The attribute key.
+    pub key: &'static str,
+    /// The value, written as `{"intValue":"<decimal>"}` (the proto3 JSON
+    /// mapping of an int64).
+    pub value: i64,
+}
+
 /// Exporter handle. Buffers spans/histograms/events and flushes
 /// them via POST to the OTel collector.
 pub struct OtlpExporter {
@@ -83,7 +172,8 @@ pub struct OtlpExporter {
 
 #[derive(Default)]
 struct ExporterBuffers {
-    spans: Vec<Span>,
+    /// Each span with its integer attributes.
+    spans: Vec<(Span, Vec<IntAttribute>)>,
     histograms: Vec<Histogram>,
     events: Vec<Event>,
 }
@@ -130,8 +220,14 @@ impl OtlpExporter {
 
     /// Adds a span to the pending queue.
     pub fn add_span(&self, span: Span) {
+        self.add_span_with_ints(span, Vec::new());
+    }
+
+    /// Adds a span with attributes of an integer value beside its string
+    /// attributes (`intValue` after the `stringValue` attributes).
+    pub fn add_span_with_ints(&self, span: Span, ints: Vec<IntAttribute>) {
         if let Ok(mut b) = self.buf.lock() {
-            b.spans.push(span);
+            b.spans.push((span, ints));
         }
     }
 
@@ -178,12 +274,53 @@ impl OtlpExporter {
         Ok(())
     }
 
-    /// Direct HTTP POST to `path`. JSON content-type.
+    /// The connection to the collector: each address of `host:port` in
+    /// turn, each connect within `timeout` (a collector that drops the SYN
+    /// does not hold the export for the kernel's retries). An IPv6 address
+    /// in brackets, as a URL writes it (RFC 3986 §3.2.2), is resolved
+    /// without them.
+    fn connect(&self) -> Result<TcpStream, ExportError> {
+        let addrs = (self.bare_host(), self.cfg.port)
+            .to_socket_addrs()
+            .map_err(ExportError::Io)?;
+        let mut last = std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            format!("{}:{} names no address", self.cfg.host, self.cfg.port),
+        );
+        for addr in addrs {
+            match TcpStream::connect_timeout(&addr, self.cfg.timeout) {
+                Ok(stream) => return Ok(stream),
+                Err(e) => last = e,
+            }
+        }
+        Err(ExportError::Io(last))
+    }
+
+    /// `host` without the brackets of an IPv6 address.
+    fn bare_host(&self) -> &str {
+        self.cfg
+            .host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(&self.cfg.host)
+    }
+
+    /// Direct HTTP POST to `path`. JSON content-type; the `Host` field
+    /// writes an IPv6 address in brackets (RFC 9110 §7.2, RFC 3986 §3.2.2).
     fn post(&self, path: &str, body: &str) -> Result<(), ExportError> {
-        let addr = format!("{}:{}", self.cfg.host, self.cfg.port);
-        let mut stream = TcpStream::connect(&addr).map_err(ExportError::Io)?;
-        stream.set_write_timeout(Some(self.cfg.timeout)).ok();
-        stream.set_read_timeout(Some(self.cfg.timeout)).ok();
+        let mut stream = self.connect()?;
+        stream
+            .set_write_timeout(Some(self.cfg.timeout))
+            .map_err(ExportError::Io)?;
+        stream
+            .set_read_timeout(Some(self.cfg.timeout))
+            .map_err(ExportError::Io)?;
+        let host = self.bare_host();
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host.to_string()
+        };
         let req = format!(
             "POST {} HTTP/1.1\r\n\
              Host: {}\r\n\
@@ -192,7 +329,7 @@ impl OtlpExporter {
              Content-Length: {}\r\n\
              Connection: close\r\n\r\n{}",
             path,
-            self.cfg.host,
+            host,
             body.len(),
             body
         );
@@ -233,7 +370,7 @@ fn parse_http_status(resp: &str) -> (u16, usize) {
 // JSON builder — minimal serializer per the OTLP/HTTP/JSON spec.
 // ============================================================================
 
-fn build_traces_json(cfg: &OtlpConfig, spans: &[Span]) -> String {
+fn build_traces_json(cfg: &OtlpConfig, spans: &[(Span, Vec<IntAttribute>)]) -> String {
     // Top-level: { resourceSpans: [{ resource, scopeSpans: [{ scope, spans }] }] }
     let mut out = String::with_capacity(512 + spans.len() * 256);
     out.push_str(r#"{"resourceSpans":[{"resource":"#);
@@ -241,11 +378,11 @@ fn build_traces_json(cfg: &OtlpConfig, spans: &[Span]) -> String {
     out.push_str(r#","scopeSpans":[{"scope":{"name":"zerodds","version":""#);
     push_str_escaped(&mut out, &cfg.service_version);
     out.push_str(r#""},"spans":["#);
-    for (i, s) in spans.iter().enumerate() {
+    for (i, (s, ints)) in spans.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        push_span(&mut out, s);
+        push_span(&mut out, s, ints);
     }
     out.push_str("]}]}]}");
     out
@@ -293,7 +430,7 @@ fn push_resource(out: &mut String, cfg: &OtlpConfig) {
     out.push_str(r#""}}]}"#);
 }
 
-fn push_span(out: &mut String, s: &Span) {
+fn push_span(out: &mut String, s: &Span, ints: &[IntAttribute]) {
     out.push_str(r#"{"traceId":""#);
     out.push_str(&s.context.trace_id.to_hex());
     out.push_str(r#"","spanId":""#);
@@ -335,7 +472,7 @@ fn push_span(out: &mut String, s: &Span) {
         });
         out.push('}');
     }
-    if !s.attributes.is_empty() {
+    if !s.attributes.is_empty() || !ints.is_empty() {
         out.push_str(r#","attributes":["#);
         for (i, a) in s.attributes.iter().enumerate() {
             if i > 0 {
@@ -345,6 +482,19 @@ fn push_span(out: &mut String, s: &Span) {
             push_str_escaped(out, a.key);
             out.push_str(r#"","value":{"stringValue":""#);
             push_str_escaped(out, &a.value);
+            out.push_str(r#""}}"#);
+        }
+        for (i, a) in ints.iter().enumerate() {
+            if i > 0 || !s.attributes.is_empty() {
+                out.push(',');
+            }
+            out.push_str(r#"{"key":""#);
+            push_str_escaped(out, a.key);
+            out.push_str(r#"","value":{"intValue":""#);
+            {
+                use std::fmt::Write as _;
+                let _ = write!(out, "{}", a.value);
+            }
             out.push_str(r#""}}"#);
         }
         out.push(']');
@@ -467,12 +617,70 @@ mod tests {
             attributes: Vec::new(),
         };
         let cfg = OtlpConfig::default();
-        let body = build_traces_json(&cfg, &[span]);
+        let body = build_traces_json(&cfg, &[(span, Vec::new())]);
         assert!(body.contains(r#""traceId":"01010101010101010101010101010101""#));
         assert!(body.contains(r#""spanId":"0202020202020202""#));
         assert!(body.contains(r#""name":"dcps.write""#));
         assert!(body.contains(r#""kind":3"#)); // Client
         assert!(body.contains(r#""service.name""#));
+    }
+
+    /// An attribute of an integer value is an `AnyValue` with `intValue`,
+    /// the int64 as a decimal string (proto3 JSON mapping), after the
+    /// string attributes; a span with integer attributes only has them too.
+    #[test]
+    fn traces_json_writes_int_attributes_as_int_value() {
+        let span = |attributes| Span {
+            context: SpanContext::new_root(TraceId([1u8; 16]), SpanId([2u8; 8])),
+            name: "svc/Call".into(),
+            kind: SpanKind::Server,
+            start_unix_ns: 1,
+            end_unix_ns: 2,
+            status: SpanStatus::Unset,
+            status_description: None,
+            attributes,
+        };
+        let ints = vec![
+            IntAttribute {
+                key: "rpc.grpc.status_code",
+                value: 0,
+            },
+            IntAttribute {
+                key: "network.peer.port",
+                value: 40_000,
+            },
+            IntAttribute {
+                key: "x.negative",
+                value: -7,
+            },
+        ];
+        let with_string = span(vec![zerodds_foundation::observability::Attribute {
+            key: "rpc.system",
+            value: "grpc".into(),
+        }]);
+        let body = build_traces_json(&OtlpConfig::default(), &[(with_string, ints.clone())]);
+        assert!(
+            body.contains(
+                r#""attributes":[{"key":"rpc.system","value":{"stringValue":"grpc"}},{"key":"rpc.grpc.status_code","value":{"intValue":"0"}},{"key":"network.peer.port","value":{"intValue":"40000"}},{"key":"x.negative","value":{"intValue":"-7"}}]"#
+            ),
+            "{body}"
+        );
+        let body = build_traces_json(&OtlpConfig::default(), &[(span(Vec::new()), ints)]);
+        assert!(
+            body.contains(
+                r#""attributes":[{"key":"rpc.grpc.status_code","value":{"intValue":"0"}},"#
+            ),
+            "{body}"
+        );
+        // Through the exporter's buffer: `add_span` has no integer
+        // attributes, `add_span_with_ints` keeps them with its span.
+        let exp = OtlpExporter::new(OtlpConfig::default());
+        exp.add_span(span(Vec::new()));
+        exp.add_span_with_ints(span(Vec::new()), vec![IntAttribute { key: "n", value: 3 }]);
+        let buffered = exp.buf.lock().map(|b| b.spans.clone()).unwrap_or_default();
+        assert_eq!(buffered.len(), 2);
+        assert!(buffered[0].1.is_empty());
+        assert_eq!(buffered[1].1, vec![IntAttribute { key: "n", value: 3 }]);
     }
 
     #[test]
@@ -520,6 +728,51 @@ mod tests {
         assert_eq!(code, 500);
     }
 
+    /// The connect to the collector waits at most `timeout`: a listener
+    /// whose accept queue is full drops the SYN (Linux), and the export
+    /// fails within the timeout instead of the kernel's SYN retries.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn flush_connects_within_the_timeout() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        // Connections the listener never accepts, until one connect waits.
+        let mut held = Vec::new();
+        while let Ok(s) = TcpStream::connect_timeout(&addr, Duration::from_millis(200)) {
+            held.push(s);
+            assert!(held.len() < 10_000, "the accept queue does not fill");
+        }
+        let exp = OtlpExporter::new(OtlpConfig {
+            host: "127.0.0.1".into(),
+            port: addr.port(),
+            timeout: Duration::from_millis(300),
+            ..OtlpConfig::default()
+        });
+        exp.add_span(Span {
+            context: SpanContext::new_root(TraceId([1u8; 16]), SpanId([2u8; 8])),
+            name: "x".into(),
+            kind: SpanKind::Internal,
+            start_unix_ns: 0,
+            end_unix_ns: 1,
+            status: SpanStatus::Unset,
+            status_description: None,
+            attributes: Vec::new(),
+        });
+        let started = std::time::Instant::now();
+        let r = exp.flush();
+        assert!(
+            matches!(&r, Err(ExportError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut),
+            "{r:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        drop(held);
+    }
+
     #[test]
     fn flush_drains_buffers_even_with_no_collector() {
         let cfg = OtlpConfig {
@@ -545,5 +798,156 @@ mod tests {
         // Buffer was emptied nonetheless.
         let r2 = exp.flush();
         assert!(r2.is_ok(), "second flush with empty buffers should be ok");
+    }
+
+    /// A collector of the test on `listener`: the request head of each of
+    /// `n` connections, each answered with 200.
+    #[allow(clippy::unwrap_used)]
+    fn heads_of(listener: std::net::TcpListener, n: usize) -> std::thread::JoinHandle<Vec<String>> {
+        std::thread::spawn(move || {
+            let mut heads = Vec::new();
+            for _ in 0..n {
+                let (mut s, _) = listener.accept().unwrap();
+                s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut req = Vec::new();
+                let mut buf = [0u8; 4096];
+                let body_at = loop {
+                    let got = s.read(&mut buf).unwrap();
+                    assert!(got > 0, "the request ended before its head");
+                    req.extend_from_slice(&buf[..got]);
+                    if let Some(i) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break i + 4;
+                    }
+                };
+                let head = String::from_utf8_lossy(&req[..body_at]).to_string();
+                let length: usize = head
+                    .lines()
+                    .find_map(|l| {
+                        let (k, v) = l.split_once(':')?;
+                        k.eq_ignore_ascii_case("content-length")
+                            .then(|| v.trim().parse().ok())?
+                    })
+                    .unwrap();
+                while req.len() < body_at + length {
+                    let got = s.read(&mut buf).unwrap();
+                    assert!(got > 0, "the request ended before its body");
+                    req.extend_from_slice(&buf[..got]);
+                }
+                s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                    .unwrap();
+                heads.push(head);
+            }
+            heads
+        })
+    }
+
+    /// An IPv6 collector: `host` `[::1]`, as `OTEL_EXPORTER_OTLP_ENDPOINT`
+    /// `http://[::1]:<port>` gives it, and `::1` reach the listener on the
+    /// IPv6 loopback, and the `Host` field carries the address in brackets
+    /// (RFC 9110 §7.2).
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn flush_reaches_a_collector_at_an_ipv6_address() {
+        let listener = std::net::TcpListener::bind("[::1]:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let collector = heads_of(listener, 2);
+        for host in ["[::1]", "::1"] {
+            let exp = OtlpExporter::new(OtlpConfig {
+                host: host.into(),
+                port,
+                timeout: Duration::from_secs(2),
+                ..OtlpConfig::default()
+            });
+            exp.add_span(Span {
+                context: SpanContext::new_root(TraceId([1u8; 16]), SpanId([2u8; 8])),
+                name: "x".into(),
+                kind: SpanKind::Internal,
+                start_unix_ns: 0,
+                end_unix_ns: 1,
+                status: SpanStatus::Unset,
+                status_description: None,
+                attributes: Vec::new(),
+            });
+            let r = exp.flush();
+            assert!(r.is_ok(), "host {host}: {r:?}");
+        }
+        let heads = collector.join().unwrap();
+        assert_eq!(heads.len(), 2);
+        for head in &heads {
+            assert!(head.starts_with("POST /v1/traces HTTP/1.1\r\n"), "{head}");
+            assert!(head.contains("\r\nHost: [::1]\r\n"), "{head}");
+        }
+    }
+
+    /// Spec §3: an endpoint with or without scheme, port and trailing `/`;
+    /// without a port, or with one that is not a number, 4318.
+    #[test]
+    fn config_from_endpoint_reads_scheme_host_and_port() {
+        let c = OtlpConfig::from_endpoint("svc", "1.2.3", "http://collector.local:4319/");
+        assert_eq!(
+            (c.host.as_str(), c.port, c.service_name.as_str()),
+            ("collector.local", 4319, "svc")
+        );
+        assert_eq!(c.service_version, "1.2.3");
+        assert_eq!(c.timeout, Duration::from_secs(5));
+        let c = OtlpConfig::from_endpoint("svc", "1", "https://otel.svc:4318");
+        assert_eq!((c.host.as_str(), c.port), ("otel.svc", 4318));
+        let c = OtlpConfig::from_endpoint("svc", "1", "host:9999");
+        assert_eq!((c.host.as_str(), c.port), ("host", 9999));
+        let c = OtlpConfig::from_endpoint("svc", "1", "host");
+        assert_eq!((c.host.as_str(), c.port), ("host", 4318));
+        let c = OtlpConfig::from_endpoint("svc", "1", "host:http");
+        assert_eq!((c.host.as_str(), c.port), ("host", 4318));
+    }
+
+    /// Spec §4: the loop flushes after `interval`, and once more after the
+    /// stop flag is set; then the thread ends.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn flush_loop_flushes_each_interval_and_at_stop() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let collector = heads_of(listener, 2);
+        let exp = std::sync::Arc::new(OtlpExporter::new(OtlpConfig {
+            port,
+            timeout: Duration::from_secs(2),
+            ..OtlpConfig::default()
+        }));
+        let span = |n: u8| Span {
+            context: SpanContext::new_root(TraceId([n; 16]), SpanId([n; 8])),
+            name: "x".into(),
+            kind: SpanKind::Internal,
+            start_unix_ns: 0,
+            end_unix_ns: 1,
+            status: SpanStatus::Unset,
+            status_description: None,
+            attributes: Vec::new(),
+        };
+        exp.add_span(span(1));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = spawn_flush_loop(
+            std::sync::Arc::clone(&exp),
+            std::sync::Arc::clone(&stop),
+            Duration::from_millis(50),
+            Duration::from_millis(10),
+            "zerodds-test-otlp",
+        )
+        .unwrap();
+        let start = std::time::Instant::now();
+        while exp.buf.lock().unwrap().spans.len() == 1 {
+            assert!(start.elapsed() < Duration::from_secs(5), "no flush");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        exp.add_span(span(2));
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        handle.join().unwrap();
+        assert!(exp.buf.lock().unwrap().spans.is_empty());
+        let heads = collector.join().unwrap();
+        assert_eq!(heads.len(), 2);
+        assert!(
+            heads
+                .iter()
+                .all(|h| h.starts_with("POST /v1/traces HTTP/1.1\r\n"))
+        );
     }
 }

@@ -24,10 +24,10 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 
 - **Konfiguration:** Der gemeinsame Loader `zerodds-config` liest Basisdatei, Drop-ins in `<stem>.d/`, Includes und `${VAR}`. Vorrang: Defaults < Umgebung < Dateien < `--set`. Jeder Daemon hat eine Liste `KEYS` und `is_key()` für die Prüfung unbekannter Schlüssel sowie `DaemonConfig::from_config()`. Innerhalb eines bekannten Abschnitts wird ein unbekannter Schlüssel mit Datei und Zeile abgelehnt (`Section::only`). Die DDS-Runtime-Schlüssel (`transport.*`, `discovery.*`) dürfen in derselben Datei stehen.
 - **Signale:** `signal-hook` fängt `SIGTERM`, `SIGINT` und `SIGHUP` (`install_signal_watcher` in `runtime_common.rs` bzw. `daemon_runtime.rs`). `SIGTERM`/`SIGINT` setzen ein Stop-Flag, `SIGHUP` ein Reload-Flag.
-- **SIGHUP-Reload:** Der Reload liest dieselben geschichteten Quellen neu (`reload_command_line` im Binary). Eine Konfiguration, die nicht lädt, ändert nichts („reload refused“). Was nur beim Start gebaut wird, bleibt und wird als „reload needs a restart for: …“ geloggt. Der Sicherheitskontext wird als Ganzes über `LiveSecurity::replace` getauscht.
+- **SIGHUP-Reload:** Der Reload liest dieselben geschichteten Quellen neu (`reload_command_line` im Binary). Eine Konfiguration, die nicht lädt, ändert nichts („reload refused“). Was nur beim Start gebaut wird, bleibt und wird als „reload needs a restart for: …“ geloggt. `zerodds-ws-bridged` schreibt beides als JSON-Ereignis auf stdout: `reload_refused` mit `reason` und `reload_needs_restart` mit `settings` (`zerodds-ws-bridge-1.0` §8.1). Der Sicherheitskontext wird als Ganzes über `LiveSecurity::replace` getauscht.
 - **Admin-Endpunkt:** `metrics.enabled` schaltet einen kleinen HTTP-Server mit `/metrics` (Prometheus), `/catalog` (JSON) und `/healthz`. Ist `metrics.listen` leer, hat jeder Daemon eine eigene Default-Adresse: ws `127.0.0.1:9091`, mqtt 9092, coap 9093, amqp 9094, grpc 9095, corba 9096.
 - **OTLP:** `otlp_config_from_env` liest `OTEL_EXPORTER_OTLP_ENDPOINT`; ein Flush-Thread exportiert alle 5 s (`spawn_otlp_flush_loop`).
-- **Interop-Tests:** Tests gegen fremde Gegenstellen sind `#[ignore]`. Sie laufen in wöchentlichen Jobs der Integrations-Säule (`ci/integration_scenarios.py`): die der CoAP-, MQTT-, WebSocket- und gRPC-Bridge in `integration-bridges-vendor` mit libcoap, Mosquitto, Python `websockets` und grpcurl, die der AMQP-Pakete in `integration-bridges-vendor-amqp` mit RabbitMQ (pika, qpid-proton), die der CORBA-Pakete in `integration-bridges-vendor-corba` mit omniORB und JacORB, die gegen TAO in `vendor-live-corba-tao` (`ci/interop-omg-weekly.yml`); ein fehlendes Fremdwerkzeug lässt sie fehlschlagen. Die `durability-svc`-Tests mit PostgreSQL und DuckDB laufen auf dem Linux-Testhost von Hand; den Daemon der OPC-UA-Bridge prüft das Szenario `bridge-opcua` der Integrations-Säule gegen open62541.
+- **Interop-Tests:** Tests gegen fremde Gegenstellen sind `#[ignore]`. Sie laufen in wöchentlichen Jobs der Integrations-Säule (`ci/integration_scenarios.py`): die der CoAP-, MQTT- und WebSocket-Bridge in `integration-bridges-vendor` mit libcoap, Mosquitto und Python `websockets`, die der gRPC-Bridge in `integration-bridges-vendor-grpc` mit grpcurl, grpc-go, grpc-java, tonic, ghz, BloomRPC, dem OpenTelemetry Collector und Cyclone DDS, die der AMQP-Pakete in `integration-bridges-vendor-amqp` mit RabbitMQ (pika, qpid-proton), die der CORBA-Pakete in `integration-bridges-vendor-corba` mit omniORB und JacORB, die gegen TAO in `vendor-live-corba-tao` (`ci/interop-omg-weekly.yml`); ein fehlendes Fremdwerkzeug lässt sie fehlschlagen. Die `durability-svc`-Tests mit PostgreSQL und DuckDB laufen auf dem Linux-Testhost von Hand; den Daemon der OPC-UA-Bridge prüft das Szenario `bridge-opcua` der Integrations-Säule gegen open62541.
 
 ### `direction`-Semantik pro Daemon (verifiziert im Code)
 
@@ -37,8 +37,8 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 | mqtt | DDS-Writer + SUBSCRIBE beim Broker (MQTT → DDS) | DDS-Reader (DDS → MQTT) | `mqtt-bridge/src/daemon/server.rs:762` |
 | coap | DDS-Writer (CoAP POST/PUT → DDS) | DDS-Reader (DDS → Observe) | `coap-bridge/src/daemon/server.rs:1603` |
 | amqp | Receiver-Link + DDS-Writer (AMQP → DDS) | DDS-Reader + Sender-Link (DDS → AMQP) | `amqp-endpoint/src/bridge_daemon.rs` Modulkopf |
-| grpc | DDS-Writer (`Publish` → DDS) | DDS-Reader (DDS → `Subscribe`) | `grpc-bridge/src/bin/zerodds-grpc-bridged.rs` `BridgeDds::start` (`bridged_into_dds`, `bridged_out_of_dds`) |
-| corba | Werte `corba_to_dds`, `dds_to_corba`, `bidir` | – | `corba-dds-bridge/src/bridge_daemon.rs:703` |
+| grpc | DDS-Writer (`Publish` → DDS) | DDS-Reader (DDS → `Subscribe`) | `grpc-bridge/src/bridge_daemon/dds_pump.rs` `BridgeDds::start` (`bridged_into_dds`, `bridged_out_of_dds`) |
+| corba | Werte `corba_to_dds`, `dds_to_corba`, `bidir` | – | `corba-dds-bridge/src/bridge_daemon/config.rs::read_mapping` |
 
 ---
 
@@ -54,11 +54,11 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 - `src/daemon/config.rs` — `CONFIG_STEM`, `KEYS`, `is_key`, `DaemonConfig::from_config`, `default_ws_path`.
 - `src/daemon/security.rs` — `ctx_from_daemon_config` (Start und Reload).
 - `src/daemon/runtime_common.rs` — Metriken, `serve_admin_endpoints`, Signal-Watcher.
-- Bibliothek: `frame.rs`, `codec.rs`, `handshake.rs`, `negotiation.rs`, `permessage_deflate.rs`, `masking.rs`, `close.rs`, `utf8.rs`, `uri.rs`, `dds_bridge.rs`.
+- Bibliothek: `frame.rs`, `codec.rs`, `handshake.rs`, `negotiation.rs`, `permessage_deflate.rs`, `masking.rs`, `message.rs`, `close.rs`, `utf8.rs`, `uri.rs`, `origin.rs` (`OriginPolicy`: Prüfung des Felds `Origin`) und `connection.rs` (`Receiver`, `Sender`: ein Ende einer Verbindung, über das der Daemon liest und schreibt).
 
 **Features** (`Cargo.toml`): `default = ["std","daemon"]`, `std`, `alloc`, `daemon` (zieht `zerodds-dcps`, `-config`, `-rtps`, `-qos`, `-types`, `-monitor`, `-observability-otlp`, `-bridge-security`, `rustls`, `signal-hook`), `cross-vendor-tests`.
 
-**Konfiguration** (`KEYS`): Wurzel `listen` (Default `127.0.0.1:8080`), `domain`, `log_level`; `tls.{enabled,cert_file,key_file,client_ca_file}`; `auth.{mode,bearer_token,bearer_subject}`, `auth.jwt.{public_key,issuer,audience,required_claim}`; `metrics.{enabled,listen}`; `topics[]` mit `name`, `type`, `direction` (`in` = Client → DDS, `out` = DDS → Client, Default `bidir`; Publish/Subscribe gegen die Richtung → Fehler-Frame 404), `ws_path`, `qos.{reliability,durability,history.depth}` (Default-Tiefe 10), `acl.{read,write}`. Ein Topic darf als bloßer Name angegeben werden.
+**Konfiguration** (`KEYS`): Wurzel `listen` (Default `127.0.0.1:8080`), `domain`, `log_level`; `tls.{enabled,cert_file,key_file,client_ca_file}`; `auth.{mode,bearer_token,bearer_subject}`, `auth.jwt.{public_key,issuer,audience,required_claim}`; `metrics.{enabled,listen}`; `limits.{max_frame_size,max_message_size}` (je 16 MiB als Default; der größte Frame und die größte Nachricht eines Clients, RFC 6455 §10.4); `origin.{allowed,required}` (die erwarteten Origins des Opening Handshake, sonst HTTP 403, RFC 6455 §10.2; leer = keine Prüfung); `topics[]` mit `name`, `type`, `direction` (`in` = Client → DDS, `out` = DDS → Client, Default `bidir`; Publish/Subscribe gegen die Richtung → Fehler-Frame 404), `ws_path`, `qos.{reliability,durability,history.depth}` (Default-Tiefe 10), `acl.{read,write}`. Ein Topic darf als bloßer Name angegeben werden.
 
 **Sicherheit.** TLS (`wss://`) mit optionalem Client-CA (mTLS). `auth.mode`: `none|bearer|jwt|mtls`; `sasl` wird abgelehnt (Kommentar in `from_config`). ACL pro Topic aus `topics[].acl`.
 
@@ -67,9 +67,11 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 **Shutdown.** Stop-Flag, `/healthz` meldet ungesund, Selbstverbindung weckt `accept()`, `router.broadcast_shutdown()` sendet Close-Frame `1001 "going away"` (`server.rs:745`), danach Join aller Threads.
 
 **Interop-Tests** (`tests/`):
-- `websockets_py_interop_e2e.rs` — Python-Modul `websockets` gegen die Bibliothek (Text, Binär, Ping); läuft in `integration-bridges-vendor`.
-- `cross_vendor.rs` — `wsbridge_12_3_rfc6455_handshake_against_zerodds_daemon_returns_101` nutzt einen eigenen Client; der Modulkommentar sagt ausdrücklich, dass dies keine Fremdmessung ist. Python `websockets` gegen den Daemon prüft die Integrations-Säule (`bridges::websocket_bridge_against_python_websockets`).
-- Weitere: `daemon_e2e.rs`, `security_e2e.rs`, `fuzz_smoke.rs`, `example_yaml_loadback.rs`.
+- `websockets_py_interop_e2e.rs` — Python-Modul `websockets` gegen die Bibliothek (Text, Binär, Ping, permessage-deflate) und gegen den Daemon (komprimierte Steuernachrichten, Closing Handshake); läuft in `integration-bridges-vendor`.
+- `autobahn_e2e.rs` — die Bibliothek als Echo-Client des Fuzzing-Servers der Autobahn|TestSuite (Container `crossbario/autobahn-testsuite`), der jeden seiner 517 Fälle bewertet; läuft in `integration-bridges-vendor-autobahn`, `-autobahn-deflate-a` und `-autobahn-deflate-b` mit dem Container als Service des Jobs, gebaut im Cargo-Profil `corpus`.
+- `autobahn_server_e2e.rs` — die Bibliothek als Echo-Server gegen den Fuzzing-Client der Autobahn|TestSuite (derselbe Container; ein Steuerskript im Service des Jobs startet den Fuzzing-Client auf Anfrage und liefert dessen `index.json`), Fälle 1 bis 10; läuft in `integration-bridges-vendor-autobahn`.
+- `cross_vendor.rs` — der Daemon gegen Cyclone DDS, Fast DDS und RTI Connext DDS in beiden Richtungen (Feature `cross-vendor-tests`, wöchentlicher Job `integration-bridges-vendor`). Python `websockets` gegen den Daemon prüft die Integrations-Säule (`bridges::websocket_bridge_against_python_websockets`).
+- Weitere: `daemon_e2e.rs`, `daemon_rfc6455.rs` (der Daemon als RFC-6455-Server: ungültige Handshakes und Frames, Fragmente, Closing Handshake, permessage-deflate), `security_e2e.rs`, `fuzz_smoke.rs`, `example_yaml_loadback.rs`.
 
 ---
 
@@ -83,14 +85,14 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 - `src/bin/zerodds-mqtt-bridged.rs`.
 - `src/daemon/server.rs` — `start_with_reload`, `DaemonHandle::shutdown`, `drain()`, `reload()`.
 - `src/daemon/client.rs` — Broker-Client; `src/daemon/ws_transport.rs` — Transport für `ws://`/`wss://`-Broker (nutzt `zerodds-websocket-bridge`).
-- `src/daemon/config.rs` — `KEYS`, `ENV` (`MQTT_PASSWORD` → `mqtt.password`), `is_key` (plus `auth.sasl_users.*`), `BrokerUrl` (Schemata `mqtt` 1883, `mqtts` 8883, `ws` 80, `wss` 443).
+- `src/daemon/config.rs` — `KEYS`, `ENV` (`MQTT_PASSWORD` → `mqtt.password`), `is_key`, `BrokerUrl` (Schemata `mqtt` 1883, `mqtts` 8883, `ws` 80, `wss` 443).
 - Bibliothek: `codec.rs`, `control_packets.rs`, `packet.rs`, `properties.rs`, `reason_codes.rs`, `topic_filter.rs`, `keep_alive.rs`, `broker.rs`, `server.rs`, `net.rs`, `dds_bridge.rs`.
 
 **Features:** `default = ["std","daemon"]`, `std`, `alloc`, `daemon` (wie ws, zusätzlich `zerodds-websocket-bridge`), `cross-vendor-tests`.
 
-**Konfiguration** (`KEYS`): `domain`, `log_level`; `mqtt.{broker_url,client_id,username,password,keep_alive_secs,drain_timeout_secs,clean_start}`, `mqtt.tls.{enabled,ca_file,cert_file,key_file,server_name}`; `auth.{mode,bearer_token,bearer_subject,username,password,sasl_users}`; `acl.{default_deny,rules}` (Regel: `subject`, `allow_publish`, `allow_subscribe`); `metrics.{enabled,listen}`; `topics[]` mit `dds_name`, `dds_type`, `mqtt_topic`, `direction`, `mqtt_qos`, `retain`, `qos`.
+**Konfiguration** (`KEYS`): `domain`, `log_level`; `mqtt.{broker_url,client_id,username,password,keep_alive_secs,drain_timeout_secs,clean_start}`, `mqtt.tls.{enabled,ca_file,cert_file,key_file,server_name}`; `auth.{mode,bearer_token,bearer_subject,username,password}`, `auth.enhanced.method`; `acl.{default_deny,rules}` (Regel: `subject`, `allow_publish`, `allow_subscribe`, MQTT-Topic-Filter); `metrics.{enabled,listen}`; `topics[]` mit `dds_name`, `dds_type`, `mqtt_topic`, `direction`, `mqtt_qos`, `retain`, `qos`.
 
-**Sicherheit.** TLS ausgehend zum Broker (`mqtts://`, `wss://`), optional Client-Zertifikat. `auth.mode`: `none|bearer|sasl|sasl_plain|mtls` — Bearer-Token geht als CONNECT-Passwort hinaus, SASL-PLAIN als CONNECT-Benutzer/Passwort. ACL nach Subjekt; `acl.default_deny` greift als Default erst, wenn eine Regel oder ein Auth-Modus existiert; ein ausdrückliches `true` sperrt immer (`config.rs`, Feld `acl_default_deny_set`).
+**Sicherheit.** TLS ausgehend zum Broker (`mqtts://`, `wss://`), optional Client-Zertifikat. `auth.mode`: `none|password|mtls|enhanced` (`bearer`, `sasl`, `sasl_plain` = `password`; `auth.rs`) — `none` nur zu einem Broker auf Loopback, `password` mit CONNECT-Benutzer/Passwort, `mtls` nur mit Client-Zertifikat, `enhanced` mit SCRAM-SHA-256, OAUTHBEARER oder einer anderen Methode (MQTT 5.0 §4.12, Neu-Authentifizierung nach SIGHUP). ACL (`acl.rs`) mit MQTT-Topic-Filtern je Subjekt; Subjekt = DN des Client-Zertifikats, Benutzername oder `sub` des JWT; `acl.default_deny` nicht gesetzt = true mit Regeln. Metriken `zerodds_mqtt_bridge_*` in `metrics.rs`.
 
 **SIGHUP.** Nur die ACL gilt sofort; ein entzogenes Recht stoppt die Samples des Topics in beide Richtungen. Neustart nötig bei `topics`, `mqtt.broker_url/client_id`, `mqtt.tls`, `auth`, `domain` sowie bei einem neu gewährten Leserecht (Subscriptions entstehen beim Start) (`server.rs:246-250`, `659-710`).
 
@@ -117,7 +119,7 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 - `src/daemon/config.rs` — `KEYS`, `OscoreSettings`, `TopicConfig`.
 - Bibliothek: `message.rs`, `codec.rs`, `option.rs`, `reliability.rs`, `observe.rs`, `blockwise.rs`, `core_link.rs`, `multicast.rs`, `caching_proxy.rs`, `matching.rs`, `uri.rs`, `dtls.rs`, `dtls_transport.rs`, `oscore/`.
 
-**Features:** `default = ["std","daemon"]`, `std`, `alloc`, `daemon`, `oscore` (hmac/sha2/ccm/aes), `dtls` (webrtc-dtls, tokio; im Cargo-Kommentar als EXPERIMENTAL markiert, siehe ADR 0011), `cross-vendor-tests`.
+**Features:** `default = ["std","daemon"]`, `std`, `alloc`, `daemon`, `oscore` (hmac/sha2/ccm/aes), `dtls` (`zerodds-dtls-openssl`, OpenSSL ab 3.2: PSK, RawPublicKey nach RFC 7250, Zertifikat; siehe ADR 0014), `dtls-vendored-openssl` (OpenSSL aus den Quellen), `cross-vendor-tests`.
 
 **Konfiguration** (`KEYS`): `domain`, `log_level`; `coap.{bind,bind_dtls,max_message_size,ack_timeout_ms,max_retransmit,observe_max_age_secs}` (Default-Bind `0.0.0.0:5683`), `coap.dtls.{enabled,cert_file,key_file,ca_file,cipher_suites,psk}` (PSK-Einträge `identity`, `secret_hex`); `auth.{mode,bearer_token,bearer_subject}`, `auth.jwt.*`; `acl.{default_deny,rules}` (Regel: `subject`, `allow_post`, `allow_observe`); `metrics.{enabled,listen}`; `oscore.{enabled,master_secret_hex,master_salt_hex,id_context_hex,sender_id_hex,replay_window}`; `topics[]` mit `dds_name`, `dds_type`, `coap_uri_path`, `direction`, `qos`.
 
@@ -151,7 +153,7 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 
 **Einstiegspunkte.**
 - `src/bin/zerodds-amqp-bridged.rs` — `CONFIG_STEM = "amqp-bridged"`, Signal-Watcher, Admin-Server, `run_with_reload`.
-- `src/bridge_daemon.rs` — `KEYS`, `ENV` (`AMQP_PASSWORD` → `amqp.sasl.password`), `DaemonConfig::from_config`, `run`, `run_with_reload`, Reload (`:1098`), `drain` (`:2208`).
+- `src/bridge_daemon/config.rs` — `KEYS`, `ENV` (`AMQP_PASSWORD` → `amqp.sasl.password`), `DaemonConfig::from_config`; `src/bridge_daemon.rs` — `run`, `run_with_reload`; `src/bridge_daemon/reload.rs` — Reload (`apply_reload`); `src/bridge_daemon/dds_pump.rs` — `drain`.
 - `src/broker.rs` — `connect` (TCP oder TLS mit ALPN `amqp`, SASL PLAIN/ANONYMOUS/EXTERNAL/SCRAM-SHA-256/XOAUTH2), `BrokerWriter`.
 - `src/daemon_runtime.rs` — Metriken, Admin-Endpunkte; `src/bridge_security.rs`.
 - Protokollmodule: `sasl.rs`, `scram.rs`, `session.rs`, `link.rs`, `routing.rs`, `mapping.rs`, `properties.rs`, `dds_bridge.rs`, `management.rs`, `metrics.rs`, `security.rs`, `coexistence.rs`, `rpc_correlation.rs`, `errors.rs`, `limits.rs`, `keyhash.rs`, `annex_a.rs`, `codegen_helpers.rs`, `config_xml.rs`, `client.rs`, `backoff.rs`.
@@ -163,9 +165,9 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 
 **Sicherheit.** TLS zum Broker (`amqps://`), SASL wie oben. Kein `auth`-Abschnitt; die ACL nennt das SASL-Subjekt der Bridge.
 
-**SIGHUP.** ACL gilt sofort (entzogenes Recht stoppt Samples und Transfers), TLS-Material gilt ab dem nächsten Connect. Neustart nötig bei neu gewährtem Recht, `topics`, `amqp.broker_url`, `domain` (`bridge_daemon.rs:1093-1151`).
+**SIGHUP.** ACL gilt sofort (entzogenes Recht stoppt Samples und Transfers), TLS-Material gilt ab dem nächsten Connect. Neustart nötig bei neu gewährtem Recht, `topics`, `amqp.broker_url`, `domain` (`bridge_daemon/reload.rs`, `apply_reload`).
 
-**Shutdown.** DDS-Samples werden nicht mehr angenommen, laufende Transfers bis `DRAIN_BUDGET = 30 s` abgewartet, dann detach, end, close (`bridge_daemon.rs:1369`, `:1870`, `:2004`).
+**Shutdown.** DDS-Samples werden nicht mehr angenommen, laufende Transfers bis `DRAIN_BUDGET = 30 s` abgewartet, dann detach, end, close (`bridge_daemon/dds_pump.rs`: `DRAIN_BUDGET`, `pump`; `bridge_daemon.rs`: `run_with_reload`).
 
 **Interop-Tests** (Fremdpeer RabbitMQ, je Test ein eigener Knoten; Job `integration-bridges-vendor-amqp`):
 - `bridge_rabbitmq_e2e.rs` — Daemon gegen RabbitMQ, `pika` (AMQP 0.9.1) als Referenzclient; der Dispose an einen Leser von Cyclone DDS bzw. Fast DDS in `vendor-live-dispose-bridges`.
@@ -196,12 +198,12 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 
 **Zweck.** gRPC-over-HTTP/2- und gRPC-Web-Codec (Length-Prefixed Message, Path, Timeout, Status, Metadata), Server-Skelett, Reflection (`grpc.reflection.v1alpha`, minimales Profil) und der Daemon.
 
-**Abbildung.** Pro Topic ein gRPC-Service `grpc_service` (Treffer auch über den letzten Namensteil). Methoden `Publish` und `PublishOne` schreiben `Sample{bytes payload=1}` als opake Nutzdaten in einen DDS-Writer und antworten `PublishAck{accepted}`; `Subscribe` entnimmt pro Aufruf ein Sample aus dem DDS-Reader (Pull; leerer Body = Stream-Ende) (`src/bin/zerodds-grpc-bridged.rs:1000-1074`). `direction` bestimmt, welche Endpunkte entstehen: `in` = `Publish` → DDS-Writer, `out` = DDS-Reader → `Subscribe`, `bidir` beides. Ein Aufruf gegen die Richtung endet mit `FAILED_PRECONDITION`, ein fehlgeschlagener Write mit `UNAVAILABLE` (`dispatch`). Service-`.proto`-Erzeugung: `src/service_gen.rs` (Paket `zerodds.bridge.v1`).
+**Abbildung.** Pro Topic ein gRPC-Service `grpc_service` (Treffer auch über den Namen ohne Paket, solange nur ein Mapping ihn trägt) mit vier Methoden und den Nachrichten von Spec §4.2 (`src/messages.rs`; Proto-Text `src/service_gen.rs`, Paket `grpc_package` oder der Default `zerodds.<erster Namensteil>.v1` nach Spec §5.1). `Publish` ist ein Client-Stream: jede `Sample`-Nachricht (CDR-Bytes mit Encapsulation-Header, `key_hash`, `source_ts_ns`, Bits für Dispose und Unregister) wird ein DDS-Write; beim Half-Close antwortet der Daemon einmal mit `PublishAck{sequence_number, acked_at_ns}`, der Sequenznummer des letzten Writes. `PublishOne` nimmt ein Sample. `Subscribe` ist ein Server-Stream mit einem eigenen DataReader pro Aufruf (`SubscribeReq.partition_filter` als seine Partitionen, `include_dispose` für Dispose und Unregister); jedes Sample geht als `Sample`-Nachricht hinaus, innerhalb des Fensters des Clients, mit höchstens 256 KiB wartend. `Catalog` antwortet mit `CatalogResp`. Nachrichten dürfen mit gzip oder deflate komprimiert sein (Spec §4.4). `direction` bestimmt, welche Endpunkte entstehen: `in` = `Publish` → DDS-Writer, `out` = DDS-Reader → `Subscribe`, `bidir` beides; ein Aufruf gegen die Richtung endet mit `FAILED_PRECONDITION` (`route`). Ein Write ohne Platz (RESOURCE_LIMITS, Timeout) endet mit `RESOURCE_EXHAUSTED`, ein anderer DDS-Fehler mit `INTERNAL`, ein Aufruf nach seinem `grpc-timeout` mit `DEADLINE_EXCEEDED`, ein Stream bei SIGTERM oder ohne lebenden DataWriter mit `UNAVAILABLE` (Spec §4.5; `src/bridge_daemon/calls.rs`, `Conn`).
 
 **Einstiegspunkte.**
-- `src/bin/zerodds-grpc-bridged.rs` — `main`, `KEYS` (`:1460`), `is_key`, `from_config`, `BridgeDds::start`, Verbindungsschleife mit GOAWAY, `apply_reload` (`:1672`).
+- `src/bin/zerodds-grpc-bridged.rs` — `main`; `src/bridge_daemon/` — `run` (`mod.rs`), `KEYS` (`config.rs:197`), `is_key`, `from_config`, `BridgeDds::start` (`dds_pump.rs`), Verbindungsschleife mit GOAWAY (`connection.rs`), `apply_reload` (`auth.rs:136`).
 - `src/daemon_runtime.rs` — Admin-Endpunkte, Signal-Watcher, `build_grpc_tls_config` (ALPN `h2`).
-- Bibliothek: `frame.rs`, `path.rs`, `timeout.rs`, `status.rs`, `metadata.rs`, `server.rs`, `reflection.rs`, `service_gen.rs`, `qos_translation.rs`, `bridge_security.rs`.
+- Bibliothek: `frame.rs`, `path.rs`, `timeout.rs`, `status.rs`, `metadata.rs`, `server.rs`, `reflection.rs`, `service_gen.rs`, `descriptor.rs`, `bridge_security.rs`.
 
 **Features:** `default = ["std", "ring-backend"]`, `std`, `alloc`, `ring-backend`/`aws-lc`, `dds-runtime` (leerer Alias für `std`; die DDS-Seite gehört zu `std`).
 
@@ -214,8 +216,10 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 **Shutdown.** Jede Verbindung prüft das Stop-Flag im Takt `CONN_POLL`; ein laufender Aufruf endet zuerst, dann GOAWAY mit der letzten Stream-ID (RFC 7540 §6.8). Leerlaufende Verbindungen erhalten ebenfalls GOAWAY.
 
 **Interop-Tests:**
-- `cross_vendor.rs` — `grpcurl` (Job `integration-bridges-vendor`); fehlendes `grpcurl` lässt den Test fehlschlagen.
-- Ohne Fremdpeer: `daemon_security_e2e.rs` (Binary mit Konfigdatei, HTTP/2 über TCP/TLS), `security_e2e.rs`, `dds_bridge_e2e.rs`, `bridge_e2e.rs`, `fuzz_smoke.rs`.
+- `cross_vendor.rs` — `grpcurl`, `curl`, die Clients von grpc-go, grpc-java und tonic aus dem ausgelieferten `.proto` (gebaut von `tests/interop/build_peers.sh`), `ghz`, BloomRPC, der OpenTelemetry Collector und ein Cyclone-DDS-Teilnehmer (Job `integration-bridges-vendor-grpc`); ein fehlendes Programm lässt den Test fehlschlagen.
+- `bridge_e2e.rs` — die drei Tests mit `grpcurl` (§12.2) laufen im selben Job.
+- `compose_e2e.rs` — tonic-Client, Cyclone-DDS-Teilnehmer und Bridge in Docker Compose (`tests/compose/docker-compose.yml`); ein manueller Test auf dem Linux-Testhost (`ci/manual-tests.tsv`), weil kein CI-Runner Container startet.
+- Ohne Fremdpeer: `daemon_security_e2e.rs` (Binary mit Konfigdatei, HTTP/2 über TCP/TLS), `security_e2e.rs`, `dds_bridge_e2e.rs`, `bridge_e2e.rs` (die beiden HTTP/2-Tests), `fuzz_smoke.rs`.
 
 ### zerodds-http2
 
@@ -235,27 +239,29 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 
 **Zweck.** Bidirektionale Brücke CORBA-Objekt ↔ DDS-Topic: IIOP-Server (und SSLIOP) auf der einen, DDS-Participant auf der anderen Seite.
 
-**Abbildung** (Modulkopf `src/bridge_daemon.rs`, verifiziert): Mapping über `repo_id` + `operation`.
+**Abbildung** (Modulkopf `src/bridge_daemon/mod.rs`, verifiziert): Mapping über `repo_id` + `operation`.
 - `corba_to_dds`: GIOP-Request → Sample auf `request_topic`; das Sample auf `reply_topic` mit gleicher `request_id` wird zur GIOP-Reply. Ohne Antwort in `timeout_ms` → `CORBA::TIMEOUT`.
-- `dds_to_corba`: Sample auf `notify_topic` → oneway-GIOP-Request an jedes Ziel (`targets`, `target_object_keys`).
+- `dds_to_corba`: Sample auf `notify_topic` → oneway-GIOP-Request an jedes Ziel (`targets`; `target_object_keys` wird abgelehnt).
 - Die Samples tragen die GIOP-Bytes unverändert (XCDR1, Layout `<Operation>Request`/`<Operation>Reply` als `@final struct`). Eine gemappte Operation über GIOP 1.0/1.1 wird mit `CORBA::NO_IMPLEMENT` beantwortet.
-- IORs werden in `corba.ior.ior_file` geschrieben.
+- Mit `idl_file` erzeugt der Daemon die Typen einer Operation aus der IDL des Interfaces und schreibt sie nach `corba.idl_dir`; eine Benutzerausnahme ist dann eine Variante des Reply-Typs (`exception_kind`).
+- IORs werden in `corba.ior.ior_file` geschrieben, die eines Mandanten als `@<mandant> …`.
+- Mandanten (`tenants`): je ein eigener DDS-Teilnehmer; eine SSLIOP-Sitzung ist an den Mandanten gebunden, dessen `subjects` ihr Client-Zertifikat nennt.
 
 **Einstiegspunkte.**
 - `src/bin/zerodds-corba-bridged.rs` — `CONFIG_STEM = "corba-bridged"`, Signal-Watcher, `run_with_reload`.
-- `src/bridge_daemon.rs` — `KEYS` (`:275`), `is_key`, `from_config` (`:373`), Reload (`:1654`), `drain` (`:2975`).
+- `src/bridge_daemon/` — `config.rs` (`KEYS`, `is_key`, `from_config`), `server.rs` (Listener, `on_request`, `apply_reload`), `correlator.rs` (`on_reply`, Timeout, Deadline, Replay, `drain`), `pump.rs`, `notify.rs`, `ior.rs`, `object_key.rs`, `framing.rs`, `log.rs`, `trace.rs`, `metrics.rs`, `typegen.rs` (`generate`, `files`, `user_exception_body`: die Typen eines Mappings aus `idl_file`).
 - `src/daemon_runtime.rs`, `src/bridge_security.rs` (`build_corba_tls_config`, SSLIOP ohne ALPN), `src/csiv2_wire.rs`.
 
 **Features:** `default = ["std", "ring-backend"]`, `std`, `alloc`, `ring-backend`/`aws-lc`.
 
-**Konfiguration** (`KEYS`): `domain`, `log_level`; `corba.orb_id`, `corba.iiop.{bind,giop_version,fragment_size,max_message_size}` (Default-Bind `0.0.0.0:6833`, `giop_version` `1.0|1.1|1.2`), `corba.ssliop.{enabled,bind,cert_file,key_file,ca_file,require_client_cert}` (Default-Bind `0.0.0.0:6834`), `corba.ior.{naming_service,publish_to_naming,ior_file}`, `corba.csiv2.enabled`; `acl.{default_deny,rules}` (Regel: `subject`, `allow_invoke`); `metrics.{enabled,listen,path}`; `mappings[]` mit `repo_id`, `operation`, `direction`, `request_topic`, `reply_topic`, `notify_topic`, `correlation_id`, `timeout_ms`, `qos`, `targets`, `target_object_keys`.
-`corba.ior.publish_to_naming` (Default `false`) bindet beim Start den Servant jedes empfangenden Mappings in `corba.ior.naming_service` und braucht diesen Wert (`bridge_daemon.rs:476`, `:523`, `:2793`). `corba.csiv2.enabled` (Default `false`) trägt `TAG_CSI_SEC_MECH_LIST` in die IOR ein und braucht `corba.csiv2.gssup.password_file` (`:541`, `:569`, `:951`).
+**Konfiguration** (`KEYS`): `domain`, `log_level`; `corba.orb_id`, `corba.iiop.{bind,advertise_host,giop_version,fragment_size,max_message_size}` (Default-Bind `0.0.0.0:6833`, `giop_version` `1.0|1.1|1.2`), `corba.ssliop.{enabled,bind,cert_file,key_file,ca_file,require_client_cert,required}` (Default-Bind `0.0.0.0:6834`), `corba.ior.{naming_service,publish_to_naming,ior_file,naming_retry_ms,naming_ssliop.*,initial_references}`, `corba.naming.{serve,persist_file}`, `corba.csiv2.{enabled,target_supports,gssup.password_file,gssup.target_name}`; `acl.{default_deny,rules}` (Regel: `subject`, `allow_invoke`); `metrics.{enabled,listen,path}`; `mappings[]` mit `repo_id`, `operation`, `direction`, `request_topic`, `reply_topic`, `notify_topic`, `correlation_id`, `timeout_ms`, `qos` (`reliability`, `durability`, `history`, `lifespan_ms`, `deadline_ms`, `liveliness_lease_ms`, `partition`), `targets`; `tenants[]` mit `name`, `domain`, `subjects`, `mappings`.
+`corba.ior.publish_to_naming` (Default `false`) bindet beim Start den Servant jedes empfangenden Mappings in `corba.ior.naming_service` und braucht diesen Wert (`config.rs::from_config`, `mod.rs::run_with_reload`). `corba.csiv2.enabled` (Default `false`) trägt `TAG_CSI_SEC_MECH_LIST` in die IOR ein, verlangt GSSUP oder ein Client-Zertifikat und braucht `corba.csiv2.gssup.password_file` (`ior.rs::csiv2_mech_list`, `server.rs::on_request`).
 
 **Sicherheit.** SSLIOP (TLS) mit optionalem Client-Zertifikat; das Subjekt des Client-Zertifikats ist die Identität für die ACL (`allow_invoke`).
 
-**SIGHUP.** ACL und SSLIOP-Material werden ersetzt. Neustart nötig bei `mappings`, Binds, `corba.ssliop.enabled`, `domain` (`bridge_daemon.rs:1679-1688`).
+**SIGHUP.** ACL und SSLIOP-Material werden für jeden Teilnehmer ersetzt. Neustart nötig bei `mappings`, Binds, `corba.ssliop.enabled`, `domain`, `tenants` (`server.rs::apply_reload`).
 
-**Shutdown** (§9.2, `bridge_daemon.rs:2975`): neue Requests erhalten `TRANSIENT`; offene erhalten ihre Reply oder `TIMEOUT`, höchstens `DRAIN_LIMIT = 30 s`; Rest `TRANSIENT` (completion MAYBE); danach `CloseConnection` an jede Verbindung.
+**Shutdown** (§9.2, `correlator.rs::drain`): die Namen werden zuerst ausgetragen; neue Requests erhalten `TRANSIENT`; offene erhalten ihre Reply oder `TIMEOUT`, höchstens `DRAIN_LIMIT = 30 s`; Rest `TRANSIENT` (completion MAYBE); danach `CloseConnection` an jede Verbindung.
 
 **Interop-Tests** (Fremdpeers omniORB 4.3, JacORB 3.9, TAO):
 - `omniorb_e2e.rs` — omniORB-Programme aus `crates/corba-dds-bridge/tests/omniorb` (omniidl + g++) gegen den Daemon; `cross_vendor.rs` — `catior` liest die IOR des Daemons (beide im Job `integration-bridges-vendor-corba`).
@@ -371,7 +377,7 @@ Tests mit Fremd-ORB: `omniorb_cross_orb.rs`, `tao_cross_orb.rs`, `jacorb_cross_o
 
 ### zerodds-corba-ccm
 CCM 4.0 (`formal/2006-04-01`) §6 und §13: Component Container, CIF, CIDL-Modell, Home, Ports, Lifecycle, Lightweight CCM, PSS, TimerEventService, Dynamic API.
-Einstiegspunkte: `src/container.rs`, `src/cif.rs`, `src/cidl.rs`, `src/component_def.rs`, `src/home.rs`, `src/port.rs`, `src/lifecycle.rs`, `src/lwccm.rs`, `src/pss.rs`, `src/timer.rs`, `src/time_psm.rs`, `src/orb_core.rs`, `src/orb_extensions.rs`, `src/cos_event_bridge.rs`.
+Einstiegspunkte: `src/container.rs`, `src/cif.rs`, `src/cidl.rs`, `src/component_def.rs`, `src/home.rs`, `src/port.rs`, `src/lifecycle.rs`, `src/lwccm.rs`, `src/pss.rs`, `src/timer.rs`, `src/orb_core.rs`, `src/orb_extensions.rs`, `src/cos_event_bridge.rs`.
 Features: `std` zieht zusätzlich `flate2`; `cos-event` (bindet `zerodds-corba-cos-event` ein).
 Tests: `crates/corba-ccm/tests/pi_service_contexts.rs`.
 Abdeckung: `docs/spec-coverage/omg-ccm-4.0.md`.
@@ -396,6 +402,12 @@ AMI4CCM 1.1 (`formal/2015-08-03`): Implied-IDL-Transformation (§7.3, §7.5), Re
 Einstiegspunkte: `src/transform.rs`, `src/pragma.rs`, `src/exception_holder.rs`, `src/connector.rs`, `src/deployment.rs`, `src/multiplex.rs`, `src/scope_resolver.rs`.
 Tests: `crates/ami4ccm/tests/implied_idl.rs`.
 Abdeckung: `docs/spec-coverage/omg-ami4ccm-1.1.md`.
+
+### zerodds-dds4ccm
+DDS4CCM 1.1 (`formal/2012-02-01`) §7.2.2 bis §8 und Annex A, B, E: die Connector-Fragmente der DDS-DCPS-Ports über den DCPS-Entities. Interfaces der Basic Ports (`Writer`, `Updater`, `Reader`, `Getter`, `Listener`, `StateListener`, Listener-Controls, `ContentFilterSetting`, Status-Listener), die Port-Typen `DDS_Write`, `DDS_Update`, `DDS_Read`, `DDS_Get`, `DDS_Listen`, `DDS_StateListen`, die Connectoren `DDS_Base`, `DDS_TopicBase`, `DDS_State`, `DDS_Event`, die Zuteilung der DCPS-Entities an Port, Komponente und Container mit ihren QoS-Profilen und die Threading-Policy. Die DDS-DLRL-Ports und -Connectoren (`CacheOperation`, Home-Receptacles, `DlrlConnector`) über den DLRL-Entities von `zerodds-dlrl`; die IDL von Annex A (`idl/ccm_dds.idl`) und Annex B (`idl/ccm_dds_dlrl.idl`, über `dds_dlrl.idl` von `crates/dlrl/idl`); die QoS-Profile der beiden Patterns (Annex E).
+Einstiegspunkte: `src/ccm_dds.rs`, `src/ccm_dds_typed.rs`, `src/ports.rs`, `src/connector.rs`, `src/entities.rs`, `src/threading.rs`, `src/writer.rs`, `src/reader.rs`, `src/listener.rs`, `src/status.rs`, `src/instance_status.rs`, `src/dlrl.rs`, `src/profiles.rs`.
+Tests: `crates/dds4ccm/tests/publishing_ports.rs`, `crates/dds4ccm/tests/subscribing_ports.rs`, `crates/dds4ccm/tests/extended_ports.rs`, `crates/dds4ccm/tests/connectors.rs`, `crates/dds4ccm/tests/entities.rs`, `crates/dds4ccm/tests/threading.rs`, `crates/dds4ccm/tests/conformance.rs`, `crates/dds4ccm/tests/dlrl_ports.rs`, `crates/dds4ccm/tests/annex_idl.rs`, `crates/dds4ccm/tests/pattern_profiles.rs`; `crates/dds4ccm/tests/omniidl.rs` (omniidl auf der IDL von Annex B) im Job `integration-bridges-vendor-corba`.
+Abdeckung: `docs/spec-coverage/dds4ccm-1.1.md`.
 
 ---
 

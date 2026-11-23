@@ -57,7 +57,7 @@ The workspace comprises the following crates. Each row marks the safety classifi
 |---|---|---|---|
 | `zerodds-transport` | Safe | Yes | Transport trait (`Transport`, `Listener`, `Locator`), abstract send/receive |
 | `zerodds-transport-udp` | Safe | Optional | UDP/IP PSM, raw socket, multicast |
-| `zerodds-transport-tcp` | Standard | No | DDSI TCP/IP PSM, connection pool |
+| `zerodds-transport-tcp` | Standard | No | ZeroDDS TCP Transport 1.0 (framing, handshake), connection pool |
 | `zerodds-transport-shm` | Safe | Optional | Shared-memory segment management, zero-copy path |
 
 ### 3.3 Protocol layer

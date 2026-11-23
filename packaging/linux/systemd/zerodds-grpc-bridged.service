@@ -12,7 +12,9 @@ ExecStart=/usr/bin/zerodds-grpc-bridged --config /etc/zerodds/grpc-bridged.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
 KillSignal=SIGTERM
-TimeoutStopSec=30
+# Above grpc.drain_secs (default 30): the drain of zerodds-grpc-bridge-1.0
+# §9.2 and the wait for the DDS acknowledgements share it.
+TimeoutStopSec=40
 Restart=on-failure
 RestartSec=5
 User=zerodds

@@ -111,7 +111,7 @@ impl ClientJob {
     /// # Errors
     /// [`UaClientError`] — see its variants.
     pub fn connect(
-        dds_bridge: &mut DdsBridge,
+        dds_bridge: &DdsBridge,
         endpoint_url: &str,
         targets: Vec<NodeTarget>,
     ) -> Result<Self, UaClientError> {
@@ -126,24 +126,47 @@ impl ClientJob {
             .create_subscription(&mut transport)
             .map_err(|e| UaClientError::Service(e.to_string()))?;
 
+        let mut job = Self {
+            endpoint_url: endpoint_url.to_string(),
+            client,
+            transport,
+            subscription_id,
+            targets: Vec::new(),
+        };
+        job.add_targets(dds_bridge, targets)?;
+        Ok(job)
+    }
+
+    /// Monitors `targets` on the connected server as well: one
+    /// MonitoredItem each in the job's subscription (Part 4 §5.12.2), its
+    /// ClientHandle the target's position, and a DDS writer each. A node
+    /// whose topic's type arrived after the job connected (spec §5.1) is
+    /// added this way.
+    ///
+    /// # Errors
+    /// [`UaClientError`] on a service, convert or DDS failure.
+    pub fn add_targets(
+        &mut self,
+        dds_bridge: &DdsBridge,
+        targets: Vec<NodeTarget>,
+    ) -> Result<(), UaClientError> {
+        let first = self.targets.len();
         let items: Vec<(NodeId, u32)> = targets
             .iter()
             .enumerate()
             .map(|(index, target)| {
                 (
                     target.node_id.clone(),
-                    u32::try_from(index).unwrap_or(u32::MAX),
+                    u32::try_from(first + index).unwrap_or(u32::MAX),
                 )
             })
             .collect();
-        client
-            .create_monitored_items(&mut transport, subscription_id, &items)
+        self.client
+            .create_monitored_items(&mut self.transport, self.subscription_id, &items)
             .map_err(|e| UaClientError::Service(e.to_string()))?;
-
-        let mut bound = Vec::with_capacity(targets.len());
         for target in targets {
             dds_bridge
-                .writer(
+                .add_writer(
                     &target.dds_topic,
                     &target.dds_type,
                     target.keyed,
@@ -154,7 +177,7 @@ impl ClientJob {
             let last = dynamic_value::default_data(&target.dyn_type).map_err(|e| {
                 UaClientError::Convert(dynamic_value::ConvertError::ShapeMismatch(e.to_string()))
             })?;
-            bound.push(BoundTarget {
+            self.targets.push(BoundTarget {
                 dds_topic: target.dds_topic,
                 dyn_type: target.dyn_type,
                 type_support: target.type_support,
@@ -162,14 +185,7 @@ impl ClientJob {
                 last,
             });
         }
-
-        Ok(Self {
-            endpoint_url: endpoint_url.to_string(),
-            client,
-            transport,
-            subscription_id,
-            targets: bound,
-        })
+        Ok(())
     }
 
     /// The remote endpoint URL this job is connected to.
@@ -298,9 +314,8 @@ mod tests {
             keyed: false,
             field_path: "v".to_string(),
         };
-        let mut job =
-            ClientJob::connect(&mut bridge, &std::format!("opc.tcp://{addr}"), vec![target])
-                .expect("connect");
+        let mut job = ClientJob::connect(&bridge, &std::format!("opc.tcp://{addr}"), vec![target])
+            .expect("connect");
         let written = job.tick(&bridge).expect("tick");
         assert_eq!(written, 1);
 

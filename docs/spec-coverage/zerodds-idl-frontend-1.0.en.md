@@ -206,7 +206,7 @@ The form is read where the declaration carrying it has just been parsed: after t
 
 **Spec:** Stable, greppable codes; no diagnostic without a specification reference; a rule with no paragraph is ZeroDDS policy and says so.
 
-**Repo:** `idl-parse/src/diagnostic.rs` (`IDL0001`–`IDL0023`, `Diagnostic::file`), `idl-parse/src/preprocess/mod.rs` (`SourceMap::original`, `Preprocessed::locate`), `idl-lower/src/validate.rs` (`rule_name`), `idl-lower/src/lower.rs` (`dedup`). A range points into the file it stands in, not into the expanded text.
+**Repo:** `idl-parse/src/diagnostic.rs` (`IDL0001`–`IDL0024`, `Diagnostic::file`), `idl-parse/src/preprocess/mod.rs` (`SourceMap::original`, `Preprocessed::locate`), `idl-lower/src/validate.rs` (`rule_name`), `idl-lower/src/lower.rs` (`dedup`). A range points into the file it stands in, not into the expanded text.
 
 **Tests:** `every_diagnostic_carries_a_code_and_a_specification_reference`, `every_diagnostic_names_a_specification_paragraph`, `every_diagnostic_points_at_a_byte_range`, `every_diagnostic_code_has_its_own_string`, `a_preprocessor_diagnostic_comes_before_the_parsers`, `tools/idlc/tests/diagnostic_positions.rs::idlfrontend_7_comments_above_an_error_do_not_move_it`, `tools/idlc/tests/diagnostic_positions.rs::idlfrontend_7_an_error_in_an_include_names_the_include`.
 

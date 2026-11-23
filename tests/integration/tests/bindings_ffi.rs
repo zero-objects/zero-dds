@@ -391,7 +391,10 @@ metrics:
     let mut command = daemon_command("ZERODDS_WS_BRIDGED");
     command.arg("--config").arg(&config);
     let mut daemon = Peer::spawn("ws-bridged", command);
-    daemon.wait_for("the line `bound on`", STEP, |l| l.text.contains("bound on"));
+    // The daemon logs one JSON line per event (zerodds-ws-bridge-1.0 §8.1).
+    daemon.wait_for("the event `bound`", STEP, |l| {
+        l.text.contains(r#""event":"bound""#)
+    });
     (daemon, format!("ws://127.0.0.1:{port}"), admin)
 }
 

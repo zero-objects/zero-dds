@@ -8,14 +8,15 @@ use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
 
-use zerodds_corba_ccm::orb_extensions::{
-    ClientInterceptionPoint, InterceptorRegistry, ServerInterceptionPoint,
-};
 use zerodds_corba_giop::{Message, Version};
 use zerodds_wire::Endianness;
 
 use crate::error::IiopError;
-use crate::framing::{read_giop_message_full, write_giop_message, write_giop_message_fragmented};
+use crate::framing::{
+    read_giop_message_ziop, write_giop_message, write_giop_message_fragmented,
+    write_giop_message_ziop,
+};
+use zerodds_corba_giop::ziop::{ZiopCodec, ZiopSend};
 
 /// Read+Write+Send stream for the TLS transport (rustls `StreamOwned` over a
 /// client or server connection). Unlike TCP, a TLS stream cannot be split into
@@ -118,11 +119,9 @@ pub struct Connection {
     transport: Transport,
     peer: SocketAddr,
     local: SocketAddr,
-    /// Spec §16 Portable Interceptors — when set,
-    /// `write_message`/`read_message` walk the pipeline at the
-    /// matching points (`SendRequest`/`ReceiveReply` client-side,
-    /// or `ReceiveRequest`/`SendReply` server-side).
-    interceptors: Option<Arc<InterceptorRegistry>>,
+    /// The compressors ZIOP messages are read with (CORBA 3.3 Part 2
+    /// §12); `None` refuses them.
+    ziop: Option<Arc<dyn ZiopCodec>>,
 }
 
 impl Connection {
@@ -146,7 +145,7 @@ impl Connection {
             },
             peer,
             local,
-            interceptors: None,
+            ziop: None,
         })
     }
 
@@ -165,7 +164,7 @@ impl Connection {
             transport: Transport::Tls { stream, sock },
             peer,
             local,
-            interceptors: None,
+            ziop: None,
         })
     }
 
@@ -189,38 +188,8 @@ impl Connection {
             },
             peer: placeholder,
             local: placeholder,
-            interceptors: None,
+            ziop: None,
         })
-    }
-
-    /// Spec §16.4.x — installs an [`InterceptorRegistry`] for
-    /// this connection. Subsequent `write_message`/`read_message`
-    /// walk the pipeline at the matching points.
-    #[must_use]
-    pub fn with_interceptors(mut self, registry: Arc<InterceptorRegistry>) -> Self {
-        self.interceptors = Some(registry);
-        self
-    }
-
-    /// Returns the active interceptor registry, if one is installed.
-    #[must_use]
-    pub fn interceptors(&self) -> Option<&Arc<InterceptorRegistry>> {
-        self.interceptors.as_ref()
-    }
-
-    /// Spec §16.4.2 — walks the client pipeline at point `point` with
-    /// operation name `op`. No-op if no registry is installed.
-    pub fn run_client_pipeline(&self, point: ClientInterceptionPoint, op: &str) {
-        if let Some(r) = &self.interceptors {
-            r.walk_client(point, op);
-        }
-    }
-
-    /// Spec §16.4.3 — walks the server pipeline.
-    pub fn run_server_pipeline(&self, point: ServerInterceptionPoint, op: &str) {
-        if let Some(r) = &self.interceptors {
-            r.walk_server(point, op);
-        }
     }
 
     /// Sets the read timeout.
@@ -267,10 +236,10 @@ impl Connection {
 
     /// Reads a GIOP message from the stream.
     ///
-    /// Walks the server pipeline at `ReceiveRequest` (for incoming
-    /// `Request` messages) or the client pipeline at `ReceiveReply`
-    /// (for incoming `Reply` messages) when an `InterceptorRegistry`
-    /// is installed (Spec §16.4.2/§16.4.3).
+    /// The connection frames messages only. The portable interceptors
+    /// of CORBA 3.3 Part 1 §16 run in the request path of the ORB
+    /// (`zerodds-corba-interop`), where the request, its reply and the
+    /// dispatch outcome are known.
     ///
     /// # Errors
     /// `IiopError::Closed` on clean EOF; otherwise `Io`/`Giop`.
@@ -297,31 +266,52 @@ impl Connection {
     /// # Errors
     /// `IiopError::Closed` on clean EOF; otherwise `Io`/`Giop`.
     pub fn read_message_full(&mut self) -> Result<(Message, Endianness, Version), IiopError> {
-        let (msg, endianness, version) = read_giop_message_full(self.transport.reader())?;
-        if let Some(r) = &self.interceptors {
-            match &msg {
-                Message::Request(req) => {
-                    r.walk_server(ServerInterceptionPoint::ReceiveRequest, &req.operation);
-                }
-                Message::Reply(_) => {
-                    // The op name is not present in the reply; we use
-                    // the spec-conformant empty marker. A caller with
-                    // op tracking can call `run_client_pipeline`
-                    // directly with the op name.
-                    r.walk_client(ClientInterceptionPoint::ReceiveReply, "");
-                }
-                _ => {}
-            }
-        }
-        Ok((msg, endianness, version))
+        let ziop = self.ziop.clone();
+        read_giop_message_ziop(self.transport.reader(), ziop.as_deref())
+    }
+
+    /// The compressors this connection reads ZIOP messages with (CORBA 3.3
+    /// Part 2 §12.1); `None` (the default) refuses a ZIOP message with
+    /// `InvalidMagic("ZIOP")`. Set it when this side declared ZIOP to the
+    /// peer, so that the peer may send it ZIOP messages (§12.2).
+    pub fn set_ziop_codec(&mut self, codec: Option<Arc<dyn ZiopCodec>>) {
+        self.ziop = codec;
+    }
+
+    /// `true` when ZIOP messages are read on this connection.
+    #[must_use]
+    pub fn reads_ziop(&self) -> bool {
+        self.ziop.is_some()
+    }
+
+    /// Writes `msg` as ZIOP messages where `send` allows it, fragmented
+    /// when `max_fragment_payload` is given (CORBA 3.3 Part 2 §12.1,
+    /// [`write_giop_message_ziop`]). Returns how many messages went out as
+    /// ZIOP messages.
+    ///
+    /// # Errors
+    /// I/O or GIOP error; `Giop(Malformed)` when the compressor fails.
+    pub fn write_message_ziop(
+        &mut self,
+        version: Version,
+        endianness: Endianness,
+        msg: &Message,
+        max_fragment_payload: Option<usize>,
+        send: &ZiopSend,
+        codec: &dyn ZiopCodec,
+    ) -> Result<usize, IiopError> {
+        write_giop_message_ziop(
+            self.transport.writer(),
+            version,
+            endianness,
+            msg,
+            max_fragment_payload,
+            send,
+            codec,
+        )
     }
 
     /// Writes a GIOP message to the stream.
-    ///
-    /// Walks the client pipeline at `SendRequest` (for outgoing
-    /// `Request` messages) or the server pipeline at `SendReply`
-    /// (for outgoing `Reply` messages) when an `InterceptorRegistry`
-    /// is installed (Spec §16.4.2/§16.4.3).
     ///
     /// # Errors
     /// I/O or GIOP error.
@@ -332,17 +322,6 @@ impl Connection {
         more_fragments: bool,
         msg: &Message,
     ) -> Result<(), IiopError> {
-        if let Some(r) = &self.interceptors {
-            match msg {
-                Message::Request(req) => {
-                    r.walk_client(ClientInterceptionPoint::SendRequest, &req.operation);
-                }
-                Message::Reply(_) => {
-                    r.walk_server(ServerInterceptionPoint::SendReply, "");
-                }
-                _ => {}
-            }
-        }
         write_giop_message(
             self.transport.writer(),
             version,
@@ -366,17 +345,6 @@ impl Connection {
         msg: &Message,
         max_fragment_payload: usize,
     ) -> Result<(), IiopError> {
-        if let Some(r) = &self.interceptors {
-            match msg {
-                Message::Request(req) => {
-                    r.walk_client(ClientInterceptionPoint::SendRequest, &req.operation);
-                }
-                Message::Reply(_) => {
-                    r.walk_server(ServerInterceptionPoint::SendReply, "");
-                }
-                _ => {}
-            }
-        }
         write_giop_message_fragmented(
             self.transport.writer(),
             version,
@@ -466,130 +434,6 @@ mod tests {
         // Server reads -> Closed.
         let err = server.read_message().unwrap_err();
         assert!(matches!(err, IiopError::Closed));
-    }
-
-    // §16 Portable Interceptors wire-up
-
-    use std::sync::Mutex;
-    use zerodds_corba_ccm::orb_extensions::{
-        ClientRequestInterceptor, IorInterceptor, ServerRequestInterceptor,
-    };
-
-    struct RecordingClient {
-        events: Arc<Mutex<Vec<(ClientInterceptionPoint, String)>>>,
-    }
-    impl ClientRequestInterceptor for RecordingClient {
-        fn name(&self) -> &str {
-            "recording-client"
-        }
-        fn intercept(&self, point: ClientInterceptionPoint, op: &str) {
-            if let Ok(mut g) = self.events.lock() {
-                g.push((point, op.to_string()));
-            }
-        }
-    }
-
-    struct RecordingServer {
-        events: Arc<Mutex<Vec<(ServerInterceptionPoint, String)>>>,
-    }
-    impl ServerRequestInterceptor for RecordingServer {
-        fn name(&self) -> &str {
-            "recording-server"
-        }
-        fn intercept(&self, point: ServerInterceptionPoint, op: &str) {
-            if let Ok(mut g) = self.events.lock() {
-                g.push((point, op.to_string()));
-            }
-        }
-    }
-
-    struct ComponentTagIor;
-    impl IorInterceptor for ComponentTagIor {
-        fn name(&self) -> &str {
-            "tagger"
-        }
-        fn establish_components(&self) -> Vec<u32> {
-            // Spec §13.6 — TAG_ORB_TYPE as a marker tag.
-            alloc::vec![0x4F4D_4730]
-        }
-    }
-
-    #[test]
-    fn pipeline_walks_client_send_request() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let mut registry = InterceptorRegistry::new();
-        registry.add_client(Arc::new(RecordingClient {
-            events: events.clone(),
-        }) as Arc<dyn ClientRequestInterceptor>);
-        let registry = Arc::new(registry);
-
-        let (client, server) = make_test_pair();
-        let mut client = client.with_interceptors(registry.clone());
-        let mut server = server;
-        client.set_nodelay(true).unwrap();
-        server.set_nodelay(true).unwrap();
-
-        let request = Message::Request(zerodds_corba_giop::Request {
-            request_id: 7,
-            response_flags: zerodds_corba_giop::ResponseFlags::SYNC_WITH_TARGET,
-            target: TargetAddress::Key(alloc::vec![0xab]),
-            operation: "do_work".into(),
-            requesting_principal: None,
-            service_context: ServiceContextList::default(),
-            body: alloc::vec![],
-        });
-        client
-            .write_message(Version::V1_2, Endianness::Big, false, &request)
-            .unwrap();
-        let _ = server.read_message().unwrap();
-
-        let g = events.lock().unwrap();
-        assert_eq!(g.len(), 1);
-        assert_eq!(g[0].0, ClientInterceptionPoint::SendRequest);
-        assert_eq!(g[0].1, "do_work");
-    }
-
-    #[test]
-    fn pipeline_walks_server_receive_request() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let mut registry = InterceptorRegistry::new();
-        registry.add_server(Arc::new(RecordingServer {
-            events: events.clone(),
-        }) as Arc<dyn ServerRequestInterceptor>);
-        let registry = Arc::new(registry);
-
-        let (client, server) = make_test_pair();
-        let mut server = server.with_interceptors(registry.clone());
-        let mut client = client;
-        client.set_nodelay(true).unwrap();
-        server.set_nodelay(true).unwrap();
-
-        let request = Message::Request(zerodds_corba_giop::Request {
-            request_id: 9,
-            response_flags: zerodds_corba_giop::ResponseFlags::SYNC_WITH_TARGET,
-            target: TargetAddress::Key(alloc::vec![0xcd]),
-            operation: "echo".into(),
-            requesting_principal: None,
-            service_context: ServiceContextList::default(),
-            body: alloc::vec![1, 2, 3],
-        });
-        client
-            .write_message(Version::V1_2, Endianness::Big, false, &request)
-            .unwrap();
-        let _ = server.read_message().unwrap();
-
-        let g = events.lock().unwrap();
-        assert_eq!(g.len(), 1);
-        assert_eq!(g[0].0, ServerInterceptionPoint::ReceiveRequest);
-        assert_eq!(g[0].1, "echo");
-    }
-
-    #[test]
-    fn ior_interceptor_fires_on_walk_ior() {
-        let mut registry = InterceptorRegistry::new();
-        registry.add_ior(Arc::new(ComponentTagIor) as Arc<dyn IorInterceptor>);
-        let tags = registry.walk_ior();
-        assert_eq!(tags, alloc::vec![0x4F4D_4730]);
     }
 
     #[test]

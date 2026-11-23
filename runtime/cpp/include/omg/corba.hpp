@@ -57,6 +57,15 @@ namespace detail {
 #define OMG_TYPES_NIL_REFERENCE() ::CORBA::detail::nil_reference()
 #include <omg/types.hpp>
 
+// The _tc_ constant of a type declared in an interface or a value type is a
+// static data member the generated code defines after the class: an inline
+// variable from C++17 on, one object for every translation unit.
+#ifdef OMG_TYPES_CXX17
+#define OMG_CORBA_INLINE_VARIABLE inline
+#else
+#define OMG_CORBA_INLINE_VARIABLE
+#endif
+
 namespace CORBA {
 
 class Any;
@@ -407,8 +416,13 @@ public:
 
     // One member of a structure, union, exception or value type, as the
     // create_ functions take it; `label` only for a union, `visibility` only
-    // for a value type.
+    // for a value type. `{name, type}` is a member of a structure or an
+    // exception: no label, public.
     struct Member {
+        Member(std::string name_, ref type_, std::shared_ptr<Any> label_ = nullptr,
+               Visibility visibility_ = PUBLIC_MEMBER)
+            : name(std::move(name_)), type(std::move(type_)), label(std::move(label_)),
+              visibility(visibility_) {}
         std::string name;
         ref type;
         std::shared_ptr<Any> label;

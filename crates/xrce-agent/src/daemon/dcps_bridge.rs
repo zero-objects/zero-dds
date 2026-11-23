@@ -1724,6 +1724,120 @@ mod tests {
         ));
     }
 
+    /// DDS-XRCE 1.0 §10.3: the clients of one agent share the `DcpsRuntime`
+    /// of their domain, and each must see the agent behave as if it had its
+    /// own DDS entities. The writer of each client reaches the reader of the
+    /// other and its own (as two DomainParticipants would); deleting one
+    /// client's reader and then all its objects leaves the other client's
+    /// writer and reader on the shared runtime working, and nothing of the
+    /// gone client reaches them.
+    #[test]
+    fn xrce_10_3_deleting_one_clients_objects_leaves_the_other_clients_reader_and_writer_working() {
+        let lease = zerodds_test_domains::lease_domain();
+        let mut p = RealDdsPort::new(RuntimeConfig::default());
+        let (a, b) = (ck(0x31), ck(0x32));
+        let key = |c, raw, kind| (c, oid(raw, kind));
+        for c in [a, b] {
+            let participant = key(c, 1, ObjectKind::Participant);
+            p.create_participant(participant, lease.id())
+                .expect("participant");
+            p.create_topic(
+                key(c, 2, ObjectKind::Topic),
+                participant,
+                TopicSpec {
+                    topic_name: "XrceBrokeredByOneAgent".into(),
+                    type_name: "Opaque".into(),
+                    known_type: None,
+                },
+            )
+            .expect("topic");
+            p.create_publisher(
+                key(c, 3, ObjectKind::Publisher),
+                participant,
+                ContainerSpec::default(),
+            )
+            .expect("publisher");
+            p.create_subscriber(
+                key(c, 4, ObjectKind::Subscriber),
+                participant,
+                ContainerSpec::default(),
+            )
+            .expect("subscriber");
+            p.create_reader(
+                key(c, 6, ObjectKind::DataReader),
+                key(c, 2, ObjectKind::Topic),
+                key(c, 4, ObjectKind::Subscriber),
+                EndpointQos::reader_default(),
+            )
+            .expect("reader");
+            p.enable(key(c, 6, ObjectKind::DataReader))
+                .expect("enable reader");
+            p.create_writer(
+                key(c, 5, ObjectKind::DataWriter),
+                key(c, 2, ObjectKind::Topic),
+                key(c, 3, ObjectKind::Publisher),
+                EndpointQos::writer_default(),
+            )
+            .expect("writer");
+            p.enable(key(c, 5, ObjectKind::DataWriter))
+                .expect("enable writer");
+        }
+        assert_eq!(p.runtimes.len(), 1, "both clients share one runtime");
+        let writer = |c| key(c, 5, ObjectKind::DataWriter);
+        let reader = |c| key(c, 6, ObjectKind::DataReader);
+        // Writes `marker` on the writer of `from` and collects what the
+        // readers of `to` receive within 3 s.
+        let exchange = |p: &mut RealDdsPort, from, marker: u8, to: &[ObjectKey]| {
+            p.write(writer(from), &[marker, 0, 0, 0], false, false, false, None)
+                .expect("write");
+            let mut got: Vec<Vec<u8>> = vec![Vec::new(); to.len()];
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while std::time::Instant::now() < deadline && got.iter().any(Vec::is_empty) {
+                for (i, r) in to.iter().enumerate() {
+                    got[i].extend(p.poll_samples(*r, 16).into_iter().map(|s| s.bytes[0]));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            got
+        };
+        assert_eq!(
+            exchange(&mut p, a, 0xA1, &[reader(a), reader(b)]),
+            vec![vec![0xA1], vec![0xA1]],
+            "the writer of a reaches its own reader and the reader of b"
+        );
+        assert_eq!(
+            exchange(&mut p, b, 0xB1, &[reader(a), reader(b)]),
+            vec![vec![0xB1], vec![0xB1]],
+            "the writer of b reaches the reader of a and its own"
+        );
+        // The delete of a's reader takes only that reader away.
+        p.delete(reader(a));
+        assert_eq!(
+            exchange(&mut p, a, 0xA2, &[reader(b)]),
+            vec![vec![0xA2]],
+            "a's writer still reaches b after a's reader is gone"
+        );
+        assert!(p.poll_samples(reader(a), 16).is_empty());
+        // All of a's objects go; b's writer and reader keep working on the
+        // shared runtime.
+        p.unregister_client(a);
+        assert!(matches!(
+            p.write(writer(a), &[0xA3, 0, 0, 0], false, false, false, None),
+            Err(DdsPortError::UnknownReference(_))
+        ));
+        assert_eq!(p.runtimes.len(), 1, "the shared runtime stays");
+        assert_eq!(
+            exchange(&mut p, b, 0xB2, &[reader(b)]),
+            vec![vec![0xB2]],
+            "b's writer reaches b's reader after a is gone"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            p.poll_samples(reader(b), 16).is_empty(),
+            "nothing else reaches b's reader"
+        );
+    }
+
     /// A content filter decodes a sample in the representation it arrived
     /// in. `UserSample` tags XCDR2 as 1; passed to `read_body` unchanged
     /// (it takes 2) every XCDR2 sample failed to decode and the filter

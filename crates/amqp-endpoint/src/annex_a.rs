@@ -323,6 +323,13 @@ pub struct AmqpEndpointConfig {
     pub bridge_id: String,
     /// `uint8 bridge_hop_cap` (default 8).
     pub bridge_hop_cap: u8,
+    /// Not a member of the Annex A structure: the bounds of the listener's
+    /// nodes, the `<nodes>` element of the XML configuration.
+    pub nodes: crate::limits::NodeLimits,
+    /// Not a member of the Annex A structure: the bounds of the
+    /// transactions of the listener's coordinator (OASIS AMQP 1.0 Part 4),
+    /// the `<transactions>` element of the XML configuration.
+    pub transactions: crate::limits::TxnLimits,
 }
 
 /// Spec Annex A — `struct AmqpBridgeConfig`.

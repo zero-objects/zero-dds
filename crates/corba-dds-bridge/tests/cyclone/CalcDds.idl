@@ -1,0 +1,17 @@
+// The request and reply of zerodds_test::Calc::add (tests/omniorb/Calc.idl)
+// as DDS types by the layout of zerodds-corba-bridge-1.0 §4.3: the bridge's
+// request_id first, then the arguments as GIOP 1.2 encodes them; the reply
+// with request_id, reply_status, reserved, then the return value.
+module CalcDds {
+  @final struct AddRequest {
+    unsigned long long request_id;
+    long long a;
+    long long b;
+  };
+  @final struct AddReply {
+    unsigned long long request_id;
+    long reply_status;
+    unsigned long reserved;
+    long long result;
+  };
+};

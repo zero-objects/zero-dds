@@ -41,7 +41,7 @@
 //!   (`-bin`-Suffix → Base64).
 //! - [`request_headers`] / [`response_headers`] / [`content_types`]
 //!   — standard header sets for request/response/gRPC-Web/JSON.
-//! - [`GrpcServer`] / [`GrpcRequest`] / [`GrpcResponse`] — gRPC
+//! - [`GrpcServer`] / [`GrpcCall`] / [`CallEvent`] / [`GrpcResponse`] — gRPC
 //!   server skeleton for caller-configured HTTP/2 listeners.
 //!
 //! ## Example
@@ -66,14 +66,21 @@ extern crate alloc;
 // §7.2 Auth-Modes, §7.3 Topic-ACL). std-only.
 #[cfg(feature = "std")]
 pub mod bridge_security;
-// Daemon-Runtime-Adapter + QoS-Translation. std-only.
+// §4.4 message compression (gzip, deflate). std-only (flate2).
+#[cfg(feature = "std")]
+pub mod compression;
+// The daemon `zerodds-grpc-bridged` (bridge spec §2 to §9). std-only.
+#[cfg(feature = "std")]
+pub mod bridge_daemon;
+// Daemon-Runtime-Adapter. std-only.
 #[cfg(feature = "std")]
 pub mod daemon_runtime;
+// §4.6 FileDescriptorProto of the generated services.
+pub mod descriptor;
 pub mod frame;
+pub mod messages;
 pub mod metadata;
 pub mod path;
-#[cfg(feature = "std")]
-pub mod qos_translation;
 pub mod reflection;
 pub mod server;
 pub mod service_gen;
@@ -86,6 +93,6 @@ pub use metadata::{
     encode_header_value, is_binary_header, request_headers, response_headers,
 };
 pub use path::{PathError, parse_path};
-pub use server::{GrpcRequest, GrpcResponse, GrpcServer};
+pub use server::{CallEvent, GrpcCall, GrpcResponse, GrpcServer};
 pub use status::Status;
 pub use timeout::{TimeoutError, TimeoutUnit, decode_timeout, encode_timeout};

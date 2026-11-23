@@ -157,6 +157,7 @@ fn rtps_8_3_8_2_a_dispose_of_the_same_type_goes_out_with_its_key_holder() {
     let (tx, rx) = mpsc::channel();
     tx.send(UserSample::Lifecycle {
         key_hash,
+        key_hash_unavailable: false,
         kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
         key_holder: Some(key_holder.clone()),
         source_timestamp: None,
@@ -228,6 +229,7 @@ fn rtps_9_6_4_8_without_the_same_type_the_key_comes_from_the_key_hash() {
     let (tx, rx) = mpsc::channel();
     tx.send(UserSample::Lifecycle {
         key_hash,
+        key_hash_unavailable: false,
         kind: zerodds_rtps::history_cache::ChangeKind::NotAliveUnregistered,
         key_holder: Some(other_holder),
         source_timestamp: None,

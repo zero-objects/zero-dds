@@ -18,9 +18,20 @@ coap:
   bind: "0.0.0.0:5683"
   # bind_dtls: "0.0.0.0:5684"   # own coaps port; default: the bind port + 1
   max_message_size: 1152        # RFC 7252 default; raise for jumbo MTUs
+  max_body_size: 65536          # largest Block1 transfer; beyond it 4.13
   ack_timeout_ms: 2000
   max_retransmit: 4
-  observe_max_age_secs: 90
+  block_size: 1024              # Block2 blocks of a larger representation
+  observe_max_age_secs: 90      # longest an observer goes without an ACK
+  keep_alive_secs: 0            # ping to each observer; 0: none
+  multicast:
+    enabled: false              # requests to IP multicast groups (RFC 7252 §8)
+    # groups: ["224.0.1.187"]   # default: the all-CoAP-nodes groups
+    interface_v4: "0.0.0.0"     # the system chooses the interface
+    interface_v6: 0             # interface index; 0: the system chooses
+    leisure_ms: 5000            # RFC 7252 §8.2 DEFAULT_LEISURE
+    resources: [".well-known/core"]
+    unauthenticated_resources: [".well-known/core"]
   dtls:
     enabled: false              # coaps:// (Spec §7.1)
     # ca_file:   "/etc/zerodds/certs/coap-ca.pem"
@@ -31,6 +42,31 @@ coap:
     # psk:                      # pre-shared keys; identity and secret_hex are required
     #   - identity:   "device-001"
     #     secret_hex: "0102030405060708"
+    # rpk_key_file: "/etc/zerodds/certs/coap-rpk.pem"   # raw public key (RFC 7250)
+    # rpk_trusted:              # RFC 6920 names of the client keys accepted
+    #   - "nih:sha-256-120;5326-9057-e12f-e2b7-4ba0-7c89-2560-a2;f"
+
+# The daemon as a CoAP-to-CoAP proxy (RFC 7252 §5.7, Spec §4.7).
+proxy:
+  forward: false                # Proxy-Uri / Proxy-Scheme requests; else 5.05
+  # schemes: ["coap", "coaps"]
+  # names: ["bridge.example"]   # host names that name this daemon
+  timeout_ms: 10000             # then 5.04 Gateway Timeout
+  # reverse:                    # resources under path are those under origin
+  #   - path: "far"
+  #     origin: "coap://[2001:db8::7]/base"
+  cache_entries: 256
+  require_dtls_for_coaps: true
+  max_hops: 16                  # RFC 8768 initial Hop-Limit
+  multicast_wait_ms: 5000
+  # dtls:                       # coaps destinations: CA (+ client certificate) or PSK
+  #   ca_file:   "/etc/zerodds/certs/coap-origin-ca.pem"
+  #   cert_file: "/etc/zerodds/certs/coap-proxy.crt"
+  #   key_file:  "/etc/zerodds/certs/coap-proxy.key"
+  #   psk_identity: "proxy"
+  #   psk_secret_hex: "000102030405060708090a0b0c0d0e0f"
+  #   rpk_key_file: "/etc/zerodds/certs/coap-proxy-rpk.pem"
+  #   rpk_trusted: ["ni:///sha-256-120;UyaQV-Ev4rdLoHyJJWCi"]
 
 # End-to-end protection across CoAP proxies (RFC 8613, Spec §7.2).
 # With `enabled: true`, `master_secret_hex` is required, else the start stops.
@@ -65,6 +101,15 @@ acl:
 metrics:
   enabled: false
   listen: "127.0.0.1:9093"      # /metrics + /catalog + /healthz
+  path: "/metrics"
+
+# The Content-Format number of each form of a sample (Spec §4.5).
+content_format:
+  cdr2_le_id: 65000
+  cdr2_be_id: 65001
+  cdr1_le_id: 65002
+  json_id: 50
+  cbor_id: 60
 
 topics:
   # DDS topic <-> CoAP resource. zerodds-coap-bridge-1.0 §5.
@@ -72,8 +117,26 @@ topics:
     dds_type:      "demo::Iot::Shadow"
     coap_uri_path: "shadow/device"   # default: slug of dds_name
     direction:     "bidir"           # in | out | bidir
+    # idl_file: "/etc/zerodds/idl/shadow.idl"   # the type: JSON, CBOR, XCDR1, /schema
+    extensibility: "appendable"      # without idl_file: final | appendable | mutable
+    data_representation: "xcdr2"     # xcdr2 | xcdr1 (needs idl_file)
     qos:
       reliability: "reliable"
       durability: "volatile"
       history:
+        kind: "keep_last"            # keep_last | keep_all
         depth: 5
+      # lifespan_ms: 30000           # Max-Age of a sample
+      # deadline_ms: 5000            # 5.03 after this without a sample
+      # liveliness_lease_ms: 10000
+      # partition: ["site-a"]
+
+# Participants beside the one of `domain` (Spec §1 L6): a DTLS session whose
+# subject a tenant names is bound to it and sees its topics only.
+# tenants:
+#   - name: "plant-a"
+#     domain: 7
+#     subjects: ["psk:device-001"]
+#     topics:
+#       - dds_name: "Plant::Status"
+#         coap_uri_path: "plant/status"

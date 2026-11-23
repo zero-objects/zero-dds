@@ -751,7 +751,29 @@ impl Publisher {
                 eid,
                 backend,
             );
+            // DDSI-RTPS 2.5 §8.7.3: the writer applies the DDSSQL filters of
+            // its remote readers to the sample as its type reads it.
+            let filter_codec = topic.codec_arc();
+            let filter_evaluator: crate::runtime::WriterFilterEvaluator = Arc::new(
+                move |body: &[u8],
+                      representation: u8,
+                      big_endian: bool,
+                      expression: &zerodds_sql_filter::Expr,
+                      parameters: &[zerodds_sql_filter::Value]| {
+                    let sample = crate::subscriber::decode_for_encap::<T>(
+                        filter_codec.as_ref(),
+                        body,
+                        representation,
+                        big_endian,
+                    )
+                    .ok()?;
+                    expression
+                        .evaluate(&crate::dds_type::DdsTypeRow::new(&sample), parameters)
+                        .ok()
+                },
+            );
             let registration = WriterRegistration {
+                filter_evaluator: Some(filter_evaluator),
                 runtime: Arc::clone(rt),
                 eid,
                 topic_name: topic.name().into(),
@@ -3528,6 +3550,9 @@ impl<T: DdsType> crate::entity::Entity for DataWriter<T> {
 /// id and nothing announces or matches it.
 #[cfg(feature = "std")]
 struct WriterRegistration {
+    /// Evaluates a remote reader's content filter against a sample of the
+    /// writer's type (`DcpsRuntime::set_user_writer_filter_evaluator`).
+    filter_evaluator: Option<crate::runtime::WriterFilterEvaluator>,
     runtime: Arc<DcpsRuntime>,
     eid: EntityId,
     topic_name: String,
@@ -3642,6 +3667,7 @@ impl WriterRegistration {
         // later runtime override on this slot (the durability/routing replay
         // writers use their own unlocked slots).
         let _ = rt.lock_user_writer_representation(eid);
+        rt.set_user_writer_filter_evaluator(eid, self.filter_evaluator.clone())?;
         // Spec §2.2.3.17 HISTORY: wire the writer's KeepLast depth onto
         // the runtime writer slot, which caps per-instance retained
         // samples for TransientLocal late joiners in this runtime and in

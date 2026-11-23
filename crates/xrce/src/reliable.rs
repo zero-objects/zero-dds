@@ -30,8 +30,9 @@ use crate::header::StreamId;
 use crate::serial_number::SerialNumber16;
 use crate::submessages::{AckNackPayload, HeartbeatPayload};
 
-/// Default heartbeat period (spec recommendation 100 ms; conservatively
-/// 500 ms here, because we have no Tx pacing layer underneath).
+/// Default heartbeat period. DDS-XRCE 1.0 §8.3.5.12 dictates no timing of
+/// HEARTBEAT messages; 500 ms, because there is no Tx pacing layer
+/// underneath.
 pub const DEFAULT_HEARTBEAT_PERIOD: Duration = Duration::from_millis(500);
 
 /// Sender window cap: 16 samples in-flight (matches the 16-bit
@@ -270,14 +271,18 @@ impl ReliableStreamState {
     /// `first_unacked` is the smallest seqnr the receiver still
     /// expects; everything strictly before it is removed as acknowledged.
     /// `nack_bitmap` is 16-bit; bit `i` = "seqnr `first_unacked + i`
-    /// still missing". So we remove all samples `< first_unacked`
-    /// and all samples in `[first_unacked, first_unacked+16)` whose
-    /// bit is not set.
+    /// still missing" (DDS-XRCE 1.0 §8.3.5.11); the caller retransmits
+    /// those. A clear bit is no acknowledgement: a receiver marks only the
+    /// gaps up to the last sequence number of the HEARTBEAT it answers
+    /// (§8.4.14.2), so a message sent after that HEARTBEAT has a clear bit
+    /// although the receiver never had it. Taken as acknowledged, such a
+    /// message would be dropped from the window and, when it was lost, never
+    /// sent again. Messages from `first_unacked` on therefore stay in flight
+    /// until a later ACKNACK moves `first_unacked` past them.
     pub fn recv_acknack(&mut self, payload: AckNackPayload) {
         let base = payload.first_unacked_seq_num as u16;
-        let bitmap = u16::from_le_bytes(payload.nack_bitmap);
 
-        // 1) Acknowledge everything before base.
+        // Acknowledge everything before base.
         let to_remove: Vec<u16> = self
             .in_flight
             .keys()
@@ -292,20 +297,9 @@ impl ReliableStreamState {
             self.in_flight.remove(&k);
         }
 
-        // 2) Within the bitmap window: bit set → missing → keep.
-        //    Bit not set → acknowledged → delete.
-        for i in 0u16..16 {
-            let seq = base.wrapping_add(i);
-            let bit = (bitmap >> i) & 1;
-            if bit == 0 {
-                // acknowledged
-                self.in_flight.remove(&seq);
-            }
-        }
-
         // Recompute the window base from the remaining samples in
-        // RFC-1982 order. Selective ACKs can leave holes, so the base is
-        // the serial-number minimum of what is left, not a numeric min.
+        // RFC-1982 order: the serial-number minimum of what is left, not a
+        // numeric min.
         if let Some(min) = self.serial_min_in_flight() {
             self.window_base = min;
         }
@@ -344,16 +338,42 @@ impl ReliableStreamState {
     /// `expected_seq` and advances `expected_seq`.
     pub fn drain_in_order(&mut self) -> Vec<(SerialNumber16, Vec<u8>)> {
         let mut out = Vec::new();
-        loop {
-            let key = self.expected_seq.raw();
-            if let Some(payload) = self.received.remove(&key) {
-                out.push((self.expected_seq, payload));
-                self.expected_seq = self.expected_seq.next();
-            } else {
-                break;
-            }
+        while let Some(next) = self.next_in_order() {
+            out.push(next);
         }
         out
+    }
+
+    /// Receiver: the message at `expected_seq`, if it is buffered, and
+    /// `expected_seq` advanced past it. A receiver that takes its messages
+    /// one at a time leaves the others buffered and unacknowledged: the
+    /// ACKNACK reports `expected_seq` as the first unacknowledged message
+    /// (§8.3.5.11), so the sender keeps them in its window.
+    pub fn next_in_order(&mut self) -> Option<(SerialNumber16, Vec<u8>)> {
+        let seq = self.expected_seq;
+        let payload = self.received.remove(&seq.raw())?;
+        self.expected_seq = seq.next();
+        Some((seq, payload))
+    }
+
+    /// Receiver: whether the message at `expected_seq` is buffered, so that
+    /// [`Self::next_in_order`] returns it.
+    #[must_use]
+    pub fn has_in_order(&self) -> bool {
+        self.received.contains_key(&self.expected_seq.raw())
+    }
+
+    /// Receiver: an ACKNACK that acknowledges every message before
+    /// `expected_seq` and asks for none again (an empty `nack_bitmap`): for a
+    /// receiver that has taken messages it held and tells the sender before
+    /// the sender's next HEARTBEAT (§8.4.14.2: the ACKNACK messages of a
+    /// client "may be periodic or optimized using on vendor specific
+    /// mechanism").
+    #[must_use]
+    pub fn acknowledgement(&self) -> AckNackPayload {
+        self.pending_acknack(Some(SerialNumber16::new(
+            self.expected_seq.raw().wrapping_sub(1),
+        )))
     }
 
     /// Receiver: computes the appropriate ACKNACK payload that marks the
@@ -387,6 +407,21 @@ impl ReliableStreamState {
             nack_bitmap: bitmap.to_le_bytes(),
             stream_id: self.stream_id.0,
         }
+    }
+
+    /// Makes the next [`Self::pending_heartbeat`] due at once, whatever time
+    /// the last HEARTBEAT went out: for a peer that was not sent HEARTBEATs
+    /// while it was silent and has now been heard again (DDS-XRCE 1.0
+    /// §8.3.5.12: HEARTBEAT only when "the XRCE Client is active and not in a
+    /// sleep cycle").
+    pub fn wake(&mut self) {
+        self.last_heartbeat = None;
+    }
+
+    /// The heartbeat period of this stream.
+    #[must_use]
+    pub fn heartbeat_period(&self) -> Duration {
+        self.config.heartbeat_period
     }
 
     /// Resets the stream state (e.g. after a `RESET` submessage).
@@ -462,6 +497,42 @@ mod tests {
     }
 
     #[test]
+    fn xrce_8_3_5_12_wake_makes_the_next_heartbeat_due() {
+        let mut s = rs();
+        s.submit(alloc::vec![1]).unwrap();
+        assert!(s.pending_heartbeat(Duration::from_millis(0)).is_some());
+        assert!(s.pending_heartbeat(Duration::from_millis(100)).is_none());
+        s.wake();
+        let hb = s
+            .pending_heartbeat(Duration::from_millis(100))
+            .expect("due at once after wake");
+        assert_eq!((hb.first_unacked_seq_nr, hb.last_unacked_seq_nr), (0, 0));
+        // The period runs again from the woken HEARTBEAT.
+        assert!(s.pending_heartbeat(Duration::from_millis(400)).is_none());
+        assert!(s.pending_heartbeat(Duration::from_millis(600)).is_some());
+        // Nothing in flight: wake sends nothing.
+        let mut empty = rs();
+        empty.wake();
+        assert!(empty.pending_heartbeat(Duration::from_millis(0)).is_none());
+    }
+
+    #[test]
+    fn xrce_8_3_5_12_the_heartbeat_period_is_the_configured_one() {
+        let mut s = ReliableStreamState::new(
+            StreamId::BUILTIN_RELIABLE,
+            ReliableConfig {
+                heartbeat_period: Duration::from_millis(50),
+                ..ReliableConfig::default()
+            },
+        );
+        assert_eq!(s.heartbeat_period(), Duration::from_millis(50));
+        s.submit(alloc::vec![1]).unwrap();
+        assert!(s.pending_heartbeat(Duration::from_millis(0)).is_some());
+        assert!(s.pending_heartbeat(Duration::from_millis(40)).is_none());
+        assert!(s.pending_heartbeat(Duration::from_millis(50)).is_some());
+    }
+
+    #[test]
     fn xrce_8_4_14_1_pending_heartbeat_none_when_window_empty() {
         let mut s = rs();
         assert!(s.pending_heartbeat(Duration::from_secs(0)).is_none());
@@ -514,6 +585,60 @@ mod tests {
         assert_eq!(drained[0].0.raw(), 0);
         assert_eq!(drained[1].0.raw(), 1);
         assert_eq!(s.expected().raw(), 2);
+    }
+
+    /// §8.4.14.2, §8.3.5.11: a receiver that takes one message of three
+    /// reports the second as the first unacknowledged one; the two it holds
+    /// are not asked for again, and the sender keeps them in its window.
+    #[test]
+    fn xrce_8_4_14_2_next_in_order_takes_one_message_and_holds_the_rest() {
+        let mut sender = rs();
+        let mut receiver = rs();
+        for b in 0..3u8 {
+            let seq = sender.submit(alloc::vec![b]).unwrap();
+            receiver.recv_data(seq, alloc::vec![b]).unwrap();
+        }
+        assert!(receiver.has_in_order());
+        assert_eq!(
+            receiver.next_in_order(),
+            Some((SerialNumber16::new(0), alloc::vec![0]))
+        );
+        assert!(receiver.has_in_order());
+        let ack = receiver.pending_acknack(Some(SerialNumber16::new(2)));
+        assert_eq!(ack.first_unacked_seq_num, 1);
+        assert_eq!(u16::from_le_bytes(ack.nack_bitmap), 0, "1 and 2 are held");
+        sender.recv_acknack(ack);
+        assert_eq!(
+            sender.in_flight_count(),
+            2,
+            "the held messages stay in flight"
+        );
+        assert_eq!(receiver.drain_in_order().len(), 2);
+        assert!(!receiver.has_in_order());
+        assert_eq!(receiver.next_in_order(), None);
+    }
+
+    /// §8.3.5.11: the acknowledgement of a receiver that has taken what it
+    /// held moves the sender's window and asks for no message again, also
+    /// for one that may still be on its way.
+    #[test]
+    fn xrce_8_3_5_11_an_acknowledgement_asks_for_nothing_again() {
+        let mut sender = rs();
+        let mut receiver = rs();
+        for b in 0..4u8 {
+            let seq = sender.submit(alloc::vec![b]).unwrap();
+            if b < 2 {
+                receiver.recv_data(seq, alloc::vec![b]).unwrap();
+            }
+        }
+        assert_eq!(receiver.drain_in_order().len(), 2);
+        let ack = receiver.acknowledgement();
+        assert_eq!(ack.first_unacked_seq_num, 2);
+        assert_eq!(ack.nack_bitmap, [0, 0]);
+        assert_eq!(ack.stream_id, StreamId::BUILTIN_RELIABLE.0);
+        sender.recv_acknack(ack);
+        assert_eq!(sender.in_flight_count(), 2);
+        assert!(sender.get_in_flight(SerialNumber16::new(2)).is_some());
     }
 
     #[test]
@@ -761,13 +886,15 @@ mod tests {
         assert_eq!(bitmap & 0b10, 0, "0x0000 present");
         assert_eq!(bitmap & 0b100, 0, "0x0001 present");
 
-        // Sender processes the ACKNACK across the wrap.
+        // Sender processes the ACKNACK across the wrap: what is before
+        // first_unacked is acknowledged, the rest stays until a later
+        // ACKNACK moves first_unacked past it.
         sender.recv_acknack(acknack);
         assert!(sender.get_in_flight(q1).is_some(), "0xFFFF retransmittable");
         assert!(sender.get_in_flight(q0).is_none(), "0xFFFE acked");
-        assert!(sender.get_in_flight(q2).is_none(), "0x0000 acked");
-        assert!(sender.get_in_flight(q3).is_none(), "0x0001 acked");
-        assert_eq!(sender.in_flight_count(), 1);
+        assert!(sender.get_in_flight(q2).is_some(), "0x0000 not yet acked");
+        assert!(sender.get_in_flight(q3).is_some(), "0x0001 not yet acked");
+        assert_eq!(sender.in_flight_count(), 3);
 
         // Retransmit the lost sample.
         let retx = sender.get_in_flight(q1).unwrap().to_vec();
@@ -780,25 +907,62 @@ mod tests {
         assert_eq!(d2[1].0.raw(), 0x0000);
         assert_eq!(d2[2].0.raw(), 0x0001);
         assert_eq!(d2[0].1, alloc::vec![11]);
+        // The next ACKNACK acknowledges all of them across the wrap.
+        sender.recv_acknack(receiver.pending_acknack(Some(q3)));
+        assert_eq!(sender.in_flight_count(), 0);
     }
 
-    /// Regression: with a selective-ACK hole the window end must be the
+    /// DDS-XRCE 1.0 §8.3.5.11 with §8.4.14.2: the receiver answers a
+    /// HEARTBEAT that announced 0..=4 with `first_unacked` 5 and a clear
+    /// bitmap. Messages 5 and 6, sent after that HEARTBEAT and lost, stay in
+    /// flight and are sent again on the next ACKNACK that names them missing.
+    #[test]
+    fn xrce_8_3_5_11_an_acknack_acknowledges_only_the_messages_before_first_unacked() {
+        let mut sender = rs();
+        let mut receiver = rs();
+        for i in 0..5u8 {
+            let seq = sender.submit(alloc::vec![i]).unwrap();
+            receiver.recv_data(seq, alloc::vec![i]).unwrap();
+        }
+        let hb = sender.pending_heartbeat(Duration::ZERO).unwrap();
+        let five = sender.submit(alloc::vec![5]).unwrap();
+        let six = sender.submit(alloc::vec![6]).unwrap();
+        receiver.drain_in_order();
+        let ack =
+            receiver.pending_acknack(Some(SerialNumber16::new(hb.last_unacked_seq_nr as u16)));
+        assert_eq!(ack.first_unacked_seq_num, 5);
+        assert_eq!(ack.nack_bitmap, [0, 0], "nothing announced is missing");
+        sender.recv_acknack(ack);
+        assert!(
+            sender.get_in_flight(five).is_some(),
+            "5 is not acknowledged"
+        );
+        assert!(sender.get_in_flight(six).is_some(), "6 is not acknowledged");
+        assert_eq!(sender.in_flight_count(), 2);
+        // The next HEARTBEAT announces them; the receiver names them missing.
+        let ack = receiver.pending_acknack(Some(six));
+        assert_eq!(u16::from_le_bytes(ack.nack_bitmap) & 0b11, 0b11);
+        sender.recv_acknack(ack);
+        assert_eq!(
+            sender.in_flight_count(),
+            2,
+            "both kept for the retransmission"
+        );
+    }
+
+    /// Regression: with a hole in the window the window end must be the
     /// RFC-1982 maximum, not `window_base + (count-1)`. Window `0,2,3`
-    /// (seq 1 acked in the middle) → HEARTBEAT `first=0, last=3`, while
-    /// `base + count-1 = 2` would be wrong.
+    /// (seq 1 gone from the middle) → HEARTBEAT `first=0, last=3`, while
+    /// `base + count-1 = 2` would be wrong. An ACKNACK no longer leaves such a
+    /// hole (`recv_acknack` acknowledges only what is before
+    /// `first_unacked`); the window computation stays exact for one.
     #[test]
     fn xrce_8_3_5_12_heartbeat_window_end_with_hole_is_serial_max_not_count() {
         let mut s = rs();
         for _ in 0..4 {
             s.submit(alloc::vec![0]).unwrap(); // 0,1,2,3
         }
-        // ACKNACK base=0: keep 0,2,3; ack the middle seq 1.
-        let ack = AckNackPayload {
-            first_unacked_seq_num: 0,
-            nack_bitmap: (0b1101u16).to_le_bytes(), // bits 0,2,3 set (missing)
-            stream_id: StreamId::BUILTIN_RELIABLE.0,
-        };
-        s.recv_acknack(ack);
+        s.in_flight.remove(&1);
         assert_eq!(s.in_flight_count(), 3);
         assert!(s.get_in_flight(SerialNumber16::new(1)).is_none());
 

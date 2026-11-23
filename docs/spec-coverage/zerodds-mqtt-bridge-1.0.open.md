@@ -5,26 +5,6 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ---
 
-## §8.1 Strukturiertes JSON-Logging
+## §11 Linux/macOS/Windows/Docker Layout
 
-**Status:** `open` — `crates/mqtt-bridge/src/daemon/cli.rs::tests` prüft die Flag-Zerlegung, aber kein Test prüft die JSON-Log-Form oder die Wirkung von `--log-level`.
-
-## §8.3 OTLP-Spans
-
-**Status:** `partial` — die Konfiguration ist geprüft, der Span-Emit nicht; der fehlende Teil wird als §8.3a `open` geführt.
-
-## §8.3a PUBLISH-Roundtrip-Span
-
-**Status:** `open` — der Emit-Teil von §8.3.
-
-## §10 RTPS-Peer + Mosquitto/EMQX/HiveMQ
-
-**Status:** `partial` — Mosquitto ist gemessen, EMQX und HiveMQ nicht; der fehlende Teil wird als §10a `open` geführt.
-
-## §10a Broker-Matrix EMQX/HiveMQ
-
-**Status:** `open` — der Teil von §10 und §12.3 jenseits Mosquitto. Die Tests mit einem fremden Broker kennen nur Mosquitto.
-
-## §12.3 Multi-Vendor cross_vendor.rs
-
-**Status:** `partial` — Mosquitto und die DDS-Seite sind geprüft, die restliche Broker-Matrix nicht.
+**Status:** `partial` — die Tests liefen grün auf dem Linux-Testrechner; der Windows-Code wurde dort mit `cargo clippy --target x86_64-pc-windows-gnu -p zerodds-mqtt-bridge --all-targets -- -D warnings` und ebenso für `zerodds-dcps` (`--lib --tests`) übersetzt, nicht ausgeführt. Es fehlt der Lauf des Dienstes `ZeroDDSMQTTBridge` unter `sc.exe` (Start, `READY=1` als `SERVICE_RUNNING`, Stopp mit dem Drain, `paramchange` als Reload, das Log in `%PROGRAMDATA%\ZeroDDS\logs\mqtt-bridged.log`); er braucht einen Windows-Rechner mit dem registrierten Dienst, der Linux-Testrechner ist keiner. Es fehlt ein CI-Job, der den Windows-Code dieses Pakets übersetzt (`install_signal_watcher` unter `cfg(not(unix))`, der Windows-Weg von `run_as_service`, `running_as_service`): die Windows-Jobs der CI (`ci/platform_jobs.py`, `CORE` und `WINDOWS_EXTRA`) laufen nur für die Kern-Crates und `zerodds-foundation`, `zerodds-qos`, `zerodds-transport-shm`, und das CI-Image (`ci/Dockerfile.rust`) hat das Target `x86_64-pc-windows-gnu` nicht; ein solcher Job braucht einen der beiden Wege und einen Lauf, der ihn grün zeigt. Das Image von `packaging/docker/mqtt-bridged/Dockerfile` wurde auf dem Linux-Testrechner einmal von Hand gebaut (Docker 26.1.5, Exit 0) und gestartet: `--check-config` mit der Konfiguration des Images Exit 0; mit `--network host` und `--broker` gegen Mosquitto 2.0.21 die Zeilen `connect`, `subscribed`, `catalog_published`, der Katalog auf `$zerodds/zerodds-mqtt-bridge/catalog` von `mosquitto_sub` gelesen, nach `docker stop` `catalog_cleared`, `disconnect` mit 0x00 und Exit 0. Kein Job außer `release.yml` beim Release baut das Image.

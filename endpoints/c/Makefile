@@ -136,7 +136,7 @@ $(BIN_XRCE_CLIENT): $(SRC_XRCE_CLIENT) include/zerodds_xrce_client.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_XRCE_CLIENT) -o $(BIN_XRCE_CLIENT)
 
-$(BIN_FINAL): $(SRC_FINAL) include/zerodds_wire.h test/sample_sensor.h
+$(BIN_FINAL): $(SRC_FINAL) include/zerodds_wire.h test/golden.h test/sample_sensor.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_FINAL) -o $(BIN_FINAL)
 
@@ -144,11 +144,11 @@ $(BIN_RANGE): $(SRC_RANGE) include/zerodds_wire.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_RANGE) -o $(BIN_RANGE)
 
-$(BIN_NESTED): $(SRC_NESTED) include/zerodds_wire.h test/sample_nested.h
+$(BIN_NESTED): $(SRC_NESTED) include/zerodds_wire.h test/golden.h test/sample_nested.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_NESTED) -o $(BIN_NESTED)
 
-$(BIN_MUTABLE): $(SRC_MUTABLE) include/zerodds_wire.h test/sample_mutable.h
+$(BIN_MUTABLE): $(SRC_MUTABLE) include/zerodds_wire.h test/golden.h test/sample_mutable.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_MUTABLE) -o $(BIN_MUTABLE)
 

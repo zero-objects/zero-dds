@@ -9275,21 +9275,24 @@ object shall set the external member pointers to NULL."
 **Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs`
 
 **Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_initialiser_sets_the_external_pointers_to_null`,
-`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_aggregate_with_an_external_member_gets_the_four_functions`
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_aggregate_with_an_external_member_gets_the_four_functions`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_initialiser_of_a_union_sets_the_discriminator`
 
-**Status:** done — `zd_init_<T>` sets the external pointers to NULL; for every aggregate type that holds an external member the C generator makes four functions (`zd_init_<T>`, `zd_fini_<T>`, `zd_copy_<T>`, `zd_copy_with_<T>`).
+**Status:** done — `zd_init_<T>` sets the external pointers to NULL; for every aggregate type that holds an external member the C generator makes four functions (`zd_init_<T>`, `zd_fini_<T>`, `zd_copy_<T>`, `zd_copy_with_<T>`). For a union `zd_init_<T>` sets the discriminator `_d` to the default value of its type (Table 9: 0, `false`, for an enumeration the `@default_literal`, otherwise the first literal) and clears the storage of the branches; the destructor and the copy read `_d`. The run test fills the storage with 0xA5 beforehand.
 
 ### §7.5.1.2.3.1 C: the destructor deletes referenced objects
 
 **Spec:** §7.5.1.2.3.1, p. 174 — "The destructor of the enclosing object shall
 delete the objects referenced by non-NULL external member pointers."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::fini_function`, `crates/lang-rules/src/adapter/c_lifecycle.rs::fini_one`
 
 **Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_destructor_deletes_what_a_non_null_pointer_references`,
-`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_external_branch_of_a_union_is_released_by_the_live_discriminator`
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_external_branch_of_a_union_is_released_by_the_live_discriminator`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_deep_copy_of_an_external_sequence_does_not_share_the_buffer`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_deep_copy_of_an_external_map_copies_what_its_values_own`
 
-**Status:** done — `zd_fini_<T>` deletes the objects that a non-NULL pointer references; for a union the live discriminator selects the branch.
+**Status:** done — `zd_fini_<T>` deletes the objects that a non-NULL pointer references; for a union the live discriminator selects the branch. For a sequence and a map the object includes the elements (released with the `zd_fini_<V>` of their type) and the buffer where `_release` is set, for an external `string`, `wstring` and `fixed` the characters; the run tests count the releases (15 and 12 blocks). An object a generated decoder filled is not passed to `zd_fini_<T>`: its pointers point into the reader's arena and at string literals.
 
 ### §7.5.1.2.3.1 C: the copy function copies external members deeply
 
@@ -9299,12 +9302,21 @@ is NULL it shall be allocated. [...] If the (recursive call to the) copy
 operation of the external member fails, then the copy function of the containing
 object shall fail as well."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_external`, `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_collection`, `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_text`, `crates/lang-rules/src/adapter/c_lifecycle.rs::reserve_value`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_allocates_a_null_destination_and_fills_it`,
-`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_deep_copy_into_a_null_destination_allocates_and_copies`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_failed_copy_of_an_external_member_fails_the_copy_of_the_aggregate`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_deep_copy_of_an_external_sequence_does_not_share_the_buffer`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_copy_of_collections_that_fails_leaves_an_object_the_destructor_releases`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_array_is_copied_and_released_element_by_element`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_copy_of_a_union_follows_the_discriminator_of_the_source`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_allocates_a_null_destination_and_fills_it`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_of_an_external_sequence_asks_the_capacity_and_copies_the_elements`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_deep_copy_of_an_external_map_copies_what_its_values_own`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_copy_of_an_object_onto_itself_changes_nothing`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_external_string_is_initialised_released_and_copied_with_its_characters`
 
-**Status:** done — `zd_copy_<T>` copies external members deeply and allocates a NULL destination pointer; `zd_copy_with_<T>` has the depth and the action of Table 45. If the copy of an external member fails, the copy of the aggregate fails.
+**Status:** done — `zd_copy_<T>` copies every external member deeply and allocates a NULL destination pointer. The object behind the pointer is, for a sequence and a map, the header with its buffer and elements (nested ones too), for `string`, `wstring` and `fixed` the characters, for an array each element. If the copy of an external member fails (allocation, or the existing member is too small), the copy of the aggregate fails; `zd_fini_<T>` releases the partly copied destination. A copy of an object onto itself (`dst == src`) changes nothing and answers `true`. The tests compile the generated C code and run it over a counting allocator. An element or key of type `string` in a sequence or map stays the caller's pointer, as in every sequence of this binding.
 
 ### §7.5.1.2.3.1 C: additional copy function with selectable behaviour
 
@@ -9313,61 +9325,81 @@ This additional copy function shall allow the user to choose whether a shallow
 or deep copy is made as well as whether any existing memory pointed by the
 member is reused, released, or replaced".
 
-**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`), `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_pointer`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_shallow_copy_into_a_null_destination_points_at_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_deep_copy_into_a_null_destination_allocates_and_copies`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_deep_copy_after_a_shallow_one_does_not_release_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_copy_of_a_union_follows_the_discriminator_of_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_string_is_released_and_copied_as_table_45_says`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_copy_of_an_object_onto_itself_changes_nothing`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** partial — the C binding generates `zd_copy_with_<T>` with depth (`ZD_COPY_DEEP`, `ZD_COPY_SHALLOW`) and action (`ZD_COPY_REUSE`, `ZD_COPY_REPLACE`, `ZD_COPY_RELEASE`); the test only checks that the constants and the default (deep, reuse) are in the generated text. No test compiles the generated C code and checks the behaviour per combination.
+**Status:** done — `zd_copy_with_<T>` takes the depth (`ZD_COPY_DEEP`, `ZD_COPY_SHALLOW`) and the action (`ZD_COPY_REUSE`, `ZD_COPY_REPLACE`, `ZD_COPY_RELEASE`). With NULL in the destination the shallow copy sets the source's pointer (no allocation, no release) and the deep copy allocates the object and copies into it, with each action. The five rows of Table 45 are the items below. Where the destination already points at the source's object (the state a shallow copy leaves), no copy releases it; deep with Replace or Release allocates an object of its own. Where destination and source are one object, no depth and no action changes anything (0 allocations, 0 releases). The tests run the generated C code over a counting allocator.
 
 ### §7.5.1.2.3.1 Table 45 — Shallow Copy, Replace
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 174 — "Shallow Copy | Replace".
 
-**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_pointer`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_shallow_replace_releases_the_destination_and_points_at_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_string_is_released_and_copied_as_table_45_says`
 
-**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
+**Status:** done — the destination points at the source's object; the destination's previous memory is released before that, including what its own external members point at (4 releases, 0 allocations in the test); the source's objects stay. A destination that already points at the source is not released; where the source's member is NULL, the destination is NULL afterwards and its memory released.
 
 ### §7.5.1.2.3.1 Table 45 — Shallow Copy, Release
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 174 — "Shallow Copy | Release".
 
-**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_pointer`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_shallow_release_releases_the_destination_and_points_at_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_string_is_released_and_copied_as_table_45_says`
 
-**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
+**Status:** done — the same description as the Replace row, the same behaviour: the destination points at the source's object, its previous memory is released before that (4 releases, 0 allocations in the test), the source's objects stay.
 
 ### §7.5.1.2.3.1 Table 45 — Deep Copy, Reuse
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 175 — "Deep Copy | Reuse".
 
-**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_pointer`, `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_collection`, `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_text`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_deep_reuse_copies_into_the_existing_memory`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_deep_reuse_fails_where_the_existing_member_is_not_large_enough`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_deep_reuse_fails_for_a_map_a_map_value_a_wstring_and_a_fixed_that_are_too_small`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_deep_copy_of_an_external_map_copies_what_its_values_own`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_reuse_of_an_external_sequence_releases_what_it_drops_and_initialises_what_it_adds`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_array_is_copied_and_released_element_by_element`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_of_an_external_sequence_asks_the_capacity_and_copies_the_elements`
 
-**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
+**Status:** done — the default (`zd_copy_<T>`): the destination's pointers stay, the values are copied, 0 allocations and 0 releases. Not large enough is a sequence or map whose `_maximum` is below the source's `_length` (at every level of nesting), and a `string`, `wstring` or `fixed` that is shorter than the source: the copy answers `false`, and the sequence, the map or the text that is too small is unchanged. What the copy reached before it holds the copy by then: the members in front of this one, the elements in front of it in a sequence, map or array around it, and the key of the map entry whose value is too small; `zd_fini_<T>` releases the result. With room the elements are in the same header and buffer. A reuse releases the elements it drops and initialises the ones it adds. A member of fixed size is always large enough.
 
 ### §7.5.1.2.3.1 Table 45 — Deep Copy, Replace
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 175 — "Deep Copy | Replace".
 
-**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_pointer`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_deep_replace_allocates_and_leaves_the_old_memory_to_the_application`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_replace_and_release_of_an_external_sequence_allocate_a_header_and_a_buffer`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_the_copy_of_a_union_follows_the_discriminator_of_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_string_is_released_and_copied_as_table_45_says`
 
-**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
+**Status:** done — new memory is allocated and filled (4 allocations in the test); the replaced memory is not released and holds its values (0 releases), the application releases it. Where the source's member is NULL, the destination is NULL and nothing is released. For a sequence the old header and the old buffer stay; for a union the destination's other branch stays.
 
 ### §7.5.1.2.3.1 Table 45 — Deep Copy, Release
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 175 — "Deep Copy | Release".
 
-**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs::copy_pointer`, `crates/lang-rules/src/adapter/c_lifecycle.rs::release`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_deep_release_frees_the_old_memory_before_it_allocates`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_a_deep_copy_after_a_shallow_one_does_not_release_the_source`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_table_45_replace_and_release_of_an_external_sequence_allocate_a_header_and_a_buffer`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_an_external_string_is_released_and_copied_as_table_45_says`
 
-**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
+**Status:** done — the existing memory is released before the new memory is allocated (the order checked on the allocator's counter; 4 releases, 4 allocations in the test), including what the external members of the old object point at; for a sequence the header and the buffer. Where the destination points at the source's object, that object is not released, and the destination gets an object of its own.
 
 ### §7.5.1.2.3.1.1 C: an external optional member may be NULL when writing
 
@@ -16375,7 +16407,7 @@ the Type System enumerated above are generally supported."
 
 ## Audit-Status
 
-1107 done / 6 partial / 0 open / 0 blocked / 86 n/a (informative).
+1113 done / 0 partial / 0 open / 0 blocked / 86 n/a (informative).
 
 Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-xtypes-1.3.md`):
 
@@ -16420,5 +16452,3 @@ Test run: in CI, crate tier and pillar jobs; the cited tests with the latest res
 * `python3 ci/run_integration.py integration-sdk` (job `integration-sdk`) — 21 tests green.
 
 1169 cited tests green, 0 not green.
-
-Open items: `dds-xtypes-1.3.open.en.md`.

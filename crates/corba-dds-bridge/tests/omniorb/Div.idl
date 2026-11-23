@@ -1,0 +1,19 @@
+// The interface of the typed mapping in `tests/omniorb_e2e.rs`
+// (zerodds-corba-bridge-1.0 §5.2): the bridge reads this file as the
+// `idl_file` of the mapping and generates the DDS types from it; omniORB
+// builds its client from it.
+module zerodds_test {
+  struct Fraction {
+    long long numerator;
+    long long denominator;
+  };
+  interface Divider {
+    exception DivideByZero {
+      long long numerator;
+      string why;
+    };
+    exception Unsupported {};
+    long long divide(in Fraction f, out long long remainder)
+      raises (DivideByZero, Unsupported);
+  };
+};

@@ -99,6 +99,7 @@ with a short purpose statement. This chapter groups them by layer.
 |---|---|
 | `zerodds-ccm` | OMG CCM 4.0 container |
 | `zerodds-ami4ccm` | AMI4CCM async pattern |
+| `zerodds-dds4ccm` | DDS4CCM DDS-DCPS ports and connectors over the DCPS entities |
 | `zerodds-rtc` | Robotic Technology Component |
 | `zerodds-time-service` | Time-Sync helper |
 

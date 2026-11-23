@@ -43,6 +43,18 @@ pub enum DdsType {
     Float32,
     /// `float64`.
     Float64,
+    /// `fixed<digits, scale>`: an OPC UA `Decimal` (OPC 10000-6 §5.1.10,
+    /// DataType `i=50`); Gateway 1.0 has no clause for it.
+    Fixed {
+        /// Total digits.
+        digits: u8,
+        /// Digits after the point.
+        scale: u8,
+    },
+    /// `long double`. Gateway 1.0 §9.2.1: a `ByteString`, and "to store
+    /// the Float128 value, the length of the equivalent ByteString shall
+    /// be 16".
+    Float128,
     /// `char`.
     Char8,
     /// `wchar`.
@@ -202,6 +214,8 @@ impl DdsType {
             | Self::UInt64
             | Self::Float32
             | Self::Float64
+            | Self::Float128
+            | Self::Fixed { .. }
             | Self::Char8
             | Self::Char16
             | Self::String8
@@ -239,6 +253,8 @@ impl DdsType {
             Self::UInt64 => "UInt64".to_string(),
             Self::Float32 => "Float".to_string(),
             Self::Float64 => "Double".to_string(),
+            Self::Float128 => "ByteString".to_string(),
+            Self::Fixed { .. } => "Decimal".to_string(),
             Self::Char8 => "Byte".to_string(),
             Self::Char16 => "UInt16".to_string(),
             Self::String8 => "String".to_string(),
@@ -330,6 +346,8 @@ fn walk(ty: &DdsType, out: &mut WalkOutput) -> Result<(), WalkError> {
         | DdsType::UInt64
         | DdsType::Float32
         | DdsType::Float64
+        | DdsType::Float128
+        | DdsType::Fixed { .. }
         | DdsType::Char8
         | DdsType::Char16
         | DdsType::String8

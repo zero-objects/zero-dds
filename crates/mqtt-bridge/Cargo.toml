@@ -30,6 +30,14 @@ ring-backend = ["zerodds-bridge-security?/ring-backend"]
 aws-lc = ["zerodds-bridge-security?/aws-lc"]
 std = ["alloc"]
 alloc = []
+# The WebSocket listener of the broker server (MQTT 5.0 §6, RFC 6455): the
+# frame codec and the opening handshake of zerodds-websocket-bridge.
+websocket = ["std", "dep:zerodds-websocket-bridge"]
+# The TLS listeners of the broker server (`mqtts`, and `wss` with
+# `websocket`) over rustls with the provider of bridge-security; it needs
+# one crypto backend, `ring-backend` or `aws-lc` (bridge-security refuses
+# to build without one).
+tls =["std", "dep:zerodds-bridge-security", "dep:rustls"]
 # `daemon` enables the `zerodds-mqtt-bridged` binary + DDS pump.
 # Pulls in `std` and path deps on zerodds-dcps/qos/types/rtps.
 daemon = [
@@ -39,11 +47,12 @@ daemon = [
     "dep:zerodds-rtps",
     "dep:zerodds-qos",
     "dep:zerodds-types",
-    "dep:zerodds-bridge-security",
-    "dep:rustls",
-    "dep:zerodds-websocket-bridge",
+    "tls",
+    "websocket",
     "dep:zerodds-monitor",
     "dep:zerodds-observability-otlp",
+    "dep:zerodds-foundation",
+    "dep:getrandom",
     "dep:signal-hook",
 ]
 # Cross-vendor interop tests against Mosquitto (Spec §10 + §12.3); requires `mosquitto_pub`/`mosquitto_sub` binaries.
@@ -66,12 +75,17 @@ zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, de
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
 zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
 rustls = { workspace = true, optional = true }
-# RFC 6455 frame codec and client handshake for the ws:// and wss:// broker
-# schemes (MQTT 5.0 §6); only the codec, not the WebSocket daemon.
+# RFC 6455 frame codec and the handshakes for the ws:// and wss:// broker
+# schemes and the WebSocket listener of the broker server (MQTT 5.0 §6);
+# only the codec, not the WebSocket daemon.
 zerodds-websocket-bridge = { version = "1.0.0-rc.7", path = "../websocket-bridge", optional = true, default-features = false, features = ["std"] }
 # Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
+# The span types of §8.3 (`zerodds_foundation::tracing`) and the random
+# trace identifiers of the spans.
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", optional = true, default-features = false, features = ["std"] }
+getrandom = { version = "0.2", optional = true }
 signal-hook = { workspace = true, optional = true }
 
 [[bin]]
@@ -86,6 +100,12 @@ rcgen = "0.13"
 rustls-pemfile = { workspace = true }
 # DDS domains of the daemon tests, leased from the host's share of the band.
 zerodds-test-domains = { path = "../test-domains" }
+# The server side of SCRAM-SHA-256 (RFC 5802 §3) in the test broker of
+# `tests/enhanced_auth.rs`: PBKDF2, HMAC, SHA-256, base64.
+ring = { workspace = true }
+base64 = { workspace = true }
+# Reads the JSON log lines of Spec §8.1 back in the tests.
+serde_json = "1"
 
 # The contract with zerodds-dcps (internal/release/rc8-test-suite.md, "Crate
 # tier"): this crate reaches zerodds-dcps only with `daemon`.
@@ -95,11 +115,12 @@ path = "tests/contract_dcps.rs"
 required-features = ["daemon"]
 
 # The contract with zerodds-websocket-bridge (internal/release/rc8-test-suite.md,
-# "Crate tier"): this crate reaches zerodds-websocket-bridge only with `daemon`.
+# "Crate tier"): this crate reaches zerodds-websocket-bridge only with
+# `websocket` (the server's listener; `daemon` enables it for the client).
 [[test]]
 name = "contract_websocket_bridge"
 path = "tests/contract_websocket_bridge.rs"
-required-features = ["daemon"]
+required-features = ["websocket"]
 
 # The contract with zerodds-types (internal/release/rc8-test-suite.md, "Crate
 # tier"): this crate reaches zerodds-types only with `daemon`.
@@ -109,8 +130,9 @@ path = "tests/contract_types.rs"
 required-features = ["daemon"]
 
 # The contract with zerodds-bridge-security (internal/release/rc8-test-suite.md,
-# "Crate tier"): this crate reaches zerodds-bridge-security only with `daemon`.
+# "Crate tier"): this crate reaches zerodds-bridge-security only with `tls`
+# (the server's TLS listeners; `daemon` enables it for its security layer).
 [[test]]
 name = "contract_bridge_security"
 path = "tests/contract_bridge_security.rs"
-required-features = ["daemon"]
+required-features = ["tls"]

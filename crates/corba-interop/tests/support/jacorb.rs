@@ -70,10 +70,10 @@ pub struct Spec<'a> {
     pub stdout_prefix: &'a str,
 }
 
-/// Builds and starts the server; returns it and its IOR.
-pub fn start(spec: &Spec<'_>) -> (Server, String) {
-    let home = jacorb_home();
-    let lib = home.join("lib");
+/// Compiles the IDL and the Java sources of `spec` into the directory of
+/// the spec; returns the directory and the classes directory.
+fn compile(spec: &Spec<'_>) -> (PathBuf, PathBuf) {
+    let lib = jacorb_home().join("lib");
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(spec.name);
     let _ = std::fs::remove_dir_all(&dir);
     let (generated, classes) = (dir.join("gen"), dir.join("classes"));
@@ -107,7 +107,13 @@ pub fn start(spec: &Spec<'_>) -> (Server, String) {
             .arg(&classes)
             .args(&sources),
     );
-    let ior_file = dir.join("server.ior");
+    (dir, classes)
+}
+
+/// The `java` command line for `main` of `spec` with JacORB as the ORB.
+fn java(spec: &Spec<'_>, classes: &Path) -> Command {
+    let home = jacorb_home();
+    let lib = home.join("lib");
     let mut cmd = Command::new(java_home().join("bin/java"));
     cmd.arg(format!("-Djava.endorsed.dirs={}", lib.display()))
         .arg(format!("-Djacorb.home={}", home.display()))
@@ -118,8 +124,50 @@ pub fn start(spec: &Spec<'_>) -> (Server, String) {
         .args(spec.props.iter().map(|p| format!("-D{p}")))
         .arg("-cp")
         .arg(format!("{}:{}/*", classes.display(), lib.display()))
-        .arg(spec.main)
-        .stderr(Stdio::null());
+        .arg(spec.main);
+    cmd
+}
+
+/// Builds `spec` and runs its main class to the end (at most 20 s);
+/// returns what it printed on stdout and stderr.
+pub fn run(spec: &Spec<'_>) -> String {
+    let (_dir, classes) = compile(spec);
+    let mut cmd = java(spec, &classes);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let child = cmd.spawn().expect("the JacORB program");
+    let id = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    match rx.recv_timeout(Duration::from_secs(20)) {
+        Ok(Ok(out)) => format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+        Ok(Err(e)) => panic!("{}: {e}", spec.main),
+        Err(_) => {
+            let _ = Command::new("kill").arg(id.to_string()).status();
+            panic!("{} did not end within 20 s", spec.main);
+        }
+    }
+}
+
+/// The file a server of `spec` writes its stdout to when its IOR goes to
+/// stdout (`ior_to_file` false).
+pub fn server_output(spec: &Spec<'_>) -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(spec.name)
+        .join("server.ior")
+}
+
+/// Builds and starts the server; returns it and its IOR.
+pub fn start(spec: &Spec<'_>) -> (Server, String) {
+    let (dir, classes) = compile(spec);
+    let ior_file = dir.join("server.ior");
+    let mut cmd = java(spec, &classes);
+    cmd.stderr(Stdio::null());
     if spec.ior_to_file {
         cmd.arg(&ior_file).stdout(Stdio::null());
     } else {

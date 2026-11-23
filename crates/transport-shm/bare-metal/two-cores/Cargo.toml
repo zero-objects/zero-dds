@@ -1,0 +1,26 @@
+# Two cores of a QEMU `virt` machine without an operating system exchange
+# frames through zerodds-transport-shm's ring in a region of RAM both see
+# (zerodds-shm-transport-1.0 §6.4). A workspace of its own: it builds for
+# `aarch64-unknown-none` only (.cargo/config.toml), which the repository's
+# workspace does not. Run with `tools/shm-region-two-cores.sh`.
+[workspace]
+
+[package]
+name = "zerodds-shm-region-two-cores"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+description = "zerodds-shm-transport-1.0 §6.4: an owner and a consumer on two bare-metal cores over one region"
+
+[dependencies]
+zerodds-transport-shm = { path = "../..", default-features = false, features = ["alloc"] }
+zerodds-transport = { path = "../../../transport", default-features = false, features = ["alloc"] }
+zerodds-rtps = { path = "../../../rtps", default-features = false, features = ["alloc"] }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+debug = false

@@ -127,6 +127,36 @@ impl<T: PubSubTransport> Publisher<T> {
         self.datasets.iter_mut().find(|d| d.name() == name)
     }
 
+    /// Appends the field `field` to the DataSet `dataset` while the
+    /// publisher runs, and has every DataSetWriter of that DataSet
+    /// advertise `minor_version` and send a key frame next (Part 14
+    /// §6.2.3.2.5: fields added at the end are a new `MinorVersion`).
+    /// `false` when there is no such DataSet.
+    pub fn append_field(
+        &mut self,
+        dataset: &str,
+        field: impl Into<alloc::string::String>,
+        initial: zerodds_opcua_gateway::data_value::DataValue,
+        minor_version: u32,
+    ) -> bool {
+        let Some(target) = self.datasets.iter_mut().find(|d| d.name() == dataset) else {
+            return false;
+        };
+        target.add_field(field, initial);
+        for writer in &mut self.writers {
+            if writer.config().data_set_name == dataset {
+                writer.fields_appended(minor_version);
+            }
+        }
+        true
+    }
+
+    /// The DataSetWriters, to read what they advertise.
+    #[must_use]
+    pub fn writers(&self) -> &[DataSetWriter] {
+        &self.writers
+    }
+
     /// The transport carrier.
     pub fn transport(&self) -> &T {
         &self.transport

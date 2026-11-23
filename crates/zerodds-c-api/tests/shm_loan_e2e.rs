@@ -51,6 +51,82 @@ use zerodds::{
     zerodds_writer_destroy, zerodds_writer_enable_shm_loan, zerodds_writer_loan_message,
 };
 
+/// The bytes at `p`, read one by one through volatile loads, so the read
+/// happens after any write through another pointer to the same memory.
+///
+/// # Safety
+/// `p` is valid for `n` bytes.
+unsafe fn bytes_at(p: *const u8, n: usize) -> Vec<u8> {
+    (0..n)
+        // SAFETY: `i < n` and the caller guarantees that `p` is valid for
+        // `n` bytes, so `p.add(i)` stays in that range and is readable; a
+        // `u8` has no alignment to keep.
+        .map(|i| unsafe { ptr::read_volatile(p.add(i)) })
+        .collect()
+}
+
+/// The zero-copy proof of `zerodds-shm-transport-1.0` §7.1: the writer's
+/// loan pointer `wptr` and the reader's take pointer `rptr` are two
+/// addresses of the same bytes of the segment behind `path`, slot `slot`.
+/// A third mapping of the segment, made here, sees the bytes the writer
+/// wrote; a pattern written through `wptr` after the commit shows up through
+/// `rptr` and through the third mapping; one written through the third
+/// mapping shows up through both. A commit that copied a heap buffer into the
+/// slot fails the second step, a take that copied the slot out fails both.
+///
+/// # Safety
+/// `wptr` and `rptr` are valid for `len` bytes: the loaned and the taken
+/// slot of a live writer and reader.
+unsafe fn assert_one_set_of_pages(
+    path: &str,
+    slot: u32,
+    wptr: *mut u8,
+    rptr: *const u8,
+    len: usize,
+    sent: &[u8],
+) {
+    use zerodds_flatdata::{PosixSlotAllocator, SlotBackend, SlotHandle};
+    let probe = PosixSlotAllocator::attach(path).expect("a third mapping of the segment");
+    let (pptr, plen) = probe
+        .slot_read_ptr(SlotHandle {
+            segment_id: 0,
+            slot_index: slot,
+        })
+        .expect("the taken slot in the third mapping");
+    assert_eq!(plen, len, "the slot's sample size");
+    // SAFETY: wptr, rptr (caller) and pptr (the probe's slot of `len`
+    // bytes, mapped while `probe` lives) are valid for `len` bytes.
+    unsafe {
+        assert_eq!(
+            bytes_at(pptr, len),
+            sent,
+            "the segment holds what the writer wrote"
+        );
+        let mut at = [wptr as usize, rptr as usize, pptr as usize];
+        at.sort_unstable();
+        assert!(
+            at[0] != at[1] && at[1] != at[2],
+            "three mappings, three addresses"
+        );
+        let through_writer: Vec<u8> = sent.iter().map(|b| !b).collect();
+        ptr::copy_nonoverlapping(through_writer.as_ptr(), wptr, len);
+        assert_eq!(
+            bytes_at(rptr, len),
+            through_writer,
+            "a write through the loan pointer reaches the reader's pointer"
+        );
+        assert_eq!(bytes_at(pptr, len), through_writer);
+        let through_probe: Vec<u8> = sent.iter().map(|b| b ^ 0x5A).collect();
+        ptr::copy_nonoverlapping(through_probe.as_ptr(), pptr.cast_mut(), len);
+        assert_eq!(
+            bytes_at(rptr, len),
+            through_probe,
+            "the reader's pointer reads the segment, not a copy"
+        );
+        assert_eq!(bytes_at(wptr, len), through_probe);
+    }
+}
+
 fn flink_path(tag: &str) -> String {
     let dir = std::env::temp_dir();
     let p = dir.join(format!("zddsloan_{}_{}", std::process::id(), tag));
@@ -139,11 +215,13 @@ fn capi_2_6_shm_loan_writer_to_reader_zero_copy() {
         );
 
         // Zero-copy proof: the reader's pointer is in its own mapping of the
-        // segment, NOT the writer's loan pointer (separate mmap, shared pages).
+        // segment, NOT the writer's loan pointer (separate mmap, shared pages),
+        // and both address the segment's bytes, not a copy of them.
         assert_ne!(
             rptr as usize, wptr as usize,
             "reader reads from its own mapping, not the writer's address"
         );
+        assert_one_set_of_pages(&path, slot, wptr, rptr, rlen, &payload);
 
         // Release the slot; with one reader and no fresh sample, the next take
         // reports NoData.
@@ -430,6 +508,7 @@ fn capi_2_6_shm_loan_runtime_path_writer_to_reader_zero_copy() {
             &payload[..],
             "runtime-path bytes match across the SHM mapping"
         );
+        assert_one_set_of_pages(&path, slot, wptr, rptr, rlen, &payload);
         assert_eq!(
             zerodds_reader_release_shm(reader, slot),
             ZeroDdsStatus::Ok as c_int

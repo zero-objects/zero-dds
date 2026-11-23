@@ -292,6 +292,81 @@ impl Repository {
     pub fn ids(&self) -> Vec<String> {
         self.by_repo_id.keys().map(ToString::to_string).collect()
     }
+
+    /// The definition with `repository_id` anywhere in the repository,
+    /// at the top level or contained in another definition.
+    #[must_use]
+    pub fn find_id(&self, repository_id: &str) -> Option<&Definition> {
+        self.by_repo_id.get(repository_id).or_else(|| {
+            self.by_repo_id
+                .values()
+                .find_map(|d| find_id_walk(d, repository_id))
+        })
+    }
+
+    /// `InterfaceDef::is_a` (CORBA 3.3 Part 1 §14.5.24.1) of the interface
+    /// `interface_id`: `true` when it is `logical_type_id` or inherits
+    /// from it, directly or indirectly, and for
+    /// `IDL:omg.org/CORBA/Object:1.0`.
+    ///
+    /// `None` when the answer is not in the repository: `interface_id` is
+    /// not an interface definition here, or `logical_type_id` was not
+    /// found and a base interface on the way is missing.
+    #[must_use]
+    pub fn interface_is_a(&self, interface_id: &str, logical_type_id: &str) -> Option<bool> {
+        if interface_id == logical_type_id || logical_type_id == OBJECT_REPOSITORY_ID {
+            return Some(true);
+        }
+        self.find_id(interface_id).filter(|d| is_interface(d))?;
+        let mut seen: Vec<&str> = Vec::new();
+        let mut todo: Vec<&str> = alloc::vec![interface_id];
+        let mut resolved = true;
+        while let Some(id) = todo.pop() {
+            if seen.contains(&id) {
+                continue;
+            }
+            seen.push(id);
+            if id == logical_type_id {
+                return Some(true);
+            }
+            match self.find_id(id) {
+                Some(d) if is_interface(d) => {
+                    if let Some(DefDetails::Interface {
+                        base_interfaces, ..
+                    }) = &d.details
+                    {
+                        todo.extend(base_interfaces.iter().map(String::as_str));
+                    }
+                }
+                _ => resolved = false,
+            }
+        }
+        resolved.then_some(false)
+    }
+}
+
+/// `IDL:omg.org/CORBA/Object:1.0`, the base of every interface.
+const OBJECT_REPOSITORY_ID: &str = "IDL:omg.org/CORBA/Object:1.0";
+
+/// The definitions `InterfaceDef::is_a` applies to: interfaces, abstract
+/// and local ones included (Part 1 §14.5.24, §14.5.26, §14.5.28), and any
+/// definition described with base interfaces.
+fn is_interface(d: &Definition) -> bool {
+    matches!(
+        d.kind,
+        DefinitionKind::Interface
+            | DefinitionKind::AbstractInterface
+            | DefinitionKind::LocalInterface
+    ) || matches!(d.details, Some(DefDetails::Interface { .. }))
+}
+
+/// zerodds-lint: recursion-depth 16
+/// The definition with `id` under `node`.
+fn find_id_walk<'a>(node: &'a Definition, id: &str) -> Option<&'a Definition> {
+    if node.repository_id == id {
+        return Some(node);
+    }
+    node.contents.iter().find_map(|c| find_id_walk(c, id))
 }
 
 /// zerodds-lint: recursion-depth 16
@@ -416,6 +491,70 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn corba_p1_14_5_24_1_is_a_follows_the_base_interfaces() {
+        let iface = |id: &str, name: &str, bases: &[&str]| {
+            Definition::new(id, name, "1.0", DefinitionKind::Interface).with_details(
+                DefDetails::Interface {
+                    base_interfaces: bases.iter().map(ToString::to_string).collect(),
+                    is_abstract: false,
+                },
+            )
+        };
+        let mut r = Repository::new();
+        r.register(
+            Definition::new("IDL:Shop:1.0", "Shop", "1.0", DefinitionKind::Module)
+                .with_content(iface("IDL:Shop/Base:1.0", "Base", &[]))
+                .with_content(iface("IDL:Shop/Mid:1.0", "Mid", &["IDL:Shop/Base:1.0"]))
+                .with_content(iface(
+                    "IDL:Shop/Feed:1.0",
+                    "Feed",
+                    &["IDL:Shop/Mid:1.0", "IDL:Shop/Other:1.0"],
+                ))
+                .with_content(iface("IDL:Shop/Other:1.0", "Other", &[]))
+                .with_content(iface("IDL:Shop/Loop:1.0", "Loop", &["IDL:Shop/Loop:1.0"]))
+                .with_content(iface("IDL:Shop/Gap:1.0", "Gap", &["IDL:Shop/Missing:1.0"])),
+        )
+        .unwrap();
+        assert!(r.find_id("IDL:Shop/Mid:1.0").is_some());
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Feed:1.0", "IDL:Shop/Feed:1.0"),
+            Some(true)
+        );
+        // Directly and indirectly inherited.
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Feed:1.0", "IDL:Shop/Mid:1.0"),
+            Some(true)
+        );
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Feed:1.0", "IDL:Shop/Base:1.0"),
+            Some(true)
+        );
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Feed:1.0", "IDL:omg.org/CORBA/Object:1.0"),
+            Some(true)
+        );
+        // Not a base: the chain is known to its end.
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Base:1.0", "IDL:Shop/Feed:1.0"),
+            Some(false)
+        );
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Loop:1.0", "IDL:Shop/Base:1.0"),
+            Some(false)
+        );
+        // Unknown interface, a module, a missing base on the way.
+        assert_eq!(
+            r.interface_is_a("IDL:Elsewhere:1.0", "IDL:Shop/Base:1.0"),
+            None
+        );
+        assert_eq!(r.interface_is_a("IDL:Shop:1.0", "IDL:Shop/Base:1.0"), None);
+        assert_eq!(
+            r.interface_is_a("IDL:Shop/Gap:1.0", "IDL:Shop/Base:1.0"),
+            None
+        );
     }
 
     fn echo_iface() -> Definition {

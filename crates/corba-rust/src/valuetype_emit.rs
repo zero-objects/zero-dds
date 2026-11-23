@@ -434,12 +434,11 @@ fn emit_init_function(
     for name in &names {
         out.push_str(&format!("    let _ = {name};\n"));
     }
+    // CORBA 3.3 Part 1 Annex A.6: NO_IMPLEMENT minor 1, "Missing local
+    // value implementation".
     out.push_str(
-        "    ::core::result::Result::Err(zerodds_corba_rust::CorbaException::SystemException {\n",
+        "    ::core::result::Result::Err(zerodds_corba_rust::CorbaException::omg(zerodds_corba_rust::SystemExceptionKind::NoImplement, 1, zerodds_corba_rust::CompletionStatus::No))\n",
     );
-    out.push_str("        minor: 0,\n");
-    out.push_str("        message: \"corba-rust: ValueFactory init not wired\",\n");
-    out.push_str("    })\n");
     out.push_str("}\n\n");
     Ok(())
 }

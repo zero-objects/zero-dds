@@ -6,6 +6,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::close::CloseCode;
 use crate::frame::{Frame, Opcode};
 use crate::masking::apply_mask;
 
@@ -27,6 +28,40 @@ pub enum CodecError {
     ControlFrameTooLong,
     /// Spec §5.5 — a control frame must have FIN=1 (no fragmentation).
     FragmentedControlFrame,
+    /// Spec §10.4 — the header announces a payload beyond the limit of
+    /// [`decode_with_limit`] (or beyond the address space). Reported as
+    /// soon as the header is complete, before any payload is buffered.
+    FrameTooLarge {
+        /// The payload length the header announces.
+        announced: u64,
+        /// The limit it exceeds.
+        limit: usize,
+    },
+}
+
+impl CodecError {
+    /// Whether the error says "more octets are needed": the input is a
+    /// prefix of a frame that can still become valid. Every other error is
+    /// final for the connection: no further input repairs the frame.
+    #[must_use]
+    pub const fn is_incomplete(&self) -> bool {
+        matches!(
+            self,
+            Self::HeaderTooShort | Self::PayloadTruncated | Self::MaskingKeyTruncated
+        )
+    }
+
+    /// Spec §7.4.1 — the status code the connection is failed with: 1009
+    /// for a frame over the limit, 1002 for every other framing violation.
+    /// An incomplete frame fails nothing; for it the code is the one a
+    /// connection that ends inside the frame would have, 1002.
+    #[must_use]
+    pub const fn close_code(&self) -> CloseCode {
+        match self {
+            Self::FrameTooLarge { .. } => CloseCode::MessageTooBig,
+            _ => CloseCode::ProtocolError,
+        }
+    }
 }
 
 impl fmt::Display for CodecError {
@@ -39,6 +74,12 @@ impl fmt::Display for CodecError {
             Self::MaskingKeyTruncated => f.write_str("masking key truncated"),
             Self::ControlFrameTooLong => f.write_str("control frame payload > 125 bytes"),
             Self::FragmentedControlFrame => f.write_str("control frame with FIN=0"),
+            Self::FrameTooLarge { announced, limit } => {
+                write!(
+                    f,
+                    "frame announces {announced} octets, the limit is {limit}"
+                )
+            }
         }
     }
 }
@@ -130,23 +171,56 @@ fn encode_payload_length(len: usize) -> (u8, Vec<u8>) {
 /// # Errors
 /// See [`CodecError`].
 pub fn decode(bytes: &[u8]) -> Result<(Frame, usize), CodecError> {
+    decode_with_limit(bytes, usize::MAX)
+}
+
+/// The header of a frame (Spec §5.2), read before its payload is there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameHeader {
+    /// `FIN`.
+    pub fin: bool,
+    /// `RSV1`.
+    pub rsv1: bool,
+    /// `RSV2`.
+    pub rsv2: bool,
+    /// `RSV3`.
+    pub rsv3: bool,
+    /// The opcode.
+    pub opcode: Opcode,
+    /// `MASK`: a masking key follows the length.
+    pub masked: bool,
+    /// The payload length the header announces.
+    pub payload_len: u64,
+    /// The octets before the payload: the two fixed ones, the extended
+    /// length and the masking key.
+    pub header_len: usize,
+}
+
+/// Reads the header of the frame at the start of `bytes`: the two fixed
+/// octets and the extended payload length. The masking key and the payload
+/// need not be there yet, so a receiver can refuse a frame for its header
+/// (Spec §5.1, §5.2, §10.4) without buffering what follows.
+///
+/// # Errors
+/// [`CodecError::HeaderTooShort`] while the length is not complete
+/// ([`CodecError::is_incomplete`]); [`CodecError::NonMinimalLength`],
+/// [`CodecError::PayloadLengthMsbSet`], [`CodecError::ControlFrameTooLong`]
+/// and [`CodecError::FragmentedControlFrame`] for a header that violates
+/// §5.2 or §5.5.
+pub fn peek_header(bytes: &[u8]) -> Result<FrameHeader, CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
     }
     let byte0 = bytes[0];
     let fin = (byte0 & 0x80) != 0;
-    let rsv1 = (byte0 & 0x40) != 0;
-    let rsv2 = (byte0 & 0x20) != 0;
-    let rsv3 = (byte0 & 0x10) != 0;
     let opcode = Opcode::from_bits(byte0 & 0x0F);
-
     let byte1 = bytes[1];
     let masked = (byte1 & 0x80) != 0;
     let len7 = byte1 & 0x7F;
 
     let mut cursor = 2usize;
     let payload_len = match len7.cmp(&126) {
-        core::cmp::Ordering::Less => usize::from(len7),
+        core::cmp::Ordering::Less => u64::from(len7),
         core::cmp::Ordering::Equal => {
             if bytes.len() < cursor + 2 {
                 return Err(CodecError::HeaderTooShort);
@@ -156,7 +230,7 @@ pub fn decode(bytes: &[u8]) -> Result<(Frame, usize), CodecError> {
             if v <= 125 {
                 return Err(CodecError::NonMinimalLength);
             }
-            usize::from(v)
+            u64::from(v)
         }
         core::cmp::Ordering::Greater => {
             // len7 == 127.
@@ -173,7 +247,7 @@ pub fn decode(bytes: &[u8]) -> Result<(Frame, usize), CodecError> {
             if v <= 0xFFFF {
                 return Err(CodecError::NonMinimalLength);
             }
-            usize::try_from(v).map_err(|_| CodecError::PayloadTruncated)?
+            v
         }
     };
 
@@ -185,44 +259,70 @@ pub fn decode(bytes: &[u8]) -> Result<(Frame, usize), CodecError> {
             return Err(CodecError::ControlFrameTooLong);
         }
     }
+    Ok(FrameHeader {
+        fin,
+        rsv1: (byte0 & 0x40) != 0,
+        rsv2: (byte0 & 0x20) != 0,
+        rsv3: (byte0 & 0x10) != 0,
+        opcode,
+        masked,
+        payload_len,
+        header_len: cursor + if masked { 4 } else { 0 },
+    })
+}
 
-    let masking_key = if masked {
-        if bytes.len() < cursor + 4 {
+/// [`decode`] with a limit on the payload of one frame (Spec §10.4). A
+/// header that announces more is [`CodecError::FrameTooLarge`] as soon as
+/// the header is there: the caller does not have to buffer the payload to
+/// learn that it is too long.
+///
+/// # Errors
+/// See [`CodecError`]; [`CodecError::is_incomplete`] tells "read more" from
+/// a frame that is invalid.
+pub fn decode_with_limit(bytes: &[u8], max_payload: usize) -> Result<(Frame, usize), CodecError> {
+    let header = peek_header(bytes)?;
+    let too_large = CodecError::FrameTooLarge {
+        announced: header.payload_len,
+        limit: max_payload,
+    };
+    let Ok(payload_len) = usize::try_from(header.payload_len) else {
+        return Err(too_large);
+    };
+    if payload_len > max_payload {
+        return Err(too_large);
+    }
+    let Some(frame_len) = header.header_len.checked_add(payload_len) else {
+        return Err(too_large);
+    };
+
+    let masking_key = if header.masked {
+        let Some(key) = bytes.get(header.header_len - 4..header.header_len) else {
             return Err(CodecError::MaskingKeyTruncated);
-        }
-        let key = [
-            bytes[cursor],
-            bytes[cursor + 1],
-            bytes[cursor + 2],
-            bytes[cursor + 3],
-        ];
-        cursor += 4;
-        Some(key)
+        };
+        Some([key[0], key[1], key[2], key[3]])
     } else {
         None
     };
 
-    if bytes.len() < cursor + payload_len {
+    let Some(payload) = bytes.get(header.header_len..frame_len) else {
         return Err(CodecError::PayloadTruncated);
-    }
-    let mut payload = bytes[cursor..cursor + payload_len].to_vec();
-    cursor += payload_len;
-
+    };
+    let mut payload = payload.to_vec();
     if let Some(key) = masking_key {
         apply_mask(&mut payload, key);
     }
 
     Ok((
         Frame {
-            fin,
-            rsv1,
-            rsv2,
-            rsv3,
-            opcode,
+            fin: header.fin,
+            rsv1: header.rsv1,
+            rsv2: header.rsv2,
+            rsv3: header.rsv3,
+            opcode: header.opcode,
             masking_key,
             payload,
         },
-        cursor,
+        frame_len,
     ))
 }
 
@@ -416,9 +516,76 @@ mod tests {
     }
 
     #[test]
+    fn ws_10_4_a_frame_announcing_2_pow_60_is_refused_from_its_header() {
+        // Ten octets of input: the header alone. The payload is never
+        // buffered, the error is final and maps to 1009 (§7.4.1).
+        let mut wire = alloc::vec![0x82u8, 0x7f];
+        wire.extend_from_slice(&(1u64 << 60).to_be_bytes());
+        let err = decode_with_limit(&wire, 1 << 20).expect_err("over the limit");
+        assert_eq!(
+            err,
+            CodecError::FrameTooLarge {
+                announced: 1 << 60,
+                limit: 1 << 20
+            }
+        );
+        assert!(!err.is_incomplete());
+        assert_eq!(err.close_code().to_u16(), 1009);
+        // A 16-bit length over the limit is refused the same way.
+        let err = decode_with_limit(&[0x82, 0x7e, 0x01, 0x00], 255).expect_err("over the limit");
+        assert_eq!(
+            err,
+            CodecError::FrameTooLarge {
+                announced: 256,
+                limit: 255
+            }
+        );
+    }
+
+    #[test]
+    fn ws_10_4_a_frame_at_the_limit_decodes() {
+        let data = alloc::vec![7u8; 256];
+        let wire = encode(&Frame::binary(data.clone())).expect("encode");
+        let (frame, used) = decode_with_limit(&wire, 256).expect("at the limit");
+        assert_eq!((frame.payload, used), (data, wire.len()));
+    }
+
+    #[test]
+    fn ws_10_4_incomplete_is_told_apart_from_invalid() {
+        // A prefix of a valid frame asks for more octets ...
+        let wire =
+            encode(&Frame::binary(alloc::vec![1u8; 300]).with_mask([1, 2, 3, 4])).expect("encode");
+        for cut in 0..wire.len() {
+            let err = decode(&wire[..cut]).expect_err("a prefix");
+            assert!(err.is_incomplete(), "{cut} octets: {err}");
+        }
+        // ... and a framing violation does not, however many follow.
+        for (wire, err) in [
+            (
+                &[0x82u8, 0x7e, 0x00, 0x64][..],
+                CodecError::NonMinimalLength,
+            ),
+            (
+                &[0x82, 0x7f, 0x80, 0, 0, 0, 0, 0, 0, 0][..],
+                CodecError::PayloadLengthMsbSet,
+            ),
+            (&[0x09, 0x00][..], CodecError::FragmentedControlFrame),
+            (
+                &[0x89, 0x7e, 0x00, 0x7e][..],
+                CodecError::ControlFrameTooLong,
+            ),
+        ] {
+            assert_eq!(decode(wire), Err(err.clone()));
+            assert!(!err.is_incomplete());
+            assert_eq!(err.close_code().to_u16(), 1002);
+        }
+    }
+
+    #[test]
     fn ws_5_2_rsv_bits_propagate_to_decoded_frame() {
-        // Spec §5.2 — RSV1-3 are not a codec validation topic
-        // (extension negotiation), but must be passed through 1:1.
+        // Spec §5.2 — whether a reserved bit is allowed depends on the
+        // negotiated extensions, which the codec does not know: it passes
+        // the bits through 1:1, `connection::Receiver` checks them.
         // FIN 0x80, RSV1 0x40, RSV3 0x10, opcode 0x2.
         let wire = [0xd2, 0x01, 0x01];
         let mut f = Frame::binary(alloc::vec![1]);

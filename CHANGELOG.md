@@ -10,6 +10,481 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **`zerodds-monitor`: `admin` and `json`** — the admin endpoints of a daemon
+  (`/catalog`, `/healthz`, the metrics path, `/`) and the JSON log text (escaping,
+  RFC 3339 timestamp, the five log levels, threshold, log line);
+  **`zerodds-observability-otlp`: `OtlpConfig::from_endpoint`,
+  `OtlpConfig::from_env` and `spawn_flush_loop`**. The bridge daemons (AMQP,
+  CoAP, CORBA/DDS, gRPC, MQTT, WebSocket, WebDDS, Zenoh, OPC UA) use them
+  instead of a copy each; their public functions stay as thin wrappers.
+- **CORBA 3.3 (`corba-3.3`): the ORB, interoperability and component parts
+  completed**. System exceptions of Part 1 §8.12 with minor codes and
+  completion status; `orb_init` with the `-ORB*` arguments and the initial
+  references; portable interceptors redesigned after §16 (flow stack,
+  ForwardRequest, PICurrent, `IorInfo`, `ORBInitInfo`); DynAny and
+  DynAnyFactory (§13.2); client-side policy management. TypeCode with all 37
+  TCKinds and `any` values of every kind; IOP::Codec and CodecFactory
+  (ENCODING_CDR_ENCAPS 1.0 to 1.4, checked octet for octet against JacORB
+  3.9). GIOP 1.3 and 1.4, Table 7.2 as data, service contexts after §7.7,
+  code set negotiation after §7.10.2.6, LOCATION_FORWARD(_PERM) and
+  NEEDS_ADDRESSING_MODE, ZIOP (§12.1) and MIOP with the Multicast Group
+  Manager and the gateway (§11, measured against JacORB 3.9); CSIv2 identity
+  assertion and authorization tokens; corbaloc/corbaname after §7.6.10 and
+  Full IOR conformance. CCM: connector fragments, the IDL3+ model of port
+  types and connectors, the D&C extension for connectors, the executor
+  equivalent IDL and the `ExecutorLocator` of the CIF. OMG CIDL (Part 3 §8)
+  under `Dialect::cidl` with PSDL, `zerodds_ast::cidl` and
+  `zerodds-idlc dump-cidl`.
+- **`zerodds-transport-uds`: the stream mode, Windows and shared
+  directories** (`zerodds-uds-transport-1.0`). `UdsStreamTransport` over
+  `AF_UNIX` `SOCK_STREAM` (hello `ZUDS` plus the sender id, length-prefixed
+  frames), the UDS transport on Windows (a protected ACL on a created
+  `base_dir`, reparse points refused); `UdsConfig::socket_mode`,
+  `base_dir_mode` and `send_timeout` (a send to a full peer fails with EAGAIN
+  after it), the socket mode set without following a symlink, the
+  recommended shared directory mode 3770; a datagram above `max_datagram` is
+  `RecvError::BufferTooSmall`, the bind checks the socket buffers the kernel
+  granted. `zerodds-dcps`: `transport.uds.base_dir`, `socket_mode`,
+  `base_dir_mode`, `max_datagram` and `mode`, the events
+  `transport.user_recv.datagram_above_limit` and `transport.uds.bind_failed`.
+  Platform jobs `platform-macos-transport-uds`, `platform-windows-transport-uds`
+  and `platform-windows-dcps-uds` (not run on Windows from here).
+- **`zerodds-transport-shm`: a ring a reader checks, one wait on every
+  platform, Windows and a region without an operating system**
+  (`zerodds-shm-transport-1.0`). The reader checks every length, skip and
+  head against what a writer can publish and resumes after a corrupt frame
+  (event `shm.corrupt_frame`); the pair lock in a per-user pair directory
+  keyed by the segment name; futex, `os_sync_wait_on_address`,
+  `__ulock_wait` or a FIFO per segment instead of a sleep-poll; the owner's
+  drop decided under the pair lock (a superseded owner's send fails); on
+  Windows segment files mapped through an unnamed file mapping, renamed
+  before removal, and the sweeps at a participant's start. `RegionShmTransport`
+  is a no_std + alloc transport over a region the integrator gives, with a
+  session rule and an integrator-chosen wait; measured between two
+  bare-metal Cortex-A53 cores under QEMU (10 000 frames) and on
+  armv5te under qemu-arm (weekly jobs `no-std-shm-two-cores`,
+  `no-std-shm-armv5te`). Platform job `platform-windows-dcps-shm`.
+- **`zerodds-mqtt-bridge`: the standalone broker server holds the server
+  statements of MQTT 5.0** (`mqtt-5.0` chapters 3, 4 and 6). Session Expiry
+  and Session Present, takeover with DISCONNECT 0x8E, Keep Alive and Server
+  Keep Alive, Assigned Client Identifier, Will with Will Delay Interval,
+  forwarded properties, Message Expiry, Retain Handling, No Local,
+  Subscription Identifiers, Shared Subscriptions, Topic Alias, Receive
+  Maximum and Maximum Packet Size in both directions, enhanced
+  authentication, a strict reading of every client packet
+  (`server/inbound.rs`) and the typed property set of Table 2-4
+  (`property_set.rs`). Listeners on TCP, TLS, WebSocket and WebSocket over
+  TLS (features `websocket` and `tls`). Measured against Mosquitto 2.0.21
+  clients and Eclipse Paho in the weekly job `integration-bridges-vendor`.
+- **`zerodds-mqtt-bridged`: the daemon of `zerodds-mqtt-bridge-1.0`** (§1 to
+  §12). The CONNECT and PUBLISH properties of §4.2, MQTT 3.1.1 as a
+  compatibility mode, tenants, the keys of §3, the exit codes of §2; one
+  SUBSCRIBE per topic filter with its Subscription Identifier, no echo of the
+  bridge's own messages, dispose and unregister in both directions
+  (`zerodds_op`), the catalog of §5.2 on `<own_topic_prefix>/<client_id>/
+  catalog`, the QoS of §6 (lifespan, deadline, liveliness, partition, the
+  replay of transient and persistent topics, `data_representation`), the
+  session kept in `mqtt.session_dir` across restarts, reconnect with
+  `mqtt.reconnect`; `auth.mode` none, password, mtls and enhanced
+  (SCRAM-SHA-256, OAUTHBEARER) with the ACL of §7.3 per subject; the metrics
+  of §8.2, one JSON log line per event on stdout and OTLP spans per PUBLISH
+  round trip; SIGHUP reloads TLS material and credentials; the Windows
+  service `ZeroDDSMQTTBridge` (not run on Windows). The broker matrix
+  Mosquitto 2.0.21, EMQX 5.8.6, HiveMQ 4.57.0 and Aedes 1.0.2 with Cyclone
+  DDS, Fast DDS and RTI Connext participants (`tests/cross_vendor.rs`).
+- **`zerodds-bridge-security`: `ScramClient`** (SCRAM-SHA-256 client, RFC
+  5802/7677), `oauthbearer_initial_response` (RFC 7628) and
+  `jwt_subject_unverified`. **`zerodds-dcps`: `cli::running_as_service()`.**
+- **`zerodds-time-service`: the Timer Event Service, CORBA objects and secure
+  time** (`omg-time-1.1`). Module `timer_event` (CosTimerEvent, §2.2 to §2.4,
+  feature `timer-event`, default) pushes `TimerEventT` to a
+  `CosEventComm::PushConsumer`; feature `serve` gives `CosTime::TimeService`,
+  UTO and TIO as CORBA objects over IIOP (GIOP 1.0 to 1.2, checked against an
+  omniORB 4.3 client), a remote caller gets no current time by default
+  (`CORBA::NO_PERMISSION`) and `proxy::TimeServiceProxy` widens time and
+  inaccuracy by half the measured round trip (App. B.2). `TimeService::
+  administered` with `admin::TimeAdmin` (authorized by an `AdminAuthorizer`,
+  recorded by an `AuditSink` before it takes effect); `secure_universal_time`
+  returns a time only from a designated source that is synchronized,
+  protected in transit and monotonic (App. A, App. B). Absolute UTOs carry
+  the time displacement factor of the local time zone (§1.3.2.4).
+- **`zerodds-dcps`: `time_source::KernelClock`** (Linux) reads the time, the
+  error bound and the synchronization state with one `adjtimex(2)`.
+  **`zerodds-security-logging`: feature `time-service`**, the
+  `JsonLinesLoggingPlugin` as the audit sink of the Time Service.
+- **`zerodds-xrce-agent`: federation of agents and HEARTBEATs only to an
+  active client** (`dds-xrce-1.0` §10.4, §8.3.5.12). With `upstream:` the
+  agent is a client of another agent for its routed clients and relays their
+  operations; requests on a reliable stream stay with the relay until the
+  upstream agent acknowledged them; a RESET ends the client's reads upstream;
+  measured against the eProsima Micro-XRCE-DDS Agent 3.0.1 (weekly job
+  `vendor-live-xrce`). HEARTBEATs go out while the client was heard within
+  `heartbeat.client_active_window_ms`. **`zerodds-xrce-client`:**
+  `XrceClient::forward` and the calls a relay needs.
+- **`zerodds-grpc-bridged`: the daemon of `zerodds-grpc-bridge-1.0`** (§1 to
+  §12). The `grpc.*` limits of §3 on the wire (SETTINGS, connection and
+  stream windows, keepalive PINGs, `SETTINGS_MAX_HEADER_LIST_SIZE` 16384);
+  tenants with a participant each, bound to the client certificate; Publish
+  as a client stream with one PublishAck; the messages of §4.2 on the wire
+  (`proto/zerodds/chat/v1/bridge.proto`); HTTP/2 flow control on the sending
+  side, CONTINUATION, padding; gzip and deflate; `grpc-timeout`; the status
+  table; reflection (`grpc.reflection.v1` and `v1alpha`) with file
+  descriptors; the §5.1 default service and package, `topics[].idl_file` and
+  `GET /idl/<dds_name>`; the QoS map of §6 (best-effort drops, retained
+  samples of TRANSIENT_LOCAL topics within one limit of 10 000 per
+  participant, lifespan per topic and per call, deadline, KEEP_ALL on the
+  writer); `topics[].keyed`; `grpc.tls.min_version` and `cipher_suites`; JWT
+  with ES256 beside RS256, `auth.mode none` only on a loopback bind, h2c only
+  on a loopback bind; one JSON log line per event on stdout with an `rpc`
+  line per call; OTLP server spans with a W3C traceparent and `intValue`
+  attributes; the drain on SIGTERM (`grpc.drain_secs`, GOAWAY with the last
+  stream, REFUSED_STREAM, the DDS acknowledgements awaited); the Windows
+  service `ZeroDDSGrpcBridge` (not run on Windows; the weekly job
+  `platform-windows-grpc-bridge-build` builds it); the modules of §12.1.
+  grpc-go, grpc-java, tonic, ghz, BloomRPC, grpcurl and the OpenTelemetry
+  Collector run against the daemon in the weekly job
+  `integration-bridges-vendor-grpc`, with a Cyclone DDS participant on the
+  DDS side.
+- **`zerodds-hpack`: `Decoder::set_max_header_list_size`** (RFC 9113 §6.5.2):
+  a larger header list is decoded to its end without its fields and reported
+  as `HeaderListTooLarge`.
+- **`zerodds-observability-otlp`: `IntAttribute` and
+  `OtlpExporter::add_span_with_ints`** write span attributes as an AnyValue
+  with `intValue`; the connect waits at most the configured timeout per
+  resolved address, and an endpoint with an IPv6 address in brackets works.
+- **`zerodds-monitor`: `TraceParent` implements `FromStr`** per W3C Trace
+  Context §3.2.
+- **`zerodds-dds4ccm`: the DDS-DLRL ports and connectors** (`dds4ccm-1.1`
+  §8, Annex B). The trait `CacheOperation` (implemented by
+  `zerodds_dlrl::cache::Cache`), `DlrlPortType` with a home receptacle per
+  class (the `ObjectHome` of the class), `DlrlPort` and `DlrlConnector` on
+  `DDS_Base` with a mirror port per DLRL port. The fragment creates the Cache
+  by `cache_usage`, registers the homes, applies the QoS profile
+  (`topic_filter` per topic; the DomainParticipant, Publisher and Subscriber
+  take the container the filter selects for every topic of the port) and
+  enables the DCPS entities; `error_listener` gets the statuses of the DCPS
+  entities of the ports; names that collide with an IDL keyword are refused.
+  The IDL of Annex B, `idl/ccm_dds_dlrl.idl`, over the DLRL IDL of
+  `zerodds-dlrl`, checked against `DDS::Cache` and the trait. Not built: home
+  receptacles typed by generated home classes (no Rust generator for the
+  DLRL classes yet).
+- **`zerodds-dlrl`: `Cache::set_new_topic_qos`** gives the QoS of a Topic
+  that `register_all_for_pubsub` creates; a Topic the DomainParticipant
+  already has is used with its QoS (`dlrl-1.2` §8.1.5.3).
+- **`amqp-dds-endpoint`: the listener is an AMQP 1.0 container**
+  (`amqp-1.0` Part 2, Part 3). Begin, attach, flow, transfer, disposition,
+  detach and end follow the rules of Part 2; links attach to queue nodes
+  shared by the connections, with the outcomes of Part 3 §3.4 and dynamic
+  nodes; idle time-out with heartbeats. `<limits>` is applied
+  (`idle-timeout-ms`, `max-sessions-per-connection`, `max-links-per-session`,
+  `max-connections`), the nodes are bounded (`<nodes max-nodes max-messages
+  max-octets>`, beyond a bound `amqp:resource-limit-exceeded`). A protocol
+  header it does not support is answered with the one it supports. Measured
+  against Apache Qpid Proton (weekly job `integration-bridges-vendor-amqp`).
+- **`zerodds-amqp-bridge`: the type system of AMQP 1.0 Part 1 completed**
+  (`amqp-1.0` §1.6). `decimal32`, `decimal64` and `decimal128`; described
+  values with a symbolic descriptor (module `descriptors`); arrays of
+  described values with their shared constructor and arrays of elements
+  without octets. The decoder bounds what a value takes beyond its octets
+  over the whole value.
+- **`zerodds-amqp-endpoint`, `amqp-dds-endpoint`: transactions of AMQP 1.0
+  Part 4** (`amqp-1.0` §4.1 to §4.5.8). The listener is a transactional
+  resource (coordinator, declare and discharge, transactional posting,
+  retirement and acquisition, `<transactions max-transactions timeout-ms>`);
+  `txn::TxnClient` and `txn::TxnController` are a transaction controller on
+  the client connection. Measured with Apache Qpid Proton as the controller
+  and Apache ActiveMQ Artemis 2.44.0 as the resource. New modules `peer` (the
+  answering side of a connection as a state machine without I/O) and
+  `terminus`.
+- **`zerodds-amqp-bridged`: the daemon of `zerodds-amqp-bridge-daemon-1.0`**
+  (§1 to §12). The QoS of §6 (KEEP_ALL, `qos.deadline_ms`,
+  `qos.liveliness_lease_ms`, `qos.partition`, a durable node for a
+  durability other than volatile, the heartbeat at half the idle time-out);
+  released and modified as Part 3 §3.4.4 and §3.4.5 say; tenants, each with
+  its own participant and broker connection; SASL SCRAM-SHA-256 and
+  SCRAM-SHA-512, EXTERNAL with the subject DN of the client certificate in
+  the topic ACL, and XOAUTH2; claims-based security (`amqp.cbs.*`, a SAS
+  token per address on `$cbs`, renewed at four fifths of its lifetime); one
+  JSON log line per event on stdout and OTLP spans per TRANSFER round trip;
+  the startup steps and the drain of §9.2 logged (`drain_started`,
+  `shutdown_with_queued`), credit granted during the drain sends no message
+  queued before the stop; the console control handler on Windows;
+  `topics[].type_file` on every keyed topic computes the KeyHash of a writer
+  that sends none (Cyclone DDS 11.0.1). The modules of §12.1. The broker
+  matrix of §10 measured against Apache ActiveMQ Artemis 2.44.0, Apache Qpid
+  Dispatch Router 1.19.0, Apache Qpid Broker-J 9.2.1, RabbitMQ 4.0.5 and
+  Solace PubSub+ Standard 10.26 (weekly jobs `integration-bridges-vendor-amqp`
+  and `integration-bridges-vendor-amqp-solace`), a Cyclone DDS writer in
+  front of the daemon in `vendor-live-dispose-bridges`. Not measured: Azure
+  Service Bus.
+- **`zerodds-amqp-endpoint`: the flow control of AMQP 1.0 §2.6.7 on every
+  link** (`amqp-1.0` §2.6.7). A sending link asked to drain consumes the
+  credit it cannot use and sends its flow state; a flow with `echo` is
+  answered with the state of the link or the session; a receiving link
+  follows the broker's delivery-count and grants consumed credit again. The
+  same for the `$cbs` links and the transaction controller.
+- **`zerodds-dcps`: `DcpsRuntime::set_user_reader_key_support`** gives a
+  reader registered without a TypeIdentifier the type its instance keys are
+  read with; `participant::host_name` returns the host name the host id is
+  built from.
+- **traceability: every key a bridge daemon reads is in its man page**, under
+  the heading of its own section (`zerodds-amqp-bridge-daemon-1.0` §11).
+- **`zerodds-dlrl`: the DLRL of DDS 1.2 chapter 8 over `zerodds-dcps`**
+  (`dlrl-1.2` §8.1.3 to §8.1.6, §8.2.2, Annex B). The model of §8.1.3
+  (`model`) and the structural mapping of §8.1.4 with its rows (`mapping`,
+  `rows`), including classes on a fixed DCPS model (`NoOid` keys,
+  `KeyAssociation`). The run-time entities of §8.1.6 (`cache`, feature
+  `dcps`): `CacheFactory`, `Cache`, `CacheAccess`, `Contract`, `ObjectHome`,
+  `ObjectRoot`, the listeners, `Selection` with `FilterCriterion`,
+  `QueryCriterion` and `SelectionListener`, and the collections `List`,
+  `Set`, `StrMap` and `IntMap`. Update rounds run on a thread of the Cache in
+  the order of §8.1.6.4; manual mode with `load`; `Cache::lock` and `unlock`,
+  `deref_reference` and `auto_deref`. `CacheAccess::write` publishes created,
+  modified and destroyed objects, also objects received from another
+  participant. Each Cache has its own Publisher and Subscriber, created not
+  enabled, so PRESENTATION can be set before `enable_all_for_pubsub`; a graph
+  written by one `write` arrives in one update round. Every operation of a
+  deleted entity raises `AlreadyDeleted`; the exceptions carry a message and
+  the repository id `IDL:DDS/<name>:1.0`. Queries and filters in the grammar
+  of Annex B (`criterion`) and `ObjectHome::set_content_filter`. The XML
+  model tags of §8.2.2.3.1 (`model_tags`, feature `model-tags`) and the
+  generator from model description and tags (`generation`). Oids carry the
+  host id and the namespaced process id. Measured against a Cyclone DDS
+  0.10.5 C program on a fixed DCPS model in both directions (weekly vendor
+  job).
+- **`zerodds-dlrl`, `zerodds-dlrl-codegen`, `zerodds-idlc`: the IDL PSM of
+  DLRL** (`dlrl-1.2` §8.2.1). `crates/dlrl/idl/dds_dlrl.idl` and
+  `dds_dcps.idl`, each declaration bound to its Rust item by a test;
+  `generate_implied_idl` writes the implied IDL of an application class
+  (§8.2.1.2.2); `zerodds-idlc dlrl --lang idl` writes it for the valuetypes
+  deriving from `DDS::ObjectRoot`, and `--lang all` includes it. Compiled by
+  omniidl 4.3.3 in the weekly job `integration-bridges-vendor-corba`.
+- **`zerodds-dcps`: `DomainParticipant::create_disabled_publisher` and
+  `create_disabled_subscriber`** create a Publisher or Subscriber not enabled,
+  whatever the participant's ENTITY_FACTORY says.
+- **`zerodds-sql-filter`: `Grammar::Dlrl12` and `parse_with`** for the
+  grammar of DDS 1.2 Annex B; `CmpOp` and `Operand` are exported.
+  **`zerodds-xml`: `parse_xml_tree_bytes`** reads a document in UTF-8 or
+  ISO-8859-1 as its declaration says.
+- **`zerodds-websocket-bridge`: RFC 6455 in full and permessage-deflate**
+  (`websocket-rfc-6455`). New module `connection` (`Receiver`, `Sender`):
+  every frame is checked at its header (masking by role, reserved bits and
+  opcodes, shortest length, control frames, size limits), fragments are
+  reassembled, invalid data fails the connection with its close code (1002,
+  1007, 1009) and the closing handshake of §7 behind it. permessage-deflate
+  (RFC 7692) with negotiated window and context takeover. Masking keys come
+  from the operating system, one per frame. The Autobahn|TestSuite runs
+  against both roles in the weekly jobs `integration-bridges-vendor-autobahn`
+  and `-autobahn-deflate-a`/`-b` (517 cases, 514 OK, 3 INFORMATIONAL on the
+  Linux test host). The WebSocket client of the MQTT daemon validates the
+  server's frames and fails with a Close frame of the violation's code.
+- **`zerodds-ws-bridged`: the daemon of `zerodds-ws-bridge-1.0`** (§1 to
+  §12). Origin check (`origin.allowed`, `origin.required`, HTTP 403), frame
+  and message limits (`limits.*`), the HTTP status of an invalid handshake
+  (400, 403, 405, 408, 426), the QoS map of §6 (bounded send queues,
+  RELIABLE waits and BEST_EFFORT drops the oldest, kept samples for late
+  subscribers, `deadline_missed`, Ping with Close 1011), `/healthz`, the
+  catalog (`catalog_on_connect`) and `/schema/<slug>` as IDL and XML, JWT
+  with ES256 beside RS256, the metric families of §8.2, one JSON log line
+  per event on stdout (the daemon wrote free text to stderr and ignored
+  `log_level`), OTLP spans per connection and message, tenants as
+  participants of their own (§1 L6), the drain on SIGTERM
+  (`shutdown_drain_ms`, Close 1001 on every connection) and the Windows
+  service `ZeroDDSWSBridge` (`zerodds_dcps::cli::run_as_service`, not run on
+  Windows). Measured against Cyclone DDS and Fast DDS (`tests/cross_vendor.rs`)
+  and Python websockets 17.4.
+- **`zerodds-transport-tcp`: the dialects of other vendors and discovery over
+  TCP** (`zerodds-tcp-transport-1.0` §2.5, §4.1 to §4.3, §6.1).
+  `transport.tcp_dialect` names the dialect of the connections a runtime
+  opens: `zerodds` (the handshake of §3, default), `rtps` (RTPS messages back
+  to back, delimited by the messageLength of the HeaderExtension), `cyclone`
+  (the stream of Cyclone DDS, length submessage 0x81) and `fastdds` (RTCP of
+  Fast DDS with its control messages, logical ports in locators above 65535).
+  The listener detects the dialect of an accepted connection at its first
+  octets; `transport.tcp_accept_dialects` restricts it. SPDP, SEDP, WLP,
+  TypeLookup and the DDS-Security builtin endpoints run over TCP
+  (`transport.tcp_port`, `discovery.peers` entries `tcp://ip:port`,
+  `discovery.unicast_transports`); a participant without unicast locators is
+  reached on the connection it opened. Measured over TCP alone against
+  Cyclone DDS 0.10.5 (`ddsperf`) and a running Fast DDS 3.6.1. Not built:
+  the TCP and TLS protocol of RTI Connext (§6.2).
+- **`zerodds-transport-tcp`: the handshake of §3 in full**
+  (`zerodds-tcp-transport-1.0` §3.3 to §3.8). The accepting side decides a
+  request against `handshake::ServerPolicy` (version, reserved flags, vendor
+  id from `transport.tcp_accepted_vendors`, peer limit, logical-port claim
+  from `transport.tcp_logical_port_claim`); a request with a reserved flag
+  is answered `ReservedFlagsSet` (code 5, new), a connection beyond the limit
+  `ResourceLimit` within the client's budget, after which the client waits
+  1 s; one deadline of 2 s per side; counters `truncated_frames`,
+  `connection_errors`, `refused_unanswered`, `connect_rejections`,
+  `peer_closed_connections`.
+- **`zerodds-dds4ccm`: DDS for Lightweight CCM 1.1, the DCPS part**
+  (`dds4ccm-1.1` §7.2 to §7.4, Annex A, C, D, E). New crate over the DCPS
+  entities: the basic port interfaces of §7.2.2.1 (`InstanceHandleManager`,
+  `Writer`, `Updater`, `Reader`, `Getter`, `Listener`, `StateListener`, the
+  two listener controls, `ContentFilterSetting`, `PortStatusListener`,
+  `ConnectorStatusListener`) with their connector fragments and
+  `ReadInfo::instance_status` by Figure 7.2, including
+  `INSTANCE_FILTERED_IN`/`OUT` for the query of a Reader; the port types
+  `DDS_Write`, `DDS_Update`, `DDS_Read`, `DDS_Get`, `DDS_Listen`,
+  `DDS_StateListen` with the attribute `filter`; the connectors `DDS_Base`,
+  `DDS_TopicBase`, `DDS_State` and `DDS_Event` with their mirror ports
+  (HISTORY KEEP_LAST and KEEP_ALL where the profile sets none); the DCPS
+  entities of the ports from the container's or component's defaults or
+  dedicated to the port (§7.4.1, §7.4.3); the threading policy of §7.4.4;
+  `qos_profile` as XML or `file:` URL with a `#Profile` fragment; the QoS
+  profiles of Annex E. The IDL of Annex A is shipped
+  (`crates/dds4ccm/idl/ccm_dds.idl`) and a test compares every method of the
+  Rust interfaces with it. A connector that finds a topic with other
+  `topic_qos` is refused with `ConnectorError::TopicQos`; a refused port
+  connection deletes what it created. Not built: the DLRL ports and
+  connectors of §8 and Annex B, which need `Cache`, `CacheAccess` and
+  `ObjectHome` of DDS-DLRL in `crates/dlrl`.
+- **`zerodds-dcps`: `DataReader::read_instance_w_condition`** (DDS 1.4
+  §2.2.2.5.3.14), the read of one instance through a ReadCondition or
+  QueryCondition.
+- **`zerodds-xml`: the schema of the DDS4CCM QoS profiles and the default
+  profile of Annex D** (`DDS4CCM_QOS_PROFILE_XSD`,
+  `DDS4CCM_DEFAULT_QOS_PROFILE_XML`), measured against the reader with
+  `xmllint`; the ci-rust image installs `libxml2-utils` for these tests.
+- **`zerodds-corba-bridged`: the types of a mapping from the IDL of its
+  interface** (`zerodds-corba-bridge-1.0` §5.2, §4.3). `mappings[].idl_file`
+  names the IDL; the daemon looks up the operation (an attribute as
+  `_get_<name>`/`_set_<name>`) and generates
+  `<Interface>::<operation>::Request`, `Reply` and `Notify` into
+  `corba.idl_dir` (default `/var/lib/zerodds/corba-bridge`), one file per
+  `idl_file`. The layout is the one of §4.3, so the argument bytes pass
+  through; a user exception is a variant of the reply type by its
+  `exception_kind`, and the daemon writes the GIOP exception (repository id
+  and members) from it. `correlation_id` names the first member of the
+  generated types. Operations with `wchar`, `wstring`, `fixed`, `any`,
+  object references or valuetypes are refused at start. Measured against
+  omniORB 4.3 and Cyclone DDS 0.10.5 (idlc compiles the generated IDL).
+- **`zerodds-corba-bridged`: tenants, SSLIOP only, the QoS of Bridge-Spec
+  §6, the log line, the spans and the CSIv2 metric of §8**
+  (`zerodds-corba-bridge-1.0` §1 L6, §4.7, §6, §8). Each entry of `tenants`
+  is a DDS participant of its own on its domain with its mappings; an SSLIOP
+  session whose client certificate it names is bound to it, its IORs are
+  the lines `@<tenant> …` of `ior_file`. `corba.ssliop.required` reaches
+  the objects over SSLIOP only: the IORs name IIOP port 0, the plain
+  listener answers a LocateRequest with `OBJECT_FORWARD` and a Request with
+  `LOCATION_FORWARD`. `qos.history`, `lifespan_ms`, `deadline_ms`,
+  `liveliness_lease_ms` and `partition` go to the DDS endpoints; with
+  `transient_local` the replies are kept per request hash and a repeated
+  request is answered from them; a reply topic that misses its deadline
+  answers the waiting requests with `TRANSIENT`. Every exchange is one JSON
+  line (`exchange`, with `timestamp` and the fields of §8.1), and with
+  `OTEL_EXPORTER_OTLP_ENDPOINT` a span `giop.request` with `dds.publish`,
+  `dds.subscribe` and `giop.reply`; `zerodds_corba_bridge_csiv2_failures_total{reason}`.
+  GIOP 1.1 replies are fragmented too. The daemon is split into the modules
+  of §12.1 (`src/bridge_daemon/`).
+- **`zerodds-coap-bridged`: a topic's type, the five forms of a sample,
+  DELETE, No-Response, the QoS of Bridge-Spec §6, the ops of §8**
+  (`zerodds-coap-bridge-1.0` §3 to §8; RFC 7641, RFC 7959, RFC 7967). A
+  topic's `idl_file` gives the daemon the type: a POST or PUT in
+  XCDR2 little or big endian (65000, 65001), XCDR1 little endian (65002),
+  JSON (50) or CBOR (60) is read as a sample of it (`4.00` otherwise) and
+  written keyed by its instance; a GET or a notification gives the form
+  Accept names; `/.well-known/core` names the forms and `type=`,
+  `GET /schema/<slug>` returns the IDL. DELETE disposes the instance named
+  by `key_hash` or by a sample in the body, with its key holder. No-Response
+  suppresses the response classes its bits name, also at the proxy.
+  Notifications of a RELIABLE topic are Confirmable and retransmitted, a
+  newer one takes the place of one in flight; a Reset, an unacknowledged
+  notification, an unanswered ping (`coap.keep_alive_secs`) or a missed
+  deadline (`deadline_ms`, `5.03` with Max-Age 0) ends an observation;
+  `observe_max_age_secs` bounds the time without an acknowledgement (RFC
+  7641 §4.5). TRANSIENT_LOCAL with KEEP_LAST(N) gives a new observer the
+  last N samples, VOLATILE none; `lifespan_ms` is the Max-Age; the partition
+  and the liveliness lease go to the DDS endpoints. `coap.block_size` cuts
+  every representation into Block2 blocks, `coap.max_body_size` bounds a
+  Block1 transfer (`4.13` with Size1), a block out of order is `4.08`. The
+  log is JSON on stdout with the fields of §8.1; `metrics.path`; the ten
+  families `zerodds_coap_bridge_*` of §8.2 with their labels (DTLS handshakes
+  by result through `zerodds_dtls_openssl::Server::failed_handshakes`); with
+  `OTEL_EXPORTER_OTLP_ENDPOINT` a span `coap.request` per exchange with its
+  child `dds.write`. `content_format.*` sets the numbers;
+  `data_representation: xcdr1` writes XCDR1 for readers that accept only it.
+- **`zerodds-coap-bridge`: the client matrix of Bridge-Spec §10 and
+  §12.3** (`tests/cross_vendor.rs`). Besides libcoap: aiocoap and Eclipse
+  Californium post, read and observe a typed topic in JSON; Eclipse
+  Wakaama's LwM2M client registers and reads the daemon's answer; a JSON
+  sample libcoap POSTs reaches a Cyclone DDS reader, and a Cyclone DDS
+  writer's sample reaches libcoap's observation. The weekly job
+  `integration-bridges-vendor` provisions them (`tests/integration/provision.sh`:
+  `aiocoap`, `cyclonedds-dev`, `californium` 3.14.0 from Maven Central with
+  its sha256, `wakaama` built from its tag at its commit).
+- **`zerodds-coap-bridged`: tenants** (`zerodds-coap-bridge-1.0` §1 L6,
+  `tenants`). Each tenant is a DomainParticipant of its own with its
+  topics, observations and catalog; a DTLS session whose subject a tenant
+  names is bound to it for its life. Plaintext, multicast and the sessions
+  no tenant names address the participant of `domain`. The metrics of a
+  tenant's topic carry `topic="<tenant>/<dds_name>"`.
+
+- **`zerodds-dtls-openssl`: DTLS 1.2 on OpenSSL 3.2 or later, with raw
+  public keys** (RFC 6347; RFC 7252 §9; RFC 7250; RFC 6920; ADR 0014). A new
+  crate: pre-shared keys, X.509 certificates checked against trust anchors
+  and the peer's name, and raw public keys checked against RFC 6920 names
+  (`KeyName`: `ni:`, `nih:` with its Luhn mod 16 check digit, the binary
+  form; `sha-256` to `sha-256-32`). A server on one UDP socket with the
+  cookie exchange of RFC 6347 §4.2.1 and at most 64 handshakes at a time, a
+  client, blocking, a thread per session, `Waker` to interrupt a waiting
+  receive. The suites RFC 7252 makes mandatory are offered first; a security
+  callback lets TLS_PSK_WITH_AES_128_CCM_8 and
+  TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 pass, which OpenSSL 3 rates below its
+  default level, CCM and GCM follow for peers whose OpenSSL leaves CCM out
+  (OpenSSL 3.5.6's `DEFAULT` has no CCM suite, measured). `vendored` builds
+  OpenSSL from source.
+
+- **`zerodds-coap-bridged`: RawPublicKey mode** (RFC 7252 §9.1.3.2,
+  §9.1.3.2.1; `coap.dtls.rpk_key_file`, `coap.dtls.rpk_trusted`,
+  `proxy.dtls.rpk_key_file`, `proxy.dtls.rpk_trusted`). The daemon shows a
+  raw public key and accepts the client keys whose RFC 6920 names it lists;
+  the proxy does the same towards `coaps` destinations. The ACL subject of a
+  raw public key is `rpk:` and its `ni` URI. Checked against libcoap 4.3.4
+  with GnuTLS in both directions; an untrusted key gets no session.
+
+- **`zerodds-coap-bridged`: CoAP-to-CoAP proxy** (RFC 7252 §5.7, §5.6,
+  §8.2.2, §11.2; RFC 8768; RFC 7959 §2.10; `proxy.*`). A forward proxy for
+  requests with Proxy-Uri or Proxy-Scheme (without `proxy.forward` they are
+  `5.05`, unless they name the daemon itself, which serves them), reverse
+  routes from a path to an origin URI with the Location-Path mapped back.
+  Every option of a proxy request is processed: an unrecognized Unsafe one
+  is `4.02`, an unrecognized Safe-to-Forward one is forwarded; an
+  unrecognized Unsafe option in a response, an undecodable response or a
+  Reset is `5.02`, no response `5.04`. Hop-Limit is decremented or
+  inserted (16), `5.08` with the daemon's identifier at zero, a loop seen
+  in a `5.08` diagnostic is not forwarded. A cache for `2.05` responses to
+  GET with the Max-Age reduced by the time in the cache, ETag validation,
+  invalidation on `2.01`/`2.02`/`2.04`; the response to a `coaps` request is
+  kept per DTLS identity only. `coaps` destinations over DTLS with the
+  certificate checked against `proxy.dtls.ca_file` (new
+  `DtlsCoapClient::connect_verified`) or with a PSK, by default only for a
+  client that comes over DTLS. Multicast destinations return every
+  response within `proxy.multicast_wait_ms`. The proxy joins Block2 blocks
+  of the destination and Block1 blocks of the client and cuts its answers
+  into blocks within the amplification limit of §11.3. A slow response is
+  preceded by an empty ACK and sent as a separate Confirmable response; a
+  retransmitted request is carried out once. `CoapCache` takes a
+  `CacheKey` with a `CacheScope` (`store_response`, `serve`,
+  `revalidated`, `invalidate`) and evicts the entry stored longest ago.
+
+- **`zerodds-coap-bridged`: Block2 for GET, and no large amplification
+  without authentication** (RFC 7959 §2.2, §2.4, §2.6; RFC 7252 §11.3). A
+  GET is answered with the block its Block2 option asks for; a request
+  without DTLS, OSCORE or auth token gets at most 8 times its size back,
+  in Block2 blocks with ETag and Size2, and so do the notifications to an
+  observer that registered so.
+
+- **`zerodds-coap-bridged`: multicast CoAP** (RFC 7252 §8, §7.1, §11.3;
+  `coap.multicast.*`). The daemon joins the all-CoAP-nodes groups or the
+  configured ones, learns the destination of each datagram from
+  `IP_PKTINFO`/`IPV6_RECVPKTINFO` and answers a Non-confirmable multicast
+  request for an allowed resource by unicast at a random point of the
+  leisure period; no Reset, no error, no empty response; without OSCORE
+  only `.well-known/core` by default. `/.well-known/core` takes the query
+  filters of RFC 6690 §4.1 (`zerodds_coap_bridge::core_link::filter_links`).
+
 - **Case-sensitive IDL identifiers as a switch:
   `zerodds_build::Config::case_sensitive_identifiers` and `zerodds-idlc
   --case-sensitive`** (GitHub #66; `zerodds-idl-parse`
@@ -743,6 +1218,196 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **`zerodds-time-service` with the feature `serve` compiles again**: the
+  pseudo-operations of `CORBA::Object` get the request body as an
+  `AlignedBody` at its offset, as `object_ops::dispatch_with_bases` takes it
+  since the GIOP 1.0/1.1 offset change. Documentation links that rustdoc
+  could not resolve under the default features (`zerodds-time-service`,
+  `zerodds-dcps`, `zerodds-transport-shm`, `zerodds-transport-tcp`) and
+  public documentation that linked to private items (`zerodds-corba-interop`,
+  `zerodds-mqtt-bridge`, `zerodds-amqp-endpoint`, `zerodds-websocket-bridge`,
+  `zerodds-transport-shm`) are fixed; `cargo doc --workspace` with
+  `-D warnings` passes.
+- **IDL4 to C++, CORBA platform: a member of type `CORBA::TypeCode` has the
+  TypeCode `CORBA::_tc_TypeCode`** (kind `tk_TypeCode`, CORBA 3.3 Part 1
+  §8.11.1); before, the generator wrote a new object reference TypeCode for
+  it.
+- **`zerodds-websocket-bridge`: the pump's unit tests compile again** (the
+  field `key_hash_unavailable` of `UserSample::Lifecycle` was missing since
+  `e2427416cf7`). The OTLP flush thread of the AMQP daemon flushes once at
+  the stop (it could flush twice).
+- **`scripts/cpd-gate.sh`: the Rust run of PMD CPD gets 8 GiB of heap by
+  default**; with 4 GiB it ended in an OutOfMemoryError on the current tree
+  and the gate reported no count. Copied code in the bridge daemons and their
+  tests is shared, which brings Rust from 1204 to 1153 blocks (baseline 1154).
+- **`zerodds-corba-giop` and its users: a GIOP 1.0/1.1 body is read and
+  written at its offset in the message** (OPEN-ITEMS 133) — requests, replies,
+  user exceptions, AMI and Bi-Directional replies, the DII result, the POA,
+  the naming service and the DSI; before, 8-octet arguments of a servant that
+  read the body itself were misaligned.
+- **`zerodds-corba-rt`, `zerodds-corba-iiop`, `zerodds-corba-ccm`,
+  `zerodds-corba-ior`: input from the wire is bounded** — an `any` nested
+  deeper than `MAX_VALUE_DEPTH` and values without octets are a `WireError`
+  (they could overflow the stack or the allocator), the MIOP reassembler
+  refuses a packet beyond `number_of_packets`, an oversized HTTP chunk size
+  of an object URL is an error instead of an overflow, `corbaloc:miop` takes
+  only two hex digits after `%`.
+- **`zerodds-idlc`: the corpus test reads `crates/dds4ccm/idl` with
+  `crates/dlrl/idl` on the include path.**
+- **`zerodds-transport-uds`: on macOS a stream peer that wrote and closed
+  before its connection was accepted is read whole** (accept without
+  `SO_NOSIGPIPE`, the hello deadline with `poll` instead of `SO_RCVTIMEO`);
+  before, the connection and its frames were dropped as a connection error.
+  The full-queue tests fill until the kernel refuses with EAGAIN and check
+  whether the peer's queue or the sender's send buffer was full, instead of
+  assuming `max_dgram_qlen + 1` (they failed in the CI container).
+- **`zerodds-transport-shm`: an existing pair directory of the user that group
+  and others may only read is accepted and set to 0700**; one they may write
+  to is still refused. On macOS the flink root `zerodds-dcps` creates had left
+  it 0755 and every open failed. The macOS test sandbox admits
+  `file-write-setugid`, so a set-group-ID bit is set as outside a sandbox.
+- **`zerodds-dcps`: a same-host channel is never visible without its
+  routes**; under load SEDP and samples no longer went over UDP although the
+  channel was open (`zerodds-shm-transport-1.0`).
+- **`zerodds-transport-shm`:** the flink sweeps accept a segment name only in
+  the shape `segment_os_id` gives (a flink pointing out of the pair directory
+  made the Linux sweep remove a file there); the sweep of the pair directory
+  removes the `.wake` FIFO of a gone segment; the owner's drop ends a `recv`
+  parked over a caller's region.
+- **`zerodds-xrce-agentd`: the DATA of a reliable output stream are bounded by
+  its sender window** of 16 messages (`dds-xrce-1.0` §8.4.14.1). A read takes
+  samples out of its DataReader only while the window has room, the others
+  stay in the DataReader under its History QoS, and an ACKNACK that frees the
+  window takes the next samples at once; a READ_DATA without delivery_control
+  on a reliable stream reads at most the free room (§8.3.5.9.2). A relay
+  (§10.4) leaves the answers of the upstream agent unacknowledged while its
+  client's window is full, so the upstream agent's window fills.
+  **`zerodds-xrce-client`:** `XrceClient::poll_held` and `holds_input`;
+  **`zerodds-xrce`:** `ReliableStreamState::next_in_order`, `has_in_order`
+  and `acknowledgement`.
+- **`zerodds-xrce`: `ReliableStreamState::recv_acknack`** acknowledges only
+  the messages before `first_unacked_seq_num`; a clear bit of the nack bitmap
+  was taken as an acknowledgement, and such a message, when lost, was never
+  sent again (`dds-xrce-1.0` §8.4.14.1). **`zerodds-xrce-client`:** a
+  best-effort stream numbers its messages (they all went out with sequence
+  number 0), and a reliable stream takes a request whole or not at all.
+- **`zerodds-dcps`: ENTITY_FACTORY** (`dds-dcps-1.4` §2.2.3.20). A
+  `DomainParticipant::set_qos` the runtime refuses no longer changes the value
+  the enable cascade reads; a participant creation reads the factory's value
+  once.
+- **`zerodds-time-service`:** an inaccuracy above 48 bits is `BAD_PARAM`
+  instead of being cut to its low 48 bits (§2.1.2.1); the crate builds without
+  std again.
+- **`zerodds-dcps`: the shutdown wakes the same-host receive thread** also
+  while the participant has no same-host channel (it slept 100 ms at a time
+  and a shutdown waited out the rest: 99 to 100 ms measured, now 1 to 2 ms),
+  and the thread reads what it waits on before its stop flag, so a wake is no
+  longer lost (up to 250 ms on the doorbell).
+- **`zerodds-amqp-endpoint`: the credit of a sending link** is zero when the
+  receiver's limit lies behind its delivery-count (it was a wrapped value),
+  and a link attached again counts from the attach's initial-delivery-count
+  (`amqp-1.0` §2.6.7).
+- **`zerodds-grpc-bridge`: `qos.history keep_all`** sets the DataWriter to
+  KEEP_ALL; before, it kept the runtime default depth. `keep_all` with a
+  depth is refused.
+- **DDS-Security: RTPS message protection and the HeaderExtension**
+  (DDS-Security 1.2 §10.5.3.3.1 Table 80, §8.4.2.4 Table 27). A protected
+  message whose SRTPS_PREFIX follows a HeaderExtension was taken as plain
+  and blocked; `decode_rtps_message` without the flag A handed on the
+  HeaderExtension no tag covers. Under `rtps_protection_kind` the HEARTBEAT
+  of the secure SPDP writer and the ACKNACK, DATA and HEARTBEAT replies of
+  the secure SPDP endpoints went out in the clear; they are protected as a
+  whole. A runtime with a TCP listener that takes the dialect `rtps` puts
+  the HeaderExtension with the message length in before a pre-shared key or
+  the form with additional authenticated data.
+- **Generated C: the copy of external members by Table 45**
+  (`dds-xtypes-1.3` §7.5.1.2.3.1). A deep copy with `ZD_COPY_RELEASE` into a
+  member that points at the source's object (after a shallow copy) no longer
+  frees that object; a shallow copy releases the destination member also with
+  `ZD_COPY_REPLACE` where the source member is NULL or a union holds another
+  branch; `zd_copy_<T>` and `zd_copy_with_<T>` of an object onto itself
+  change nothing and answer true (the copy released or replaced the object's
+  own external members). The generated code runs over a counting allocator
+  under gcc with the address and undefined-behaviour sanitizers and under
+  clang.
+- **`zerodds-corba-bridged`**: with CSIv2 and SSLIOP the IOR named
+  `TAG_SSL_SEC_TRANS` with the SSLIOP body as the transport of its CSIv2
+  mechanism; it is `TAG_TLS_SEC_TRANS` with the address, beside a mechanism
+  over plain IIOP. The IOR required GSSUP, but a request without it and
+  without a client certificate went on to the ACL; it is `NO_PERMISSION`.
+  With `ca_file` and without `require_client_cert` the IOR named trust in
+  the client and the server asked for no certificate; it asks and checks
+  one now. A message with a wrong magic, an unknown GIOP version or a header
+  that does not decode closed the connection without `MessageError`. A
+  notify target that closed its connection got the next sample written
+  into the closed one; the connection is opened again.
+- **`zerodds-coap-bridged`: the encapsulation header of a CoAP sample, and
+  the Content-Format of a DDS one.** The daemon's writer offered XCDR1 first
+  and sent a 65000 body (XCDR2) under `CDR_LE`; a reader decoded a type with
+  an 8-octet member at the wrong offsets. The writer now offers and sends
+  XCDR2 under the header of the type's extensibility (`extensibility:`
+  without a type, `appendable` by default after DDS-XTypes 1.3
+  §7.3.1.2.1.8). A DDS sample in XCDR1 went to observers as 65000; it now
+  carries the Content-Format of its representation, or is converted with
+  the type. A failed DDS write left the request without an answer (a
+  Confirmable one was retransmitted); it is `5.00`. DELETE answered `2.02`
+  without a dispose. A Block1 block out of order went unanswered, it is
+  `4.08`; the transfer is kept per endpoint and resource, not per token
+  (RFC 7959 §2.3). A registration with the endpoint and token of one the
+  daemon has replaces it instead of adding a second (RFC 7641 §4.1).
+
+- **`zerodds-coap-bridged`: a retransmitted request is processed once;
+  options, methods and preconditions** (RFC 7252 §4.5, §5.4.1, §5.8,
+  §5.10.3, §5.10.4, §5.10.6, §5.10.8). The daemon did not deduplicate: a
+  retransmitted POST was written to DDS again; now a Confirmable duplicate
+  gets the first acknowledgement and a Non-confirmable one is ignored
+  (`reliability::DuplicateDetector`, over UDP, DTLS and multicast). An
+  unrecognized critical option was ignored; now `4.02` (a Non-confirmable
+  request is reset). An unknown method was `4.00`, now `4.05`, also for
+  anything but GET on `/.well-known/core`. An Accept the resource cannot
+  serve is `4.06`; a body in a Content-Format other than 65000 was written
+  to DDS as XCDR2 and is now `4.15`. If-Match and If-None-Match were
+  ignored and are now checked against the topic's last sample (`4.12`); a
+  GET carries the ETag of the sample and an ETag that names it gets `2.03
+  Valid`.
+
+- **`zerodds-coap-bridged`: the message layer, and URIs with an IPv6
+  address or percent-encodings** (RFC 7252 §4.2, §4.3, §6.4). An
+  Acknowledgement, a Reset or an empty Confirmable message (a CoAP ping)
+  got a `4.00` response; now an empty Confirmable message and any other
+  Confirmable message that is no request get a Reset, an Acknowledgement
+  or Reset ends the retransmission it answers, and an undecodable
+  Confirmable message is reset. `zerodds_coap_bridge::uri::parse_coap_uri`
+  read neither an IPv6 literal (`coap://[2001:db8::1]:5683/`) nor
+  percent-encodings and dropped empty path segments; it now decomposes a
+  URI as §6.4 does (an empty segment is a Uri-Path option, every segment
+  and query argument percent-decoded, scheme and host without regard to
+  case, user information refused); `CoapUri::to_uri` composes it again
+  (§6.5).
+
+- **`zerodds-coap-bridged`: requests to an unknown resource, dot segments,
+  "/" in a segment, GET** (RFC 7252 §5.9.2.5, §5.10.1, §6.5, §5.8.1, §11.1).
+  A request to a resource the daemon does not have got no response (an
+  error in the log, the client retransmitting until it gave up); now `4.04
+  Not Found`. A Uri-Path "." or ".." is `4.00 Bad Request`. A "/" inside one
+  Uri-Path segment is percent-encoded into the resource name as §6.5 says,
+  so `["a/b"]` no longer reaches (and is no longer authorized as) the
+  resource `a/b`. A GET returned an empty `2.05`; it returns the last
+  sample of the topic, as does the first response of an observation.
+  `zerodds_coap_bridge::content_format` names the Content-Formats of RFC
+  7252 §12.3 and the bridge's own.
+
+- **`zerodds-opcua-bridged`: types with a union, an `@optional` member, an
+  array of several dimensions or a named member type.** A sample of a type
+  with a union was refused (`UnknownMember "_d"`), as was one whose
+  `@optional` member was absent and one with an array of several
+  dimensions; a PubSub publisher of such a type did not start. A type from
+  an IDL file with a structure, a union or an enumeration as a member did
+  not start the daemon (`incomplete TypeObject`): the TypeObjects of the
+  member types were not passed on. A client's Write of one member wrote
+  the type's zero value for every other member into DDS; the sample now
+  keeps what was written last.
+
 - **`PosixShmTransport::interrupt_recv` reaches a `recv` that is about to
   park** (`zerodds-transport-shm`). The flag it sets is not the word the
   consumer parks on, and it woke the ring once. A `recv` that had looked at
@@ -1437,6 +2102,11 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Removed
 
+- **`zerodds-dlrl`: the modules `relationship`, `subscription` and `query`**,
+  `metamodel::{ClassMetamodel, MultiAttributeMetamodel, MonoRelationMetamodel,
+  default_mapping, CacheAttachmentState, CacheMode}`,
+  `mapping::CellType::ExternalKey` and `rows::RowError::NoOidKey`; replaced
+  by `model`, `mapping`, `cache` and `criterion` (`dlrl-1.2`).
 - **`zerodds-corba-interop`: `tests/codegen_roundtrip.rs` and
   `tests/valuetype_wire.rs`**, which checked the generated stub against the
   generated skeleton and the value codec against itself (the cross-ORB tests
@@ -1461,6 +2131,373 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
   dds-warehouse demo describe their mappings with it.
 
 ### Changed
+
+- **IDL4 to C++, CORBA platform: each TypeCode is written once.** The `_tc_`
+  constant of a type declared in an interface or a value type is declared in
+  the class and defined after it, an inline variable from C++17 on
+  (`OMG_CORBA_INLINE_VARIABLE` in `omg/corba.hpp`); the expression no longer
+  stands twice. `CORBA::TypeCode::Member` has a constructor with the label
+  defaulting to none and the visibility to `PUBLIC_MEMBER`, and the generated
+  member lists write only what differs. `omg/corba_module.hpp` is
+  regenerated. With the shared helpers of the C and C++ endpoint tests and
+  of the Cyclone DDS backends of `zerodds-corba-dds-bridge`, PMD CPD counts
+  67 C/C++ blocks in the GitHub mirror's tree (baseline 67, before 96).
+- **BREAKING (CORBA crates):** `CorbaException::SystemException` is replaced
+  by `CorbaException::System(SystemException)`; `Servant::invoke`,
+  `NamingServant::dispatch`, `CorbaException::UserException::body` and
+  `RequestException::User::body` take or carry an `AlignedBody`;
+  `CorbaConnection::invoke` takes `MarshalArgs`; `ZiopConfig`,
+  `cidl::{HomeExecutor, StorageType, StorageHome}` and `corba-ccm::time_psm`
+  are removed (the second CosTimerEvent implementation, replaced by
+  `zerodds_time_service::timer_event`; OPEN-ITEMS 134); corba-iiop no longer
+  depends on corba-ccm.
+- **BREAKING (`zerodds-transport-uds`):** `AbstractDgramConfig::recv_buf` is
+  renamed `max_datagram` (default 65 536, was 212 992), `DEFAULT_RECV_BUF` is
+  removed, `UdsAddress::Filesystem` gains `socket_mode` and `base_dir_mode`,
+  `UdsConfig` gains `socket_mode`, `base_dir_mode` and `send_timeout`; the
+  filesystem mode of `UdsAbstractDgramTransport` binds
+  `<base_dir>/<hex32>.sock` under `/tmp/zerodds/uds`. **`zerodds-transport-shm`:**
+  segment layout version 3; `shared_memory` and `libc` are optional under
+  `std`.
+- **BREAKING (`zerodds-xrce-agentd`): the key `limits.max_pending_samples` is
+  removed**; it bounded a queue the daemon never fills. A file that sets it
+  stops the start with an error that names the key and the sender window that
+  replaces it (`dds-xrce-1.0` §8.4.14).
+- **BREAKING (`zerodds-mqtt-bridged`): `auth.sasl_users` is removed** (it fed
+  a check the daemon never called); `auth.mode` takes `none`, `password`,
+  `mtls` or `enhanced`, and `bearer`, `sasl` and `sasl_plain` are read as
+  `password`. The daemon's own topics begin with `mqtt.own_topic_prefix`
+  (default `$zerodds`); the default client id is `zerodds-bridge-<host>`
+  (`zerodds-mqtt-bridge-1.0` §3, §7.2).
+- **BREAKING (`zerodds-time-service`):** the public fields
+  `TimeService::default_tdf` and `default_inaccuracy` are replaced by
+  `with_tdf`, `with_inaccuracy`, `inaccuracy()` and `tdf_at()`;
+  `new_interval` returns `BadParam` for `lower > upper` (`omg-time-1.1`).
+- **BREAKING (`zerodds-grpc-bridge`): the server library hands calls out as
+  `CallEvent`s and queues answers per stream** (`zerodds-grpc-bridge-1.0`
+  §4). New modules `messages` and `compression`; `GrpcRequest` and the module
+  `qos_translation` are removed. `zerodds-grpc-bridged`:
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is read as `http://host[:port]`, anything
+  else stops the start; `metrics.listen` must be an IP address and port.
+- **BREAKING (`amqp-dds-endpoint`, `zerodds-amqp-endpoint`, `zerodds-dcps`):
+  the APIs around the AMQP container** (`amqp-1.0`,
+  `zerodds-amqp-bridge-daemon-1.0`). `handle_connection` takes a
+  `frame_io::Transport`; `HandlerConfig` gains `nodes`, `idle_time_out` and
+  `poll_interval`, `ServerConfig` gains `nodes`; new `HandlerError::Closed`;
+  `FrameIoError::UnsupportedVersion` carries the revision; `AmqpError` and
+  `Outcome` move to `terminus` (re-exported from `broker`); `Peer::drained`
+  takes the container; `UserSample::Lifecycle` has the new field
+  `key_hash_unavailable`. A txn-id longer than 32 octets is a protocol error
+  unless `TxnClient::set_txn_id_limit` admits it.
+- **`zerodds-amqp-bridged`: the container id and the exit codes**
+  (`zerodds-amqp-bridge-daemon-1.0` §2). The default container id is
+  `zerodds-bridge-<host>` from `gethostname`, no longer from `$HOSTNAME`; a
+  failed TLS handshake, SASL exchange or open before the first connection
+  ends with exit 4, 5 or 6 also without `--once`; a broker open with fewer
+  channels than links is exit 6 (was 2).
+- **BREAKING (`zerodds-dlrl`): the API follows the PSM of DDS 1.2 §8.2.1**
+  (`dlrl-1.2`). `DlrlException` moves to the module `error`;
+  `UNLIMITED_RELATED_OBJECTS` is a `RelatedObjectDepth` (`i16`); the remove
+  of `List`, `Set`, `StrMap` and `IntMap` and `Set::remove_object` return a
+  boolean instead of raising `NoSuchElement`; `Cache::attach_listener`,
+  `detach_listener`, `enable_updates`, `disable_updates`, `find_home_by_name`,
+  `find_home_by_index`, `CacheAccess::purge`, `Contract::set_depth`,
+  `set_scope`, `Selection::set_listener`, `ObjectRoot::is_modified`,
+  `which_contained_modified` and `is_attribute_modified`, the queries of
+  `Set` and the listings of `ObjectHome` return a `Result`.
+- **BREAKING (`zerodds-websocket-bridge`, `zerodds-bridge-security`): the
+  WebSocket library API** (`websocket-rfc-6455`, `zerodds-ws-bridge-1.0`).
+  `InsecureSplitmixProvider` is removed; `generate_masking_key` and
+  `MaskingKeyProvider::next_key` return `Result<[u8; 4], EntropyError>`;
+  `validate_wire_status_code` refuses the undefined codes of 1000 to 2999;
+  `parse_client_request` refuses a request without `Host`, another method
+  than GET, below HTTP/1.1, or a key that is not 16 octets; `SendError`,
+  `HandshakeError`, `CodecError` and `NegotiationError` have new variants;
+  `ClientHandshake` has `origin`, `DaemonConfig` new fields.
+  `AuthMode::Jwt` carries `key: JwtKey` (RS256 or ES256) instead of
+  `pkcs1_pubkey_der`. `auth.mode: none` on a listen address that is not
+  loopback is a configuration error; the default listen address is
+  `127.0.0.1:8080`; the nine metric families `zerodds_ws_*` without labels
+  are replaced by `zerodds_ws_bridge_*`.
+- **BREAKING (`zerodds-transport-tcp`, `zerodds-rtps`): TCP framing and
+  locator kinds** (`zerodds-tcp-transport-1.0` §1.1, §2.3, §2.4, §3.6, §5.1).
+  `FramingError` is `#[non_exhaustive]` with `Closed` for the end of a
+  stream on a frame boundary; `accept_one` returns an error for a
+  connection closed inside a frame (it returned `Ok`). `send` refuses a
+  payload above 16 MiB before it connects. A send to a peer that closed its
+  connection connects anew in the same call; a frame written before the
+  close arrived can be lost with `Ok` and is counted. An outgoing connection
+  claims its listener's port as logical port, and the source of its frames
+  is that listener. `set_tcp_kinds_fast_dds` is removed: the locator kinds 4
+  and 8 are the variants `LocatorKind::Tcpv4Kind4`/`Tcpv6Kind8`, chosen per
+  runtime by `transport.tcp_locator_kinds`. A runtime with a TCP transport
+  announces its TCP listener as a metatraffic unicast locator beside the UDP
+  one.
+- **`zerodds-xml`: the Boolean and number forms of DDS4CCM 1.1 §7.4.2.1
+  Table 7.1** (`dds4ccm-1.1` §7.4.2.1). `yes`, `no`, `BOOLEAN_TRUE`,
+  `BOOLEAN_FALSE` in every case, hexadecimal numbers in the numeric fields of
+  a QoS policy, a negative `ownership_strength` or `transport_priority`,
+  `LENGTH_UNLIMITED` in those two and the spaces around a partition name are
+  vendor forms: the default reading refuses them with `XmlError::VendorForm`
+  (`True` ended with `ValueOutOfRange` before), `ReadOptions` with
+  `VendorForms::Accept` reads and reports each once per element.
+- **`zerodds-idl-lower`: template modules** (IDL 4.2 §7.4.12.4). The body of
+  a template module names what the scope of its declaration declares; a
+  `<sequence_type>` formal parameter over an earlier formal is checked
+  against the actual, comparing element types through their typedefs by
+  kind, width, bound, digits and dimensions.
+- **BREAKING (`zerodds-ccm`): the DDS4CCM data model is the one of the
+  specification.** `dds4ccm::BasicPortKind` names the 13 interfaces of
+  §7.2.2.1, `ExtendedPortKind` the six port types of §7.2.2.2,
+  `ConnectorKind` the connectors and `ThreadingLevel` the levels of the
+  threading policy. Removed, because the specification does not name them
+  and nothing read them: the port kinds `MultiTopicReader`,
+  `ContentFilteredReader`, `QueryConditionReader`, `WaitsetReader`,
+  `ConnectorThreadingPolicy`, `Connector`, `ConnectorPattern`,
+  `qos_profiles`, `DlrlPort`, `DlrlPortKind`, `IdlOutputForm`.
+- **BREAKING (generated C): an `@external string`, `wstring` or `fixed`
+  member is owned by its aggregate** (`dds-xtypes-1.3` §7.5.1.2.3.1). It is
+  owned like every other external member, a union branch included:
+  `zd_fini_<T>` frees its characters, a deep `zd_copy_<T>` copies them, and a
+  copy into an object that already holds one writes into its characters
+  (`ZD_COPY_REUSE`) or frees them; it was assigned and never freed. An
+  application that points such a member at a literal or other storage of its
+  own sets it to NULL before `zd_fini_<T>` and before the object is the
+  destination of a copy. A sample a generated decoder filled is not passed to
+  `zd_fini_<T>` and is not a destination.
+- **Generated C: `zd_copy_<T>` and `zd_copy_with_<T>` copy a sequence or map
+  behind an `@external` or `@optional` member with its elements**
+  (`dds-xtypes-1.3` §7.5.1.2.3.1), at every nesting depth; the header was
+  assigned and `_buffer` shared with the source. `zd_fini_<T>` finalises the
+  elements and frees a buffer the collection owns (`_release`). Table 45
+  "Deep Copy | Reuse": the copy answers false where an existing sequence or
+  map has `_maximum` below the source's `_length`, or an existing string is
+  shorter than the source. A member behind an external or optional pointer
+  whose arrays and collections nest 64 levels or deeper is refused with an
+  error that names the member.
+- **Generated C: `zd_init_<T>` of a union sets `_d`** to the default value of
+  the discriminator type (DDS-XTypes 1.3 Table 9) and clears the branches; it
+  left `_d` as it was, and `zd_fini_<T>` and the copy read `_d`. A `_d`
+  written before `zd_init_<T>` is overwritten.
+- **`zerodds-coap-bridge`: the DTLS transport is OpenSSL, blocking**
+  (feature `dtls`; ADR 0014 supersedes ADR 0011). webrtc-dtls, webrtc-util,
+  tokio, pem and rustls leave the feature; it links libssl 3.2 or later
+  (`dtls-vendored-openssl` builds OpenSSL from source). `dtls_transport`
+  keeps its type names and becomes blocking: `DtlsCoapSession::send_message`
+  and `recv_message(timeout)` take `&mut self`, `waker()` interrupts a
+  receive; `DtlsCoapServer::accept(timeout)`; `DtlsCoapClient::connect` takes
+  a `zerodds_dtls_openssl::ClientConfig`, `connect_verified` a CA file and
+  checks the server's certificate and name, `connect_rpk` is new;
+  `load_certificate`, `load_client_cas` and `connect_with_certificate` are
+  gone (a key in SEC1 or PKCS#1 form is read as well). A client no longer
+  accepts a server certificate unchecked. The daemon serves a DTLS session
+  on a thread of its own; a bind or credential error of the DTLS listener
+  stops the start (exit 4) instead of being only logged.
+
+- **`zerodds-codec`: a sample read with a loan costs no MD5, no lock and
+  no `String` per sample.** `key_material_from_body` of a type that borrows
+  wrote the key holder twice and hashed it for every sample; it writes it
+  once and keeps the KeyHash while the holder is the one the thread saw
+  last. `model_of` kept every type's model in one map behind a lock and
+  asked it per value encoded or decoded; the model a thread asked for last
+  is kept beside it. `LoanExt::read_as` compared the two type names through
+  two copies. Measured on the Linux test host with a reader taking with a
+  loan (`crates/codec/examples/zerodds_perf_loan.rs`), 1 kB, BEST_EFFORT,
+  the writer batching: 2.7 → 2.15 µs of CPU per sample, 71 → 94 % received
+  of 960 kS/s written; the owned take beside it 2.0–2.3 µs.
+
+- **`zerodds-opcua-bridged`: the answer to a client's Write is the outcome
+  of the write into DDS** (`zerodds-opcua-server` `Server::set_write_commit`,
+  `zerodds-opcua-bridge`). A Write the AddressSpace accepted was answered
+  `Good` and written into DDS by the poll 100 ms later, where a failure was
+  only logged. Now the daemon writes into DDS before the client is answered;
+  a value that does not encode for the topic's type or that DDS does not
+  take is answered `Bad_CommunicationError` and taken back out of the
+  AddressSpace.
+
+- **`zerodds-opcua-bridged`: the DataTypes of a topic's type and the value
+  of its aggregate Variables** (DDS-OPCUA Gateway 1.0 §9.2). Every
+  structure, union, enumeration and bitmask is a `<Name>DataType` node with
+  its `DataTypeDefinition` and its `Default Binary` encoding, a structure
+  also a `<Name>VariableType`; every Variable carries its DataType,
+  ValueRank and TypeDefinition (all were `BaseDataType` before). The Value
+  of a structure, union or bitset Variable is its ExtensionObject (OPC
+  10000-6 §5.2.6 to §5.2.8), of a collection of structures the array of
+  them, of a `map` its `KeyValuePair`s; a client writes it whole. A bitmask
+  is an `OptionSet` (Table 9.12), no longer an integer. A union's
+  discriminator is the leaf `SwitchField`. A collection whose elements are
+  collections has a Variable per inner collection (§9.2.5.2.2.5); a sample
+  of such a type was refused. Checked against the client of
+  `asyncua` (FreeOpcUa), which loads the definitions and reads and writes
+  structures, unions and optional members.
+
+- **`zerodds-opcua-bridged`: the SKS pushes keys to its push targets**
+  (OPC 10000-14 §8.6, §8.7): `KeyPushTargets` with `AddPushTarget`,
+  `RemovePushTarget` and the folder Methods, a `PubSubKeyPushTargetType`
+  Object per target with `ConnectSecurityGroups`,
+  `DisconnectSecurityGroups` and `TriggerKeyUpdate`; the daemon opens a
+  SignAndEncrypt channel to the target with its server's certificate and
+  calls `SetSecurityKeys` at half the key lifetime, after an error after
+  the `RetryInterval`. **`zerodds-opcua-server`:
+  `AddressSpace::remove_reference`.**
+
+- **`zerodds-opcua-bridged`: SecurityGroups and their folders added and
+  removed at run time, and the SKS roles** (OPC 10000-14 §8.5, §8.8):
+  `AddSecurityGroup`, `RemoveSecurityGroup`, `AddSecurityGroupFolder`,
+  `RemoveSecurityGroupFolder` and `SupportedSecurityPolicyUris` on the
+  `SecurityGroups` folder; `opcua.server.roles` with
+  `security_key_server_admin`, `security_key_server_access` and
+  `security_key_server_push`. **`zerodds-opcua-server`:
+  `AddressSpace::add_method_mut`, `call_mut` and `remove_subtree`** for a
+  Method that adds or removes nodes.
+
+- **`zerodds-opcua-bridged`: the `DataSetMetaData` of a subscriber
+  describes its fields and their DataTypes** (OPC 10000-14 §6.2.3.2): the
+  DataType, ValueRank, ArrayDimensions and built-in type of each field
+  from its DDS type, a `DataSetFieldId` per field (all were zero), the
+  namespaces and the `structureDataTypes`/`enumDataTypes`. A RawData
+  DataSet with an array field was read as a scalar (every field had
+  ValueRank −1), a field whose sequence was empty in the type's zero value
+  was read as an Int32, and a field naming no part of the type was taken
+  as an Int32. **`zerodds-opcua-server`: the `Server` Object with
+  `ServerArray` and `NamespaceArray`** (OPC 10000-5 §8.3.2,
+  `AddressSpace::ensure_server_object`, `server::APPLICATION_URI`).
+
+- **`zerodds-opcua-bridged`: `fixed<P,S>` is an OPC UA `Decimal`** (OPC
+  10000-6 §5.1.10), both directions; a type with a `fixed` member was not
+  converted.
+
+- **`zerodds-opcua-bridged`: PubSub keys from a Security Key Service, and
+  the daemon as one** (OPC 10000-14 §5.4.5, §8, §9.1.3.3; features `crypto`
+  and `pubsub-security`). A secured PubSub connection had one static key.
+  Its `security.key_source` is now `static`, `local` (the daemon's own
+  SecurityGroup), `sks` (pulled with `GetSecurityKeys` over an encrypted
+  session, again at half the key lifetime and when a message names an
+  unknown token) or `push` (`SetSecurityKeys`); the keys rotate as the SKS
+  says. `opcua.server.security_groups` makes the daemon an SKS: keys from
+  the operating system's random source, `GetSecurityKeys`,
+  `GetSecurityGroup`, a `SecurityGroupType` Object per group with
+  `InvalidateKeys` and `ForceKeyRotation`. `zerodds-opcua-server`: a Method
+  handler gets the session's user and the security of its channel
+  (`MethodContext`), and `AddressSpace::add_method` adds a Method with its
+  `InputArguments`/`OutputArguments`. `zerodds-opcua-pubsub`:
+  `GetSecurityKeys` follows §8.3.2 (`RequestedKeyCount` 0 is the current key
+  alone, an unknown `StartingTokenId` the oldest key, `TimeToNextKey` the
+  time the owner sets); past keys are kept; the method arguments as
+  Variants.
+
+- **`zerodds-opcua-bridged`: a PubSub subscriber of a struct with a member
+  `value` writes its value.** The subscriber took every DataSet field named
+  `value` for the one field of a scalar topic and wrote the struct's
+  default, 0, into DDS. It read one NetworkMessage a tick; a publisher
+  that sent faster than the daemon ticked left its values ever further
+  behind. It reads what is there now (at most 256 a tick). Several
+  subscribers of one multicast group on one
+  host each bind the group's port now (`zerodds-opcua-pubsub`
+  `UdpTransport::bind_shared`, `SO_REUSEADDR`/`SO_REUSEPORT`); the second
+  failed with "address in use".
+
+- **Two `zerodds-opcua-bridged` on one host and domain no longer share a
+  GUID prefix.** The prefix came from the daemon's name and the domain
+  alone; it now includes the address the daemon's server listens on.
+  `zerodds-rtps`: an ACKNACK that acknowledges more than the writer wrote
+  (what a reader of the other daemon's writer of the same GUID sent)
+  acknowledges what was written; before, the next HEARTBEAT announced
+  firstSN beyond lastSN + 1, and a debug build stopped its tick thread on
+  the assertion that catches it.
+
+- **`zerodds-opcua-bridged`: a topic whose type is in no IDL file gets
+  its type from the remote endpoints of the topic** (DDS-XTypes 1.3
+  §7.6.3.3). A gateway entry whose type no `opcua.idl` file declared stopped
+  the start. Now the daemon asks the remote endpoints that announce a
+  complete `TypeIdentifier` for the type (`getTypes`,
+  `getTypeDependencies`) and builds the topic when the type is there; this
+  holds for both connection directions, for client nodes and for PubSub
+  publishers and subscribers. The daemon's own endpoints announce their
+  type and answer for it. `zerodds-dcps`: `DiscoveredEndpointInfo` carries
+  the complete identifier of a remote endpoint's type
+  (`complete_type_identifier`), read from its `PID_TYPE_INFORMATION` in
+  either byte order; `SerializedTypeSupport::type_identifier` and
+  `type_objects` are public.
+
+- **`zerodds-opcua-bridged`: the elements of an array or a sequence of
+  structures have values** (DDS-OPCUA 1.0 §9.2.5.1.2.3, §9.2.5.2.2.3): one
+  Variable per element, `<TypeName>_<index>`, an ordered component of the
+  collection's Variable (`zerodds-opcua-server`
+  `reference_types::HAS_ORDERED_COMPONENT`), with the members under it. The
+  collection was a valueless node before.
+
+- **`zerodds-opcua-bridged`: a Write of an array value reaches DDS.** A
+  Variant written to a leaf that is an array or a sequence of scalars was
+  dropped: the sample went out with the collection it had before. It now
+  replaces the collection.
+
+- **`zerodds-opcua-bridged`: `long double` and `bitset` have values.** A
+  type with a `long double` or a `bitset` member was not converted at all.
+  `long double` is now a `ByteString` of 16 octets (DDS-OPCUA 1.0 §9.2.1), a
+  `bitset` the structure of its named bitfields, one leaf each; both
+  directions. `zerodds-types` exports `dynamic::Float128`.
+
+- **`zerodds-opcua-bridged`: a `map` key a DDS sample brings gets its node
+  and its DataSet field.** The AddressSpace and the PublishedDataSet were
+  built once from the type's default sample, whose maps are empty, so the
+  value of every map entry was reported as an unmatched path and reached no
+  client. Now the entry's Variable is created under the map member's node
+  when the sample is applied, and a PublishedDataSet gets the field appended
+  with a new `MinorVersion` (`zerodds-opcua-pubsub` `Publisher::append_field`).
+
+- **Debian: `zerodds-opcua-bridge` is declared in the control file**
+  (`packaging/linux/deb/control.tmpl`); `assemble-debs.sh` built the package
+  and the control file did not name it. `zerodds-opcua-bridged.yaml(5)` and
+  the example configuration name the same keys.
+
+- **`zerodds-opcua-bridged`: `log_level` filters the log.** The value was
+  read and not used; every line went to stderr. A line now carries its
+  level and is written when the level reaches `log_level`; a decode failure
+  and a failed DDS write name their topic.
+
+- **A DataWriter applies the content filters of its remote readers**
+  (DDSI-RTPS 2.5 §8.7.3; `zerodds-rtps`, `zerodds-dcps`). A typed DataWriter
+  evaluates the DDSSQL filter a matched reader announces in its subscription
+  (`PID_CONTENT_FILTER_PROPERTY`) against each sample. A sample that passes
+  goes out with `PID_CONTENT_FILTER_INFO` (§9.6.4.1: the signatures of the
+  filters applied and their results); the first sample of an instance that
+  does not pass after one that did goes out as a DATA without payload and
+  with the FilteredFlag (§8.7.3.2, §8.7.3.4); a further one is a GAP with
+  `filteredCount` 1. A filter of another class, an expression that does not
+  parse or names a field the writer's type does not have, and the 33rd
+  filter of one writer are left to the reader, as is every filter of a
+  writer that has only serialized samples (the runtime API, the C API). The
+  reader keeps applying its own filter. Not measured against another
+  vendor's reader or writer.
+
+- **A sample KEEP_LAST replaced no longer counts in the flow-control window**
+  (`zerodds-rtps` `ReliableWriter`). The window counted every sample sent
+  until the readers acknowledged it, also one the history no longer held and
+  the writer could not send again, so a RELIABLE writer with KEEP_LAST waited
+  up to `max_blocking_time` after every 8 MiB. DDS 1.4 §2.2.3.18 has a
+  KEEP_LAST writer keep the latest `depth` values and discard the older
+  ones; now the window counts what the history holds. Measured on the Linux
+  test host: the self pair with KEEP_LAST 64 and 8 KiB samples, p99.9 60 to
+  94 µs over five runs, 100 ms in each run before. A KEEP_ALL writer is held
+  as before.
+
+- **The flow-control window of a writer with reliable readers is 8 MiB by
+  default, 512 KiB before** (`writer.unacked_window_bytes`,
+  `ZERODDS_WRITER_UNACKED_WINDOW`; `zerodds-rtps`
+  `DEFAULT_UNACKED_WINDOW`). With the specification's
+  `heartbeatResponseDelay` of 500 ms (DDSI-RTPS 2.5 §8.4.7.1) a reader
+  acknowledges twice a second, so a writer moves one window per 500 ms.
+  Measured on the Linux test host (`net.core.rmem_max` 4 MiB, the host
+  reserved exclusively, `tests/perf/speed/speed.py`, row `zerodds`, three
+  runs, median) with 512 KiB, 8, 16, 32 and 64 MiB: RELIABLE 12.0, 142,
+  146, 146 and 148 kS/s at 64 octets; 1.01, 15.5, 31.1, 56.5 and 116 kS/s
+  at 1 KiB; 0.026, 0.262, 0.509, 0.873 and 1.25 kS/s at 64 KiB, where the
+  reader's kernel dropped 0, 0, 133, 593 and 1361 datagrams over the three
+  runs. 8 MiB is the largest size without a dropped datagram. The round
+  trip of a 1 KiB sample: p99.9 100 ms with 512 KiB, 90 µs with 8 MiB; of a
+  64 KiB sample p99 stays at 100 ms (RELIABILITY `max_blocking_time`), with
+  every size. BEST_EFFORT is not held by the window.
 
 - **`tools/omg-xtypes-test-main`: the suite's answers are the client's
   defaults.** On the four axes where the OMG dds-xtypes suite expects another
@@ -1830,6 +2867,10 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Security
 
+- **`url` 2.5.9 closes RUSTSEC-2026-0592**, a stack overflow in
+  `Url::origin()` on nested `blob:` URLs; `url` comes in through
+  `zenoh-link-ws` under `zerodds-zenoh-bridge`. `form_urlencoded` 1.2.3 with
+  it.
 - **`rusqlite` 0.41 closes RUSTSEC-2026-0459.** The SQLite that
   `libsqlite3-sys` 0.30.1 bundled (before 3.54.0) can return uninitialized
   page-cache memory when a database is opened with a `-wal` file of another

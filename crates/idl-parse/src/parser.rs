@@ -136,6 +136,7 @@ pub fn parse(source: &str) -> Parse {
 pub fn parse_with(source: &str, dialect: crate::Dialect) -> Parse {
     let mut parser = Parser::new(source);
     parser.dialect = dialect;
+    parser.mark_cidl_keywords();
     parser.parse_file()
 }
 
@@ -166,6 +167,7 @@ pub fn parse_preprocessed_with(
 ) -> Parse {
     let mut parser = Parser::over(&preprocessed.text, preprocessed.tokens.clone());
     parser.dialect = dialect;
+    parser.mark_cidl_keywords();
     let mut parse = parser.parse_file();
     parse.prepend_diagnostics(preprocessed.diagnostics.clone());
     parse
@@ -260,6 +262,33 @@ impl<'a> Parser<'a> {
             root,
             diagnostics: self.diagnostics,
             placed: self.placed,
+        }
+    }
+
+    /// Under `Dialect::cidl`, turn every identifier spelled exactly like
+    /// a CIDL or PSDL keyword into that keyword.
+    ///
+    /// CORBA 3.3 Part 3 §8.2.1: the words of Table 8.2 and of PSDL's
+    /// Table 3-2 "are reserved for use as keywords in CIDL, and may not be
+    /// used otherwise in CIDL, unless escaped with a leading underscore".
+    /// The lexer does not know the dialect, and the preprocessor hands
+    /// over tokens it lexed itself, so the reclassification happens once
+    /// here, over the finished stream. The escaped form `_state` is an
+    /// identifier whose text starts with the underscore and is left as
+    /// it is.
+    pub fn mark_cidl_keywords(&mut self) {
+        if !self.dialect.cidl {
+            return;
+        }
+        for token in &mut self.tokens {
+            if token.kind != TokenKind::Ident {
+                continue;
+            }
+            let text = token.span.slice(self.source).unwrap_or("");
+            if let Some(kind) = zerodds_idl_cst::cidl_keyword(text) {
+                token.kind = kind;
+                token.value = zerodds_idl_cst::TokenValue::None;
+            }
         }
     }
 
@@ -637,7 +666,11 @@ impl<'a> Parser<'a> {
                 | TokenKind::Typeprefix
                 | TokenKind::Import
                 | TokenKind::At
-        )
+        ) || (self.dialect.cidl
+            && matches!(
+                self.current(),
+                TokenKind::Composition | TokenKind::Storagetype | TokenKind::Storagehome
+            ))
     }
 
     /// The diagnostics gathered so far.

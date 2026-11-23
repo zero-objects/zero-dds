@@ -137,7 +137,10 @@ pub fn prelude() -> Vec<c::Decl> {
         c::Decl::Typedef(c::Typedef {
             doc: Doc::lines(&[
                 "A `string`. The bytes are the caller's and are not owned here:",
-                "nothing in the write path allocates.",
+                "nothing in the write path allocates. The exception is a member",
+                "annotated `@external` (XTypes 1.3 7.5.1.2.3.1): its characters are",
+                "the aggregate's, `zd_fini_<T>` frees them and `zd_copy_<T>` copies",
+                "them, as it does for a `wstring` and a `fixed` so annotated.",
             ]),
             type_: c::Type::Pointer(Box::new(c::Type::Const(Box::new(c::Type::Primitive(
                 c::Primitive::Char,
@@ -1948,10 +1951,13 @@ fn sequence_decl(name: &str, element: c::Type) -> Vec<c::Decl> {
                 bits: None,
             },
         ],
-        Doc::line(
-            "A sequence: a count and the elements. The buffer is the caller's — \
-             nothing in the write path allocates.",
-        ),
+        Doc::lines(&[
+            "A sequence: a count and the elements. The buffer is the caller's —",
+            "nothing in the write path allocates. The exception is a sequence an",
+            "`@external` or `@optional` member points at (XTypes 1.3 7.5.1.2.3.1):",
+            "`zd_fini_<T>` finalises its elements and frees the buffer where",
+            "`_release` is set, and `zd_copy_<T>` copies the elements.",
+        ]),
     )
 }
 

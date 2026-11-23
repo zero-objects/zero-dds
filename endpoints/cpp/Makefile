@@ -41,7 +41,7 @@ examples: $(BUILD)/example_sync $(BUILD)/example_async
 	$(RUNNER) $(BUILD)/example_async
 
 # --- conservative C++98 facade tests ---
-$(BUILD)/test_byte_identity: test/test_byte_identity.cpp include/zerodds_wire.hpp
+$(BUILD)/test_byte_identity: test/test_byte_identity.cpp test/golden.hpp include/zerodds_wire.hpp
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS98) $(INCLUDE) test/test_byte_identity.cpp $(CSRC_WIRE) -o $@
 
@@ -49,11 +49,11 @@ $(BUILD)/test_endpoint: test/test_endpoint.cpp include/zerodds_wire.hpp
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS98) $(INCLUDE) test/test_endpoint.cpp $(CSRC_WIRE) $(CSRC_EP) -o $@
 
-$(BUILD)/test_mutable: test/test_mutable.cpp include/zerodds_wire.hpp
+$(BUILD)/test_mutable: test/test_mutable.cpp test/golden.hpp include/zerodds_wire.hpp
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS98) $(INCLUDE) test/test_mutable.cpp $(CSRC_WIRE) -o $@
 
-$(BUILD)/test_nested: test/test_nested.cpp include/zerodds_wire.hpp
+$(BUILD)/test_nested: test/test_nested.cpp test/golden.hpp include/zerodds_wire.hpp
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS98) $(INCLUDE) test/test_nested.cpp $(CSRC_WIRE) -o $@
 

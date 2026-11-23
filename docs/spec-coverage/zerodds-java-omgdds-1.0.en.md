@@ -205,10 +205,10 @@ today's tree.
 ### §4.2 gRPC bridge for multi-process
 
 **Spec:** §5 — the gRPC service exposes DDS publish/subscribe
-(`zerodds.bridge.v1.<topic>/Publish|Subscribe`), a pure-Java client connects.
+(`/<package>.<Service>/Publish|Subscribe`, e.g. `/zerodds.demo.v1.DemoStream/Publish`), a pure-Java client connects.
 
 **Repo:** daemon `zerodds-grpc-bridged` (service routing in `service_gen.rs`,
-`/zerodds.bridge.v1.<topic>/Publish|Subscribe`) + pure-Java h2c client
+`/<package>.<Service>/Publish|Subscribe`, the package `grpc_package` or the default `zerodds.<first name segment>.v1` of zerodds-grpc-bridge-1.0 §5.1, e.g. `/zerodds.demo.v1.DemoStream`) + pure-Java h2c client
 `org/zerodds/bridge/GrpcBridgeClient.java` (raw HTTP/2 + HPACK + protobuf
 `Sample`/`PublishAck` — no grpc-java, no TLS, Java-8 compatible).
 

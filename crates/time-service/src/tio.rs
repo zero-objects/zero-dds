@@ -12,6 +12,7 @@
 //! };
 //! ```
 
+use crate::exception::DataConversion;
 use crate::time_base::{IntervalT, TimeT, UtcT};
 use crate::uto::Uto;
 
@@ -72,14 +73,21 @@ impl Tio {
     }
 
     /// Spec §1.3.5.4 — `time()`: returns a UTO with time = midpoint and
-    /// inaccuracy = half the interval width.
-    #[must_use]
-    pub fn time(self) -> Uto {
+    /// inaccuracy = half the interval width. A TIO carries no time zone,
+    /// so the UTO has `tdf` 0.
+    ///
+    /// # Errors
+    /// [`DataConversion`] (`CORBA::DATA_CONVERSION`) if half the width
+    /// does not fit the 48 bits of `InaccuracyT` (an interval wider than
+    /// about 650 days): the UTO could not express the interval.
+    pub fn time(self) -> Result<Uto, DataConversion> {
         let lo = self.inner.lower_bound;
         let hi = self.inner.upper_bound;
         let midpoint = lo / 2 + hi / 2 + (lo % 2 + hi % 2) / 2;
         let half_width = (hi - lo) / 2;
-        Uto::from_utc(UtcT::new(midpoint, half_width, 0))
+        UtcT::new(midpoint, half_width, 0)
+            .map(Uto::from_utc)
+            .map_err(|_| DataConversion)
     }
 }
 
@@ -146,9 +154,20 @@ mod tests {
         // Spec §1.3.5.4.
         let i = IntervalT::new(100, 200).expect("ok");
         let tio = Tio::from_interval(i);
-        let uto = tio.time();
+        let uto = tio.time().expect("ok");
         assert_eq!(uto.time(), 150);
         assert_eq!(uto.inaccuracy(), 50);
+    }
+
+    #[test]
+    fn time_1_3_5_4_interval_wider_than_48_bit_inaccuracy_is_data_conversion() {
+        // Half the width above 48 bits cannot be the inaccuracy of a UTO;
+        // the operation fails instead of cutting the inaccuracy.
+        let max = crate::time_base::MAX_INACCURACY;
+        let fits = Tio::from_interval(IntervalT::new(0, 2 * max).expect("ok"));
+        assert_eq!(fits.time().expect("fits").inaccuracy(), max);
+        let wide = Tio::from_interval(IntervalT::new(0, 2 * max + 2).expect("ok"));
+        assert_eq!(wide.time(), Err(DataConversion));
     }
 
     #[test]
@@ -203,7 +222,7 @@ mod tests {
         // Self = [50, 250], UTO = time=150 ± 50 -> [100, 200].
         // Self contains the UTO range -> OTContainer.
         let a = Tio::from_interval(IntervalT::new(50, 250).expect("ok"));
-        let uto = Uto::new(150, 50, 0);
+        let uto = Uto::new(150, 50, 0).expect("ok");
         let (kind, overlap) = a.spans(uto);
         assert_eq!(kind, OverlapType::Container);
         // overlap = the UTO envelope.

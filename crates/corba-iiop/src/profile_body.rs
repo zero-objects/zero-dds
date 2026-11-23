@@ -58,11 +58,43 @@ impl IiopVersion {
     pub const V1_2: Self = Self { major: 1, minor: 2 };
     /// IIOP 1.3.
     pub const V1_3: Self = Self { major: 1, minor: 3 };
+    /// IIOP 1.4 (CORBA 3.3 Part 2 §9.7: based on GIOP 1.0 to 1.4).
+    pub const V1_4: Self = Self { major: 1, minor: 4 };
+    /// The highest version this ORB processes: a profile it publishes may
+    /// name any version up to this one (Part 2 §9.7.2, "the minor version
+    /// in the TAG_INTERNET_IOP profile signals the highest minor revision
+    /// of GIOP supported by the server"). Which version the profiles of a
+    /// server carry is the server's setting.
+    pub const MAX: Self = Self::V1_4;
 
     /// Constructor.
     #[must_use]
     pub const fn new(major: u8, minor: u8) -> Self {
         Self { major, minor }
+    }
+
+    /// `true` when the profile's host may be an IPv6 address (Part 2
+    /// §7.9 Table 7.2, "IPV6 addresses in IOR": version 1.4).
+    #[must_use]
+    pub const fn allows_ipv6_host(self) -> bool {
+        self.major > 1 || self.minor >= 4
+    }
+
+    /// The version a profile with `host` is written in: `self`, or 1.4
+    /// when `host` is an IPv6 address, with or without the brackets of
+    /// the URL form, and `self` is below 1.4 (Part 2 §7.9 Table 7.2:
+    /// "IPV6 addresses in IOR" belong to version 1.4).
+    #[must_use]
+    pub fn for_host(self, host: &str) -> Self {
+        if !self.allows_ipv6_host()
+            && unbracketed_host(host)
+                .parse::<core::net::Ipv6Addr>()
+                .is_ok()
+        {
+            Self::V1_4
+        } else {
+            self
+        }
     }
 
     /// `true` if the version has a `components` sequence in the body
@@ -75,6 +107,15 @@ impl IiopVersion {
             self.minor >= 1
         }
     }
+}
+
+/// `host` without the brackets an IPv6 address takes in an object URL
+/// (`[::1]`, Part 2 §7.6.10.3); any other host as it is.
+#[must_use]
+pub fn unbracketed_host(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host)
 }
 
 /// Tagged component — Spec §13.6.6.
@@ -120,12 +161,31 @@ impl IiopProfileBody {
         }
     }
 
+    /// The profile a server publishes for its endpoint `host`:`port`
+    /// (Part 2 §7.9, §9.7.2): the `host` field holds the address without
+    /// the brackets of the URL form (`[::1]` is written `::1`; the
+    /// brackets belong to the object URL syntax of §7.6.10.3, the profile
+    /// names the host), and the version is `version` or, for an IPv6
+    /// address, 1.4 ([`IiopVersion::for_host`]).
+    #[must_use]
+    pub fn for_endpoint(version: IiopVersion, host: &str, port: u16, object_key: Vec<u8>) -> Self {
+        let host = unbracketed_host(host);
+        Self::new(version.for_host(host), host.into(), port, object_key)
+    }
+
     /// CDR-encodes the ProfileBody (without the encapsulation wrapper —
     /// the caller wraps it in `crates/corba-ior/` when needed).
     ///
     /// # Errors
-    /// Buffer write error or length overflow.
+    /// Buffer write error or length overflow;
+    /// [`CdrError::ComponentsNotInVersion`] for an IIOP 1.0 body that
+    /// holds components: `ProfileBody_1_0` has no place for them
+    /// (CORBA 3.3 Part 2 §7.6.6, Table 7.2 "IOR components in IIOP
+    /// profile" from 1.1), and they are not left out silently.
     pub fn encode(&self, w: &mut Writer) -> Result<(), CdrError> {
+        if !self.iiop_version.has_components() && !self.components.is_empty() {
+            return Err(CdrError::ComponentsNotInVersion);
+        }
         w.write_u8(self.iiop_version.major);
         w.write_u8(self.iiop_version.minor);
         w.write_string(&self.host);
@@ -250,6 +310,9 @@ pub enum CdrError {
     Truncated,
     /// Endianness octet is neither 0 nor 1.
     InvalidEndianness,
+    /// An IIOP 1.0 profile body with components, which only IIOP 1.1
+    /// and later carry.
+    ComponentsNotInVersion,
 }
 
 impl From<zerodds_wire::WireError> for CdrError {
@@ -267,6 +330,47 @@ mod tests {
     fn iiop_version_constants_match_spec() {
         assert_eq!(IiopVersion::V1_0, IiopVersion::new(1, 0));
         assert_eq!(IiopVersion::V1_3, IiopVersion::new(1, 3));
+        assert_eq!(IiopVersion::V1_4, IiopVersion::new(1, 4));
+        assert_eq!(IiopVersion::MAX, IiopVersion::V1_4);
+    }
+
+    /// Table 7.2 "IPV6 addresses in IOR": 1.4 only. A 1.4 profile with an
+    /// IPv6 host round-trips with the host as written.
+    #[test]
+    fn corba_p2_7_9_ipv6_host_in_a_1_4_profile() {
+        assert!(!IiopVersion::V1_2.allows_ipv6_host());
+        assert!(!IiopVersion::V1_3.allows_ipv6_host());
+        assert!(IiopVersion::V1_4.allows_ipv6_host());
+        let body = IiopProfileBody::new(IiopVersion::V1_4, "fe80::1:2".into(), 2809, b"k".to_vec());
+        let bytes = body.encode_encapsulation(Endianness::Little).unwrap();
+        let back = IiopProfileBody::decode_encapsulation(&bytes).unwrap();
+        assert_eq!(back, body);
+    }
+
+    /// Table 7.2 "IPV6 addresses in IOR": the profile a server publishes
+    /// for an IPv6 host is IIOP 1.4 whatever version it asks for, and its
+    /// `host` holds the address without the brackets of the URL form; a
+    /// DNS name or an IPv4 address keeps the version asked for.
+    #[test]
+    fn corba_p2_7_9_an_endpoint_profile_for_an_ipv6_host_is_1_4_without_brackets() {
+        for host in ["::1", "[::1]"] {
+            for version in [IiopVersion::V1_0, IiopVersion::V1_2, IiopVersion::V1_4] {
+                let body = IiopProfileBody::for_endpoint(version, host, 2809, b"k".to_vec());
+                assert_eq!(body.iiop_version, IiopVersion::V1_4, "{host} {version:?}");
+                assert_eq!(body.host, "::1", "{host}");
+                assert_eq!((body.port, &body.object_key[..]), (2809, &b"k"[..]));
+            }
+        }
+        for host in ["host.example", "192.0.2.7"] {
+            let body = IiopProfileBody::for_endpoint(IiopVersion::V1_2, host, 1, b"k".to_vec());
+            assert_eq!(
+                (body.iiop_version, &body.host[..]),
+                (IiopVersion::V1_2, host)
+            );
+        }
+        // A bracketed text that is no IPv6 address is not raised.
+        assert_eq!(IiopVersion::V1_2.for_host("[host]"), IiopVersion::V1_2);
+        assert_eq!(unbracketed_host("[::1"), "[::1");
     }
 
     #[test]
@@ -276,6 +380,35 @@ mod tests {
         assert!(IiopVersion::V1_1.has_components());
         assert!(IiopVersion::V1_2.has_components());
         assert!(IiopVersion::V1_3.has_components());
+    }
+
+    /// Table 7.2 has no components in IIOP 1.0: a 1.0 body with
+    /// components is refused, not encoded without them; the same
+    /// components encode under 1.1.
+    #[test]
+    fn corba_p2_7_9_iiop_1_0_profile_with_components_is_refused() {
+        let mut body = sample_v1_0();
+        body.components.push(TaggedComponent {
+            tag: 1, // TAG_CODE_SETS
+            component_data: alloc::vec![0, 0, 0, 0],
+        });
+        let mut w = Writer::new(Endianness::Big);
+        assert_eq!(body.encode(&mut w), Err(CdrError::ComponentsNotInVersion));
+        assert_eq!(
+            body.encode_encapsulation(Endianness::Little),
+            Err(CdrError::ComponentsNotInVersion)
+        );
+        body.iiop_version = IiopVersion::V1_1;
+        let bytes = body.encode_encapsulation(Endianness::Big).unwrap();
+        let back = IiopProfileBody::decode_encapsulation(&bytes).unwrap();
+        assert_eq!(back.components, body.components);
+        // A 1.0 body without components still encodes.
+        let plain = sample_v1_0();
+        let back = IiopProfileBody::decode_encapsulation(
+            &plain.encode_encapsulation(Endianness::Big).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(back, plain);
     }
 
     fn sample_v1_0() -> IiopProfileBody {
@@ -336,15 +469,13 @@ mod tests {
 
     #[test]
     fn v1_0_does_not_emit_components_field() {
-        // Spec §15.7.2: IIOP 1.0 has no components sequence on the wire.
-        // A full round-trip must work without components too.
-        let mut p = sample_v1_0();
-        // components are ignored on encode/decode in 1.0.
-        p.components = alloc::vec![TaggedComponent {
-            tag: 99,
-            component_data: alloc::vec![1, 2],
-        }];
+        // Spec §15.7.2: IIOP 1.0 has no components sequence on the wire:
+        // the encapsulation ends with the object key. A body with
+        // components is refused (see
+        // `corba_p2_7_9_iiop_1_0_profile_with_components_is_refused`).
+        let p = sample_v1_0();
         let bytes = p.encode_encapsulation(Endianness::Big).unwrap();
+        assert_eq!(bytes.last_chunk::<2>(), Some(&[0xab, 0xcd]));
         let decoded = IiopProfileBody::decode_encapsulation(&bytes).unwrap();
         assert!(decoded.components.is_empty());
     }

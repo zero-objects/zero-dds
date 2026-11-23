@@ -22,8 +22,12 @@ services:
       context: ../..
       dockerfile: packaging/docker/ws-bridged/Dockerfile
     network_mode: host
+    # The image's configuration (ws-bridged/ws-bridged.yaml): 0.0.0.0:8080,
+    # `bearer` with this token; the daemon does not start without it.
+    environment:
+      - WS_BRIDGE_TOKEN
     volumes:
-      - ./conf/ws-bridged.yaml:/etc/zerodds/ws-bridged.yaml:ro
+      - ./ws-bridged/ws-bridged.yaml:/etc/zerodds/ws-bridged.yaml:ro
       - ./certs:/etc/zerodds/certs:ro
       - zerodds_logs:/var/log/zerodds
 

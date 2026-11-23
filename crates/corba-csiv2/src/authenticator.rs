@@ -26,13 +26,15 @@
 
 extern crate alloc;
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 
 use crate::gssup::GssupCredentialToken;
 use crate::gssup_store::GssupUserStore;
+use crate::identity::{AssertedIdentity, AssertionTrust, IdentityError, ScopedUsername};
 use crate::sas::{IdentityToken, SasMessage};
 use crate::session::{
-    CONTEXT_ERROR_INVALID_EVIDENCE, CONTEXT_ERROR_NO_CONTEXT, SasTarget, TargetAction,
+    CONTEXT_ERROR_INVALID_EVIDENCE, CONTEXT_ERROR_INVALID_MECHANISM, CONTEXT_ERROR_NO_CONTEXT,
+    SasTarget, TargetAction,
 };
 
 /// Bit for [`IdentityToken::Anonymous`] in an `identity_types` mask.
@@ -88,43 +90,74 @@ fn refuse(client_context_id: u64, status: (u32, u32)) -> SasMessage {
     })
 }
 
-/// Decodes an `IdentityToken`'s asserted name as UTF-8, lossily — a
-/// pragmatic reading of the DER/RFC-1779 bytes Spec §24.2.5 does not
-/// mandate a display form for; a caller that needs the exact bytes
-/// still has them in the original `EstablishContext` before calling
-/// this function.
-fn asserted_name(tok: &IdentityToken) -> Option<String> {
-    match tok {
-        IdentityToken::PrincipalName(b)
-        | IdentityToken::X509CertChain(b)
-        | IdentityToken::DistinguishedName(b) => Some(String::from_utf8_lossy(b).into_owned()),
-        IdentityToken::Anonymous => Some("anonymous".to_string()),
-        // An identity form this target has no reading of is refused by the
-        // caller, never taken for the GSSUP user.
-        IdentityToken::Absent | IdentityToken::Extension { .. } => None,
-    }
-}
-
 /// Evaluates one request's raw `SecurityAttributeService` context bytes
 /// against `store`, honoring `target_supports_identity_types` (an
 /// `IDENTITY_TYPE_*` bitmask — configuration's `corba.csiv2.target_supports`)
 /// for identity assertion.
 ///
-/// Every rejection this function raises uses
-/// [`CONTEXT_ERROR_INVALID_EVIDENCE`] — a `SASContextBody` that does not
-/// decode, a GSSUP token that does not decode, a username/password that
-/// does not authenticate, and an unsupported identity assertion are all
-/// "the evidence in this `EstablishContext` is not acceptable", the same
-/// category JacORB 3.9 answers with `(1, 1)` for its own equivalent
-/// rejection paths (measured this round, see `crate::session`'s doc
-/// block on the constant). `CONTEXT_ERROR_INVALID_MECHANISM` exists but
-/// is not emitted here — this function does not have a confirmed
-/// condition to attach it to (also documented on that constant).
+/// The rejections follow [`authenticate_gssup_with`]: a
+/// `SASContextBody` that does not decode, a GSSUP token that does not
+/// decode, a username/password that does not authenticate, malformed
+/// identity octets and an identity the user may not assert are
+/// [`CONTEXT_ERROR_INVALID_EVIDENCE`] (1, 1), the status JacORB 3.9
+/// answers its own equivalent rejections with (see `crate::session`'s
+/// doc block on the constant); an identity type outside
+/// `target_supports_identity_types`, a principal name of another
+/// mechanism than GSSUP and an identity extension are
+/// [`CONTEXT_ERROR_INVALID_MECHANISM`] (2, 1) (§10.2.5, Table 10.10).
+///
+/// An identity assertion is evaluated with [`AssertionTrust::new`]: the
+/// authenticated user may assert exactly itself and the anonymous
+/// identity; [`authenticate_gssup_with`] takes the target's trust rules.
 #[must_use]
 pub fn authenticate_gssup(
     sas_context_data: &[u8],
     store: &GssupUserStore,
     target_supports_identity_types: u32,
+) -> SasOutcome {
+    authenticate_gssup_with(
+        sas_context_data,
+        store,
+        target_supports_identity_types,
+        &AssertionTrust::new(),
+    )
+}
+
+/// [`authenticate_gssup`] with the target's rules for backward trust
+/// evaluation (CORBA 3.3 Part 2 §10.3.1.1): an identity token is
+/// accepted when its type is in `target_supports_identity_types`, its
+/// octets name an identity (a GSSUP exported name for
+/// `ITTPrincipalName`, directly or in an encapsulation, §10.2.5) and
+/// `trust` lets the authenticated GSSUP user assert it. A type the
+/// target does not support, a principal name of another mechanism and
+/// an identity extension are `ContextError` invalid mechanism (2, 1)
+/// (§10.2.5, Table 10.10); malformed identity octets and an identity
+/// the user is not trusted to assert are invalid evidence (1, 1).
+#[must_use]
+pub fn authenticate_gssup_with(
+    sas_context_data: &[u8],
+    store: &GssupUserStore,
+    target_supports_identity_types: u32,
+    trust: &AssertionTrust,
+) -> SasOutcome {
+    authenticate_with_verifier(
+        sas_context_data,
+        &|username, password| store.verify(username, password),
+        target_supports_identity_types,
+        trust,
+    )
+}
+
+/// [`authenticate_gssup_with`] for a target whose GSSUP credentials are
+/// checked by `verify(username, password)` instead of a
+/// [`GssupUserStore`]: the same decoding, the same identity assertion
+/// with backward trust evaluation and the same `ContextError` statuses.
+#[must_use]
+pub fn authenticate_with_verifier(
+    sas_context_data: &[u8],
+    verify: &dyn Fn(&str, &str) -> bool,
+    target_supports_identity_types: u32,
+    trust: &AssertionTrust,
 ) -> SasOutcome {
     let Ok(msg) = SasMessage::decode_encapsulation(sas_context_data) else {
         // JacORB 3.9 measured: "Could not parse service context" -> (1, 1).
@@ -163,7 +196,7 @@ pub fn authenticate_gssup(
         };
     };
     // JacORB 3.9 measured: "Could not validate context EstablishContext" -> (1, 1).
-    if !store.verify(&token.username, &token.password) {
+    if !verify(&token.username, &token.password) {
         return SasOutcome::Rejected {
             reply: refuse(ec.client_context_id, CONTEXT_ERROR_INVALID_EVIDENCE),
         };
@@ -176,19 +209,31 @@ pub fn authenticate_gssup(
             asserted: false,
         };
     }
-    if ec.identity_token.discriminator() & target_supports_identity_types == 0 {
-        return SasOutcome::Rejected {
-            reply: refuse(ec.client_context_id, CONTEXT_ERROR_INVALID_EVIDENCE),
-        };
-    }
-    let Some(name) = asserted_name(&ec.identity_token) else {
-        return SasOutcome::Rejected {
-            reply: refuse(ec.client_context_id, CONTEXT_ERROR_INVALID_EVIDENCE),
-        };
+    let rejected = |status| SasOutcome::Rejected {
+        reply: refuse(ec.client_context_id, status),
     };
+    if ec.identity_token.discriminator() & target_supports_identity_types == 0 {
+        return rejected(CONTEXT_ERROR_INVALID_MECHANISM);
+    }
+    let asserted = match AssertedIdentity::from_token(&ec.identity_token) {
+        Ok(Some(a)) => a,
+        Ok(None) | Err(IdentityError::Malformed(_)) => {
+            return rejected(CONTEXT_ERROR_INVALID_EVIDENCE);
+        }
+        Err(IdentityError::UnsupportedMechanism(_)) => {
+            return rejected(CONTEXT_ERROR_INVALID_MECHANISM);
+        }
+    };
+    // §10.2.5.2: the GSSUP user name is a scoped-username.
+    let Ok(proxy) = ScopedUsername::parse(&token.username) else {
+        return rejected(CONTEXT_ERROR_INVALID_EVIDENCE);
+    };
+    if !trust.trusts(&proxy, &asserted) {
+        return rejected(CONTEXT_ERROR_INVALID_EVIDENCE);
+    }
     SasOutcome::Accepted {
         reply: complete,
-        principal: name,
+        principal: asserted.principal_text(),
         asserted: true,
     }
 }
@@ -261,14 +306,85 @@ mod tests {
         ));
     }
 
+    fn principal(text: &str) -> IdentityToken {
+        IdentityToken::PrincipalName(crate::identity::exported_gssup_name(
+            &ScopedUsername::parse(text).unwrap(),
+        ))
+    }
+
+    fn status(outcome: SasOutcome) -> (u32, u32) {
+        match outcome {
+            SasOutcome::Rejected {
+                reply: SasMessage::ContextError(e),
+            } => (e.major_status, e.minor_status),
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn a_supported_identity_assertion_is_accepted_as_the_asserted_principal() {
-        let bytes = establish_bytes(
+    fn corba_p2_10_3_1_1_an_identity_the_user_is_not_trusted_to_assert_is_invalid_evidence() {
+        // No rule: alice may assert alice and anonymous, nobody else.
+        let other = establish_bytes("alice", "secret", principal("end-user@REALM"));
+        assert_eq!(
+            status(authenticate_gssup(
+                &other,
+                &store(),
+                IDENTITY_TYPE_PRINCIPAL_NAME
+            )),
+            CONTEXT_ERROR_INVALID_EVIDENCE
+        );
+        let itself = establish_bytes("alice", "secret", principal("alice"));
+        assert!(matches!(
+            authenticate_gssup(&itself, &store(), IDENTITY_TYPE_PRINCIPAL_NAME),
+            SasOutcome::Accepted { asserted: true, .. }
+        ));
+        let anonymous = establish_bytes("alice", "secret", IdentityToken::Anonymous);
+        match authenticate_gssup(&anonymous, &store(), IDENTITY_TYPE_ANONYMOUS) {
+            SasOutcome::Accepted { principal, .. } => assert_eq!(principal, "anonymous"),
+            other => panic!("expected Accepted, got {other:?}"),
+        }
+        // Raw bytes that are no exported name are malformed evidence.
+        let raw = establish_bytes(
             "alice",
             "secret",
             IdentityToken::PrincipalName(b"end-user@REALM".to_vec()),
         );
-        let outcome = authenticate_gssup(&bytes, &store(), IDENTITY_TYPE_PRINCIPAL_NAME);
+        assert_eq!(
+            status(authenticate_gssup(
+                &raw,
+                &store(),
+                IDENTITY_TYPE_PRINCIPAL_NAME
+            )),
+            CONTEXT_ERROR_INVALID_EVIDENCE
+        );
+    }
+
+    #[test]
+    fn corba_p2_10_2_5_a_principal_name_of_another_mechanism_is_invalid_mechanism() {
+        let mut kerberos = alloc::vec![0x04, 0x01, 0x00, 0x0b];
+        kerberos.extend_from_slice(&[0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 1, 2, 2]);
+        kerberos.extend_from_slice(&[0, 0, 0, 1, b'k']);
+        let bytes = establish_bytes("alice", "secret", IdentityToken::PrincipalName(kerberos));
+        assert_eq!(
+            status(authenticate_gssup(
+                &bytes,
+                &store(),
+                IDENTITY_TYPE_PRINCIPAL_NAME
+            )),
+            CONTEXT_ERROR_INVALID_MECHANISM
+        );
+    }
+
+    #[test]
+    fn a_supported_identity_assertion_is_accepted_as_the_asserted_principal() {
+        let bytes = establish_bytes("alice", "secret", principal("end-user@REALM"));
+        let mut trust = AssertionTrust::new();
+        trust.allow(
+            ScopedUsername::parse("alice").unwrap(),
+            AssertedIdentity::GssupPrincipal(ScopedUsername::parse("end-user@REALM").unwrap()),
+        );
+        let outcome =
+            authenticate_gssup_with(&bytes, &store(), IDENTITY_TYPE_PRINCIPAL_NAME, &trust);
         match outcome {
             SasOutcome::Accepted {
                 principal,
@@ -334,22 +450,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unsupported_identity_assertion_is_rejected_with_invalid_evidence() {
+    fn corba_p2_10_2_5_an_identity_type_the_target_does_not_support_is_invalid_mechanism() {
         let bytes = establish_bytes(
             "alice",
             "secret",
             IdentityToken::X509CertChain(b"der-bytes".to_vec()),
         );
         let outcome = authenticate_gssup(&bytes, &store(), IDENTITY_TYPE_PRINCIPAL_NAME);
-        match outcome {
-            SasOutcome::Rejected {
-                reply: SasMessage::ContextError(e),
-            } => assert_eq!(
-                (e.major_status, e.minor_status),
-                CONTEXT_ERROR_INVALID_EVIDENCE
-            ),
-            other => panic!("expected Rejected, got {other:?}"),
-        }
+        assert_eq!(status(outcome), CONTEXT_ERROR_INVALID_MECHANISM);
     }
 
     #[test]

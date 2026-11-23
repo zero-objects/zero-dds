@@ -89,6 +89,56 @@ impl core::fmt::Display for AuthError {
 
 impl std::error::Error for AuthError {}
 
+/// A token that is verified (signature, time, issuer, audience) and lacks
+/// the claim `auth.jwt.required_claim` asks for: its bearer is
+/// authenticated and not authorised. Over HTTP that is 403 with
+/// `insufficient_scope` (RFC 6750 §3.1), where every other refusal is 401.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingClaim {
+    /// Who the token names.
+    pub subject: AuthSubject,
+    /// The claim that is required.
+    pub claim: String,
+    /// The value the claim has to carry.
+    pub value: String,
+}
+
+impl core::fmt::Display for MissingClaim {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "jwt: claim {} lacks {}", self.claim, self.value)
+    }
+}
+
+/// Why [`AuthMode::validate_scoped`] refuses credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// The credentials do not authenticate anyone.
+    Unauthenticated(AuthError),
+    /// They authenticate their bearer, who lacks the required claim.
+    MissingClaim(Box<MissingClaim>),
+}
+
+impl core::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Unauthenticated(e) => e.fmt(f),
+            Self::MissingClaim(m) => write!(f, "credentials rejected: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for Refusal {}
+
+impl From<Refusal> for AuthError {
+    /// The refusal as [`AuthMode::validate`] reports it.
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::Unauthenticated(e) => e,
+            Refusal::MissingClaim(m) => Self::Rejected(m.to_string()),
+        }
+    }
+}
+
 /// Auth mode per daemon (CLI `--auth-mode <MODE>`).
 #[derive(Debug, Clone)]
 pub enum AuthMode {
@@ -100,11 +150,11 @@ pub enum AuthMode {
         /// Mapping from the token string to the resulting subject.
         tokens: HashMap<String, AuthSubject>,
     },
-    /// JWT — RS256 signature validation against an RSA public key (DER
-    /// bytes as from `RsaPublicKey::to_pkcs1_der`).
+    /// JWT — RS256 or ES256 signature validation (RFC 7518 §3.3, §3.4)
+    /// against the public key; the `alg` of a token has to fit the key.
     Jwt {
-        /// PKCS#1 DER of the RSA public key.
-        pkcs1_pubkey_der: Vec<u8>,
+        /// The public key the signature is verified with.
+        key: JwtKey,
         /// Optional issuer match (`iss` claim).
         expected_issuer: Option<String>,
         /// Optional audience match (`aud` claim, a string or an array
@@ -127,6 +177,29 @@ pub enum AuthMode {
     },
 }
 
+/// The public key of [`AuthMode::Jwt`]; its kind names the one `alg` a
+/// token may carry (RFC 7518 §3.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JwtKey {
+    /// RS256 (RSASSA-PKCS1-v1_5 with SHA-256, RFC 7518 §3.3): the PKCS#1
+    /// `RSAPublicKey` DER (RFC 8017 §A.1.1).
+    Rs256(Vec<u8>),
+    /// ES256 (ECDSA P-256 with SHA-256, RFC 7518 §3.4): the uncompressed
+    /// point `04 || X || Y` (SEC 1 §2.3.3), 65 octets.
+    Es256(Vec<u8>),
+}
+
+impl JwtKey {
+    /// The `alg` value of a token this key verifies.
+    #[must_use]
+    pub fn alg(&self) -> &'static str {
+        match self {
+            Self::Rs256(_) => "RS256",
+            Self::Es256(_) => "ES256",
+        }
+    }
+}
+
 /// What the caller (daemon) supplies for `validate`.
 #[derive(Debug, Clone, Default)]
 pub struct AuthInput<'a> {
@@ -145,31 +218,43 @@ impl AuthMode {
     /// # Errors
     /// [`AuthError`] with sub-variant.
     pub fn validate(&self, input: &AuthInput<'_>) -> Result<AuthSubject, AuthError> {
+        self.validate_scoped(input).map_err(AuthError::from)
+    }
+
+    /// [`Self::validate`], telling a verified token without the required
+    /// claim apart from credentials that authenticate no one.
+    ///
+    /// # Errors
+    /// [`Refusal::MissingClaim`] for a JWT whose signature, time, issuer
+    /// and audience hold and whose required claim is absent or carries
+    /// another value; [`Refusal::Unauthenticated`] for everything else
+    /// `validate` refuses.
+    pub fn validate_scoped(&self, input: &AuthInput<'_>) -> Result<AuthSubject, Refusal> {
+        let unauthenticated = Refusal::Unauthenticated;
         match self {
             Self::None => Ok(AuthSubject::anonymous()),
             Self::Bearer { tokens } => {
                 let hdr = input
                     .authorization_header
-                    .ok_or(AuthError::MissingCredentials)?;
-                let token = strip_bearer(hdr)?;
-                tokens
-                    .get(token)
-                    .cloned()
-                    .ok_or_else(|| AuthError::Rejected("unknown bearer token".to_string()))
+                    .ok_or(unauthenticated(AuthError::MissingCredentials))?;
+                let token = strip_bearer(hdr).map_err(unauthenticated)?;
+                tokens.get(token).cloned().ok_or_else(|| {
+                    unauthenticated(AuthError::Rejected("unknown bearer token".to_string()))
+                })
             }
             Self::Jwt {
-                pkcs1_pubkey_der,
+                key,
                 expected_issuer,
                 expected_audience,
                 required_claim,
             } => {
                 let hdr = input
                     .authorization_header
-                    .ok_or(AuthError::MissingCredentials)?;
-                let token = strip_bearer(hdr)?;
-                validate_jwt_rs256(
+                    .ok_or(unauthenticated(AuthError::MissingCredentials))?;
+                let token = strip_bearer(hdr).map_err(unauthenticated)?;
+                validate_jwt(
                     token,
-                    pkcs1_pubkey_der,
+                    key,
                     &JwtChecks {
                         issuer: expected_issuer.as_deref(),
                         audience: expected_audience.as_deref(),
@@ -179,21 +264,26 @@ impl AuthMode {
                         now: unix_now(),
                     },
                 )
+                .map_err(unauthenticated)?
+                .map_err(|m| Refusal::MissingClaim(Box::new(m)))
             }
-            Self::Mtls => input
-                .mtls_subject
-                .clone()
-                .ok_or_else(|| AuthError::Rejected("mTLS expected client cert".to_string())),
+            Self::Mtls => input.mtls_subject.clone().ok_or_else(|| {
+                unauthenticated(AuthError::Rejected("mTLS expected client cert".to_string()))
+            }),
             Self::SaslPlain { users } => {
-                let blob = input.sasl_plain_blob.ok_or(AuthError::MissingCredentials)?;
-                let (user, pass) = parse_sasl_plain(blob)?;
-                let stored = users
-                    .get(user)
-                    .ok_or_else(|| AuthError::Rejected("unknown user".to_string()))?;
+                let blob = input
+                    .sasl_plain_blob
+                    .ok_or(unauthenticated(AuthError::MissingCredentials))?;
+                let (user, pass) = parse_sasl_plain(blob).map_err(unauthenticated)?;
+                let stored = users.get(user).ok_or_else(|| {
+                    unauthenticated(AuthError::Rejected("unknown user".to_string()))
+                })?;
                 if stored == pass {
                     Ok(AuthSubject::new(user))
                 } else {
-                    Err(AuthError::Rejected("password mismatch".to_string()))
+                    Err(unauthenticated(AuthError::Rejected(
+                        "password mismatch".to_string(),
+                    )))
                 }
             }
         }
@@ -273,11 +363,13 @@ fn numeric_date(payload: &str, key: &str) -> Result<Option<u64>, AuthError> {
         .map_err(|_| AuthError::MalformedCredentials(format!("jwt: {key} is not a NumericDate")))
 }
 
-fn validate_jwt_rs256(
+/// The subject of a token that verifies; `Ok(Err(_))` for one that
+/// verifies and lacks the required claim, the last of the checks.
+fn validate_jwt(
     token: &str,
-    pkcs1_pubkey_der: &[u8],
+    key: &JwtKey,
     checks: &JwtChecks<'_>,
-) -> Result<AuthSubject, AuthError> {
+) -> Result<Result<AuthSubject, MissingClaim>, AuthError> {
     use base64::Engine as _;
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
@@ -307,28 +399,18 @@ fn validate_jwt_rs256(
         .decode(s_b64)
         .map_err(|e| AuthError::MalformedCredentials(format!("jwt sig b64: {e}")))?;
 
-    // Header must say alg=RS256.
+    // RFC 7515 §4.1.1 / RFC 8725 §3.1: the header's `alg` has to be the
+    // one algorithm of the configured key; `none`, HS256 and the other
+    // kind of key are refused before any signature is looked at.
     let header_str = core::str::from_utf8(&header_bytes)
         .map_err(|_| AuthError::MalformedCredentials("jwt header utf8".into()))?;
-    if !json_field_eq(header_str, "alg", "RS256") {
-        return Err(AuthError::Rejected("jwt: alg must be RS256".into()));
+    if !json_field_eq(header_str, "alg", key.alg()) {
+        return Err(AuthError::Rejected(format!(
+            "jwt: alg must be {} for the configured key",
+            key.alg()
+        )));
     }
-
-    // Verify the signature over `<h_b64>.<p_b64>` with RSA-PKCS#1-v1.5-SHA256.
-    let signed = {
-        let mut v = Vec::with_capacity(h_b64.len() + 1 + p_b64.len());
-        v.extend_from_slice(h_b64.as_bytes());
-        v.push(b'.');
-        v.extend_from_slice(p_b64.as_bytes());
-        v
-    };
-    let pubkey = crate::backend::signature::UnparsedPublicKey::new(
-        &crate::backend::signature::RSA_PKCS1_2048_8192_SHA256,
-        pkcs1_pubkey_der,
-    );
-    pubkey
-        .verify(&signed, &sig_bytes)
-        .map_err(|_| AuthError::Rejected("jwt: signature invalid".into()))?;
+    verify_jws_signature(key, h_b64, p_b64, &sig_bytes)?;
 
     // Extract payload claims.
     let payload_str = core::str::from_utf8(&payload_bytes)
@@ -365,6 +447,12 @@ fn validate_jwt_rs256(
             return Err(AuthError::Rejected(format!("jwt: aud lacks {expected}")));
         }
     }
+    let mut subj = AuthSubject::new(sub);
+    if let Some(groups_raw) = json_array(payload_str, "groups") {
+        for g in groups_raw {
+            subj.groups.push(g);
+        }
+    }
     if let Some((claim, value)) = checks.required_claim {
         let matches = match json_array(payload_str, claim) {
             Some(list) => list.iter().any(|v| v == value),
@@ -372,22 +460,112 @@ fn validate_jwt_rs256(
                 .is_some_and(|v| v == value || v.split(' ').any(|p| p == value)),
         };
         if !matches {
-            return Err(AuthError::Rejected(format!(
-                "jwt: claim {claim} lacks {value}"
-            )));
+            return Ok(Err(MissingClaim {
+                subject: subj,
+                claim: claim.to_string(),
+                value: value.to_string(),
+            }));
         }
     }
-
-    let mut subj = AuthSubject::new(sub);
-    if let Some(groups_raw) = json_array(payload_str, "groups") {
-        for g in groups_raw {
-            subj.groups.push(g);
-        }
-    }
-    Ok(subj)
+    Ok(Ok(subj))
 }
 
-/// The PKCS#1 `RSAPublicKey` DER that [`AuthMode::Jwt`] verifies with,
+/// Verifies the JWS signature over the signing input `<h_b64>.<p_b64>`
+/// (RFC 7515 §5.2): RSASSA-PKCS1-v1_5 SHA-256 for RS256, ECDSA P-256
+/// SHA-256 with the 64-octet `R || S` signature for ES256 (RFC 7518 §3.4).
+fn verify_jws_signature(
+    key: &JwtKey,
+    h_b64: &str,
+    p_b64: &str,
+    sig: &[u8],
+) -> Result<(), AuthError> {
+    use crate::backend::signature;
+    let mut signed = Vec::with_capacity(h_b64.len() + 1 + p_b64.len());
+    signed.extend_from_slice(h_b64.as_bytes());
+    signed.push(b'.');
+    signed.extend_from_slice(p_b64.as_bytes());
+    let verified = match key {
+        JwtKey::Rs256(der) => {
+            signature::UnparsedPublicKey::new(&signature::RSA_PKCS1_2048_8192_SHA256, der)
+                .verify(&signed, sig)
+        }
+        JwtKey::Es256(point) => {
+            // RFC 7518 §3.4: a signature of another length is no ES256
+            // signature (an ASN.1 DER one included).
+            if sig.len() != 64 {
+                return Err(AuthError::Rejected(
+                    "jwt: an ES256 signature is 64 octets".into(),
+                ));
+            }
+            signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, point)
+                .verify(&signed, sig)
+        }
+    };
+    verified.map_err(|_| AuthError::Rejected("jwt: signature invalid".into()))
+}
+
+/// The key [`AuthMode::Jwt`] verifies with, out of a PEM file's text:
+/// an RSA key (as [`jwt_public_key_from_pem`] reads it) is an RS256 key,
+/// a `-----BEGIN PUBLIC KEY-----` block with the id-ecPublicKey algorithm
+/// on the curve P-256 (RFC 5480 §2) an ES256 key.
+///
+/// # Errors
+/// A message naming what the text lacks; an EC key on another curve and a
+/// compressed point are refused.
+pub fn jwt_key_from_pem(pem: &str) -> Result<JwtKey, String> {
+    if let Some(point) = ec_p256_point_from_pem(pem)? {
+        return Ok(JwtKey::Es256(point));
+    }
+    jwt_public_key_from_pem(pem).map(JwtKey::Rs256)
+}
+
+/// The P-256 point of an SPKI PEM with the id-ecPublicKey algorithm;
+/// `Ok(None)` when the text holds no such key.
+fn ec_p256_point_from_pem(pem: &str) -> Result<Option<Vec<u8>>, String> {
+    use base64::Engine as _;
+    const ID_EC_PUBLIC_KEY: &[u8] = &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01];
+    const PRIME256V1: &[u8] = &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+    let Some(b64) = pem_block(pem, "PUBLIC KEY") else {
+        return Ok(None);
+    };
+    let spki = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| format!("pem base64: {e}"))?;
+    let Some((0x30, outer, _)) = der_tlv(&spki) else {
+        return Ok(None);
+    };
+    let Some((0x30, alg, rest)) = der_tlv(outer) else {
+        return Ok(None);
+    };
+    let Some((0x06, oid, params)) = der_tlv(alg) else {
+        return Ok(None);
+    };
+    if oid != ID_EC_PUBLIC_KEY {
+        return Ok(None);
+    }
+    match der_tlv(params) {
+        Some((0x06, curve, _)) if curve == PRIME256V1 => {}
+        _ => return Err("spki: an EC key for ES256 is on the curve P-256 (prime256v1)".into()),
+    }
+    match der_tlv(rest) {
+        Some((0x03, bits, _)) => match bits.split_first() {
+            Some((0, point)) if point.len() == 65 && point[0] == 0x04 => Ok(Some(point.to_vec())),
+            _ => Err("spki: the EC point is not an uncompressed P-256 point".into()),
+        },
+        _ => Err("spki: no BIT STRING with the key".into()),
+    }
+}
+
+/// The base64 text between the BEGIN and END lines of `label`.
+fn pem_block(pem: &str, label: &str) -> Option<String> {
+    let begin = format!("-----BEGIN {label}-----");
+    let end = format!("-----END {label}-----");
+    let start = pem.find(&begin)? + begin.len();
+    let stop = pem[start..].find(&end)? + start;
+    Some(pem[start..stop].split_whitespace().collect())
+}
+
+/// The PKCS#1 `RSAPublicKey` DER that [`JwtKey::Rs256`] verifies with,
 /// out of a PEM file's text.
 ///
 /// Accepts `-----BEGIN RSA PUBLIC KEY-----` (PKCS#1, RFC 8017 §A.1.1) and
@@ -399,13 +577,7 @@ fn validate_jwt_rs256(
 /// A message naming what the text lacks.
 pub fn jwt_public_key_from_pem(pem: &str) -> Result<Vec<u8>, String> {
     use base64::Engine as _;
-    fn block(pem: &str, label: &str) -> Option<String> {
-        let begin = format!("-----BEGIN {label}-----");
-        let end = format!("-----END {label}-----");
-        let start = pem.find(&begin)? + begin.len();
-        let stop = pem[start..].find(&end)? + start;
-        Some(pem[start..stop].split_whitespace().collect())
-    }
+    let block = pem_block;
     let decode = |b64: String| {
         base64::engine::general_purpose::STANDARD
             .decode(b64)
@@ -465,7 +637,7 @@ fn der_tlv(input: &[u8]) -> Option<(u8, &[u8], &[u8])> {
 /// Accepts flat-structured JSON as JWT libraries emit it. Not a full
 /// JSON parser implementation — Spec §7.2 says a JWT lib may use a
 /// compact subset.
-fn json_field(src: &str, key: &str) -> Option<String> {
+pub(crate) fn json_field(src: &str, key: &str) -> Option<String> {
     let pat = format!("\"{key}\"");
     let pos = src.find(&pat)?;
     let after = &src[pos + pat.len()..];
@@ -638,7 +810,7 @@ mod tests {
         // (rcgen can't do that for JWT). The code path itself is driven
         // against `crate::backend::signature::UnparsedPublicKey::verify`.
         let m = AuthMode::Jwt {
-            pkcs1_pubkey_der: vec![0u8; 32],
+            key: JwtKey::Rs256(vec![0u8; 32]),
             expected_issuer: None,
             expected_audience: None,
             required_claim: None,
@@ -658,7 +830,7 @@ mod tests {
     #[test]
     fn jwt_wrong_alg_rejected() {
         let m = AuthMode::Jwt {
-            pkcs1_pubkey_der: vec![0u8; 32],
+            key: JwtKey::Rs256(vec![0u8; 32]),
             expected_issuer: None,
             expected_audience: None,
             required_claim: None,
@@ -741,7 +913,7 @@ mod tests {
     fn grpcbridge_7_2_a_signed_jwt_is_checked_for_time_audience_and_claim() {
         let (pkcs8, spki_pem) = rsa_key();
         let mode = AuthMode::Jwt {
-            pkcs1_pubkey_der: jwt_public_key_from_pem(&spki_pem).unwrap(),
+            key: JwtKey::Rs256(jwt_public_key_from_pem(&spki_pem).unwrap()),
             expected_issuer: Some("zerodds-test".into()),
             expected_audience: Some("zerodds-grpc".into()),
             required_claim: Some(("scope".into(), "dds.read".into())),
@@ -804,6 +976,305 @@ mod tests {
                 ..Default::default()
             })
             .is_err()
+        );
+    }
+
+    /// RFC 6750 §3.1: a token that verifies and lacks the required claim
+    /// is told apart from one that authenticates no one (`insufficient_scope`
+    /// against `invalid_token`); `validate` reports both as `Rejected`.
+    #[test]
+    fn rfc_6750_3_1_a_verified_token_without_the_required_claim_is_told_apart() {
+        let (pkcs8, spki_pem) = rsa_key();
+        let mode = AuthMode::Jwt {
+            key: JwtKey::Rs256(jwt_public_key_from_pem(&spki_pem).unwrap()),
+            expected_issuer: None,
+            expected_audience: Some("zerodds-ws".into()),
+            required_claim: Some(("scope".into(), "dds.read".into())),
+        };
+        let now = unix_now();
+        let header = |exp: u64, aud: &str, scope: &str| {
+            format!(
+                "Bearer {}",
+                sign(
+                    &pkcs8,
+                    &format!(
+                        r#"{{"sub":"alice","aud":"{aud}","groups":["ops"],{scope}"exp":{exp}}}"#
+                    )
+                )
+            )
+        };
+        let scoped = |header: &str| {
+            mode.validate_scoped(&AuthInput {
+                authorization_header: Some(header),
+                ..Default::default()
+            })
+        };
+        // The claim is there, alone or in a space-separated list.
+        for scope in [r#""scope":"dds.read","#, r#""scope":"dds.write dds.read","#] {
+            assert_eq!(
+                scoped(&header(now + 600, "zerodds-ws", scope))
+                    .unwrap()
+                    .name,
+                "alice"
+            );
+        }
+        // Another value, and no claim at all: the bearer is known.
+        for scope in [r#""scope":"dds.write","#, ""] {
+            let token = header(now + 600, "zerodds-ws", scope);
+            let mut alice = AuthSubject::new("alice");
+            alice.groups.push("ops".into());
+            assert_eq!(
+                scoped(&token),
+                Err(Refusal::MissingClaim(Box::new(MissingClaim {
+                    subject: alice,
+                    claim: "scope".into(),
+                    value: "dds.read".into(),
+                }))),
+                "{scope}"
+            );
+            // `validate` keeps its answer.
+            let plain = mode.validate(&AuthInput {
+                authorization_header: Some(&token),
+                ..Default::default()
+            });
+            assert_eq!(
+                plain,
+                Err(AuthError::Rejected(
+                    "jwt: claim scope lacks dds.read".into()
+                ))
+            );
+        }
+        // A token that does not verify authenticates no one, whatever its
+        // claim says: expired, another audience, another key, no token.
+        let (other, _) = rsa_key();
+        let forged = format!(
+            "Bearer {}",
+            sign(
+                &other,
+                &format!(
+                    r#"{{"sub":"alice","aud":"zerodds-ws","exp":{}}}"#,
+                    now + 600
+                )
+            )
+        );
+        for token in [
+            header(now - 3600, "zerodds-ws", r#""scope":"dds.write","#),
+            header(now + 600, "elsewhere", r#""scope":"dds.write","#),
+            forged,
+        ] {
+            assert!(
+                matches!(
+                    scoped(&token),
+                    Err(Refusal::Unauthenticated(AuthError::Rejected(_)))
+                ),
+                "{token}"
+            );
+        }
+        assert_eq!(
+            mode.validate_scoped(&AuthInput::default()),
+            Err(Refusal::Unauthenticated(AuthError::MissingCredentials))
+        );
+    }
+
+    /// An EC key from `openssl genpkey` on `curve`: the private half as
+    /// PKCS#8 DER, the public half as the SPKI PEM `openssl` writes.
+    fn ec_key(curve: &str) -> (Vec<u8>, String) {
+        use std::process::Command;
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("zd-jwt-ec-{}-{seq}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = dir.join("key.pem");
+        let run = |args: &[&str]| {
+            let out = Command::new("openssl")
+                .args(args)
+                .output()
+                .expect("openssl on PATH: the ES256 round trip needs a real EC key");
+            assert!(out.status.success(), "openssl {args:?}: {out:?}");
+            out.stdout
+        };
+        let curve_opt = format!("ec_paramgen_curve:{curve}");
+        run(&[
+            "genpkey",
+            "-algorithm",
+            "EC",
+            "-pkeyopt",
+            &curve_opt,
+            "-out",
+            key.to_str().unwrap(),
+        ]);
+        let der = run(&[
+            "pkcs8",
+            "-topk8",
+            "-nocrypt",
+            "-outform",
+            "DER",
+            "-in",
+            key.to_str().unwrap(),
+        ]);
+        let spki = run(&["pkey", "-pubout", "-in", key.to_str().unwrap()]);
+        let _ = std::fs::remove_dir_all(&dir);
+        (der, String::from_utf8(spki).unwrap())
+    }
+
+    /// A token with the header `{"alg":"ES256"}`, signed with the P-256
+    /// key `pkcs8` (the 64-octet `R || S` of RFC 7518 §3.4).
+    fn sign_es256(pkcs8: &[u8], payload: &str) -> String {
+        use crate::backend::{rand, signature};
+        use base64::Engine as _;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
+        let signed = format!(
+            "{}.{}",
+            b64(br#"{"alg":"ES256","typ":"JWT"}"#),
+            b64(payload.as_bytes())
+        );
+        let rng = rand::SystemRandom::new();
+        #[cfg(feature = "aws-lc")]
+        let pair =
+            signature::EcdsaKeyPair::from_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8)
+                .unwrap();
+        #[cfg(not(feature = "aws-lc"))]
+        let pair = signature::EcdsaKeyPair::from_pkcs8(
+            &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+            pkcs8,
+            &rng,
+        )
+        .unwrap();
+        let sig = pair.sign(&rng, signed.as_bytes()).unwrap();
+        format!("{signed}.{}", b64(sig.as_ref()))
+    }
+
+    fn bearer(mode: &AuthMode, token: &str) -> Result<AuthSubject, AuthError> {
+        mode.validate(&AuthInput {
+            authorization_header: Some(&format!("Bearer {token}")),
+            ..Default::default()
+        })
+    }
+
+    /// RFC 7515 Appendix A.3: the ES256 example JWS, its key (x, y) and
+    /// its signature `R || S`, taken from the RFC text, verify; one octet
+    /// changed in the signature or in the signing input does not.
+    #[test]
+    fn jwt_es256_rfc_7515_a_3_example_verifies() {
+        use base64::Engine as _;
+        let d = |s: &str| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(s)
+                .unwrap()
+        };
+        let mut point = vec![0x04];
+        point.extend(d("f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU"));
+        point.extend(d("x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"));
+        let key = JwtKey::Es256(point);
+        let header = "eyJhbGciOiJFUzI1NiJ9";
+        let payload = "eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ";
+        let sig = d(
+            "DtEhU3ljbEg8L38VWAfUAqOyKAM6-Xx-F4GawxaepmXFCgfTjDxw5djxLa8ISlSApmWQxfKTUJqPP3-Kg6NU1Q",
+        );
+        assert_eq!(sig.len(), 64);
+        verify_jws_signature(&key, header, payload, &sig).expect("RFC 7515 A.3 verifies");
+        let mut bad = sig.clone();
+        bad[10] ^= 0x01;
+        assert!(verify_jws_signature(&key, header, payload, &bad).is_err());
+        let other_payload = payload.replacen('J', "K", 1);
+        assert!(verify_jws_signature(&key, header, &other_payload, &sig).is_err());
+        // The same token through `validate_jwt` before its `exp`: the
+        // signature holds, and the token is refused for its missing `sub`.
+        let token = format!(
+            "{header}.{payload}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&sig)
+        );
+        let checks = JwtChecks {
+            issuer: Some("joe"),
+            audience: None,
+            required_claim: None,
+            now: 1_300_819_000,
+        };
+        assert_eq!(
+            validate_jwt(&token, &key, &checks).unwrap_err(),
+            AuthError::Rejected("jwt: no sub claim".into())
+        );
+    }
+
+    /// An ES256 token signed with a P-256 key is checked with the key's
+    /// SPKI PEM: subject, groups and time; another key's signature, a
+    /// signature in ASN.1 DER form and a P-384 key are refused.
+    #[test]
+    fn jwt_es256_is_verified() {
+        let (pkcs8, spki_pem) = ec_key("P-256");
+        let key = jwt_key_from_pem(&spki_pem).unwrap();
+        assert!(matches!(&key, JwtKey::Es256(p) if p.len() == 65 && p[0] == 4));
+        let mode = AuthMode::Jwt {
+            key,
+            expected_issuer: None,
+            expected_audience: Some("zerodds-ws".into()),
+            required_claim: None,
+        };
+        let now = unix_now();
+        let claims = |exp: u64| {
+            format!(r#"{{"sub":"alice","aud":"zerodds-ws","groups":["engineers"],"exp":{exp}}}"#)
+        };
+        let ok = bearer(&mode, &sign_es256(&pkcs8, &claims(now + 600))).unwrap();
+        assert_eq!(ok.name, "alice");
+        assert_eq!(ok.groups, vec!["engineers".to_string()]);
+        assert!(matches!(
+            bearer(&mode, &sign_es256(&pkcs8, &claims(now - 3600))),
+            Err(AuthError::Rejected(_))
+        ));
+        let (other, _) = ec_key("P-256");
+        assert_eq!(
+            bearer(&mode, &sign_es256(&other, &claims(now + 600))),
+            Err(AuthError::Rejected("jwt: signature invalid".into()))
+        );
+        // A DER-encoded ECDSA signature (SEQUENCE { r, s }) is no ES256
+        // signature (RFC 7518 §3.4).
+        use base64::Engine as _;
+        let token = sign_es256(&pkcs8, &claims(now + 600));
+        let (signing_input, _) = token.rsplit_once('.').unwrap();
+        let der_sig = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([0x30u8; 70]);
+        assert_eq!(
+            bearer(&mode, &format!("{signing_input}.{der_sig}")),
+            Err(AuthError::Rejected(
+                "jwt: an ES256 signature is 64 octets".into()
+            ))
+        );
+        let (_, p384) = ec_key("P-384");
+        assert!(jwt_key_from_pem(&p384).unwrap_err().contains("P-256"));
+    }
+
+    /// The `alg` of a token has to be the algorithm of the configured key
+    /// (RFC 8725 §3.1): an RS256 token against an ES256 key and an ES256
+    /// token against an RS256 key are refused, whatever their signature.
+    #[test]
+    fn jwt_alg_must_match_the_key_type() {
+        let (rsa_pkcs8, rsa_pem) = rsa_key();
+        let (ec_pkcs8, ec_pem) = ec_key("P-256");
+        let rs = jwt_key_from_pem(&rsa_pem).unwrap();
+        assert!(matches!(rs, JwtKey::Rs256(_)));
+        let mode = |key| AuthMode::Jwt {
+            key,
+            expected_issuer: None,
+            expected_audience: None,
+            required_claim: None,
+        };
+        let rs_mode = mode(rs);
+        let es_mode = mode(jwt_key_from_pem(&ec_pem).unwrap());
+        let claims = format!(r#"{{"sub":"alice","exp":{}}}"#, unix_now() + 600);
+        let rs_token = sign(&rsa_pkcs8, &claims);
+        let es_token = sign_es256(&ec_pkcs8, &claims);
+        assert_eq!(bearer(&rs_mode, &rs_token).unwrap().name, "alice");
+        assert_eq!(bearer(&es_mode, &es_token).unwrap().name, "alice");
+        assert_eq!(
+            bearer(&es_mode, &rs_token),
+            Err(AuthError::Rejected(
+                "jwt: alg must be ES256 for the configured key".into()
+            ))
+        );
+        assert_eq!(
+            bearer(&rs_mode, &es_token),
+            Err(AuthError::Rejected(
+                "jwt: alg must be RS256 for the configured key".into()
+            ))
         );
     }
 

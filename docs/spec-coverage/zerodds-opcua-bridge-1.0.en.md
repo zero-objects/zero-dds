@@ -40,13 +40,9 @@ convenience flag is `--set` of its file key and wins over the files.
 **Repo:** `crates/opcua-bridge/src/bin/zerodds-opcua-bridged.rs`,
 `crates/opcua-bridge/src/daemon/cli.rs`.
 
-**Tests:** `crates/opcua-bridge/src/daemon/cli.rs::tests::{opcuabridge_2_empty_args_default, opcuabridge_2_bind_addr_parsed, opcuabridge_2_equals_form, opcuabridge_2_domain_parses_int, opcuabridge_2_idl_is_repeatable, opcuabridge_2_unknown_flag_rejected, opcuabridge_2_sets_render_idl_as_appends, opcuabridge_2_help_short_form}`.
-
-**Status:** partial — checked are `--bind` (also in `=` form), `--domain`,
-repeated `--idl` and its rendering as `+opcua.idl=…`, `-h` and the refusal
-of an unknown flag. Without a test: the exit codes of `--check-config`,
-`--config`, `--gateway-config`, `--log-level`, `--metrics`, `--version` and
-the precedence of `--set` over the files.
+**Tests:** `crates/opcua-bridge/src/daemon/cli.rs::tests::{opcuabridge_2_empty_args_default, opcuabridge_2_bind_addr_parsed, opcuabridge_2_equals_form, opcuabridge_2_domain_parses_int, opcuabridge_2_idl_is_repeatable, opcuabridge_2_unknown_flag_rejected, opcuabridge_2_sets_render_idl_as_appends, opcuabridge_2_help_short_form}`;
+`crates/opcua-bridge/tests/binary_cli.rs::{opcuabridge_2_version_prints_the_name_and_exits_zero, opcuabridge_2_check_config_answers_with_its_exit_codes, opcuabridge_2_a_log_level_outside_the_five_names_is_refused, opcuabridge_2_a_set_assignment_wins_over_the_file, opcuabridge_9_2_sigterm_ends_the_running_daemon_with_exit_code_zero}`
+**Status:** done — the flags are tested at the parser and at the binary: `--version`, the exit codes 0, 1 and 2 of `--check-config` with `--config`, `--log-level` with its five values, the run with `--bind`, `--domain`, `--idl`, `--gateway-config` and `--metrics`, and `--set` over the file.
 
 ## §3 Config-file format
 
@@ -106,66 +102,61 @@ The library services themselves are in `opcua-client-server-1.05.en.md`.
 
 ### §4.3 Part 14 UADP
 
-**Spec:** §4.3 — one publisher/subscriber pair per
+**Spec:** §4.3 — one Publisher/Subscriber pair per
 `opcua.pubsub.connections[]` over UDP; message security (feature
-`pubsub-security`) with a static key from
-`opcua.pubsub.connections[].security`; a key whose length does not fit the
-policy is refused at load time.
+`pubsub-security`) with keys from one of four sources (`static`, `local`,
+`sks`, `push`); a subscriber's `DataSetMetaData` describes each field with
+its built-in type, DataType, ValueRank, ArrayDimensions and a
+`DataSetFieldId` of its own, with the `namespaces`, `structureDataTypes`
+and `enumDataTypes` (Part 14 §6.2.3.2).
 
 **Repo:** `crates/opcua-bridge/src/pubsub_glue.rs::{PublisherJob,
-SubscriberJob, set_security}`; `crates/opcua-bridge/src/daemon/config.rs::PubSubSecurityConfig`;
-`crates/opcua-bridge/src/daemon/server.rs::build_pubsub_security`.
+SubscriberJob, set_security, dataset_metadata}`; `crates/opcua-bridge/src/daemon/config.rs::PubSubSecurityConfig`;
+`crates/opcua-bridge/src/daemon/server.rs::build_pubsub_security`; `crates/opcua-bridge/src/ua_types.rs::{type_at_path, builtin_of, type_descriptions}`.
 
-**Tests:** `crates/opcua-bridge/src/pubsub_glue.rs::tests::{opcuabridge_4_3_a_scalar_topic_is_the_field_value, opcuabridge_4_3_publisher_job_builds_a_pds_field_per_leaf, opcuabridge_4_3_a_secured_publisher_job_delivers_a_dds_sample_to_a_subscriber_job, opcuabridge_4_3_subscriber_with_the_wrong_key_refuses_not_silently_drops}`;
+**Tests:** `crates/opcua-bridge/src/pubsub_glue.rs::tests::{opcuabridge_4_3_a_scalar_topic_is_the_field_value, opcuabridge_4_3_publisher_job_builds_a_pds_field_per_leaf, opcuabridge_4_3_the_networkmessage_carries_the_connections_publisher_id, opcuabridge_4_3_a_secured_publisher_job_delivers_a_dds_sample_to_a_subscriber_job, opcuabridge_4_3_subscriber_with_the_wrong_key_refuses_not_silently_drops, uapubsub_6_2_3_2_the_metadata_describes_each_field_and_the_datatypes}`;
 `crates/opcua-bridge/src/daemon/config.rs::tests::{opcuabridge_3_pubsub_security_parses_and_hex_decodes_the_keys, opcuabridge_4_3_pubsub_security_with_wrong_key_length_is_refused, opcuabridge_4_3_pubsub_security_odd_length_hex_is_refused, opcuabridge_4_3_pubsub_security_unknown_policy_is_refused, opcuabridge_4_3_no_security_key_leaves_it_none}`;
 `crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_1_dds_publish_reaches_an_in_tree_pubsub_subscriber, opcuabridge_1_external_pubsub_publisher_reaches_the_daemons_own_subscriber}`.
 
-**Status:** partial — publisher/subscriber in both directions and the
-static key are built and checked; key rotation via `GetSecurityKeys`/SKS
-is missing (§4.3.1).
+**Status:** done — publisher and subscriber in both directions, the four key sources (§4.3.1) and the metadata are built and checked. Not checked: RawData fields with arrays of several dimensions (the RawData reader of `zerodds-opcua-pubsub` reads one dimension); the publisher sends no discovery announcements (OPEN-ITEMS 127).
 
 ### §4.3.1 SKS key rotation
 
-**Spec:** §4.3, §14 — message security with a static current key, "not a
-live `GetSecurityKeys`/SKS rotation exchange"; §14 lists it as open.
+**Spec:** §4.3 — the daemon as a Security Key Service (Part 14 §8): `GetSecurityKeys`, `GetSecurityGroup`, `InvalidateKeys`, `ForceKeyRotation`, rotation after `key_lifetime_ms`; SecurityGroups and their folders at run time (§8.5); push targets it pushes the keys to with `SetSecurityKeys` (§8.6, §8.7); the roles of §8.8 as `opcua.server.roles`; as a client it pulls keys with `GetSecurityKeys` (`key_source: sks`) or takes them with `SetSecurityKeys` (`key_source: push`).
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/daemon/keys.rs::{KeyService, spawn_puller}`; `crates/opcua-bridge/src/daemon/push.rs::{PushTargets, spawn_pusher}`; `crates/opcua-server/src/address_space.rs::{add_method_mut, call_mut, remove_subtree}`.
 
-**Tests:** —
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_4_3_the_daemon_hands_out_the_keys_of_its_security_group, opcuabridge_4_3_a_daemon_pulls_the_keys_from_another_and_they_agree, opcuabridge_4_3_an_sks_pushes_the_keys_and_the_publisher_starts, opcuabridge_4_3_security_groups_and_their_folders_are_added_and_removed_at_run_time, opcuabridge_4_3_the_sks_pushes_the_keys_of_a_connected_group_to_its_push_target}`;
+`crates/opcua-server/src/address_space.rs::tests::uacs_5_12_2_a_method_adds_and_removes_nodes`.
 
-**Status:** open — the daemon fetches no keys via `GetSecurityKeys` and
-does not rotate them; a new key needs a restart (§9.3).
+**Status:** done — rotation, pulling, taking pushed keys, managing groups and folders and pushing to a target are checked on the running daemon, the push between two daemons over a SignAndEncrypt channel. The role Objects of OPC 10000-18 and `SessionlessInvoke` are not built by the own spec (OPEN-ITEMS 121). Not checked: an SKS or a target of another implementation.
 
 ## §5 Topic mapping
 
 ### §5.1 TypeObject/TypeLookup → SerializedTypeSupport
 
-**Spec:** §5.1 — type resolution without a compiled Rust type:
-`opcua.idl` → `CompleteTypeObject` → `SerializedTypeSupport`; a second
-path `dds_bridge::resolve_discovered` via the runtime's TypeLookup
-registry.
+**Spec:** §5.1 — type resolution without a compiled Rust type: `opcua.idl`
+→ `CompleteTypeObject` with the TypeObjects of the member types →
+`SerializedTypeSupport`; a type in no IDL file comes over TypeLookup from
+the remote endpoints of the topic (§5.1.1).
 
 **Repo:** `crates/opcua-bridge/src/idl.rs::{compile, type_support_for,
-is_keyed}`; `crates/opcua-bridge/src/dds_bridge.rs::resolve_discovered`.
+is_keyed}`; `crates/opcua-bridge/src/dds_bridge.rs::resolve_discovered`; `crates/opcua-bridge/src/daemon/server.rs::LateTopics`.
 
-**Tests:** `crates/opcua-bridge/src/idl.rs::tests::{opcuabridge_5_1_compiles_a_struct_and_resolves_its_type_support, opcuabridge_5_1_unknown_type_is_reported_by_name, opcuabridge_5_1_broken_idl_is_reported_with_diagnostics}`.
+**Tests:** `crates/opcua-bridge/src/idl.rs::tests::{opcuabridge_5_1_compiles_a_struct_and_resolves_its_type_support, opcuabridge_5_1_a_type_with_struct_enum_and_union_members_has_its_type_support, opcuabridge_5_1_unknown_type_is_reported_by_name, opcuabridge_5_1_broken_idl_is_reported_with_diagnostics}`;
+`crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_5_1_a_type_in_no_idl_file_comes_from_the_remote_writer, opcuabridge_5_1_a_type_in_no_idl_file_comes_from_the_remote_reader}`.
 
-**Status:** partial — the IDL path is checked; `resolve_discovered` has
-no test; the daemon's own `getTypes` request is missing (§5.1.1).
+**Status:** done — a type with a structure, enumeration or union member got no type support before (the TypeObjects of the member types were missing); both ways are checked.
 
 ### §5.1.1 getTypes request for an unknown type
 
-**Spec:** §5.1 — "This daemon does **not** itself drive a live
-cross-participant `getTypes` RPC exchange for a topic whose type is
-otherwise unknown."
+**Spec:** §5.1 — a topic whose type is in no IDL file waits; the daemon asks every remote endpoint of the topic that announces a complete `TypeIdentifier` with `getTypes` and `getTypeDependencies` and builds the topic once the registry holds the type; its endpoints announce the type themselves.
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/dds_bridge.rs::{TypeQuery, announce_type}`; `crates/opcua-bridge/src/daemon/server.rs::LateTopics`; `crates/dcps/src/runtime.rs::DiscoveredEndpointInfo::complete_type_identifier`.
 
-**Tests:** —
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_5_1_a_type_in_no_idl_file_comes_from_the_remote_writer, opcuabridge_5_1_a_type_in_no_idl_file_comes_from_the_remote_reader}`.
 
-**Status:** open — a topic whose type comes neither from `opcua.idl` nor
-from the runtime's registry is not bridged; the daemon does not request
-the type via TypeLookup.
+**Status:** done — both directions (remote writer, remote reader) checked on the running daemon. Not checked: an endpoint of another implementation.
 
 ### §5.2 AddressSpace shape (§9.3)
 
@@ -186,49 +177,49 @@ materialize_instance_with_override, ensure_browse_path, apply_sample}`.
 
 ### §5.3 Type-shape coverage
 
-**Spec:** §5.3 — primitives, strings (narrow and wide), enums (ordinal),
-bitmasks, nested structs, `map<K,V>` (one leaf per entry,
-`<field>.<key>`) and arrays/sequences of these in both directions; shapes
-that cannot be mapped are reported by path, never silently dropped.
+**Spec:** §5.3 — primitives, strings, enumerations, bitmasks, structs, unions, `map<K,V>` and collections of them, both directions; a DataType with `DataTypeDefinition` and `Default Binary` encoding per structure, union, enumeration and bitmask, a `<Name>VariableType` per structure, DataType, ValueRank and TypeDefinition on every Variable (Gateway 1.0 §9.2); the value of an aggregate Variable as an ExtensionObject (OPC 10000-6 §5.2.6 to §5.2.8); a bitmask as an `OptionSet`; an absent `@optional` member and an inactive union case read `Bad_NoData`; the Server Object with `NamespaceArray`.
 
 **Repo:** `crates/opcua-bridge/src/dynamic_value.rs::{flatten, unflatten}`;
-`crates/opcua-bridge/src/dynamic_type.rs`.
+`crates/opcua-bridge/src/dynamic_type.rs`; `crates/opcua-bridge/src/ua_types.rs::{ensure_types, shape_of}`; `crates/opcua-bridge/src/ua_structure.rs::{aggregate_values, to_extension_object, from_extension_object, replace_at}`; `crates/opcua-bridge/src/address_space_build.rs::{materialize_instance_with_override, apply_sample}`; `crates/opcua-server/src/address_space.rs::ensure_server_object`.
 
-**Tests:** `crates/opcua-bridge/src/dynamic_value.rs::tests::{opcuabridge_5_3_a_flat_struct_is_one_variable_per_member_and_back, opcuabridge_5_3_nested_struct_flattens_with_dotted_paths, opcuabridge_5_3_partial_unflatten_keeps_the_rest_of_the_default, opcuabridge_5_3_enum_flattens_to_its_ordinal_and_back, opcuabridge_5_3_sequence_of_primitives_is_one_variant, opcuabridge_5_3_sequence_of_struct_is_reported_skipped_not_dropped_silently, opcuabridge_5_3_wide_char_maps_to_uint16_and_back, opcuabridge_5_3_wide_string_maps_to_string_and_back, opcuabridge_5_3_map_of_primitives_decomposes_to_one_leaf_per_key_and_back, opcuabridge_5_3_map_partial_write_keeps_the_untouched_key, opcuabridge_5_3_a_value_nested_past_the_bound_is_refused_not_walked}`;
-`crates/opcua-bridge/src/dynamic_type.rs::tests::opcuabridge_5_3_fixed_point_type_is_a_named_unmapped_error`;
-`crates/opcua-bridge/src/address_space_build.rs::tests::opcuabridge_5_3_unmatched_path_is_reported_not_dropped`.
+**Tests:** `crates/opcua-bridge/src/dynamic_value.rs::tests::{opcuabridge_5_3_a_flat_struct_is_one_variable_per_member_and_back, opcuabridge_5_3_nested_struct_flattens_with_dotted_paths, opcuabridge_5_3_partial_unflatten_keeps_the_rest_of_the_default, opcuabridge_5_3_enum_flattens_to_its_ordinal_and_back, opcuabridge_5_3_sequence_of_primitives_is_one_variant, opcuabridge_5_3_wide_char_maps_to_uint16_and_back, opcuabridge_5_3_wide_string_maps_to_string_and_back, opcuabridge_5_3_map_of_primitives_decomposes_to_one_leaf_per_key_and_back, opcuabridge_5_3_map_partial_write_keeps_the_untouched_key, opcuabridge_5_3_a_value_nested_past_the_bound_is_refused_not_walked, opcuabridge_5_3_a_union_is_its_switch_field_and_its_active_case_and_back, opcuabridge_5_3_an_absent_optional_member_has_no_leaf_until_it_is_written, opcuabridge_5_3_an_array_of_two_dimensions_is_one_leaf_and_back, opcuabridge_5_3_a_bitmask_is_an_option_set_and_a_write_keeps_the_bits_not_valid}`;
+`crates/opcua-bridge/src/address_space_build.rs::tests::{opcuabridge_5_3_unmatched_path_is_reported_not_dropped, opcuabridge_5_3_an_inner_sequence_is_a_variable_with_its_datatype}`;
+`crates/opcua-bridge/src/ua_structure.rs::tests::{opcuabridge_5_3_a_structure_is_its_default_binary_extension_object, opcuabridge_5_3_optional_members_are_an_encoding_mask_first, opcuabridge_5_3_a_union_is_its_switch_then_the_case}`;
+`crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_5_3_structure_and_union_variables_carry_their_datatypes_and_whole_values, opcuabridge_6_2_a_write_keeps_the_members_it_does_not_name_and_a_structure_is_written_whole}`;
+`crates/opcua-server/src/address_space.rs::tests::uacs_5_8_3_2_the_server_object_names_the_namespaces`.
 
-**Status:** partial — the listed shapes are mapped and checked; an
-array/sequence of struct/union, `bitset`, `fixed<P,S>` and `float128` have
-no live value (§5.3.1); a new `map` key gets no node (§5.3.2).
+**Status:** done — cross-checked with the client of `asyncua` (FreeOpcUa) on the Linux test host: it loads the DataTypeDefinitions and reads and writes structures with structure, sequence and enumeration members, unions, `@optional` members and sequences of sequences in both directions. Measured there: `asyncua` does not read the inline matrix of an array of several dimensions (Part 6 1.05 §5.2.5) and knows an OptionSet only as an integer (OPEN-ITEMS 125). The fault that a sample with a union, an absent `@optional` member or an array of several dimensions was refused is fixed.
 
 ### §5.3.1 Live value for array/sequence of struct/union, bitset, fixed, float128
 
-**Spec:** §5.3 — these shapes get no live value, only a node without a
-value; DDS-OPCUA 1.0 §9.2.5 maps arrays and sequences of structures and
-unions to one array Variable each (Figure 9.19, 9.20, 9.25, 9.26).
+**Spec:** §5.3 — `long double` is a `ByteString` of 16 octets (DDS-OPCUA 1.0 §9.2.1); `fixed<P,S>` a `Decimal` (OPC 10000-6 §5.1.10); a `bitset` the structure of its named bitfields; an array or a sequence of structures or unions has a Variable `<TypeName>_<index>` per element (§9.2.5.1.2.3, §9.2.5.2.2.3), a collection of collections a Variable `<Name>_<index>` per inner collection (§9.2.5.2.2.5); a collection of structures has the array of their ExtensionObjects as its value.
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/dynamic_value.rs::{flatten, unflatten, element_name}`;
+`crates/opcua-bridge/src/dynamic_type.rs::{to_dds_type, bitfields, fixed_of}`;
+`crates/opcua-bridge/src/ua_structure.rs::aggregate_values`;
+`crates/opcua-bridge/src/address_space_build.rs::{apply_sample, TopicAddressSpace}`;
+`crates/opcua-gateway/src/dds_to_ua/walker.rs::DdsType`
 
-**Tests:** —
+**Tests:** `crates/opcua-bridge/src/dynamic_value.rs::tests::{opcuabridge_5_3_long_double_is_a_byte_string_of_sixteen_and_back, opcuabridge_5_3_a_bitset_is_one_leaf_per_bitfield_and_back, opcuabridge_5_3_a_fixed_is_a_decimal_and_back, opcuabridge_5_3_a_sequence_of_structs_is_one_variable_per_element_and_back, opcuabridge_5_3_an_element_is_named_by_its_position_in_each_dimension, opcuabridge_5_3_a_write_to_a_collection_of_numbers_replaces_it, opcuabridge_5_3_a_sequence_of_sequences_is_a_variable_per_inner_sequence_and_back}`;
+`crates/opcua-bridge/src/dynamic_type.rs::tests::{opcuabridge_5_3_long_double_is_a_byte_string, opcuabridge_5_3_a_fixed_is_a_decimal, opcuabridge_5_3_a_bitset_is_the_structure_of_its_named_bitfields}`;
+`crates/opcua-bridge/src/ua_structure.rs::tests::{opcuabridge_5_3_an_array_of_two_dimensions_is_the_inline_matrix_and_the_older_form_is_read, opcuabridge_5_3_a_collection_of_collections_is_a_field_of_variants, opcuabridge_5_3_every_aggregate_gets_its_value_and_a_write_replaces_it}`;
+`crates/opcua-bridge/src/address_space_build.rs::tests::opcuabridge_5_3_the_elements_of_a_collection_of_structs_are_variables`.
 
-**Status:** open — `dynamic_value.rs::flatten` reports these shapes by
-path and leaves the node without a value; the mapping to an array Variable
-or a fitting value is missing.
+**Status:** done — every form named is built and checked in both directions, the collection of collections also with `asyncua`. The outer Variable of a collection of collections has no value of its own (the daemon's Variant model holds no Variant in a Variant); its elements have theirs.
 
 ### §5.3.2 New map key at run time
 
-**Spec:** §5.3 — a `map` key a write introduces is reported as an
-unmatched path; "dynamic node/field creation is a tracked follow-up, not
-implemented".
+**Spec:** §5.3 — a `map` key a DDS sample brings and that has no node yet gets it when the sample is applied (a Variable under the map member's node, for a struct value its members under it); in the `PublishedDataSet` it is a field appended at the end with a new `MinorVersion`. At most 4096 entries a topic, keys up to 256 octets.
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/address_space_build.rs::{apply_sample, TopicAddressSpace}`;
+`crates/opcua-bridge/src/pubsub_glue.rs::PublisherJob::tick`;
+`crates/opcua-pubsub/src/daemon.rs::Publisher::append_field`; `crates/opcua-pubsub/src/writer.rs::DataSetWriter::fields_appended`
 
-**Tests:** —
+**Tests:** `crates/opcua-bridge/src/address_space_build.rs::tests::opcuabridge_5_3_a_new_map_key_gets_its_nodes_when_a_sample_brings_it`;
+`crates/opcua-bridge/src/pubsub_glue.rs::tests::opcuabridge_5_3_a_new_map_key_is_a_field_appended_to_the_published_dataset`;
+`crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_5_3_a_map_key_a_sample_brings_is_a_node_a_client_reads`
 
-**Status:** open — `AddressSpace` and `PublishedDataSet` build their node
-and field set once from the Table 9 default; a key that appears later gets
-no node.
+**Status:** done — the node is created with the first sample that has the key and stays; a key past either bound and a path under no map are reported as an unmatched path. A client cannot introduce a key through a Write (the daemon does not serve AddNodes). Not tested: keys of a map that is itself the value of a map; a subscriber of another implementation that sees the new `MinorVersion`.
 
 ### §5.4 Historical access (§9.3.4)
 
@@ -250,13 +241,9 @@ HistoricalTopicConfig}`; `crates/opcua-bridge/src/address_space_build.rs`;
 `crates/opcua-gateway/src/historical/adapter.rs::tests::{push_bounded_evicts_the_oldest_sample_past_max_depth, ensure_stream_makes_an_empty_read_ok_not_unknown_instance}`;
 `crates/opcua-bridge/src/address_space_build.rs::tests::{opcuabridge_5_4_historical_depth_marks_every_leaf_historizing, opcuabridge_5_4_no_historical_depth_leaves_a_leaf_non_historizing}`;
 `crates/opcua-bridge/src/daemon/config.rs::tests::{opcuabridge_3_historical_topics_parse, opcuabridge_5_4_historical_topic_without_depth_is_refused, opcuabridge_5_4_historical_topic_zero_depth_is_refused}`;
-`crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_1_historical_topic_config_makes_history_read_work_end_to_end`.
-
-**Status:** partial — marking, retention, raw range, AtTime, continuation
-point and the refusal of `is_read_modified` are checked. Without a test:
-the load-time error for a `dds_topic` without a `dds_to_ua_connection`
-(`crates/opcua-bridge/src/daemon/server.rs`, "names no dds_to_ua_connection
-topic").
+`crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_1_historical_topic_config_makes_history_read_work_end_to_end`;
+`crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_5_4_a_historical_topic_without_a_connection_is_a_load_time_error`
+**Status:** done — marking, retention, raw range, AtTime, continuation point, the refusal of `is_read_modified` and the load-time error for a `dds_topic` without a `dds_to_ua_connection` are tested.
 
 ## §6 OPC UA ↔ DDS bridging behavior
 
@@ -277,34 +264,28 @@ every sample is decoded, flattened into named leaf values and applied with
 
 ### §6.2 OPC UA → DDS
 
-**Spec:** §6.2 — (1) a foreign client writes to the own server: the write
-hook checks `acl.rules[].subject` per session (denial
-`Bad_UserAccessDenied`), an allowed write reaches DDS via a 100 ms poll;
-(2) client role against configured foreign servers, one MonitoredItem per
-node, every notification is written to DDS. A failed DDS write is logged,
-the writing OPC UA client is not told ("remains, named, not fixed").
+**Spec:** §6.2 — (1) a foreign client writes to the own server: the write hook checks `acl.rules[].subject` per session (denial `Bad_UserAccessDenied`); an allowed write goes into DDS before the client is answered, and the answer is the outcome; (2) client role against configured foreign servers, one MonitoredItem per node, every notification is written to DDS.
 
 **Repo:** `crates/opcua-bridge/src/daemon/server.rs::pump_loop`
 (`ua_to_dds_jobs`); `crates/opcua-bridge/src/ua_client.rs::ClientJob`.
 
 **Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_1_opcua_client_write_reaches_the_dds_reader, opcuabridge_4_2_per_session_write_acl_allows_the_named_subject_and_refuses_the_other}`;
 `crates/opcua-bridge/src/ua_client.rs::tests::opcuabridge_1_client_job_writes_a_monitored_scalar_node_into_dds`;
-`crates/opcua-bridge/src/dds_bridge.rs::tests::opcuabridge_6_2_write_against_unknown_topic_is_reported`.
-
-**Status:** partial — both mechanisms are built and checked; reporting a
-failed DDS write back to the client is missing (§6.2.1).
+`crates/opcua-bridge/src/dds_bridge.rs::tests::opcuabridge_6_2_write_against_unknown_topic_is_reported`;
+`crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_6_2_a_write_that_does_not_reach_dds_is_answered_bad`;
+`crates/opcua-server/src/client.rs::tests::opcuabridge_6_2_a_write_the_commit_refuses_is_answered_bad_and_taken_back`
+**Status:** done — both mechanisms are built and tested; the answer to an allowed Write is the outcome of the write into DDS (§6.2.1).
 
 ### §6.2.1 Reporting a failed DDS write
 
-**Spec:** §6.2, §14 — the write response to the OPC UA client does not
-depend on whether the DDS write succeeds; §14 lists it as open.
+**Spec:** §6.2 — the answer to a Write is the outcome of the write into DDS; a value DDS does not take is answered `Bad_CommunicationError` and taken back out of the AddressSpace.
 
-**Repo:** —
+**Repo:** `crates/opcua-server/src/server.rs::{Server::set_write_commit, Server::write_one}`;
+`crates/opcua-bridge/src/daemon/server.rs::{start_with_reload, flush_ua_to_dds}`
 
-**Tests:** —
-
-**Status:** open — the path to DDS stays a poll; a failed DDS write is
-only logged.
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_6_2_a_write_that_does_not_reach_dds_is_answered_bad`;
+`crates/opcua-server/src/client.rs::tests::opcuabridge_6_2_a_write_the_commit_refuses_is_answered_bad_and_taken_back`
+**Status:** done — a Write the AddressSpace accepts goes into DDS through `Server::set_write_commit` before the client is answered. When the value does not encode for the topic's type or DDS does not take it, the answer is `Bad_CommunicationError` and the server puts the value before it back. Tested is the case of a value that does not encode (`string<4>`); a write DDS itself refuses is not reproduced.
 
 ## §7 Security
 
@@ -350,13 +331,11 @@ acl_allow_anonymous}`; `crates/opcua-bridge/src/daemon/server.rs::start_with_rel
 **Spec:** §8.1 — `log_level` (`trace`…`error`) to stderr; every skip,
 every decode failure and every failed DDS write is logged with topic/path.
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/daemon/log.rs`; `crates/opcua-bridge/src/daemon/server.rs`
 
-**Tests:** —
-
-**Status:** open — the messages are `eprintln!` calls in
-`crates/opcua-bridge/src/daemon/server.rs`; no test checks `log_level` or a
-message.
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_8_1_a_decode_failure_is_logged_by_topic_and_log_level_filters`;
+`crates/opcua-bridge/src/daemon/log.rs::tests::opcuabridge_8_1_a_line_below_the_log_level_is_not_written`
+**Status:** done — each line carries its level and is written when the level reaches `log_level`; decode failures and failed DDS writes name their topic. Tested are the decode failure with its topic and the filtering of an `info` line at `warn`; the lines of the other skips are not tested one by one.
 
 ### §8.2 Prometheus metrics
 
@@ -365,12 +344,10 @@ message.
 `zerodds_opcua_pubsub_{published,received}_total`,
 `zerodds_opcua_connections_total`, `zerodds_opcua_errors_total`.
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/daemon/server.rs::{BridgeMetrics, serve_metrics}`
 
-**Tests:** —
-
-**Status:** open — `crates/opcua-bridge/src/daemon/server.rs::{BridgeMetrics,
-serve_metrics}` is built; no test reads the endpoint.
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_8_2_the_metrics_endpoint_serves_the_six_counters`
+**Status:** done — the test reads `GET /metrics` and finds the six counters; `dds_to_ua_samples_total` and `connections_total` count the sample and the connection of the test.
 
 ### §8.3 OTLP spans
 
@@ -401,12 +378,9 @@ threads are joined, `ExitCode 0`.
 DaemonHandle::shutdown, serve_metrics}`;
 `crates/opcua-bridge/src/bin/zerodds-opcua-bridged.rs`.
 
-**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_1_dcps_writer_reaches_the_opcua_client_read, opcuabridge_1_opcua_client_write_reaches_the_dds_reader, opcuabridge_8_3_otlp_endpoint_receives_a_span_on_opc_tcp_accept}`.
-
-**Status:** partial — in-process start (`start_with_reload`) and end
-(`DaemonHandle::shutdown`) are checked.
-Without a test: signal handling (SIGTERM/SIGINT) and exit code 0 of the
-binary.
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::{opcuabridge_1_dcps_writer_reaches_the_opcua_client_read, opcuabridge_1_opcua_client_write_reaches_the_dds_reader, opcuabridge_8_3_otlp_endpoint_receives_a_span_on_opc_tcp_accept}`;
+`crates/opcua-bridge/tests/binary_cli.rs::{opcuabridge_9_2_sigterm_ends_the_running_daemon_with_exit_code_zero, opcuabridge_9_2_sigint_ends_the_running_daemon_with_exit_code_zero}`
+**Status:** done — startup and shutdown are tested in the process and at the binary: SIGTERM and SIGINT end the running daemon with exit code 0.
 
 ### §9.3 SIGHUP
 
@@ -414,13 +388,10 @@ binary.
 same sources; a file that fails to load changes nothing; every other key
 needs a restart.
 
-**Repo:** —
+**Repo:** `crates/opcua-bridge/src/daemon/server.rs::{start_with_reload, install_signal_watcher}`
 
-**Tests:** —
-
-**Status:** open — the reload thread in
-`crates/opcua-bridge/src/daemon/server.rs::start_with_reload` is built; no
-test sends SIGHUP.
+**Tests:** `crates/opcua-bridge/tests/daemon_e2e.rs::opcuabridge_9_3_sighup_reloads_the_acl_and_a_failed_load_changes_nothing`
+**Status:** done — the test sends SIGHUP to the process: a load that fails changes nothing; the next one puts the new `acl.rules` in force.
 
 ## §10 Cross-vendor interop
 
@@ -458,13 +429,11 @@ deb/rpm/Arch/AppImage entries.
 `packaging/linux/arch/PKGBUILD`, `packaging/linux/appimage/build.sh`;
 `READY=1`/`STOPPING=1` in `crates/opcua-bridge/src/bin/zerodds-opcua-bridged.rs`.
 
-**Tests:** `crates/opcua-bridge/tests/example_yaml_loadback.rs::opcuabridge_3_shipped_example_config_loads_back`.
-
-**Status:** partial — the example configuration loads through the real
-parser. Without a test: unit, manual pages and package entries;
-`tools/traceability/tests/deployment_layout.rs` and
-`tools/traceability/tests/bridge_config_manpages.rs` do not have the OPC UA
-daemon in their bridge list.
+**Tests:** `crates/opcua-bridge/tests/example_yaml_loadback.rs::opcuabridge_3_shipped_example_config_loads_back`;
+`tools/traceability/tests/deployment_layout.rs::{fhs_layout_paths_are_the_ones_the_clause_names, debian_control_declares_the_package_split_of_the_clause, rpm_spec_declares_the_same_split_and_systemd_scriptlets, arch_pkgbuild_carries_the_aur_fields_and_the_daemon_list, appimage_build_targets_musl_and_covers_every_daemon, every_systemd_unit_carries_the_hardening_set_of_the_clause}`;
+`tools/traceability/tests/bridge_config_manpages.rs::{every_example_key_is_documented_in_the_man_page, the_man_page_names_no_key_the_example_does_not_declare, every_man_page_names_its_parser_and_what_an_unknown_key_does}`;
+`crates/opcua-bridge/tests/binary_cli.rs::opcuabridge_11_the_manual_page_names_every_flag_of_the_binary`
+**Status:** done — the example configuration loads through the real parser; the unit, the package entries (deb, rpm, Arch, AppImage) and both manual pages are checked by the traceability tests and a test at the binary.
 
 ## §12 Testing
 
@@ -541,23 +510,23 @@ items.
 **Tests:** —
 
 **Status:** n/a (informative) — version history; the items it lists as
-open are items §4.3.1, §5.3.1, §5.3.2 and §6.2.1.
+open (the role Objects of OPC 10000-18, `SessionlessInvoke`) are in
+OPEN-ITEMS 121.
 
 ---
 
 ## Audit status
 
-13 done / 8 partial / 8 open / 0 blocked / 2 n/a (informative).
+29 done / 0 partial / 0 open / 0 blocked / 2 n/a (informative).
 
-Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-opcua-bridge-1.0.md`):
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 9695 to 9813 of `main` (`python3 ci/coverage_results.py --document zerodds-opcua-bridge-1.0.md`):
 
-* `cargo nextest run --profile merge -p zerodds-opcua-bridge --all-targets` (job `merge-rust-opcua-bridge`) — 80 tests green.
+* `cargo nextest run --profile merge -p zerodds-opcua-bridge --all-targets` (job `merge-rust-opcua-bridge`) — 123 tests green.
 * `cargo nextest run --profile merge -p zerodds-opcua-gateway --all-targets` (job `merge-rust-opcua-gateway`) — 4 tests green.
-* `cargo nextest run --profile merge -p zerodds-opcua-server --all-targets` (job `merge-rust-opcua-server`) — 10 tests green.
-* `cargo nextest run --profile merge -p zerodds-opcua-bridge --all-targets --features crypto,pubsub-security` (job `merge-rust-opcua-bridge-features-crypto-pubsub-security`) — 3 tests green.
+* `cargo nextest run --profile merge -p zerodds-opcua-server --all-targets` (job `merge-rust-opcua-server`) — 13 tests green.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (job `merge-rust-traceability`) — 9 tests green.
+* `cargo nextest run --profile merge -p zerodds-opcua-bridge --all-targets --features crypto,pubsub-security` (job `merge-rust-opcua-bridge-features-crypto-pubsub-security`) — 8 tests green.
 * `cargo nextest run --profile merge -p zerodds-opcua-uacp --all-targets --features crypto` (job `merge-rust-opcua-uacp-features-crypto`) — 2 tests green.
 * `python3 ci/run_integration.py integration-bridges` (job `integration-bridges`) — 1 test green.
 
-100 cited tests green, 0 not green.
-
-Open items: `zerodds-opcua-bridge-1.0.open.en.md`.
+160 cited tests green, 0 not green.

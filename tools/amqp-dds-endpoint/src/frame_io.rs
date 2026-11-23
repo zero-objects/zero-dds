@@ -8,10 +8,54 @@
 //! * §2.3 Frame Layout (8-Byte Header + Body).
 
 use std::io::{self, Read, Write};
+use std::net::TcpStream;
+use std::time::Duration;
 
 use zerodds_amqp_bridge::frame::{
     FrameError, FrameHeader, FrameType, decode_frame_header, encode_frame_header,
 };
+
+/// The byte stream of one connection: `Read + Write`, and what a protocol
+/// endpoint needs of the socket below it.
+pub trait Transport: Read + Write {
+    /// How long a read waits for octets before it returns
+    /// `WouldBlock`/`TimedOut`; `None` waits without bound.
+    ///
+    /// # Errors
+    /// The socket's error.
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()>;
+
+    /// Closes the outgoing stream; the incoming one stays readable (Spec
+    /// §2.2: "both peers MUST close their outgoing stream and SHOULD read
+    /// the incoming stream until it is terminated").
+    ///
+    /// # Errors
+    /// The socket's error.
+    fn close_outgoing(&mut self) -> io::Result<()>;
+}
+
+impl Transport for TcpStream {
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        TcpStream::set_read_timeout(self, timeout)
+    }
+
+    fn close_outgoing(&mut self) -> io::Result<()> {
+        self.shutdown(std::net::Shutdown::Write)
+    }
+}
+
+#[cfg(feature = "tls")]
+impl Transport for rustls::StreamOwned<rustls::ServerConnection, TcpStream> {
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.sock.set_read_timeout(timeout)
+    }
+
+    fn close_outgoing(&mut self) -> io::Result<()> {
+        self.conn.send_close_notify();
+        self.flush()?;
+        self.sock.shutdown(std::net::Shutdown::Write)
+    }
+}
 
 /// Spec §2.2 — AMQP protocol ID. First byte of the
 /// Protocol-Headers.
@@ -90,12 +134,14 @@ pub enum FrameIoError {
     InvalidProtocolMagic([u8; 4]),
     /// Unknown protocol id (not 0x00 or 0x03).
     UnsupportedProtocolId(u8),
-    /// Major/minor does not match AMQP 1.0.0.
+    /// The version is not AMQP 1.0.0.
     UnsupportedVersion {
         /// Received major.
         major: u8,
         /// Received minor.
         minor: u8,
+        /// Received revision.
+        revision: u8,
     },
     /// Frame body longer than the resource limits allow.
     FrameTooLarge {
@@ -113,8 +159,12 @@ impl core::fmt::Display for FrameIoError {
             Self::Frame(e) => write!(f, "frame error: {e}"),
             Self::InvalidProtocolMagic(m) => write!(f, "invalid protocol magic: {m:?}"),
             Self::UnsupportedProtocolId(p) => write!(f, "unsupported protocol-id 0x{p:02x}"),
-            Self::UnsupportedVersion { major, minor } => {
-                write!(f, "unsupported AMQP version {major}.{minor}")
+            Self::UnsupportedVersion {
+                major,
+                minor,
+                revision,
+            } => {
+                write!(f, "unsupported AMQP version {major}.{minor}.{revision}")
             }
             Self::FrameTooLarge { size, max } => {
                 write!(f, "frame size {size} exceeds max-frame-size {max}")
@@ -142,7 +192,7 @@ impl From<FrameError> for FrameIoError {
 /// # Errors
 /// `Io` on TCP error, `InvalidProtocolMagic` on wrong
 /// magic bytes, `UnsupportedProtocolId`/`UnsupportedVersion` on
-/// non-AMQP-1.0 header.
+/// non-AMQP-1.0 header; the version is major, minor and revision (1.0.0).
 pub fn read_protocol_header<R: Read>(r: &mut R) -> Result<ProtocolHeader, FrameIoError> {
     let mut buf = [0u8; 8];
     r.read_exact(&mut buf)?;
@@ -159,8 +209,12 @@ pub fn read_protocol_header<R: Read>(r: &mut R) -> Result<ProtocolHeader, FrameI
     let major = buf[5];
     let minor = buf[6];
     let revision = buf[7];
-    if major != protocol::MAJOR || minor != protocol::MINOR {
-        return Err(FrameIoError::UnsupportedVersion { major, minor });
+    if major != protocol::MAJOR || minor != protocol::MINOR || revision != protocol::REVISION {
+        return Err(FrameIoError::UnsupportedVersion {
+            major,
+            minor,
+            revision,
+        });
     }
     Ok(ProtocolHeader {
         protocol,
@@ -211,6 +265,84 @@ pub fn read_frame<R: Read>(r: &mut R, max_frame_size: u32) -> Result<Frame, Fram
         r.read_exact(&mut body)?;
     }
     Ok(Frame { header, body })
+}
+
+/// What [`FrameReader::poll`] found.
+#[derive(Debug)]
+pub enum Polled {
+    /// A whole frame.
+    Frame(Frame),
+    /// The read timed out before a whole frame was there; the octets read
+    /// so far are kept.
+    Idle,
+    /// The peer closed the stream.
+    Closed,
+}
+
+/// Reads frames from a stream whose reads time out: the octets of a frame
+/// cut by a time-out stay in the reader until the rest arrives.
+#[derive(Debug, Default)]
+pub struct FrameReader {
+    buf: Vec<u8>,
+    discard: bool,
+}
+
+impl FrameReader {
+    /// From now on the octets of the stream are read and dropped: after a
+    /// framing error there is no frame boundary to find again.
+    pub fn discard_rest(&mut self) {
+        self.discard = true;
+        self.buf.clear();
+    }
+
+    /// The next frame, if the stream has one within its read time-out.
+    ///
+    /// # Errors
+    /// `Io` for a failed read, `Frame` for a header that is none (Spec
+    /// §2.3.1), `FrameTooLarge` for a frame above `max_frame_size`.
+    pub fn poll<R: Read>(
+        &mut self,
+        r: &mut R,
+        max_frame_size: u32,
+    ) -> Result<Polled, FrameIoError> {
+        let mut chunk = [0u8; 16 * 1024];
+        loop {
+            if !self.discard && self.buf.len() >= 8 {
+                let mut hdr = [0u8; 8];
+                hdr.copy_from_slice(&self.buf[..8]);
+                let header = decode_frame_header(&hdr)?;
+                if header.size > max_frame_size {
+                    return Err(FrameIoError::FrameTooLarge {
+                        size: header.size,
+                        max: max_frame_size,
+                    });
+                }
+                let size = header.size as usize;
+                if self.buf.len() >= size {
+                    // Spec §2.3.1.3: the extended header between octet 8
+                    // and the body offset is skipped.
+                    let body = self.buf[header.body_offset()..size].to_vec();
+                    self.buf.drain(..size);
+                    return Ok(Polled::Frame(Frame { header, body }));
+                }
+            }
+            match r.read(&mut chunk) {
+                Ok(0) => return Ok(Polled::Closed),
+                Ok(_) if self.discard => {}
+                Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    return Ok(Polled::Idle);
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(FrameIoError::Io(e)),
+            }
+        }
+    }
 }
 
 /// Spec §2.3 — write frame (header + body).
@@ -311,7 +443,25 @@ mod tests {
         let err = read_protocol_header(&mut r).unwrap_err();
         assert!(matches!(
             err,
-            FrameIoError::UnsupportedVersion { major: 2, minor: 5 }
+            FrameIoError::UnsupportedVersion {
+                major: 2,
+                minor: 5,
+                revision: 0
+            }
+        ));
+    }
+
+    /// §2.2: the version is major, minor and revision; 1.0.1 is not 1.0.0.
+    #[test]
+    fn amqp10_2_2_another_revision_is_another_version() {
+        let mut r = Cursor::new(b"AMQP\x00\x01\x00\x01".to_vec());
+        assert!(matches!(
+            read_protocol_header(&mut r).unwrap_err(),
+            FrameIoError::UnsupportedVersion {
+                major: 1,
+                minor: 0,
+                revision: 1
+            }
         ));
     }
 
@@ -366,6 +516,80 @@ mod tests {
         let f = read_frame(&mut Cursor::new(octets.to_vec()), 1024).unwrap();
         assert_eq!(f.header.frame_type, FrameType::Sasl);
         assert_eq!(f.body, b"x");
+    }
+
+    /// A read that returns its octets in pieces and times out in between.
+    struct Pieces {
+        pieces: std::collections::VecDeque<Option<Vec<u8>>>,
+    }
+    impl Read for Pieces {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            match self.pieces.pop_front() {
+                Some(Some(piece)) => {
+                    buf[..piece.len()].copy_from_slice(&piece);
+                    Ok(piece.len())
+                }
+                Some(None) => Err(io::Error::from(io::ErrorKind::WouldBlock)),
+                None => Ok(0),
+            }
+        }
+    }
+
+    /// §2.3.1: a frame that arrives in pieces around a read time-out is one
+    /// frame; two frames in one read are two; the end of the stream is
+    /// told apart from a time-out.
+    #[test]
+    fn amqp10_2_3_1_a_frame_cut_by_a_read_timeout_is_kept_until_its_rest_arrives() {
+        let mut one = Vec::new();
+        write_frame(&mut one, FrameType::Amqp, 3, b"hello").unwrap();
+        let mut two = Vec::new();
+        write_frame(&mut two, FrameType::Amqp, 0, b"").unwrap();
+        let mut second_read = one[5..].to_vec();
+        second_read.extend_from_slice(&two);
+        let mut r = Pieces {
+            pieces: [Some(one[..5].to_vec()), None, Some(second_read), None]
+                .into_iter()
+                .collect(),
+        };
+        let mut reader = FrameReader::default();
+        assert!(matches!(reader.poll(&mut r, 512).unwrap(), Polled::Idle));
+        let Polled::Frame(f) = reader.poll(&mut r, 512).unwrap() else {
+            panic!("the first frame");
+        };
+        assert_eq!((f.header.channel, f.body.as_slice()), (3, &b"hello"[..]));
+        let Polled::Frame(f) = reader.poll(&mut r, 512).unwrap() else {
+            panic!("the second frame");
+        };
+        assert!(f.body.is_empty());
+        assert!(matches!(reader.poll(&mut r, 512).unwrap(), Polled::Idle));
+        assert!(matches!(reader.poll(&mut r, 512).unwrap(), Polled::Closed));
+
+        // A frame above the limit, and octets that are no frame header
+        // (DOFF 1).
+        let mut r = Pieces {
+            pieces: [Some(one.clone())].into_iter().collect(),
+        };
+        assert!(matches!(
+            FrameReader::default().poll(&mut r, 12),
+            Err(FrameIoError::FrameTooLarge { size: 13, max: 12 })
+        ));
+        let mut r = Pieces {
+            pieces: [Some(b"\x00\x00\x00\x08\x01\x00\x00\x00".to_vec())]
+                .into_iter()
+                .collect(),
+        };
+        assert!(matches!(
+            FrameReader::default().poll(&mut r, 512),
+            Err(FrameIoError::Frame(_))
+        ));
+        // After discard_rest octets are dropped until the stream ends.
+        let mut r = Pieces {
+            pieces: [Some(one.clone()), None].into_iter().collect(),
+        };
+        let mut reader = FrameReader::default();
+        reader.discard_rest();
+        assert!(matches!(reader.poll(&mut r, 512).unwrap(), Polled::Idle));
+        assert!(matches!(reader.poll(&mut r, 512).unwrap(), Polled::Closed));
     }
 
     #[test]

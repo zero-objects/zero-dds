@@ -5,8 +5,9 @@
 //!
 //! Covers:
 //! * §7.1 TLS — bridge-client connect via `mqtts://` with a rustls wrap.
-//! * §7.2 Auth — bearer token + SASL-PLAIN as CONNECT username/password.
-//! * §7.3 topic ACL — subscribe-skip + publish-drop on deny.
+//! * §7.2 Auth — `password` (also under its names `bearer` and
+//!   `sasl_plain`) as CONNECT username/password; `mtls` with the client
+//!   certificate and neither.
 //!
 //! Mock broker: a rustls server on `127.0.0.1:0` that reads a single
 //! MQTT CONNECT frame, pushes the CONNECT body into a channel
@@ -41,11 +42,8 @@ use std::time::Duration;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use rustls::{ClientConfig, ServerConfig, ServerConnection, StreamOwned};
 use rustls_pemfile::Item;
+use zerodds_mqtt_bridge::daemon::auth::{AuthKind, Credentials};
 use zerodds_mqtt_bridge::daemon::config::DaemonConfig;
-use zerodds_mqtt_bridge::daemon::security::{
-    AclEntry, AclOp, AuthSubject, SecurityConfig, authorize, build_ctx, ctx_from_daemon_config,
-    outbound_credentials,
-};
 
 // ---------- Cert-Helper ----------
 
@@ -264,6 +262,16 @@ fn read_mqtt_connect<R: Read>(r: &mut R) -> Option<MqttConnect> {
     i += 2;
     let client_id = String::from_utf8_lossy(&body[i..i + cid_len]).to_string();
     i += cid_len;
+    // The will (spec §6 Liveliness): its properties, topic and message.
+    if flags & 0x04 != 0 {
+        let mut sub = std::io::Cursor::new(&body[i..]);
+        let props_len = read_vbi(&mut sub)? as usize;
+        i += sub.position() as usize + props_len;
+        for _ in 0..2 {
+            let len = u16::from_be_bytes([*body.get(i)?, *body.get(i + 1)?]) as usize;
+            i += 2 + len;
+        }
+    }
     let mut username: Option<String> = None;
     let mut password: Option<Vec<u8>> = None;
     if user_flag && i + 2 <= body.len() {
@@ -373,6 +381,47 @@ fn mqttbridge_7_1_tls_connect_offers_the_mqtt_alpn_protocol() {
     broker.shutdown();
 }
 
+/// Spec §3 `mqtt.tls.alpn`: the TLS handshake offers the protocol names
+/// of the configuration instead of `mqtt` (a broker that serves MQTT on
+/// another ALPN name, such as `x-amzn-mqtt-ca`); a broker that allows only
+/// `mqtt` refuses it.
+#[test]
+fn mqttbridge_3_the_alpn_list_of_the_configuration_is_offered() {
+    use zerodds_mqtt_bridge::daemon::client::MqttClient;
+    let (cert, key) = gen_self_signed_for("localhost");
+    let mut server_cfg = (*server_tls_cfg(&cert, &key)).clone();
+    server_cfg.alpn_protocols = vec![b"x-amzn-mqtt-ca".to_vec()];
+    let broker = MockBroker::start_tls(Arc::new(server_cfg));
+    let (host, port) = broker.addr.rsplit_once(':').unwrap();
+    let port: u16 = port.parse().unwrap();
+    let mut cfg = DaemonConfig::default_for_dev();
+    cfg.client_id = "alpn-list".into();
+    cfg.broker_tls_server_name = "localhost".into();
+    cfg.broker_tls_alpn = Some(vec!["x-amzn-mqtt-ca".into()]);
+    let _client =
+        MqttClient::connect_secure(host, port, &cfg, Some(build_test_client_config(&cert)))
+            .expect("tls connect");
+    let captured = broker
+        .captured
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap();
+    assert_eq!(captured.alpn.as_deref(), Some(&b"x-amzn-mqtt-ca"[..]));
+    broker.shutdown();
+
+    let mut mqtt_only = (*server_tls_cfg(&cert, &key)).clone();
+    mqtt_only.alpn_protocols = vec![b"mqtt".to_vec()];
+    let broker = MockBroker::start_tls(Arc::new(mqtt_only));
+    let (host, port) = broker.addr.rsplit_once(':').unwrap();
+    let port: u16 = port.parse().unwrap();
+    let refused =
+        MqttClient::connect_secure(host, port, &cfg, Some(build_test_client_config(&cert)));
+    assert!(
+        refused.is_err(),
+        "a broker of only `mqtt` accepted the offer"
+    );
+    broker.shutdown();
+}
+
 #[test]
 fn mqttbridge_7_2_auth_bearer_emits_password_in_connect() {
     use zerodds_mqtt_bridge::daemon::client::MqttClient;
@@ -388,7 +437,7 @@ fn mqttbridge_7_2_auth_bearer_emits_password_in_connect() {
     cfg.client_id = "auth-cli".into();
     cfg.broker_tls_enabled = true;
     cfg.broker_tls_server_name = "localhost".into();
-    cfg.auth_mode = "bearer".into();
+    cfg.auth_mode = AuthKind::parse("bearer");
     cfg.auth_bearer_token = Some("super-secret-token".into());
 
     let _client = MqttClient::connect_secure(host, port, &cfg, Some(client_cfg)).expect("connect");
@@ -418,7 +467,7 @@ fn mqttbridge_7_2_auth_sasl_plain_emits_user_and_password() {
     cfg.client_id = "sasl-cli".into();
     cfg.broker_tls_enabled = true;
     cfg.broker_tls_server_name = "localhost".into();
-    cfg.auth_mode = "sasl_plain".into();
+    cfg.auth_mode = AuthKind::parse("sasl_plain");
     cfg.outbound_username = Some("alice".into());
     cfg.outbound_password = Some("wonderland".into());
 
@@ -433,68 +482,469 @@ fn mqttbridge_7_2_auth_sasl_plain_emits_user_and_password() {
 }
 
 #[test]
-fn mqttbridge_7_3_ctx_from_config_builds_security_context_with_acl() {
+fn mqttbridge_7_2_the_bearer_token_is_the_password_without_a_user_name() {
     let mut cfg = DaemonConfig::default_for_dev();
-    cfg.auth_mode = "bearer".into();
-    cfg.auth_bearer_token = Some("tk".into());
-    cfg.auth_bearer_subject = Some("alice".into());
-    cfg.topic_acl
-        .insert("Trade".into(), (vec!["alice".into()], vec!["alice".into()]));
-    cfg.topic_acl
-        .insert("Forbidden".into(), (vec!["bob".into()], vec!["bob".into()]));
-
-    let (ctx, tls) = ctx_from_daemon_config(&cfg).expect("ctx");
-    assert!(tls.is_none(), "tls disabled => no client cfg");
-    let alice = AuthSubject::new("alice");
-    let bob = AuthSubject::new("bob");
-    assert!(authorize(&ctx.acl, &alice, AclOp::Read, "Trade"));
-    assert!(authorize(&ctx.acl, &alice, AclOp::Write, "Trade"));
-    assert!(!authorize(&ctx.acl, &alice, AclOp::Read, "Forbidden"));
-    assert!(authorize(&ctx.acl, &bob, AclOp::Read, "Forbidden"));
-}
-
-#[test]
-fn mqttbridge_7_2_outbound_credentials_bearer_yields_password_only() {
-    let mut cfg = DaemonConfig::default_for_dev();
-    cfg.auth_mode = "bearer".into();
+    cfg.auth_mode = AuthKind::parse("bearer");
     cfg.auth_bearer_token = Some("tok42".into());
-    let (u, p) = outbound_credentials(&cfg);
-    assert!(u.is_none());
-    assert_eq!(p.as_deref(), Some(b"tok42".as_ref()));
+    let c = Credentials::of(&cfg);
+    assert_eq!(c.kind(), AuthKind::Password);
+    assert!(c.connect_user_name().is_none());
+    assert_eq!(c.connect_password().as_deref(), Some(b"tok42".as_ref()));
 }
 
 #[test]
-fn mqttbridge_7_2_outbound_credentials_sasl_yields_user_and_password() {
+fn mqttbridge_7_2_auth_username_and_password_win_over_the_mqtt_keys() {
     let mut cfg = DaemonConfig::default_for_dev();
-    cfg.auth_mode = "sasl_plain".into();
+    cfg.auth_mode = AuthKind::parse("sasl_plain");
+    cfg.username = Some("mqtt-user".into());
+    cfg.password = Some("mqtt-pass".into());
     cfg.outbound_username = Some("u".into());
     cfg.outbound_password = Some("p".into());
-    let (u, p) = outbound_credentials(&cfg);
-    assert_eq!(u.as_deref(), Some("u"));
-    assert_eq!(p.as_deref(), Some(b"p".as_ref()));
+    let c = Credentials::of(&cfg);
+    assert_eq!(c.connect_user_name().as_deref(), Some("u"));
+    assert_eq!(c.connect_password().as_deref(), Some(b"p".as_ref()));
 }
 
+// ---------- §7.1: the certificate of the next connection ----------
+
+/// A client certificate verifier that takes any certificate and keeps
+/// each, so the test reads which one the daemon presented.
+#[derive(Debug)]
+struct RecordingVerifier {
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
+
+impl rustls::server::danger::ClientCertVerifier for RecordingVerifier {
+    fn root_hint_subjects(&self) -> &[rustls::DistinguishedName] {
+        &[]
+    }
+
+    fn verify_client_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::server::danger::ClientCertVerified, rustls::Error> {
+        Ok(rustls::server::danger::ClientCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+/// The server name and the ALPN protocol names a ClientHello offered.
+type Hello = (Option<String>, Vec<Vec<u8>>);
+
+/// The server certificate of [`CertBroker`]: it keeps the server name and
+/// the ALPN offer of each ClientHello and serves the certificate in force,
+/// which [`CertBroker::serve`] replaces.
+#[derive(Debug)]
+struct HelloRecorder {
+    key: std::sync::Mutex<Arc<rustls::sign::CertifiedKey>>,
+    hellos: std::sync::Mutex<Vec<Hello>>,
+}
+
+impl HelloRecorder {
+    fn certified(cert_pem: &str, key_pem: &str) -> Arc<rustls::sign::CertifiedKey> {
+        let key = rustls::crypto::ring::sign::any_supported_type(&load_key(key_pem).into())
+            .expect("a signing key");
+        Arc::new(rustls::sign::CertifiedKey::new(load_certs(cert_pem), key))
+    }
+}
+
+impl rustls::server::ResolvesServerCert for HelloRecorder {
+    fn resolve(
+        &self,
+        hello: rustls::server::ClientHello<'_>,
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        let alpn = hello
+            .alpn()
+            .map(|names| names.map(<[u8]>::to_vec).collect())
+            .unwrap_or_default();
+        self.hellos
+            .lock()
+            .unwrap()
+            .push((hello.server_name().map(str::to_string), alpn));
+        Some(Arc::clone(&self.key.lock().unwrap()))
+    }
+}
+
+/// A TLS broker that asks for a client certificate and keeps the one of
+/// each connection, and the server name and ALPN offer of each ClientHello;
+/// it answers CONNECT, SUBSCRIBE, a QoS 1 PUBLISH and PINGREQ, and closes
+/// the connection that stands on [`Self::close`].
+struct CertBroker {
+    port: u16,
+    certs: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    /// The Connect Flags of each CONNECT (MQTT 5.0 §3.1.2.3).
+    connect_flags: Arc<std::sync::Mutex<Vec<u8>>>,
+    current: Arc<std::sync::Mutex<Option<TcpStream>>>,
+    resolver: Arc<HelloRecorder>,
+}
+
+impl CertBroker {
+    fn start(cert_pem: &str, key_pem: &str) -> Self {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let resolver = Arc::new(HelloRecorder {
+            key: std::sync::Mutex::new(HelloRecorder::certified(cert_pem, key_pem)),
+            hellos: std::sync::Mutex::default(),
+        });
+        let mut server_cfg = ServerConfig::builder_with_provider(Arc::clone(&provider))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_client_cert_verifier(Arc::new(RecordingVerifier {
+                provider: Arc::clone(&provider),
+            }))
+            .with_cert_resolver(
+                Arc::clone(&resolver) as Arc<dyn rustls::server::ResolvesServerCert>
+            );
+        // Every connection is a full handshake: a resumed session (RFC 8446
+        // §2.2) shows no certificate, so the client's CA and certificate of
+        // the moment would not be what the test reads.
+        server_cfg.send_tls13_tickets = 0;
+        server_cfg.session_storage = Arc::new(rustls::server::NoServerSessionStorage {});
+        let server_cfg = Arc::new(server_cfg);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let certs: Arc<std::sync::Mutex<Vec<Vec<u8>>>> = Arc::default();
+        let connect_flags: Arc<std::sync::Mutex<Vec<u8>>> = Arc::default();
+        let current: Arc<std::sync::Mutex<Option<TcpStream>>> = Arc::default();
+        let (certs_t, current_t, flags_t) = (
+            Arc::clone(&certs),
+            Arc::clone(&current),
+            Arc::clone(&connect_flags),
+        );
+        thread::spawn(move || {
+            for sock in listener.incoming() {
+                let Ok(sock) = sock else { break };
+                let Ok(conn) = ServerConnection::new(Arc::clone(&server_cfg)) else {
+                    continue;
+                };
+                *current_t.lock().unwrap() = sock.try_clone().ok();
+                let certs = Arc::clone(&certs_t);
+                let flags = Arc::clone(&flags_t);
+                thread::spawn(move || {
+                    let mut tls = StreamOwned::new(conn, sock);
+                    while tls.conn.is_handshaking() {
+                        if tls.conn.complete_io(&mut tls.sock).is_err() {
+                            return;
+                        }
+                    }
+                    if let Some(chain) = tls.conn.peer_certificates() {
+                        certs.lock().unwrap().push(chain[0].to_vec());
+                    }
+                    serve_mqtt(&mut tls, &flags);
+                });
+            }
+        });
+        Self {
+            port,
+            certs,
+            connect_flags,
+            current,
+            resolver,
+        }
+    }
+
+    /// The connections from now on get this server certificate.
+    fn serve(&self, cert_pem: &str, key_pem: &str) {
+        *self.resolver.key.lock().unwrap() = HelloRecorder::certified(cert_pem, key_pem);
+    }
+
+    /// The server name and the ALPN offer of each ClientHello, completed
+    /// handshake or not.
+    fn hellos(&self) -> Vec<Hello> {
+        self.resolver.hellos.lock().unwrap().clone()
+    }
+
+    /// Closes the connection that stands, without DISCONNECT.
+    fn close(&self) {
+        if let Some(s) = self.current.lock().unwrap().take() {
+            let _ = s.shutdown(std::net::Shutdown::Both);
+        }
+    }
+
+    fn presented(&self) -> Vec<Vec<u8>> {
+        self.certs.lock().unwrap().clone()
+    }
+}
+
+/// The broker side of one MQTT connection: CONNACK, SUBACK, PUBACK,
+/// PINGRESP, until the connection ends; the Connect Flags of the CONNECT go
+/// into `flags`.
+fn serve_mqtt<S: Read + Write>(s: &mut S, flags: &std::sync::Mutex<Vec<u8>>) {
+    use zerodds_mqtt_bridge::net::{frame_packet, read_packet};
+    while let Ok((byte0, body)) = read_packet(s) {
+        let answer = match byte0 >> 4 {
+            1 => {
+                // Protocol Name (2 + 4 octets), Protocol Level, Connect Flags.
+                flags.lock().unwrap().push(body[7]);
+                Some(frame_packet(0x20, &[0, 0, 0]).unwrap())
+            }
+            8 => {
+                // SUBACK: the identifier, no property, QoS 0 granted.
+                let mut b = body[..2].to_vec();
+                b.extend([0, 0]);
+                Some(frame_packet(0x90, &b).unwrap())
+            }
+            3 if (byte0 >> 1) & 0x03 == 1 => {
+                let topic_len = usize::from(u16::from_be_bytes([body[0], body[1]]));
+                let mut b = body[2 + topic_len..4 + topic_len].to_vec();
+                b.push(0);
+                Some(frame_packet(0x40, &b).unwrap())
+            }
+            12 => Some(vec![0xD0, 0x00]),
+            14 => return,
+            _ => None,
+        };
+        if let Some(a) = answer {
+            if s.write_all(&a).is_err() || s.flush().is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// The DER of the first certificate of `pem`.
+fn der_of(pem: &str) -> Vec<u8> {
+    load_certs(pem)[0].to_vec()
+}
+
+/// The daemon towards `broker` with the client certificate in `dir`
+/// (`client.pem`, `client.key`), reloading with `load`.
+fn rotating_daemon(
+    broker: &CertBroker,
+    dir: &std::path::Path,
+    ca_pem: &str,
+    next: &Arc<std::sync::Mutex<DaemonConfig>>,
+) -> (
+    zerodds_mqtt_bridge::daemon::server::DaemonHandle,
+    zerodds_test_domains::DomainLease,
+) {
+    std::fs::write(dir.join("ca.pem"), ca_pem).unwrap();
+    let lease = zerodds_test_domains::lease_domain();
+    let mut cfg = DaemonConfig::default_for_dev();
+    cfg.domain = lease.id();
+    cfg.broker_url = format!("mqtts://127.0.0.1:{}", broker.port);
+    cfg.client_id = "rotating-cli".into();
+    cfg.session_dir = dir.join("sessions").display().to_string();
+    cfg.broker_tls_enabled = true;
+    cfg.broker_tls_ca_file = dir.join("ca.pem").display().to_string();
+    cfg.broker_tls_client_cert_file = dir.join("client.pem").display().to_string();
+    cfg.broker_tls_client_key_file = dir.join("client.key").display().to_string();
+    cfg.broker_tls_server_name = "localhost".into();
+    cfg.reconnect.initial_delay_ms = 100;
+    cfg.reconnect.max_delay_ms = 400;
+    *next.lock().unwrap() = cfg.clone();
+    let n = Arc::clone(next);
+    let d = zerodds_mqtt_bridge::daemon::server::start_with_reload(
+        cfg,
+        zerodds_dcps::runtime::RuntimeConfig::default(),
+        Some(Box::new(move || Ok(n.lock().unwrap().clone()))),
+    )
+    .expect("daemon start");
+    (d, lease)
+}
+
+fn wait_for(what: &str, mut cond: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !cond() {
+        assert!(std::time::Instant::now() < deadline, "{what} within 10 s");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Spec §7.2 `mtls`: the daemon presents the client certificate of
+/// `mqtt.tls.cert_file`, and its CONNECT carries neither User Name nor
+/// Password (Connect Flags bits 7 and 6 clear); without `auth.mode` a
+/// client certificate and no credentials are `mtls`.
 #[test]
-fn mqttbridge_7_3_acl_skip_subscribe_when_subject_not_in_read_list() {
-    // Synthetic ACL setup; covers the behavior used in
-    // server.rs for SUBSCRIBE filters.
-    let mut sec = SecurityConfig::default();
-    sec.topic_acl.insert(
-        "Allowed".into(),
-        AclEntry {
-            read: vec!["zerodds-mqtt-bridge".into()],
-            write: vec!["zerodds-mqtt-bridge".into()],
-        },
+fn mqttbridge_7_2_mtls_sends_no_user_name_and_no_password() {
+    let (srv_cert, srv_key) = gen_self_signed_for("localhost");
+    let (a_cert, a_key) = gen_self_signed_for("client-a");
+    let dir = write_temp("mtls-marker", b"")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::write(dir.join("client.pem"), &a_cert).unwrap();
+    std::fs::write(dir.join("client.key"), &a_key).unwrap();
+    let broker = CertBroker::start(&srv_cert, &srv_key);
+    let next = Arc::new(std::sync::Mutex::new(DaemonConfig::default_for_dev()));
+    let (mut d, _lease) = rotating_daemon(&broker, &dir, &srv_cert, &next);
+    assert_eq!(
+        Credentials::of(&next.lock().unwrap()).kind(),
+        AuthKind::Mtls
     );
-    sec.topic_acl.insert(
-        "Forbidden".into(),
-        AclEntry {
-            read: vec!["someone-else".into()],
-            write: vec!["someone-else".into()],
-        },
+    wait_for("the CONNECT", || {
+        !broker.connect_flags.lock().unwrap().is_empty()
+    });
+    assert_eq!(broker.presented()[0], der_of(&a_cert));
+    let flags = broker.connect_flags.lock().unwrap()[0];
+    assert_eq!(flags & 0xC0, 0, "Connect Flags {flags:#04x}");
+    d.shutdown();
+}
+
+/// Spec §7.1, §9.2: after SIGHUP the daemon reads the client certificate
+/// and key again; the connection that stands keeps the old one, the next
+/// connection (§9.3, after the broker closed the first) presents the new
+/// one.
+#[test]
+fn mqttbridge_7_1_a_sighup_puts_the_new_client_certificate_into_the_next_connection() {
+    let (srv_cert, srv_key) = gen_self_signed_for("localhost");
+    let (a_cert, a_key) = gen_self_signed_for("client-a");
+    let (b_cert, b_key) = gen_self_signed_for("client-b");
+    let dir = write_temp("rotate-marker", b"")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::write(dir.join("client.pem"), &a_cert).unwrap();
+    std::fs::write(dir.join("client.key"), &a_key).unwrap();
+    let broker = CertBroker::start(&srv_cert, &srv_key);
+    let next = Arc::new(std::sync::Mutex::new(DaemonConfig::default_for_dev()));
+    let (mut d, _lease) = rotating_daemon(&broker, &dir, &srv_cert, &next);
+    wait_for("the first connection", || broker.presented().len() == 1);
+    assert_eq!(broker.presented()[0], der_of(&a_cert));
+    std::fs::write(dir.join("client.pem"), &b_cert).unwrap();
+    std::fs::write(dir.join("client.key"), &b_key).unwrap();
+    d.reload_flag.store(true, Ordering::SeqCst);
+    thread::sleep(Duration::from_millis(600));
+    assert_eq!(broker.presented().len(), 1, "the connection stands");
+    broker.close();
+    wait_for("the next connection", || broker.presented().len() == 2);
+    assert_eq!(broker.presented()[1], der_of(&b_cert));
+    d.shutdown();
+}
+
+/// Spec §7.1: a reload whose TLS material does not load changes nothing;
+/// the next connection presents the certificate of before.
+#[test]
+fn mqttbridge_7_1_a_failed_reload_keeps_the_old_certificate() {
+    let (srv_cert, srv_key) = gen_self_signed_for("localhost");
+    let (a_cert, a_key) = gen_self_signed_for("client-a");
+    let dir = write_temp("rotate-fail-marker", b"")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::write(dir.join("client.pem"), &a_cert).unwrap();
+    std::fs::write(dir.join("client.key"), &a_key).unwrap();
+    let broker = CertBroker::start(&srv_cert, &srv_key);
+    let next = Arc::new(std::sync::Mutex::new(DaemonConfig::default_for_dev()));
+    let (mut d, _lease) = rotating_daemon(&broker, &dir, &srv_cert, &next);
+    wait_for("the first connection", || broker.presented().len() == 1);
+    next.lock().unwrap().broker_tls_client_key_file = dir.join("missing.key").display().to_string();
+    d.reload_flag.store(true, Ordering::SeqCst);
+    thread::sleep(Duration::from_millis(600));
+    broker.close();
+    wait_for("the next connection", || broker.presented().len() == 2);
+    assert_eq!(broker.presented()[1], der_of(&a_cert));
+    d.shutdown();
+}
+
+/// Spec §7.1, §9.2: a SIGHUP takes `mqtt.tls.server_name` and
+/// `mqtt.tls.alpn`; the connection that stands keeps what it offered, the
+/// next connection (after the broker closed the first) offers the new
+/// server name in its SNI and the new ALPN list.
+#[test]
+fn mqttbridge_7_1_a_sighup_puts_the_new_server_name_and_alpn_into_the_next_connection() {
+    let ck = rcgen::generate_simple_self_signed(vec![
+        "localhost".to_string(),
+        "broker.example".to_string(),
+    ])
+    .unwrap();
+    let (srv_cert, srv_key) = (ck.cert.pem(), ck.key_pair.serialize_pem());
+    let (a_cert, a_key) = gen_self_signed_for("client-a");
+    let dir = write_temp("rotate-name-marker", b"")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::write(dir.join("client.pem"), &a_cert).unwrap();
+    std::fs::write(dir.join("client.key"), &a_key).unwrap();
+    let broker = CertBroker::start(&srv_cert, &srv_key);
+    let next = Arc::new(std::sync::Mutex::new(DaemonConfig::default_for_dev()));
+    let (mut d, _lease) = rotating_daemon(&broker, &dir, &srv_cert, &next);
+    wait_for("the first connection", || broker.presented().len() == 1);
+    assert_eq!(
+        broker.hellos(),
+        [(Some("localhost".to_string()), vec![b"mqtt".to_vec()])]
     );
-    let ctx = build_ctx(&sec).unwrap();
-    let bridge = AuthSubject::new("zerodds-mqtt-bridge");
-    assert!(authorize(&ctx.acl, &bridge, AclOp::Read, "Allowed"));
-    assert!(!authorize(&ctx.acl, &bridge, AclOp::Read, "Forbidden"));
+    {
+        let mut n = next.lock().unwrap();
+        n.broker_tls_server_name = "broker.example".into();
+        n.broker_tls_alpn = Some(vec!["x-amzn-mqtt-ca".into(), "mqtt".into()]);
+    }
+    d.reload_flag.store(true, Ordering::SeqCst);
+    thread::sleep(Duration::from_millis(600));
+    assert_eq!(broker.presented().len(), 1, "the connection stands");
+    broker.close();
+    wait_for("the next connection", || broker.presented().len() == 2);
+    assert_eq!(
+        broker.hellos().last().cloned(),
+        Some((
+            Some("broker.example".to_string()),
+            vec![b"x-amzn-mqtt-ca".to_vec(), b"mqtt".to_vec()]
+        ))
+    );
+    d.shutdown();
+}
+
+/// Spec §7.1: a SIGHUP reads `mqtt.tls.ca_file` again. The broker moves
+/// to a certificate the CA of the start does not trust: the reconnects
+/// fail their handshake and are tried again (§9.3); after the CA file
+/// names the new certificate and a SIGHUP, the next attempt stands.
+#[test]
+fn mqttbridge_7_1_a_sighup_reads_the_ca_file_again() {
+    let (old_cert, old_key) = gen_self_signed_for("localhost");
+    let (new_cert, new_key) = gen_self_signed_for("localhost");
+    let (a_cert, a_key) = gen_self_signed_for("client-a");
+    let dir = write_temp("rotate-ca-marker", b"")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::write(dir.join("client.pem"), &a_cert).unwrap();
+    std::fs::write(dir.join("client.key"), &a_key).unwrap();
+    let broker = CertBroker::start(&old_cert, &old_key);
+    let next = Arc::new(std::sync::Mutex::new(DaemonConfig::default_for_dev()));
+    let (mut d, _lease) = rotating_daemon(&broker, &dir, &old_cert, &next);
+    wait_for("the first connection", || broker.presented().len() == 1);
+    broker.serve(&new_cert, &new_key);
+    broker.close();
+    wait_for("three refused handshakes", || broker.hellos().len() >= 4);
+    assert_eq!(broker.presented().len(), 1, "an untrusted broker accepted");
+    std::fs::write(dir.join("ca.pem"), &new_cert).unwrap();
+    d.reload_flag.store(true, Ordering::SeqCst);
+    wait_for("the connection under the new CA", || {
+        broker.presented().len() == 2
+    });
+    d.shutdown();
 }

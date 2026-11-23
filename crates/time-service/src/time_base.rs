@@ -21,6 +21,8 @@
 //! };
 //! ```
 
+use crate::exception::BadParam;
+
 /// `TimeBase::TimeT` (spec §1.3.2.1) — 64-bit tick counter with
 /// 100-nanosecond resolution. For absolute time the base is
 /// `15 October 1582 00:00:00` (Gregorian calendar). For
@@ -28,9 +30,15 @@
 pub type TimeT = u64;
 
 /// `TimeBase::InaccuracyT` (spec §1.3.2.2) — 48-bit value in
-/// 100-nanosecond units. We pack it as a `u64` and
-/// enforce the range on `pack`/`unpack` (see [`UtcT::set_inaccuracy`]).
+/// 100-nanosecond units. The IDL type is `TimeT` (64 bits); every
+/// constructor and setter rejects a value above [`MAX_INACCURACY`] with
+/// [`BadParam`] (see [`UtcT::new`], [`UtcT::set_inaccuracy`]).
 pub type InaccuracyT = u64;
+
+/// The largest inaccuracy `UtcT` carries: 48 bits, `inacchi` (16) and
+/// `inacclo` (32), spec §1.3.2.2 and §1.3.2.4. About 325 days in
+/// 100-nanosecond units.
+pub const MAX_INACCURACY: InaccuracyT = 0x0000_FFFF_FFFF_FFFF;
 
 /// `TimeBase::TdfT` (spec §1.3.2.3) — 16-bit signed short, gives
 /// the time-displacement factor in minutes (Greenwich = 0,
@@ -62,17 +70,23 @@ pub struct UtcT {
 }
 
 impl UtcT {
-    /// Constructor with all spec fields. The inaccuracy is capped to
-    /// 48 bits (spec §1.3.2.4).
-    #[must_use]
-    pub const fn new(time: TimeT, inaccuracy: InaccuracyT, tdf: TdfT) -> Self {
-        let inacc = inaccuracy & 0x0000_FFFF_FFFF_FFFF;
-        Self {
-            time,
-            inacclo: (inacc & 0xFFFF_FFFF) as u32,
-            inacchi: ((inacc >> 32) & 0xFFFF) as u16,
-            tdf,
+    /// Constructor with all spec fields (spec §1.3.2.4).
+    ///
+    /// # Errors
+    /// [`BadParam`] if `inaccuracy` does not fit the 48 bits of
+    /// `inacclo` + `inacchi` (spec §1.3.2.2: "48 bits is sufficient";
+    /// §2.1.2.1: "CORBA::BAD_PARAM is raised in the case of an
+    /// out-of-range parameter value for inaccuracy").
+    pub const fn new(time: TimeT, inaccuracy: InaccuracyT, tdf: TdfT) -> Result<Self, BadParam> {
+        if inaccuracy > MAX_INACCURACY {
+            return Err(BadParam);
         }
+        Ok(Self {
+            time,
+            inacclo: (inaccuracy & 0xFFFF_FFFF) as u32,
+            inacchi: ((inaccuracy >> 32) & 0xFFFF) as u16,
+            tdf,
+        })
     }
 
     /// Returns the inaccuracy as a 48-bit composite value
@@ -82,11 +96,18 @@ impl UtcT {
         ((self.inacchi as u64) << 32) | (self.inacclo as u64)
     }
 
-    /// Sets the inaccuracy (clamps to 48 bits).
-    pub const fn set_inaccuracy(&mut self, value: InaccuracyT) {
-        let v = value & 0x0000_FFFF_FFFF_FFFF;
-        self.inacclo = (v & 0xFFFF_FFFF) as u32;
-        self.inacchi = ((v >> 32) & 0xFFFF) as u16;
+    /// Sets the inaccuracy.
+    ///
+    /// # Errors
+    /// [`BadParam`] if `value` does not fit 48 bits; the struct is left
+    /// unchanged.
+    pub const fn set_inaccuracy(&mut self, value: InaccuracyT) -> Result<(), BadParam> {
+        if value > MAX_INACCURACY {
+            return Err(BadParam);
+        }
+        self.inacclo = (value & 0xFFFF_FFFF) as u32;
+        self.inacchi = ((value >> 32) & 0xFFFF) as u16;
+        Ok(())
     }
 
     /// Spec §1.3.2.4 — UTC time + tdf*600,000,000 yields the local
@@ -199,6 +220,39 @@ pub fn current_time() -> TimeT {
     }
 }
 
+/// The time displacement factor of the local time zone at `time`, in
+/// minutes east of Greenwich (spec §1.3.2.3, §1.3.2.4: "Implementations
+/// must place the time displacement factor for the local time zone in
+/// this field whenever they create a UTO that expresses absolute time").
+///
+/// The zone is the one of the process: the `TZ` environment variable
+/// (an IANA name, a TZif path or a POSIX rule such as
+/// `CET-1CEST,M3.5.0,M10.5.0/3`), else `/etc/localtime` on Unix and the
+/// system setting on Windows, mapped to its IANA name and looked up in the
+/// time zone database built into the binary there (jiff feature
+/// `tzdb-bundle-platform`). Daylight saving time is taken at `time`,
+/// not at the moment of the call. A process whose zone cannot be
+/// determined runs on UTC, as the C library does, and gets `0`. Offsets
+/// with a seconds part (local mean time before 1900) are truncated
+/// toward zero to whole minutes; a `time` beyond the years -9999 to 9999
+/// is evaluated at the nearest of these bounds.
+#[cfg(feature = "std")]
+#[must_use]
+pub fn local_tdf(time: TimeT) -> TdfT {
+    use jiff::Timestamp;
+    use jiff::tz::TimeZone;
+    let ticks_since_unix = i128::from(time) - i128::from(UTC_EPOCH_TO_UNIX_TICKS);
+    let seconds = ticks_since_unix.div_euclid(i128::from(TICKS_PER_SECOND));
+    let min = i128::from(Timestamp::MIN.as_second());
+    let max = i128::from(Timestamp::MAX.as_second());
+    let clamped = i64::try_from(seconds.clamp(min, max)).unwrap_or(0);
+    let Ok(timestamp) = Timestamp::from_second(clamped) else {
+        return 0;
+    };
+    let offset_seconds = TimeZone::system().to_offset(timestamp).seconds();
+    TdfT::try_from(offset_seconds / 60).unwrap_or(0)
+}
+
 /// `no_std` stub: always returns 0. On `no_std` there is no
 /// wall clock; a real time source is injected by the embedding via
 /// `TimeService::with_source(...)`. Whoever calls `current_time()`
@@ -218,7 +272,7 @@ mod tests {
     #[test]
     fn utct_size_is_16_octets() {
         // Spec §1.3.2.4 — the total UtcT layout size is 16 octets.
-        let utc = UtcT::new(0x0123_4567_89AB_CDEF, 0xFFFF_FFFF_FFFF, 60);
+        let utc = UtcT::new(0x0123_4567_89AB_CDEF, 0xFFFF_FFFF_FFFF, 60).expect("ok");
         let wire = utc.to_wire();
         assert_eq!(wire.len(), 16);
     }
@@ -232,15 +286,30 @@ mod tests {
     }
 
     #[test]
-    fn inaccuracy_caps_at_48_bits() {
-        // Spec §1.3.2.2 + §1.3.2.4 — inaccuracy has 48 bits.
-        let utc = UtcT::new(0, u64::MAX, 0);
-        assert_eq!(utc.inaccuracy(), 0x0000_FFFF_FFFF_FFFF);
+    fn time_1_3_2_2_utct_rejects_inaccuracy_above_48_bits() {
+        // Spec §1.3.2.2 + §1.3.2.4 — inaccuracy has 48 bits; a larger
+        // value is BAD_PARAM, not cut to its low 48 bits.
+        assert_eq!(UtcT::new(0, MAX_INACCURACY + 1, 0), Err(BadParam));
+        assert_eq!(UtcT::new(0, u64::MAX, 0), Err(BadParam));
+        let utc = UtcT::new(0, MAX_INACCURACY, 0).expect("48 bits fit");
+        assert_eq!(utc.inaccuracy(), MAX_INACCURACY);
+        assert_eq!(utc.inacchi, 0xFFFF);
+        assert_eq!(utc.inacclo, 0xFFFF_FFFF);
+    }
+
+    #[test]
+    fn time_1_3_2_2_set_inaccuracy_rejects_above_48_bits_and_keeps_the_value() {
+        let mut utc = UtcT::new(7, 1_000, 0).expect("ok");
+        assert_eq!(utc.set_inaccuracy(MAX_INACCURACY + 1), Err(BadParam));
+        assert_eq!(utc.inaccuracy(), 1_000);
+        utc.set_inaccuracy(0x0001_0000_0002).expect("fits");
+        assert_eq!(utc.inacchi, 1);
+        assert_eq!(utc.inacclo, 2);
     }
 
     #[test]
     fn utct_wire_roundtrip_preserves_all_fields() {
-        let original = UtcT::new(123_456_789_012_345_678, 0xAABB_CCDD_EEFF, -480);
+        let original = UtcT::new(123_456_789_012_345_678, 0xAABB_CCDD_EEFF, -480).expect("ok");
         let wire = original.to_wire();
         let decoded = UtcT::from_wire(wire);
         assert_eq!(decoded, original);
@@ -265,7 +334,7 @@ mod tests {
         // Spec §1.3.2.4: utc.time + utc.tdf * 600_000_000 == local time.
         // tdf = 60 (Berlin summer time, +60 minutes); ticks/min =
         // 60 sec * 10_000_000 = 600_000_000.
-        let utc = UtcT::new(1_000_000_000, 0, 60);
+        let utc = UtcT::new(1_000_000_000, 0, 60).expect("ok");
         let expected = 1_000_000_000_i64 + 60 * 600_000_000;
         assert_eq!(utc.local_time(), expected as TimeT);
     }
@@ -273,7 +342,7 @@ mod tests {
     #[test]
     fn local_time_negative_tdf_west_of_greenwich() {
         // Spec §1.3.2.3 — west of Greenwich = negative.
-        let utc = UtcT::new(1_000_000_000_000, 0, -480); // PST (-8h)
+        let utc = UtcT::new(1_000_000_000_000, 0, -480).expect("ok"); // PST (-8h)
         let expected = 1_000_000_000_000_i64 + (-480) * 600_000_000;
         assert_eq!(utc.local_time(), expected as TimeT);
     }

@@ -99,3 +99,5 @@ pub use sample::{
 };
 pub use to_ast::{ModelFromTypeObjects, dynamic_type};
 pub use type_::{DynamicType, DynamicTypeMember};
+/// The value of a `long double` ([`DynamicData::LongDouble`]).
+pub use zerodds_float128::Float128;

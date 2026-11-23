@@ -68,18 +68,57 @@ pub fn encode_secured_rtps_message_psk(
     Ok(plugin.encode_rtps_message_psk(local, message)?)
 }
 
+/// The submessage id of the HeaderExtension (DDSI-RTPS 2.5 §9.4.5.1.1).
+const HEADER_EXTENSION: u8 = 0x00;
+
+/// Where the SRTPS_PREFIX of a protected RTPS message begins: directly
+/// behind the RTPS Header or, if the message has one, behind its
+/// HeaderExtension. DDS-Security 1.2 §10.5.3.3.1 Table 80: the output of
+/// `encode_rtps_message` is "the original RTPS Header and, if present, the
+/// original HeaderExtension, followed by the SecureRTPSPrefixSubMsg"; a
+/// message sent over a stream carries its length in a HeaderExtension
+/// (DDSI-RTPS 2.5 §8.3.3), which stands directly behind the header
+/// (§8.3.7.3). `None` for a message whose first submessage, the
+/// HeaderExtension aside, is no SRTPS_PREFIX with its four header octets:
+/// a plain message, or one cut short.
+#[must_use]
+pub fn srtps_prefix_offset(wire: &[u8]) -> Option<usize> {
+    let mut at = RTPS_HEADER_LEN;
+    if wire.get(at) == Some(&HEADER_EXTENSION) {
+        // id, flags (E is bit 0), octetsToNextHeader.
+        let flags = *wire.get(at + 1)?;
+        let len = [*wire.get(at + 2)?, *wire.get(at + 3)?];
+        let len = if flags & 0x01 != 0 {
+            u16::from_le_bytes(len)
+        } else {
+            u16::from_be_bytes(len)
+        };
+        at += 4 + usize::from(len);
+    }
+    (wire.get(at) == Some(&SRTPS_PREFIX) && wire.len() >= at + 4).then_some(at)
+}
+
+/// Whether `wire` is an RTPS message protected as a whole: it has an
+/// SRTPS_PREFIX where [`srtps_prefix_offset`] finds one.
+#[must_use]
+pub fn is_secured_rtps_message(wire: &[u8]) -> bool {
+    srtps_prefix_offset(wire).is_some()
+}
+
+/// The flags octet of the SRTPS_PREFIX of `wire` (DDS-Security 1.2
+/// §7.4.7.8.1: `|X|X|X|X|X|P|A|E|`); `None` for a message without one.
+#[must_use]
+pub fn srtps_prefix_flags(wire: &[u8]) -> Option<u8> {
+    srtps_prefix_offset(wire).and_then(|at| wire.get(at + 1).copied())
+}
+
 /// Reads the `PreSharedKeyFlag` bit from the SRTPS_PREFIX of a
-/// secured RTPS message. Returns `None` if the wire is not a valid
-/// SRTPS wrapping.
+/// secured RTPS message, behind the RTPS Header and the HeaderExtension,
+/// if there is one. Returns `None` if the wire is not a valid SRTPS
+/// wrapping.
 #[must_use]
 pub fn srtps_psk_flag(wire: &[u8]) -> Option<bool> {
-    if wire.len() < RTPS_HEADER_LEN + 4 {
-        return None;
-    }
-    if wire[RTPS_HEADER_LEN] != SRTPS_PREFIX {
-        return None;
-    }
-    Some(wire[RTPS_HEADER_LEN + 1] & PRE_SHARED_KEY_FLAG != 0)
+    srtps_prefix_flags(wire).map(|flags| flags & PRE_SHARED_KEY_FLAG != 0)
 }
 
 /// Protects a **whole** RTPS message with the key material the plugin
@@ -110,8 +149,9 @@ pub fn encode_secured_rtps_message(
 /// the plaintext message (`[header | body]`).
 ///
 /// # Errors
-/// No SRTPS_PREFIX with a CryptoHeader behind the header, big-endian, cut
-/// short, or a crypto verify fail.
+/// No SRTPS_PREFIX with a CryptoHeader behind the header and the
+/// HeaderExtension, if there is one; big-endian, cut short, or a crypto
+/// verify fail.
 pub fn decode_secured_rtps_message(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
@@ -121,7 +161,10 @@ pub fn decode_secured_rtps_message(
     if wire.len() < RTPS_HEADER_LEN {
         return Err(SecurityRtpsError::Truncated("rtps-message header"));
     }
-    crate::codec::check_prefix(&wire[RTPS_HEADER_LEN..], SRTPS_PREFIX, "SRTPS_PREFIX")?;
+    // Without an SRTPS_PREFIX behind a HeaderExtension the check runs on
+    // what follows the header and names what it found there.
+    let prefix = srtps_prefix_offset(wire).unwrap_or(RTPS_HEADER_LEN);
+    crate::codec::check_prefix(&wire[prefix..], SRTPS_PREFIX, "SRTPS_PREFIX")?;
     if local == remote {
         Ok(plugin.decode_rtps_message_cyclone(wire)?)
     } else {
@@ -274,6 +317,62 @@ mod tests {
         let (a, local_a, _, _, _) = pair();
         let classic = encode_secured_rtps_message(&a, local_a, &[], &msg).unwrap();
         assert_eq!(srtps_psk_flag(&classic), Some(false));
+    }
+
+    /// A HeaderExtension that carries only the messageLength `len`
+    /// (DDSI-RTPS 2.5 §9.4.5.2: flags E and L, four octets).
+    fn length_extension(len: u32) -> [u8; 8] {
+        let l = len.to_le_bytes();
+        [0x00, 0x03, 0x04, 0x00, l[0], l[1], l[2], l[3]]
+    }
+
+    /// Table 80: the SRTPS_PREFIX follows the RTPS Header or the
+    /// HeaderExtension behind it. A message a stream leg gave a
+    /// HeaderExtension with its length is found protected, its flags are
+    /// read behind the extension, in both byte orders of the extension's
+    /// length; a plain message, one with a HeaderExtension and a plain
+    /// submessage, and one cut inside the extension or the prefix are not.
+    #[test]
+    fn security_10_5_3_3_1_the_srtps_prefix_is_found_behind_a_header_extension() {
+        let (a, local_a, _, _, _) = pair();
+        let msg = fake_rtps_message(&BODY);
+        let wire = encode_secured_rtps_message(&a, local_a, &[], &msg).unwrap();
+        assert_eq!(srtps_prefix_offset(&wire), Some(RTPS_HEADER_LEN));
+        assert!(is_secured_rtps_message(&wire));
+
+        let mut stated = wire[..RTPS_HEADER_LEN].to_vec();
+        stated.extend_from_slice(&length_extension(u32::try_from(wire.len() + 8).unwrap()));
+        stated.extend_from_slice(&wire[RTPS_HEADER_LEN..]);
+        assert_eq!(srtps_prefix_offset(&stated), Some(RTPS_HEADER_LEN + 8));
+        assert!(is_secured_rtps_message(&stated));
+        assert_eq!(srtps_prefix_flags(&stated), Some(wire[RTPS_HEADER_LEN + 1]));
+        assert_eq!(srtps_psk_flag(&stated), Some(false));
+        stated[RTPS_HEADER_LEN + 9] |= PRE_SHARED_KEY_FLAG;
+        assert_eq!(srtps_psk_flag(&stated), Some(true));
+
+        // A big-endian HeaderExtension with a timestamp behind the length:
+        // twelve octets of body.
+        let mut big = wire[..RTPS_HEADER_LEN].to_vec();
+        big.extend_from_slice(&[0x00, 0x06, 0x00, 0x0C]);
+        big.extend_from_slice(&[0; 12]);
+        big.extend_from_slice(&wire[RTPS_HEADER_LEN..]);
+        assert_eq!(srtps_prefix_offset(&big), Some(RTPS_HEADER_LEN + 16));
+
+        // Plain: no prefix behind the header, none behind the extension.
+        assert_eq!(srtps_prefix_offset(&msg), None);
+        let mut plain = msg[..RTPS_HEADER_LEN].to_vec();
+        plain.extend_from_slice(&length_extension(40));
+        plain.extend_from_slice(&BODY);
+        assert_eq!(srtps_prefix_offset(&plain), None);
+        assert!(!is_secured_rtps_message(&plain));
+        assert_eq!(srtps_psk_flag(&plain), None);
+        // Cut short: inside the extension, behind it, inside the prefix.
+        for cut in [21, 23, 28, 29, 31] {
+            assert_eq!(srtps_prefix_offset(&stated[..cut]), None, "{cut}");
+        }
+        assert_eq!(srtps_prefix_offset(&stated[..32]), Some(28));
+        assert_eq!(srtps_prefix_offset(&msg[..RTPS_HEADER_LEN]), None);
+        assert_eq!(srtps_prefix_offset(&[]), None);
     }
 
     /// §7.4.7.8.3: P is bit 2 of the SRTPS_PREFIX flags.

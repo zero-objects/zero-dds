@@ -31,11 +31,38 @@ session_timeout_secs: 60
 # limit, as Micro-XRCE-DDS 3.0.1 does; not the specification.
 read_without_delivery_control: once
 
+# The DATA of a reliable output stream are bounded by its sender window (16
+# messages, DDS-XRCE 1.0 §8.4.14): a read takes a sample out of its DataReader
+# only while the window has room, the other samples stay in the DataReader
+# under its History QoS. A routed client's relay leaves the answers of the
+# upstream agent unacknowledged there in the same way. The former key
+# limits.max_pending_samples is refused.
 limits:
   max_clients: 1024
   max_objects_per_client: 256
-  # Reliable-stream samples buffered per client waiting on ACKNACK.
-  max_pending_samples: 256
+
+# HEARTBEATs on the reliable output streams (DDS-XRCE 1.0 §8.3.5.12): only to
+# a client heard, or sent a new message, within client_active_window_ms; a
+# client heard again after a silence gets them with the answer.
+# silent_client: suppress (default) | send (the period also while silent).
+heartbeat:
+  period_ms: 500
+  client_active_window_ms: 2000
+  silent_client: suppress
+
+# Federation (DDS-XRCE 1.0 §10.4): this agent as a client of another agent.
+# The operations of the routed clients go there unchanged; requests wait
+# while it cannot be reached. Without this block there is no federation.
+# The access rules of the upstream agent decide the operations of a routed
+# client; an access_rules entry that covers one stops the daemon.
+# upstream:
+#   locator: udp://192.0.2.10:2018   # or tcp://host:port
+#   mtu: 508                         # 13 or more
+#   keepalive_ms: 1000
+#   link_timeout_ms: 5000
+#   reconnect_ms: 1000
+#   max_queued_messages: 256
+#   clients: [0xAABBCCDD]            # all clients when absent
 
 # GET_INFO on the well-known multicast discovery group (§11.2.4). A Micro
 # Client without a hardcoded agent address finds this daemon here.

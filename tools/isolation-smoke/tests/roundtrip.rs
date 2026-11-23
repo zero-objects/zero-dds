@@ -143,3 +143,76 @@ fn smoke_binary_uds_roundtrip_same_host() {
     let rx_out = receiver.wait_with_output().expect("receiver wait");
     assert!(rx_out.status.success());
 }
+
+/// zerodds-uds-transport-1.0 §5.2: `echo` sends every datagram back to the
+/// locator it came from, `ping` sends `--count` datagrams one at a time and
+/// checks each echo for its content and its source; the ping starts first
+/// and waits for the echo's socket. Both log the exchange with the other's
+/// locator. This is the pair the container test of §5.2 runs in two
+/// containers (`tests/container_volume.rs`).
+#[test]
+fn uds_5_2_ping_and_echo_exchange_datagrams_in_both_directions() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bin = smoke_bin();
+    let base = tmp.path().to_str().unwrap().to_string();
+
+    let ping = Command::new(&bin)
+        .args([
+            "--transport=uds",
+            "--role=ping",
+            "--local-id=b2",
+            "--peer-id=b1",
+            &format!("--base-dir={base}"),
+            "--count=20",
+            "--payload-size=300",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn ping");
+    std::thread::sleep(Duration::from_millis(300));
+    let echo = Command::new(&bin)
+        .args([
+            "--transport=uds",
+            "--role=echo",
+            "--local-id=b1",
+            &format!("--base-dir={base}"),
+            "--count=20",
+        ])
+        .output()
+        .expect("run echo");
+    let ping = ping.wait_with_output().expect("ping wait");
+    let echo_log = String::from_utf8_lossy(&echo.stderr);
+    let ping_log = String::from_utf8_lossy(&ping.stderr);
+    assert!(echo.status.success(), "echo: {echo_log}");
+    assert!(ping.status.success(), "ping: {ping_log}");
+    assert!(
+        ping_log.contains(&format!("ping: 20 echoes received from Uds:{:0>32}", "b1")),
+        "ping: {ping_log}"
+    );
+    assert!(
+        echo_log.contains(&format!("echo: 20 datagrams echoed to Uds:{:0>32}", "b2")),
+        "echo: {echo_log}"
+    );
+}
+
+/// zerodds-uds-transport-1.0 §5.2: `--socket-mode` sets the mode of the
+/// socket file and applies to UDS only; `echo` and `ping` are refused for
+/// SHM, which has no answer path to a source locator.
+#[test]
+fn uds_5_2_socket_mode_and_the_echo_roles_are_refused_where_they_do_not_apply() {
+    let bin = smoke_bin();
+    for args in [
+        &["--transport=udp", "--role=receiver", "--socket-mode=660"][..],
+        &[
+            "--transport=shm",
+            "--role=echo",
+            "--local-id=01",
+            "--peer-id=02",
+        ][..],
+        &["--transport=uds", "--role=echo", "--socket-mode=9"][..],
+    ] {
+        let out = Command::new(&bin).args(args).output().expect("run");
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {out:?}");
+    }
+}

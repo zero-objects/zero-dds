@@ -28,6 +28,7 @@ use std::process::ExitCode;
 
 use zerodds_coap_bridge::daemon::cli::{self, HELP_TEXT, VERSION_TEXT};
 use zerodds_coap_bridge::daemon::config::{self, DaemonConfig};
+use zerodds_coap_bridge::daemon::log;
 use zerodds_coap_bridge::daemon::server::{self, ServerError};
 use zerodds_config::CommandLine;
 use zerodds_dcps::cli::Configured;
@@ -122,29 +123,20 @@ fn main() -> ExitCode {
     });
     match run(cfg, configured.runtime, load) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(ServerError::Config(m)) => {
-            eprintln!("[zerodds-coap-bridged] config error: {m}");
-            ExitCode::from(1)
-        }
-        Err(ServerError::Bind(m)) => {
-            eprintln!("[zerodds-coap-bridged] bind error: {m}");
-            ExitCode::from(2)
-        }
-        Err(ServerError::Dds(m)) => {
-            eprintln!("[zerodds-coap-bridged] dds error: {m}");
-            ExitCode::from(3)
-        }
-        Err(ServerError::Dtls(m)) => {
-            eprintln!("[zerodds-coap-bridged] dtls error: {m}");
-            ExitCode::from(4)
-        }
-        Err(ServerError::Oscore(m)) => {
-            eprintln!("[zerodds-coap-bridged] oscore error: {m}");
-            ExitCode::from(4)
-        }
-        Err(ServerError::Io(m)) => {
-            eprintln!("[zerodds-coap-bridged] io error: {m}");
-            ExitCode::from(1)
+        Err(e) => {
+            // Spec §8.1: the daemon's log is JSON on stdout; §2: the exit
+            // code names the kind of error.
+            let (kind, code) = match &e {
+                ServerError::Config(_) | ServerError::Io(_) => ("config", 1),
+                ServerError::Bind(_) => ("bind", 2),
+                ServerError::Dds(_) => ("dds", 3),
+                ServerError::Dtls(_) | ServerError::Oscore(_) => ("security", 4),
+            };
+            log::event(log::Level::Error, "start_failed")
+                .field("kind", kind)
+                .field("reason", &e.to_string())
+                .emit();
+            ExitCode::from(code)
         }
     }
 }
@@ -155,7 +147,7 @@ fn run(
     load: server::ConfigLoader,
 ) -> Result<(), ServerError> {
     let mut handle = server::start_with_reload(cfg, runtime, Some(load))?;
-    eprintln!("[zerodds-coap-bridged] running");
+    log::event(log::Level::Info, "running").emit();
     // SIGTERM/SIGINT set the stop flag; the loop used to park forever and
     // the daemon was still running 3 s after SIGTERM (measured).
     zerodds_dcps::cli::notify_service_manager("READY=1");
@@ -164,5 +156,6 @@ fn run(
     }
     zerodds_dcps::cli::notify_service_manager("STOPPING=1");
     handle.shutdown();
+    log::event(log::Level::Info, "stopped").emit();
     Ok(())
 }

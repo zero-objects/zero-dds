@@ -39,7 +39,9 @@ fn example_yaml_key_fields_match_intent() {
 
     assert_eq!(cfg.max_clients, 1024);
     assert_eq!(cfg.max_objects_per_client, 256);
-    assert_eq!(cfg.max_pending_samples, 256);
+    assert_eq!(cfg.heartbeat_period_ms, 500);
+    assert_eq!(cfg.client_active_window_ms, 2000);
+    assert!(!cfg.heartbeat_to_silent_client);
 
     assert!(cfg.discovery_enabled);
     assert_eq!(cfg.discovery_port, 7400);

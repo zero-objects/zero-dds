@@ -1479,6 +1479,11 @@ specs.
 
 86 done / 1 partial / 20 open / 0 blocked / 15 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules --test cpp_idl4_mapping --test cpp_idl4_corba --test cpp_idl4_components` and `cargo test -p zerodds-idlc` on the Linux test host — 35 cited tests green, 0 failed.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 9695 to 9740 of `main` (`python3 ci/coverage_results.py --document idl4-cpp-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 1 test green.
+* `python3 ci/run_integration.py merge-codegen-cpp` (job `merge-codegen-cpp`) — 34 tests green.
+
+35 cited tests green, 0 not green.
 
 Open items: `idl4-cpp-1.0.open.en.md`.

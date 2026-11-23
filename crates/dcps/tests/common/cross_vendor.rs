@@ -77,6 +77,19 @@ pub fn start_cyclone_python(label: &str, script: &str, args: &[String]) -> io::R
     VendorChild::spawn(label, &mut command)
 }
 
+/// Cyclone's `ddsperf` with the configuration `uri` (`CYCLONEDDS_URI`,
+/// an XML fragment) and the arguments `args`.
+pub fn start_cyclone_ddsperf_with_uri(
+    label: &str,
+    uri: &str,
+    args: &[&str],
+) -> io::Result<VendorChild> {
+    let binary = std::env::var_os("DDSPERF").unwrap_or_else(|| "ddsperf".into());
+    let mut command = Command::new(binary);
+    command.env("CYCLONEDDS_URI", uri).args(args);
+    VendorChild::spawn(label, &mut command)
+}
+
 pub fn start_cyclone_ddsperf_sub(domain: u32, duration_secs: u32) -> io::Result<VendorChild> {
     let binary = std::env::var_os("DDSPERF").unwrap_or_else(|| "ddsperf".into());
     let mut command = Command::new(binary);
@@ -88,4 +101,15 @@ pub fn start_cyclone_ddsperf_sub(domain: u32, duration_secs: u32) -> io::Result<
         "sub",
     ]);
     VendorChild::spawn(&format!("cyclone-sub-{domain}"), &mut command)
+}
+
+/// The Fast DDS shapes client of `tests/interop/ci/fastdds`
+/// (`fastdds_shapes`, the executable `FASTDDS_SHAPES` names) with the
+/// arguments `args`.
+pub fn start_fastdds_shapes(label: &str, args: &[&str]) -> io::Result<VendorChild> {
+    let binary = std::env::var_os("FASTDDS_SHAPES")
+        .ok_or_else(|| io::Error::other("FASTDDS_SHAPES names no fastdds_shapes executable"))?;
+    let mut command = Command::new(binary);
+    command.args(args);
+    VendorChild::spawn(label, &mut command)
 }

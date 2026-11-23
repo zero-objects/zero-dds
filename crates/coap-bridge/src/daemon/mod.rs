@@ -17,15 +17,20 @@
 //!   stream on the reader sample.
 //! * **L4 — Config**: the shared layered loader `zerodds-config`.
 //! * **L5 — Auth**: bearer auth (§7.2) + topic ACL (§7.3); DTLS
-//!   (§7.1, feature `dtls`, ADR 0011) and OSCORE (§7.2, feature
+//!   (§7.1, feature `dtls`, ADR 0014) and OSCORE (§7.2, feature
 //!   `oscore`, ADR 0010) as opt-in features.
 //!
 //! L6 (multi-tenant) is a stub.
 
 pub mod cli;
 pub mod config;
+pub mod log;
+pub mod multicast_io;
+mod observe;
 pub mod oscore_gateway;
+mod proxy;
 pub mod qos_translation;
+pub mod representation;
 pub mod runtime_common;
 pub mod security;
 pub mod server;

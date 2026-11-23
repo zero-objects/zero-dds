@@ -26,7 +26,9 @@
 //! Spec sources: OASIS AMQP 1.0 Part 2 (transport: §2.3 frames, §2.4
 //! connections, §2.5 sessions, §2.6 links, §2.7 performatives), Part 3
 //! (messaging: §3.2 sections, §3.4 delivery states, §3.5 source/target),
-//! Part 5 (SASL). SCRAM: RFC 5802 / RFC 7677. XOAUTH2: the Google/Microsoft
+//! Part 4 (transactions: a link to the coordinator, transfers,
+//! dispositions and flows that name a transaction; the controller on top
+//! is [`crate::txn`]), Part 5 (SASL). SCRAM: RFC 5802 / RFC 7677. XOAUTH2: the Google/Microsoft
 //! `user=…\x01auth=Bearer …\x01\x01` initial response.
 
 use std::collections::BTreeMap;
@@ -57,17 +59,15 @@ const MAX_ACCEPTED_FRAME: u32 = 16 * 1024 * 1024;
 /// The largest message reassembled from multi-frame transfers.
 const MAX_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 
-/// Descriptors of the delivery states and nodes (Part 3 §3.4, §3.5).
-mod desc {
-    pub const SOURCE: u64 = 0x28;
-    pub const TARGET: u64 = 0x29;
-    pub const ERROR: u64 = 0x1d;
-    pub const RECEIVED: u64 = 0x23;
-    pub const ACCEPTED: u64 = 0x24;
-    pub const REJECTED: u64 = 0x25;
-    pub const RELEASED: u64 = 0x26;
-    pub const MODIFIED: u64 = 0x27;
-}
+mod sasl;
+
+pub use crate::terminus::{AmqpError, DeliveryState, Outcome};
+use crate::terminus::{
+    OUTCOME_SYMBOLS, Source, as_bool, as_text, as_u32, decode_error, decode_state_up_to, desc,
+    described, encode_error, encode_outcome, encode_state, field, symbol_array, symbols,
+};
+use crate::transactions::{Coordinator, TxnCapability, TxnId, flow_properties};
+pub use sasl::{SaslCredentials, scram_client_final};
 
 fn protocol(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
@@ -283,178 +283,8 @@ fn write_frame(
 }
 
 // ============================================================================
-// Value helpers.
-// ============================================================================
-
-fn fields(v: &AmqpExtValue) -> &[AmqpExtValue] {
-    match v {
-        AmqpExtValue::List(items) => items,
-        _ => &[],
-    }
-}
-
-fn field(v: &AmqpExtValue, i: usize) -> Option<&AmqpExtValue> {
-    fields(v)
-        .get(i)
-        .filter(|x| !matches!(x, AmqpExtValue::Null))
-}
-
-fn as_u32(v: Option<&AmqpExtValue>) -> Option<u32> {
-    match v? {
-        AmqpExtValue::Uint(x) => Some(*x),
-        AmqpExtValue::Ushort(x) => Some(u32::from(*x)),
-        AmqpExtValue::Ubyte(x) => Some(u32::from(*x)),
-        AmqpExtValue::Ulong(x) => u32::try_from(*x).ok(),
-        _ => None,
-    }
-}
-
-fn as_bool(v: Option<&AmqpExtValue>) -> Option<bool> {
-    match v? {
-        AmqpExtValue::Boolean(b) => Some(*b),
-        _ => None,
-    }
-}
-
-fn as_text(v: Option<&AmqpExtValue>) -> Option<String> {
-    match v? {
-        AmqpExtValue::Str(s) | AmqpExtValue::Symbol(s) => Some(s.clone()),
-        _ => None,
-    }
-}
-
-fn symbols(v: Option<&AmqpExtValue>) -> Vec<String> {
-    match v {
-        Some(AmqpExtValue::Symbol(s)) => vec![s.clone()],
-        Some(AmqpExtValue::Array(items)) | Some(AmqpExtValue::List(items)) => {
-            items.iter().filter_map(|x| as_text(Some(x))).collect()
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// A `symbol` multiple (Part 1 §1.4): an array of symbols, or null for
-/// none (an empty array has no element constructor to encode).
-fn symbol_array(names: &[&str]) -> AmqpExtValue {
-    if names.is_empty() {
-        return AmqpExtValue::Null;
-    }
-    AmqpExtValue::Array(
-        names
-            .iter()
-            .map(|n| AmqpExtValue::Symbol((*n).to_string()))
-            .collect(),
-    )
-}
-
-fn described(descriptor: u64, list: Vec<AmqpExtValue>) -> AmqpExtValue {
-    AmqpExtValue::Described {
-        descriptor,
-        value: Box::new(AmqpExtValue::List(list)),
-    }
-}
-
-/// An `amqp:error` (Part 2 §2.8.14): condition and description.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AmqpError {
-    /// The condition symbol, e.g. `amqp:not-found`.
-    pub condition: String,
-    /// The broker's description, if any.
-    pub description: Option<String>,
-}
-
-impl core::fmt::Display for AmqpError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match &self.description {
-            Some(d) => write!(f, "{}: {d}", self.condition),
-            None => f.write_str(&self.condition),
-        }
-    }
-}
-
-fn decode_error(v: Option<&AmqpExtValue>) -> Option<AmqpError> {
-    match v? {
-        AmqpExtValue::Described { descriptor, value } if *descriptor == desc::ERROR => {
-            Some(AmqpError {
-                condition: as_text(field(value, 0)).unwrap_or_default(),
-                description: as_text(field(value, 1)),
-            })
-        }
-        _ => None,
-    }
-}
-
-fn encode_error(e: &AmqpError) -> AmqpExtValue {
-    described(
-        desc::ERROR,
-        vec![
-            AmqpExtValue::Symbol(e.condition.clone()),
-            e.description
-                .clone()
-                .map_or(AmqpExtValue::Null, AmqpExtValue::Str),
-        ],
-    )
-}
-
-// ============================================================================
 // Public types.
 // ============================================================================
-
-/// How the client authenticates in the SASL layer (Part 5, daemon spec
-/// §7.2). The broker must offer the mechanism; there is no fallback to a
-/// weaker one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SaslCredentials {
-    /// `ANONYMOUS` (RFC 4505).
-    Anonymous,
-    /// `PLAIN` (RFC 4616).
-    Plain {
-        /// Authentication identity.
-        username: String,
-        /// Password.
-        password: String,
-    },
-    /// `SCRAM-SHA-256` (RFC 7677); the server signature is verified.
-    ScramSha256 {
-        /// Authentication identity.
-        username: String,
-        /// Password.
-        password: String,
-    },
-    /// `EXTERNAL` (RFC 4422 App. A): the identity of the TLS client
-    /// certificate.
-    External,
-    /// `XOAUTH2`: an OAuth 2.0 bearer token.
-    XOAuth2 {
-        /// The user the token is for.
-        username: String,
-        /// The bearer token.
-        token: String,
-    },
-}
-
-impl SaslCredentials {
-    fn mechanism(&self) -> &'static str {
-        match self {
-            Self::Anonymous => "ANONYMOUS",
-            Self::Plain { .. } => "PLAIN",
-            Self::ScramSha256 { .. } => "SCRAM-SHA-256",
-            Self::External => "EXTERNAL",
-            Self::XOAuth2 { .. } => "XOAUTH2",
-        }
-    }
-
-    /// The authenticated subject the daemon's ACL uses (spec §7.3).
-    #[must_use]
-    pub fn subject(&self) -> Option<&str> {
-        match self {
-            Self::Plain { username, .. }
-            | Self::ScramSha256 { username, .. }
-            | Self::XOAuth2 { username, .. } => Some(username),
-            Self::Anonymous | Self::External => None,
-        }
-    }
-}
 
 /// What [`connect`] needs.
 #[derive(Clone)]
@@ -539,65 +369,6 @@ pub struct RemoteOpen {
     pub channel_max: u16,
 }
 
-/// The outcome of a delivery (Part 3 §3.4).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Outcome {
-    /// `accepted`.
-    Accepted,
-    /// `rejected`, with the broker's error.
-    Rejected(Option<AmqpError>),
-    /// `released`: not processed, may be sent again.
-    Released,
-    /// `modified`.
-    Modified {
-        /// The delivery failed and counts towards redelivery.
-        delivery_failed: bool,
-        /// Must not be delivered to this link again.
-        undeliverable_here: bool,
-    },
-    /// A non-terminal `received` state or none.
-    None,
-}
-
-fn decode_outcome(v: Option<&AmqpExtValue>) -> Outcome {
-    match v {
-        Some(AmqpExtValue::Described { descriptor, value }) => match *descriptor {
-            desc::ACCEPTED => Outcome::Accepted,
-            desc::REJECTED => Outcome::Rejected(decode_error(field(value, 0))),
-            desc::RELEASED => Outcome::Released,
-            desc::MODIFIED => Outcome::Modified {
-                delivery_failed: as_bool(field(value, 0)).unwrap_or(false),
-                undeliverable_here: as_bool(field(value, 1)).unwrap_or(false),
-            },
-            desc::RECEIVED => Outcome::None,
-            _ => Outcome::None,
-        },
-        _ => Outcome::None,
-    }
-}
-
-fn encode_outcome(o: &Outcome) -> AmqpExtValue {
-    match o {
-        Outcome::Accepted => described(desc::ACCEPTED, vec![]),
-        Outcome::Rejected(e) => described(
-            desc::REJECTED,
-            vec![e.as_ref().map_or(AmqpExtValue::Null, encode_error)],
-        ),
-        Outcome::Released => described(desc::RELEASED, vec![]),
-        Outcome::Modified {
-            delivery_failed,
-            undeliverable_here,
-        } => described(
-            desc::MODIFIED,
-            vec![
-                AmqpExtValue::Boolean(*delivery_failed),
-                AmqpExtValue::Boolean(*undeliverable_here),
-            ],
-        ),
-        Outcome::None => AmqpExtValue::Null,
-    }
-}
-
 /// A link to attach (Part 2 §2.7.3).
 #[derive(Debug, Clone)]
 pub struct LinkSpec {
@@ -620,6 +391,12 @@ pub struct LinkSpec {
     pub properties: Vec<(String, String)>,
     /// `attach.desired-capabilities`.
     pub desired_capabilities: Vec<String>,
+    /// `Some`: the link is a control link (Part 4 §4.2): its target is a
+    /// coordinator with these desired capabilities in place of a node at
+    /// `address`, and its source supports the four outcomes, `rejected`
+    /// among them ("Transaction controllers SHOULD establish a control
+    /// link that allows the rejected outcome"). The client sends on it.
+    pub coordinator: Option<Vec<TxnCapability>>,
 }
 
 /// A frame from the broker, decoded. `channel` is always the client's
@@ -648,6 +425,9 @@ pub enum Inbound {
         has_node: bool,
         /// `initial-delivery-count` of a broker sending on the link.
         initial_delivery_count: Option<u32>,
+        /// The broker's target when it is a coordinator (Part 4 §4.5.1),
+        /// with the capabilities the coordinator has.
+        coordinator: Option<Coordinator>,
     },
     /// Flow state (Part 2 §2.7.4); link fields when `remote_handle` is set.
     Flow {
@@ -665,6 +445,8 @@ pub enum Inbound {
         link_credit: Option<u32>,
         /// Link: `echo`.
         echo: bool,
+        /// Link: `drain`.
+        drain: bool,
     },
     /// A whole message, reassembled from one or more transfer frames.
     Transfer {
@@ -678,6 +460,9 @@ pub enum Inbound {
         settled: bool,
         /// The encoded message sections.
         message: Vec<u8>,
+        /// `transfer.state` of the first frame (Part 4 §4.4.3: a
+        /// `transactional-state` for a message acquired in a transaction).
+        state: Option<DeliveryState>,
     },
     /// Settlement of deliveries in `first..=last`.
     Disposition {
@@ -691,8 +476,16 @@ pub enum Inbound {
         last: u32,
         /// Settled by the broker.
         settled: bool,
-        /// The delivery state.
+        /// The delivery state as an outcome of Part 3; [`Outcome::None`]
+        /// for `received` and for the states of Part 4.
         outcome: Outcome,
+        /// The delivery state, with `declared` and `transactional-state`
+        /// (Part 4 §4.5.5, §4.5.6).
+        state: Option<DeliveryState>,
+        /// The `message-annotations` of a `modified` outcome (Part 3
+        /// §3.4.5), to combine with the message's before it is sent again;
+        /// empty for any other state.
+        annotations: Vec<(AmqpExtValue, AmqpExtValue)>,
     },
     /// The broker detached a link.
     Detach {
@@ -783,7 +576,7 @@ pub fn connect(
     };
     let mut wire = wire;
 
-    sasl(&mut wire, &mut reader, &params.sasl).map_err(at(ConnectStage::Sasl))?;
+    sasl::exchange(&mut wire, &mut reader, &params.sasl).map_err(at(ConnectStage::Sasl))?;
     let (wire, reader, remote_open) =
         open_connection(params, wire, reader).map_err(at(ConnectStage::Open))?;
     let shared = Arc::new(Mutex::new(Shared::default()));
@@ -798,6 +591,7 @@ pub fn connect(
             frames: reader,
             partial: None,
             shared,
+            txn_id_limit: TxnId::MAX_LEN,
         },
         remote_open,
     ))
@@ -899,166 +693,6 @@ fn open_body(params: &ConnectParams) -> io::Result<Vec<u8>> {
     .map_err(codec)
 }
 
-fn random_nonce() -> io::Result<String> {
-    let mut bytes = [0u8; 18];
-    zerodds_bridge_security::tls_provider()
-        .secure_random
-        .fill(&mut bytes)
-        .map_err(|_| io::Error::other("no random source for the SCRAM nonce"))?;
-    Ok(crate::scram::b64(&bytes))
-}
-
-/// The SASL layer (Part 5 §5.3): the broker offers mechanisms, the client
-/// picks the configured one, answers challenges, reads the outcome.
-fn sasl(wire: &mut Wire, reader: &mut FrameReader, creds: &SaslCredentials) -> io::Result<()> {
-    use zerodds_amqp_bridge::performatives::{
-        sasl_init, sasl_mechanisms_from_body, sasl_outcome_code, sasl_plain_response, sasl_response,
-    };
-    wire.write_all(&SASL_HEADER)?;
-    let peer = reader.read_exact_header(8)?;
-    if peer[..] != SASL_HEADER[..] {
-        return Err(protocol(format!(
-            "the broker answered {peer:02x?} to the SASL header; it does not offer SASL"
-        )));
-    }
-    let next_sasl = |reader: &mut FrameReader| -> io::Result<(u64, AmqpExtValue)> {
-        let f = reader.next()?;
-        if f.frame_type != FrameType::Sasl {
-            return Err(protocol("expected a SASL frame"));
-        }
-        let (d, v, _) = decode_performative(&f.body).map_err(codec)?;
-        Ok((d, v))
-    };
-    let (d, v) = next_sasl(reader)?;
-    if d != descriptor::SASL_MECHANISMS {
-        return Err(protocol("expected sasl-mechanisms"));
-    }
-    let offered = sasl_mechanisms_from_body(&v);
-    let mech = creds.mechanism();
-    if !offered.iter().any(|m| m == mech) {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!(
-                "the broker offers SASL {}, not the configured {mech}",
-                offered.join(", ")
-            ),
-        ));
-    }
-    let mut scram: Option<(String, String, String)> = None; // (client-first-bare, nonce, password)
-    let initial: Vec<u8> = match creds {
-        SaslCredentials::Anonymous => Vec::new(),
-        SaslCredentials::External => Vec::new(),
-        SaslCredentials::Plain { username, password } => sasl_plain_response(username, password),
-        SaslCredentials::XOAuth2 { username, token } => {
-            format!("user={username}\x01auth=Bearer {token}\x01\x01").into_bytes()
-        }
-        SaslCredentials::ScramSha256 { username, password } => {
-            let nonce = random_nonce()?;
-            let user = username.replace('=', "=3D").replace(',', "=2C");
-            let bare = format!("n={user},r={nonce}");
-            let first = format!("n,,{bare}");
-            scram = Some((bare, nonce, password.clone()));
-            first.into_bytes()
-        }
-    };
-    let init = sasl_init(mech, &initial).map_err(codec)?;
-    write_frame(wire, FrameType::Sasl, 0, &init)?;
-    let mut server_signature: Option<[u8; 32]> = None;
-    loop {
-        let (d, v) = next_sasl(reader)?;
-        match d {
-            descriptor::SASL_CHALLENGE => {
-                let challenge = match field(&v, 0) {
-                    Some(AmqpExtValue::Binary(b)) => b.clone(),
-                    _ => Vec::new(),
-                };
-                let Some((bare, nonce, password)) = scram.as_ref() else {
-                    return Err(protocol(format!("unexpected SASL challenge for {mech}")));
-                };
-                let server_first = String::from_utf8(challenge)
-                    .map_err(|_| protocol("SCRAM server-first is not UTF-8"))?;
-                let (fin, signature) = scram_client_final(bare, nonce, &server_first, password)?;
-                server_signature = Some(signature);
-                let resp = sasl_response(fin.as_bytes()).map_err(codec)?;
-                write_frame(wire, FrameType::Sasl, 0, &resp)?;
-            }
-            descriptor::SASL_OUTCOME => {
-                return match sasl_outcome_code(&v) {
-                    Some(0) => {
-                        if let Some(expected) = server_signature {
-                            let data = match field(&v, 1) {
-                                Some(AmqpExtValue::Binary(b)) => {
-                                    String::from_utf8_lossy(b).to_string()
-                                }
-                                _ => String::new(),
-                            };
-                            let v_attr = data.split(',').find_map(|p| p.strip_prefix("v="));
-                            let got = v_attr.and_then(crate::scram::b64_decode);
-                            if got.as_deref() != Some(&expected[..]) {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::PermissionDenied,
-                                    "SCRAM server signature does not verify; the broker does not know the password",
-                                ));
-                            }
-                        }
-                        Ok(())
-                    }
-                    Some(code) => Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        format!("SASL {mech} refused, outcome code {code}"),
-                    )),
-                    None => Err(protocol("sasl-outcome without a code")),
-                };
-            }
-            other => return Err(protocol(format!("unexpected SASL performative {other:#x}"))),
-        }
-    }
-}
-
-/// The SCRAM-SHA-256 client-final message for a server-first challenge,
-/// and the server signature the outcome must carry (RFC 5802 §3, §5.1;
-/// RFC 7677). `client_first_bare` is `n=<user>,r=<nonce>`.
-///
-/// # Errors
-/// A server-first without nonce, salt or iteration count, a server nonce
-/// that does not extend the client's, fewer than 4096 iterations
-/// (RFC 7677 §4).
-pub fn scram_client_final(
-    client_first_bare: &str,
-    client_nonce: &str,
-    server_first: &str,
-    password: &str,
-) -> io::Result<(String, [u8; 32])> {
-    let attr = |k: &str| {
-        server_first
-            .split(',')
-            .find_map(|p| p.strip_prefix(k))
-            .map(str::to_string)
-    };
-    let full_nonce = attr("r=").ok_or_else(|| protocol("SCRAM server-first without r="))?;
-    if !full_nonce.starts_with(client_nonce) || full_nonce.len() == client_nonce.len() {
-        return Err(protocol(
-            "SCRAM server nonce does not extend the client nonce",
-        ));
-    }
-    let salt = attr("s=")
-        .and_then(|s| crate::scram::b64_decode(&s))
-        .ok_or_else(|| protocol("SCRAM server-first without a salt"))?;
-    let iterations: u32 = attr("i=")
-        .and_then(|s| s.parse().ok())
-        .filter(|i| *i >= 4096)
-        .ok_or_else(|| protocol("SCRAM iteration count missing or below 4096"))?;
-    let without_proof = format!("c=biws,r={full_nonce}");
-    let auth_message = crate::scram::auth_message(client_first_bare, server_first, &without_proof);
-    let proof = crate::scram::client_proof(password, &salt, iterations, &auth_message);
-    let signature = crate::scram::ScramServerSecrets::from_password(password, &salt, iterations)
-        .server_signature(&auth_message);
-    Ok((
-        format!("{without_proof},p={}", crate::scram::b64(&proof)),
-        signature,
-    ))
-}
-
 // ============================================================================
 // Writer half.
 // ============================================================================
@@ -1072,6 +706,31 @@ struct Shared {
     /// The broker's channel → the client's.
     channel_of: BTreeMap<u16, u16>,
 }
+
+/// The credit of a sending link after the receiver's flow (Part 2 §2.6.7):
+/// "link-credit(snd) := delivery-count(rcv) + link-credit(rcv) -
+/// delivery-count(snd)", where a flow without delivery-count (the receiver
+/// has not seen the sender's attach) counts from the sender's
+/// `initial_delivery_count`. The counts are serial numbers (RFC 1982): a
+/// limit behind `delivery_count`, which a flow sent before the receiver saw
+/// the deliveries in flight states, is no credit, not a wrapped one.
+#[must_use]
+pub fn sender_credit(
+    receiver_count: Option<u32>,
+    link_credit: u32,
+    delivery_count: u32,
+    initial_delivery_count: u32,
+) -> u32 {
+    let left = receiver_count
+        .unwrap_or(initial_delivery_count)
+        .wrapping_add(link_credit)
+        .wrapping_sub(delivery_count);
+    if left < 0x8000_0000 { left } else { 0 }
+}
+
+/// The initial-delivery-count the attach of a sending link states (Part 2
+/// §2.7.3); [`BrokerWriter::attach`] sends it.
+pub const INITIAL_DELIVERY_COUNT: u32 = 0;
 
 fn shared(m: &Mutex<Shared>) -> io::Result<std::sync::MutexGuard<'_, Shared>> {
     m.lock()
@@ -1193,17 +852,68 @@ impl BrokerWriter {
     /// # Errors
     /// I/O errors.
     pub fn attach(&mut self, channel: u16, link: &LinkSpec) -> io::Result<()> {
-        let node = described(
-            if link.sender {
-                desc::TARGET
-            } else {
-                desc::SOURCE
-            },
-            vec![
-                AmqpExtValue::Str(link.address.clone()),
-                AmqpExtValue::Uint(link.durable),
-            ],
-        );
+        self.attach_with_target(channel, link, None)
+    }
+
+    /// [`BrokerWriter::attach`] of a receiving link whose own target is
+    /// the node `target`: the address a request names as its `reply-to`
+    /// (AMQP CBS, a management node), where the broker sends the answers.
+    ///
+    /// # Errors
+    /// As [`BrokerWriter::attach`]; `InvalidInput` for a sending link.
+    pub fn attach_receiver_to(
+        &mut self,
+        channel: u16,
+        link: &LinkSpec,
+        target: &str,
+    ) -> io::Result<()> {
+        if link.sender {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the target of a sending link is its node",
+            ));
+        }
+        self.attach_with_target(channel, link, Some(target))
+    }
+
+    fn attach_with_target(
+        &mut self,
+        channel: u16,
+        link: &LinkSpec,
+        own_target: Option<&str>,
+    ) -> io::Result<()> {
+        if link.coordinator.is_some() && !link.sender {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a control link is one the client sends on (Part 4 §4.2)",
+            ));
+        }
+        let node = match &link.coordinator {
+            Some(capabilities) => Coordinator {
+                capabilities: capabilities.clone(),
+            }
+            .encode(),
+            None => described(
+                if link.sender {
+                    desc::TARGET
+                } else {
+                    desc::SOURCE
+                },
+                vec![
+                    AmqpExtValue::Str(link.address.clone()),
+                    AmqpExtValue::Uint(link.durable),
+                ],
+            ),
+        };
+        let own_source = if link.coordinator.is_some() {
+            Source {
+                outcomes: OUTCOME_SYMBOLS.iter().map(|s| (*s).to_string()).collect(),
+                ..Source::default()
+            }
+            .encode()
+        } else {
+            described(desc::SOURCE, vec![])
+        };
         let properties = AmqpExtValue::Map(
             link.properties
                 .iter()
@@ -1229,19 +939,22 @@ impl BrokerWriter {
                 AmqpExtValue::Ubyte(link.snd_settle_mode),
                 AmqpExtValue::Ubyte(link.rcv_settle_mode),
                 if link.sender {
-                    described(desc::SOURCE, vec![])
+                    own_source
                 } else {
                     node.clone()
                 },
                 if link.sender {
                     node
                 } else {
-                    described(desc::TARGET, vec![])
+                    described(
+                        desc::TARGET,
+                        own_target.map_or_else(Vec::new, |t| vec![AmqpExtValue::Str(t.into())]),
+                    )
                 },
                 AmqpExtValue::Null,           // unsettled
                 AmqpExtValue::Boolean(false), // incomplete-unsettled
                 if link.sender {
-                    AmqpExtValue::Uint(0)
+                    AmqpExtValue::Uint(INITIAL_DELIVERY_COUNT)
                 } else {
                     AmqpExtValue::Null
                 },
@@ -1267,26 +980,108 @@ impl BrokerWriter {
         delivery_count: u32,
         link_credit: u32,
     ) -> io::Result<()> {
+        self.flow_in_txn(channel, handle, delivery_count, link_credit, false, None)
+    }
+
+    /// [`BrokerWriter::flow`] with `drain` and the transaction the broker
+    /// is to acquire the messages of this link in (Part 4 §4.4.3: the
+    /// `txn-id` entry of `flow.properties`). `Some(None)` sends a
+    /// properties map without the entry, which ends the association;
+    /// `None` sends no properties. Before the discharge "the controller
+    /// SHOULD ensure there is no outstanding credit at the sender", with
+    /// `drain` or with a credit of zero.
+    ///
+    /// # Errors
+    /// I/O errors.
+    pub fn flow_in_txn(
+        &mut self,
+        channel: u16,
+        handle: u32,
+        delivery_count: u32,
+        link_credit: u32,
+        drain: bool,
+        txn: Option<Option<&TxnId>>,
+    ) -> io::Result<()> {
+        let mut list = self.session_flow_fields(channel)?;
+        list.extend([
+            AmqpExtValue::Uint(handle),
+            AmqpExtValue::Uint(delivery_count),
+            AmqpExtValue::Uint(link_credit),
+        ]);
+        if drain || txn.is_some() {
+            // available (7) is not set; drain is field 8.
+            list.push(AmqpExtValue::Null);
+            list.push(AmqpExtValue::Boolean(drain));
+        }
+        if let Some(txn) = txn {
+            // echo (9) is not set; properties is field 10.
+            list.push(AmqpExtValue::Null);
+            list.push(txn.map_or_else(|| AmqpExtValue::Map(Vec::new()), flow_properties));
+        }
+        let body =
+            encode_performative(descriptor::FLOW, &AmqpExtValue::List(list)).map_err(codec)?;
+        self.send(channel, &body)
+    }
+
+    /// The flow state of a sending link (Part 2 §2.7.4): its
+    /// `delivery_count`, the `link_credit` it holds, the messages
+    /// `available` to it, its drain mode; `echo` not set, so an answer to
+    /// an echo asks for none. Sent when the receiver asked to drain (Part
+    /// 2 §2.6.7) or for the link's state.
+    ///
+    /// # Errors
+    /// I/O errors.
+    pub fn sender_flow(
+        &mut self,
+        channel: u16,
+        handle: u32,
+        delivery_count: u32,
+        link_credit: u32,
+        available: u32,
+        drain: bool,
+    ) -> io::Result<()> {
+        let mut list = self.session_flow_fields(channel)?;
+        list.extend([
+            AmqpExtValue::Uint(handle),
+            AmqpExtValue::Uint(delivery_count),
+            AmqpExtValue::Uint(link_credit),
+            AmqpExtValue::Uint(available),
+            AmqpExtValue::Boolean(drain),
+        ]);
+        let body =
+            encode_performative(descriptor::FLOW, &AmqpExtValue::List(list)).map_err(codec)?;
+        self.send(channel, &body)
+    }
+
+    /// The flow state of session `channel` alone, without a link (Part 2
+    /// §2.7.4): the answer to a flow with `echo` and no handle.
+    ///
+    /// # Errors
+    /// I/O errors; no session on `channel`.
+    pub fn session_flow(&mut self, channel: u16) -> io::Result<()> {
+        let list = self.session_flow_fields(channel)?;
+        let body =
+            encode_performative(descriptor::FLOW, &AmqpExtValue::List(list)).map_err(codec)?;
+        self.send(channel, &body)
+    }
+
+    /// The four session fields of a flow (Part 2 §2.7.4): the transfer-id
+    /// of the broker's next transfer, the client's incoming window (as
+    /// large as §2.5.6 allows, as in its begin), its next outgoing id and
+    /// its outgoing window.
+    fn session_flow_fields(&mut self, channel: u16) -> io::Result<Vec<AmqpExtValue>> {
         let next_incoming = shared(&self.shared)?
             .next_incoming_id
             .get(&channel)
             .copied()
             .unwrap_or(0);
         let next_outgoing = self.session(channel)?.next_outgoing_id;
-        let body = encode_performative(
-            descriptor::FLOW,
-            &AmqpExtValue::List(vec![
-                AmqpExtValue::Uint(next_incoming),
-                AmqpExtValue::Uint(i32::MAX as u32),
-                AmqpExtValue::Uint(next_outgoing),
-                AmqpExtValue::Uint(u32::MAX),
-                AmqpExtValue::Uint(handle),
-                AmqpExtValue::Uint(delivery_count),
-                AmqpExtValue::Uint(link_credit),
-            ]),
-        )
-        .map_err(codec)?;
-        self.send(channel, &body)
+        Ok(vec![
+            AmqpExtValue::Uint(next_incoming),
+            AmqpExtValue::Uint(i32::MAX as u32),
+            AmqpExtValue::Uint(next_outgoing),
+            AmqpExtValue::Uint(u32::MAX),
+        ])
     }
 
     /// Sends one message on a sending link of session `channel`; returns
@@ -1304,12 +1099,33 @@ impl BrokerWriter {
         message: &[u8],
         settled: bool,
     ) -> io::Result<u32> {
+        self.transfer_with_state(channel, handle, delivery_tag, message, settled, None)
+    }
+
+    /// [`BrokerWriter::transfer`] with a `transfer.state` (Part 4 §4.4.1:
+    /// a `transactional-state` posts the message to its transaction). The
+    /// state is on every frame of the delivery: "if delivery is split
+    /// across several transfer frames then all frames MUST be explicitly
+    /// associated with the same transaction".
+    ///
+    /// # Errors
+    /// As [`BrokerWriter::transfer`].
+    pub fn transfer_with_state(
+        &mut self,
+        channel: u16,
+        handle: u32,
+        delivery_tag: &[u8],
+        message: &[u8],
+        settled: bool,
+        state: Option<&DeliveryState>,
+    ) -> io::Result<u32> {
+        let state = state.map(encode_state);
         let max_frame = self.max_frame_size as usize;
         let session = self.session(channel)?;
         let delivery_id = session.next_delivery_id;
         let window = session.remote_incoming_window as usize;
         let head = |more: bool, first: bool| -> io::Result<Vec<u8>> {
-            let list = if first {
+            let mut list = if first {
                 vec![
                     AmqpExtValue::Uint(handle),
                     AmqpExtValue::Uint(delivery_id),
@@ -1328,6 +1144,11 @@ impl BrokerWriter {
                     AmqpExtValue::Boolean(more),
                 ]
             };
+            if let Some(state) = &state {
+                // rcv-settle-mode (6) is not set; state is field 7.
+                list.push(AmqpExtValue::Null);
+                list.push(state.clone());
+            }
             encode_performative(descriptor::TRANSFER, &AmqpExtValue::List(list)).map_err(codec)
         };
         // Room per frame: the negotiated size less the frame header and the
@@ -1377,14 +1198,81 @@ impl BrokerWriter {
         last: u32,
         outcome: &Outcome,
     ) -> io::Result<()> {
+        self.disposition_settled(channel, first, last, true, outcome)
+    }
+
+    /// [`BrokerWriter::disposition`] that settles only when `settled`: on a
+    /// link whose receiver settle mode is `second` (Part 2 §2.8.3) the
+    /// client sends the outcome unsettled and settles once the broker, the
+    /// sender, has settled.
+    ///
+    /// # Errors
+    /// I/O errors.
+    pub fn disposition_settled(
+        &mut self,
+        channel: u16,
+        first: u32,
+        last: u32,
+        settled: bool,
+        outcome: &Outcome,
+    ) -> io::Result<()> {
         let body = encode_performative(
             descriptor::DISPOSITION,
             &AmqpExtValue::List(vec![
                 AmqpExtValue::Boolean(true), // role: receiver
                 AmqpExtValue::Uint(first),
                 AmqpExtValue::Uint(last),
-                AmqpExtValue::Boolean(true),
+                AmqpExtValue::Boolean(settled),
                 encode_outcome(outcome),
+            ]),
+        )
+        .map_err(codec)?;
+        self.send(channel, &body)
+    }
+
+    /// The state of the broker's deliveries `first..=last` of session
+    /// `channel` as this receiver holds it, settled or not (Part 4 §4.4.2:
+    /// a `transactional-state` with the outcome associates the outcome
+    /// with its transaction).
+    ///
+    /// # Errors
+    /// I/O errors.
+    pub fn disposition_with_state(
+        &mut self,
+        channel: u16,
+        first: u32,
+        last: u32,
+        settled: bool,
+        state: &DeliveryState,
+    ) -> io::Result<()> {
+        let body = encode_performative(
+            descriptor::DISPOSITION,
+            &AmqpExtValue::List(vec![
+                AmqpExtValue::Boolean(true), // role: receiver
+                AmqpExtValue::Uint(first),
+                AmqpExtValue::Uint(last),
+                AmqpExtValue::Boolean(settled),
+                encode_state(state),
+            ]),
+        )
+        .map_err(codec)?;
+        self.send(channel, &body)
+    }
+
+    /// Settles the client's own deliveries `first..=last` of session
+    /// `channel` (Part 2 §2.6.12: the sender settles a delivery whose
+    /// receiver reached a terminal state without settling).
+    ///
+    /// # Errors
+    /// I/O errors.
+    pub fn settle(&mut self, channel: u16, first: u32, last: u32) -> io::Result<()> {
+        let body = encode_performative(
+            descriptor::DISPOSITION,
+            &AmqpExtValue::List(vec![
+                AmqpExtValue::Boolean(false), // role: sender
+                AmqpExtValue::Uint(first),
+                AmqpExtValue::Uint(last),
+                AmqpExtValue::Boolean(true),
             ]),
         )
         .map_err(codec)?;
@@ -1447,6 +1335,7 @@ struct Partial {
     remote_handle: u32,
     delivery_id: u32,
     settled: bool,
+    state: Option<DeliveryState>,
     message: Vec<u8>,
 }
 
@@ -1455,9 +1344,32 @@ pub struct BrokerReader {
     frames: FrameReader,
     partial: Option<Partial>,
     shared: Arc<Mutex<Shared>>,
+    /// The longest txn-id the reader takes in a `declared` or a
+    /// `transactional-state`; 32 octets (Part 4 §4.5.4) unless
+    /// [`BrokerReader::set_txn_id_limit`] says otherwise.
+    txn_id_limit: usize,
 }
 
 impl BrokerReader {
+    /// Takes txn-ids of up to `octets` octets in the delivery states of
+    /// the broker in place of the 32 of Part 4 §4.5.4 (a value below 32
+    /// keeps 32): for a resource that issues longer identifiers, as
+    /// Apache ActiveMQ Artemis does with the 36 octets of a UUID's text.
+    /// A longer txn-id stays a protocol error of the read.
+    pub fn set_txn_id_limit(&mut self, octets: usize) {
+        self.txn_id_limit = octets.max(TxnId::MAX_LEN);
+    }
+
+    /// How long [`BrokerReader::next_event`] waits for octets of the
+    /// broker before it returns `WouldBlock` or `TimedOut`; octets of a
+    /// frame read in part are kept for the next call.
+    ///
+    /// # Errors
+    /// The error of the socket option.
+    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.frames.wire.socket().set_read_timeout(timeout)
+    }
+
     /// The next event from the broker, blocking until one arrives or the
     /// read timeout (twice the client's idle time-out) expires.
     ///
@@ -1516,6 +1428,8 @@ impl BrokerReader {
                         field(&v, 5).is_some()
                     },
                     initial_delivery_count: as_u32(field(&v, 9)),
+                    coordinator: Coordinator::decode(field(&v, 6))
+                        .map_err(|e| protocol(format!("attach.target: {e}")))?,
                 },
                 descriptor::FLOW => Inbound::Flow {
                     channel,
@@ -1525,6 +1439,7 @@ impl BrokerReader {
                     delivery_count: as_u32(field(&v, 5)),
                     link_credit: as_u32(field(&v, 6)),
                     echo: as_bool(field(&v, 9)).unwrap_or(false),
+                    drain: as_bool(field(&v, 8)).unwrap_or(false),
                 },
                 descriptor::TRANSFER => {
                     if let Some(n) = shared(&self.shared)?.next_incoming_id.get_mut(&channel) {
@@ -1548,6 +1463,8 @@ impl BrokerReader {
                                 protocol("first transfer frame without delivery-id")
                             })?,
                             settled: as_bool(field(&v, 4)).unwrap_or(false),
+                            state: decode_state_up_to(field(&v, 7), self.txn_id_limit)
+                                .map_err(|e| protocol(format!("transfer.state: {e}")))?,
                             message: Vec::new(),
                         },
                     };
@@ -1574,18 +1491,25 @@ impl BrokerReader {
                         delivery_id: part.delivery_id,
                         settled: part.settled,
                         message: part.message,
+                        state: part.state,
                     }
                 }
                 descriptor::DISPOSITION => {
                     let first = as_u32(field(&v, 1))
                         .ok_or_else(|| protocol("disposition without first"))?;
+                    let state = decode_state_up_to(field(&v, 4), self.txn_id_limit)
+                        .map_err(|e| protocol(format!("disposition.state: {e}")))?;
+                    let annotations = crate::terminus::modified_annotations(field(&v, 4))
+                        .map_err(|e| protocol(format!("disposition.state: {e}")))?;
                     Inbound::Disposition {
+                        annotations,
                         channel,
                         role_receiver: as_bool(field(&v, 0)).unwrap_or(false),
                         first,
                         last: as_u32(field(&v, 2)).unwrap_or(first),
                         settled: as_bool(field(&v, 3)).unwrap_or(false),
-                        outcome: decode_outcome(field(&v, 4)),
+                        outcome: state.as_ref().map_or(Outcome::None, DeliveryState::outcome),
+                        state,
                     }
                 }
                 descriptor::DETACH => Inbound::Detach {
@@ -1613,33 +1537,9 @@ impl BrokerReader {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-
-    /// RFC 7677 §3: user `user`, password `pencil`, the client and server
-    /// messages of the RFC; the client-final and the server signature are
-    /// the RFC's bytes.
-    #[test]
-    fn amqpbridge_7_2_scram_client_final_matches_the_rfc_7677_example() {
-        let (fin, sig) = scram_client_final(
-            "n=user,r=rOprNGfwEbeRWgbNEkqO",
-            "rOprNGfwEbeRWgbNEkqO",
-            "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096",
-            "pencil",
-        )
-        .unwrap();
-        assert_eq!(
-            fin,
-            "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="
-        );
-        assert_eq!(
-            crate::scram::b64(&sig),
-            "6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4="
-        );
-        // A server nonce that does not extend the client's is refused.
-        assert!(scram_client_final("n=u,r=abc", "abc", "r=xyz,s=AAAA,i=4096", "p").is_err());
-        assert!(scram_client_final("n=u,r=abc", "abc", "r=abcd,s=AAAA,i=1000", "p").is_err());
-    }
+    use crate::terminus::decode_state;
 
     /// AMQP 1.0 Part 3 §3.4: the outcomes are described lists, accepted
     /// 0x24, rejected 0x25 with its error (Part 2 §2.8.14, 0x1d: condition
@@ -1672,16 +1572,125 @@ mod tests {
         ] {
             assert_eq!(encode_outcome(&o).encode().unwrap(), octets, "{o:?}");
             let (value, _) = AmqpExtValue::decode(&octets).unwrap();
-            assert_eq!(decode_outcome(Some(&value)), o);
+            assert_eq!(crate::terminus::decode_outcome(Some(&value)), o);
         }
     }
 
-    fn pair() -> (TcpStream, TcpStream) {
+    pub(crate) fn pair() -> (TcpStream, TcpStream) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let client = std::thread::spawn(move || TcpStream::connect(addr).unwrap());
         let (server, _) = listener.accept().unwrap();
         (client.join().unwrap(), server)
+    }
+
+    /// A writer on `client` with session 3 begun, and what it writes as
+    /// frames: descriptor, fields, payload.
+    pub(crate) struct Written {
+        frames: FrameReader,
+    }
+
+    impl Written {
+        pub(crate) fn next(&mut self) -> (u64, Vec<AmqpExtValue>, Vec<u8>) {
+            let frame = self.frames.next().unwrap();
+            let (code, value, used) = decode_performative(&frame.body).unwrap();
+            let AmqpExtValue::List(fields) = value else {
+                panic!("a performative is a list");
+            };
+            (code, fields, frame.body[used..].to_vec())
+        }
+    }
+
+    /// A writer with session 3 begun (window 100, frames of 512 octets),
+    /// and the reader of what it writes.
+    pub(crate) fn writer_and_written() -> (BrokerWriter, Written) {
+        let (client, server) = pair();
+        server
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let writer = writer_with_session(client, 100, Arc::new(Mutex::new(Shared::default())));
+        (
+            writer,
+            Written {
+                frames: FrameReader {
+                    wire: Wire::Plain(server),
+                    buf: Vec::new(),
+                },
+            },
+        )
+    }
+
+    /// A writer without a session (frames of 512 octets), and the reader of
+    /// what it writes: for the daemon's link state, which begins its
+    /// sessions itself.
+    pub(crate) fn bare_writer_and_written() -> (BrokerWriter, Written) {
+        let (client, server) = pair();
+        server
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        (
+            BrokerWriter {
+                wire: Wire::Plain(client),
+                max_frame_size: 512,
+                sessions: BTreeMap::new(),
+                shared: Arc::new(Mutex::new(Shared::default())),
+            },
+            Written {
+                frames: FrameReader {
+                    wire: Wire::Plain(server),
+                    buf: Vec::new(),
+                },
+            },
+        )
+    }
+
+    impl Written {
+        /// The next frame with its channel: channel, descriptor, fields.
+        pub(crate) fn next_on(&mut self) -> (u16, u64, Vec<AmqpExtValue>) {
+            let frame = self.frames.next().unwrap();
+            let (code, value, _) = decode_performative(&frame.body).unwrap();
+            let AmqpExtValue::List(fields) = value else {
+                panic!("a performative is a list");
+            };
+            (frame.channel, code, fields)
+        }
+
+        /// The next frame with its channel, as [`Written::next_on`], or
+        /// `None` when the writer wrote nothing within 200 ms.
+        pub(crate) fn try_next_on(&mut self) -> Option<(u16, u64, Vec<AmqpExtValue>)> {
+            self.frames
+                .wire
+                .socket()
+                .set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            let got = self.frames.next();
+            self.frames
+                .wire
+                .socket()
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let frame = got.ok()?;
+            let (code, value, _) = decode_performative(&frame.body).unwrap();
+            let AmqpExtValue::List(fields) = value else {
+                panic!("a performative is a list");
+            };
+            Some((frame.channel, code, fields))
+        }
+
+        /// Whether the writer wrote nothing more within 200 ms.
+        pub(crate) fn nothing_more(&mut self) -> bool {
+            let socket = self.frames.wire.socket();
+            socket
+                .set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            let got = self.frames.next();
+            self.frames
+                .wire
+                .socket()
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            got.is_err()
+        }
     }
 
     fn writer_with_session(
@@ -1743,6 +1752,7 @@ mod tests {
             },
             partial: None,
             shared: Arc::clone(&shared),
+            txn_id_limit: TxnId::MAX_LEN,
         };
         match reader.next_event().unwrap() {
             Inbound::Transfer {
@@ -1751,12 +1761,14 @@ mod tests {
                 delivery_id,
                 settled,
                 message: got,
+                state,
             } => {
                 assert_eq!(
                     (channel, remote_handle, delivery_id, settled),
                     (3, 4, 7, false)
                 );
                 assert_eq!(got, message);
+                assert_eq!(state, None);
             }
             other => panic!("{other:?}"),
         }
@@ -1765,6 +1777,569 @@ mod tests {
             frames,
             "one transfer-id per frame"
         );
+    }
+
+    fn txn(octets: &[u8]) -> TxnId {
+        TxnId::new(octets).unwrap()
+    }
+
+    fn in_txn(id: &TxnId, outcome: Option<Outcome>) -> DeliveryState {
+        DeliveryState::Transactional(crate::transactions::TransactionalState {
+            txn_id: id.clone(),
+            outcome,
+        })
+    }
+
+    /// Part 4 §4.4.1: "if delivery is split across several transfer frames
+    /// then all frames MUST be explicitly associated with the same
+    /// transaction": a posted message of several frames carries the
+    /// transactional-state on each; a message without a state carries
+    /// none.
+    #[test]
+    fn amqp10_4_4_1_a_posted_message_names_the_transaction_on_every_frame() {
+        let (mut writer, mut written) = writer_and_written();
+        let message: Vec<u8> = (0..2000u32).map(|i| (i % 253) as u8).collect();
+        let state = in_txn(&txn(&[0, 9]), None);
+        writer
+            .transfer_with_state(3, 4, b"tag", &message, false, Some(&state))
+            .unwrap();
+        let frames = writer.sessions[&3].next_outgoing_id;
+        assert!(frames >= 4, "{frames} frames for 2000 octets at 512");
+        let mut got = Vec::new();
+        for i in 0..frames {
+            let (code, fields, payload) = written.next();
+            assert_eq!(code, descriptor::TRANSFER);
+            assert_eq!(
+                decode_state(fields.get(7)),
+                Ok(Some(state.clone())),
+                "frame {i}"
+            );
+            assert_eq!(
+                as_bool(fields.get(5)),
+                Some(i + 1 < frames),
+                "more on all but the last"
+            );
+            got.extend(payload);
+        }
+        assert_eq!(got, message);
+        writer.transfer(3, 4, b"plain", b"m", true).unwrap();
+        let (_, fields, _) = written.next();
+        assert_eq!(fields.len(), 6, "no state field");
+    }
+
+    fn symbol_list(v: Option<&AmqpExtValue>) -> Vec<String> {
+        match v {
+            Some(AmqpExtValue::Array(items)) => items
+                .iter()
+                .map(|i| match i {
+                    AmqpExtValue::Symbol(s) => s.clone(),
+                    other => panic!("not a symbol: {other:?}"),
+                })
+                .collect(),
+            other => panic!("not an array: {other:?}"),
+        }
+    }
+
+    fn symbol_map(v: Option<&AmqpExtValue>) -> Vec<(String, String)> {
+        match v {
+            Some(AmqpExtValue::Map(entries)) => entries
+                .iter()
+                .map(|(k, v)| match (k, v) {
+                    (AmqpExtValue::Symbol(k), AmqpExtValue::Str(v)) => (k.clone(), v.clone()),
+                    other => panic!("not symbol -> string: {other:?}"),
+                })
+                .collect(),
+            other => panic!("not a map: {other:?}"),
+        }
+    }
+
+    /// Daemon spec §4.1: the open carries container-id, hostname,
+    /// max-frame-size, channel-max and idle-time-out from the parameters
+    /// (Part 2 §2.7.1 field order), the capability in both lists and the
+    /// properties as a map with symbol keys; an idle time-out of 0 is no
+    /// field.
+    #[test]
+    fn amqpbridge_4_1_the_open_carries_the_fields_of_the_spec() {
+        let mut params = ConnectParams {
+            addr: "127.0.0.1:5672".into(),
+            host: "127.0.0.1".into(),
+            tls: None,
+            sasl: SaslCredentials::Anonymous,
+            container_id: "zerodds-bridge-prod-01".into(),
+            hostname: Some("vhost:prod".into()),
+            max_frame_size: 65_536,
+            channel_max: 256,
+            idle_time_out_ms: 30_000,
+            properties: vec![
+                ("zerodds_version".into(), "1.0".into()),
+                ("zerodds_role".into(), "bridge".into()),
+            ],
+            capabilities: vec!["AMQP_DDS_BRIDGE".into()],
+            timeout: Duration::from_secs(1),
+        };
+        let (code, value, _) = decode_performative(&open_body(&params).unwrap()).unwrap();
+        assert_eq!(code, descriptor::OPEN);
+        let AmqpExtValue::List(f) = value else {
+            panic!("a list")
+        };
+        assert_eq!(f.len(), 10);
+        assert_eq!(f[0], AmqpExtValue::Str("zerodds-bridge-prod-01".into()));
+        assert_eq!(f[1], AmqpExtValue::Str("vhost:prod".into()));
+        assert_eq!(f[2], AmqpExtValue::Uint(65_536));
+        assert_eq!(f[3], AmqpExtValue::Ushort(256));
+        assert_eq!(f[4], AmqpExtValue::Uint(30_000));
+        assert_eq!((&f[5], &f[6]), (&AmqpExtValue::Null, &AmqpExtValue::Null));
+        assert_eq!(symbol_list(f.get(7)), ["AMQP_DDS_BRIDGE"], "offered");
+        assert_eq!(symbol_list(f.get(8)), ["AMQP_DDS_BRIDGE"], "desired");
+        assert_eq!(
+            symbol_map(f.get(9)),
+            [
+                ("zerodds_version".to_string(), "1.0".to_string()),
+                ("zerodds_role".to_string(), "bridge".to_string())
+            ]
+        );
+        params.idle_time_out_ms = 0;
+        params.hostname = None;
+        let (_, value, _) = decode_performative(&open_body(&params).unwrap()).unwrap();
+        assert_eq!(field(&value, 4), None, "no idle time-out");
+        assert_eq!(field(&value, 1), None, "no hostname");
+    }
+
+    /// Daemon spec §4.2: the attach of a sending and of a receiving link:
+    /// name, handle, role, both settle modes, the node with the address and
+    /// the terminus durability on the side the role names, the
+    /// initial-delivery-count of a sender, the desired capability and the
+    /// properties as a map with symbol keys.
+    #[test]
+    fn amqpbridge_4_2_the_attach_carries_name_role_node_settle_modes_properties_and_capability() {
+        let (mut writer, mut written) = writer_and_written();
+        let mut spec = LinkSpec {
+            name: "cid/T/sender".into(),
+            handle: 2,
+            sender: true,
+            address: "/queues/t".into(),
+            snd_settle_mode: 0,
+            rcv_settle_mode: 1,
+            durable: 1,
+            properties: vec![
+                ("zerodds_topic".into(), "T".into()),
+                ("zerodds_type".into(), "TType".into()),
+            ],
+            desired_capabilities: vec!["dds.cdr2".into()],
+            coordinator: None,
+        };
+        let node = |v: Option<&AmqpExtValue>, code: u64| match v {
+            Some(AmqpExtValue::Described { descriptor, value }) => {
+                assert_eq!(*descriptor, code);
+                (field(value, 0).cloned(), field(value, 1).cloned())
+            }
+            other => panic!("not a terminus: {other:?}"),
+        };
+        writer.attach(3, &spec).unwrap();
+        let (code, f, _) = written.next();
+        assert_eq!(code, descriptor::ATTACH);
+        assert_eq!(f[0], AmqpExtValue::Str("cid/T/sender".into()));
+        assert_eq!(f[1], AmqpExtValue::Uint(2));
+        assert_eq!(f[2], AmqpExtValue::Boolean(false), "role sender");
+        assert_eq!(
+            (&f[3], &f[4]),
+            (&AmqpExtValue::Ubyte(0), &AmqpExtValue::Ubyte(1))
+        );
+        assert_eq!(
+            node(f.get(6), desc::TARGET),
+            (
+                Some(AmqpExtValue::Str("/queues/t".into())),
+                Some(AmqpExtValue::Uint(1))
+            )
+        );
+        assert_eq!(f[9], AmqpExtValue::Uint(0), "initial-delivery-count");
+        assert_eq!(symbol_list(f.get(12)), ["dds.cdr2"]);
+        assert_eq!(
+            symbol_map(f.get(13)),
+            [
+                ("zerodds_topic".to_string(), "T".to_string()),
+                ("zerodds_type".to_string(), "TType".to_string())
+            ]
+        );
+        spec.sender = false;
+        spec.name = "cid/T/receiver".into();
+        writer.attach(3, &spec).unwrap();
+        let (_, f, _) = written.next();
+        assert_eq!(f[2], AmqpExtValue::Boolean(true), "role receiver");
+        assert_eq!(
+            node(f.get(5), desc::SOURCE),
+            (
+                Some(AmqpExtValue::Str("/queues/t".into())),
+                Some(AmqpExtValue::Uint(1))
+            )
+        );
+        assert_eq!(f[9], AmqpExtValue::Null, "a receiver has no delivery count");
+    }
+
+    /// Part 2 §2.8.3, mode second: the receiver's disposition carries the
+    /// outcome unsettled; the settled form is the one of mode first.
+    #[test]
+    fn amqpbridge_3_a_disposition_in_mode_second_leaves_the_delivery_unsettled() {
+        let (mut writer, mut written) = writer_and_written();
+        writer
+            .disposition_settled(3, 4, 4, false, &Outcome::Accepted)
+            .unwrap();
+        let (code, f, _) = written.next();
+        assert_eq!(code, descriptor::DISPOSITION);
+        assert_eq!(as_bool(f.first()), Some(true), "role receiver");
+        assert_eq!(as_bool(f.get(3)), Some(false), "not settled");
+        assert_eq!(crate::terminus::decode_outcome(f.get(4)), Outcome::Accepted);
+        writer.disposition(3, 5, 5, &Outcome::Released).unwrap();
+        let (_, f, _) = written.next();
+        assert_eq!(as_bool(f.get(3)), Some(true), "settled");
+    }
+
+    /// Part 4 §4.2: the attach of a control link has a coordinator with
+    /// the desired capabilities as its target and a source that supports
+    /// the four outcomes, rejected among them; a control link the client
+    /// would receive on is refused.
+    #[test]
+    fn amqp10_4_2_the_attach_of_a_control_link_has_a_coordinator_as_its_target() {
+        let (mut writer, mut written) = writer_and_written();
+        let mut spec = LinkSpec {
+            name: "txn-ctl".into(),
+            handle: 0,
+            sender: true,
+            address: String::new(),
+            snd_settle_mode: 0,
+            rcv_settle_mode: 0,
+            durable: 0,
+            properties: Vec::new(),
+            desired_capabilities: Vec::new(),
+            coordinator: Some(vec![TxnCapability::LocalTransactions]),
+        };
+        writer.attach(3, &spec).unwrap();
+        let (code, fields, _) = written.next();
+        assert_eq!(code, descriptor::ATTACH);
+        assert_eq!(as_bool(fields.get(2)), Some(false), "role sender");
+        assert_eq!(
+            Coordinator::decode(fields.get(6)),
+            Ok(Some(Coordinator {
+                capabilities: vec![TxnCapability::LocalTransactions]
+            }))
+        );
+        let source = Source::decode(fields.get(5))
+            .expect("a source")
+            .expect("not null");
+        assert_eq!(source.outcomes, OUTCOME_SYMBOLS);
+        assert!(source.outcomes.iter().any(|o| o == "amqp:rejected:list"));
+        spec.sender = false;
+        let refused = writer.attach(3, &spec).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// Part 4 §4.4.2: a disposition with a transactional-state, settled
+    /// or not; Part 2 §2.6.12: the settlement of the client's own
+    /// deliveries. Part 4 §4.4.3: the txn-id in the properties of a flow,
+    /// a properties map without it, and a flow without properties.
+    #[test]
+    fn amqp10_4_4_dispositions_and_flows_name_the_transaction() {
+        let (mut writer, mut written) = writer_and_written();
+        let id = txn(&[5]);
+        let state = in_txn(&id, Some(Outcome::Accepted));
+        writer
+            .disposition_with_state(3, 11, 20, false, &state)
+            .unwrap();
+        let (code, fields, _) = written.next();
+        assert_eq!(code, descriptor::DISPOSITION);
+        assert_eq!(as_bool(fields.first()), Some(true), "role receiver");
+        assert_eq!(
+            (as_u32(fields.get(1)), as_u32(fields.get(2))),
+            (Some(11), Some(20))
+        );
+        assert_eq!(as_bool(fields.get(3)), Some(false), "not settled");
+        assert_eq!(decode_state(fields.get(4)), Ok(Some(state)));
+        writer.settle(3, 7, 8).unwrap();
+        let (_, fields, _) = written.next();
+        assert_eq!(as_bool(fields.first()), Some(false), "role sender");
+        assert_eq!(
+            (as_u32(fields.get(1)), as_u32(fields.get(2))),
+            (Some(7), Some(8))
+        );
+        assert_eq!(as_bool(fields.get(3)), Some(true), "settled");
+        assert_eq!(fields.len(), 4, "no state");
+        // Flows.
+        writer
+            .flow_in_txn(3, 2, 4, 10, true, Some(Some(&id)))
+            .unwrap();
+        let (code, fields, _) = written.next();
+        assert_eq!(code, descriptor::FLOW);
+        assert_eq!(as_u32(fields.get(4)), Some(2), "handle");
+        assert_eq!(as_u32(fields.get(5)), Some(4), "delivery-count");
+        assert_eq!(as_u32(fields.get(6)), Some(10), "link-credit");
+        assert_eq!(as_bool(fields.get(8)), Some(true), "drain");
+        assert_eq!(
+            crate::transactions::flow_txn_id(&fields[10]),
+            Ok(Some(id.clone()))
+        );
+        writer.flow_in_txn(3, 2, 4, 10, false, Some(None)).unwrap();
+        let (_, fields, _) = written.next();
+        assert_eq!(fields[10], AmqpExtValue::Map(Vec::new()));
+        writer.flow(3, 2, 4, 10).unwrap();
+        let (_, fields, _) = written.next();
+        assert_eq!(fields.len(), 7, "no drain, no properties");
+    }
+
+    /// Part 4 §4.5: the reader hands on the coordinator of an attach, the
+    /// state of a transfer and the state of a disposition; a
+    /// transactional-state without a txn-id is a protocol error.
+    #[test]
+    fn amqp10_4_5_the_reader_decodes_coordinator_and_transactional_states() {
+        let (client, server) = pair();
+        let shared = Arc::new(Mutex::new(Shared::default()));
+        shared.lock().unwrap().channel_of.insert(0, 3);
+        let mut reader = BrokerReader {
+            frames: FrameReader {
+                wire: Wire::Plain(client),
+                buf: Vec::new(),
+            },
+            partial: None,
+            shared,
+            txn_id_limit: TxnId::MAX_LEN,
+        };
+        let mut wire = Wire::Plain(server);
+        let mut write = |code: u64, fields: Vec<AmqpExtValue>, payload: &[u8]| {
+            let mut body = encode_performative(code, &AmqpExtValue::List(fields)).unwrap();
+            body.extend_from_slice(payload);
+            write_frame(&mut wire, FrameType::Amqp, 0, &body).unwrap();
+        };
+        let own = Coordinator {
+            capabilities: vec![
+                TxnCapability::LocalTransactions,
+                TxnCapability::MultiTxnsPerSsn,
+            ],
+        };
+        write(
+            descriptor::ATTACH,
+            vec![
+                AmqpExtValue::Str("txn-ctl".into()),
+                AmqpExtValue::Uint(5),
+                AmqpExtValue::Boolean(true),
+                AmqpExtValue::Null,
+                AmqpExtValue::Null,
+                AmqpExtValue::Null,
+                own.encode(),
+            ],
+            &[],
+        );
+        match reader.next_event().unwrap() {
+            Inbound::Attach {
+                name,
+                remote_handle,
+                has_node,
+                coordinator,
+                ..
+            } => {
+                assert_eq!(
+                    (name.as_str(), remote_handle, has_node),
+                    ("txn-ctl", 5, true)
+                );
+                assert_eq!(coordinator, Some(own));
+            }
+            other => panic!("{other:?}"),
+        }
+        let id = txn(&[1]);
+        write(
+            descriptor::TRANSFER,
+            vec![
+                AmqpExtValue::Uint(6),
+                AmqpExtValue::Uint(11),
+                AmqpExtValue::Binary(vec![1]),
+                AmqpExtValue::Uint(0),
+                AmqpExtValue::Boolean(false),
+                AmqpExtValue::Boolean(false),
+                AmqpExtValue::Null,
+                encode_state(&in_txn(&id, None)),
+            ],
+            b"m",
+        );
+        match reader.next_event().unwrap() {
+            Inbound::Transfer { state, message, .. } => {
+                assert_eq!(state, Some(in_txn(&id, None)));
+                assert_eq!(message, b"m");
+            }
+            other => panic!("{other:?}"),
+        }
+        for state in [
+            DeliveryState::Declared(id.clone()),
+            in_txn(&id, Some(Outcome::Accepted)),
+        ] {
+            write(
+                descriptor::DISPOSITION,
+                vec![
+                    AmqpExtValue::Boolean(true),
+                    AmqpExtValue::Uint(0),
+                    AmqpExtValue::Null,
+                    AmqpExtValue::Boolean(true),
+                    encode_state(&state),
+                ],
+                &[],
+            );
+            match reader.next_event().unwrap() {
+                Inbound::Disposition {
+                    outcome,
+                    state: got,
+                    settled,
+                    ..
+                } => {
+                    assert_eq!(got, Some(state));
+                    assert_eq!(outcome, Outcome::None, "no outcome of Part 3");
+                    assert!(settled);
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        write(
+            descriptor::DISPOSITION,
+            vec![
+                AmqpExtValue::Boolean(true),
+                AmqpExtValue::Uint(0),
+                AmqpExtValue::Null,
+                AmqpExtValue::Boolean(true),
+                described(0x34, vec![]),
+            ],
+            &[],
+        );
+        let error = reader.next_event().unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("txn-id"), "{error}");
+    }
+
+    /// Part 3 §3.4.5: the reader hands on the message-annotations of a
+    /// `modified` outcome; another outcome has none; a field that is not a
+    /// map, or a key that is not a symbol, is a protocol error.
+    #[test]
+    fn amqpbridge_4_5_the_reader_hands_on_the_annotations_of_modified() {
+        let read = |state: AmqpExtValue| {
+            let (client, server) = pair();
+            let shared = Arc::new(Mutex::new(Shared::default()));
+            shared.lock().unwrap().channel_of.insert(0, 3);
+            let mut reader = BrokerReader {
+                frames: FrameReader {
+                    wire: Wire::Plain(client),
+                    buf: Vec::new(),
+                },
+                partial: None,
+                shared,
+                txn_id_limit: TxnId::MAX_LEN,
+            };
+            let body = encode_performative(
+                descriptor::DISPOSITION,
+                &AmqpExtValue::List(vec![
+                    AmqpExtValue::Boolean(true),
+                    AmqpExtValue::Uint(0),
+                    AmqpExtValue::Null,
+                    AmqpExtValue::Boolean(true),
+                    state,
+                ]),
+            )
+            .unwrap();
+            write_frame(&mut Wire::Plain(server), FrameType::Amqp, 0, &body).unwrap();
+            match reader.next_event() {
+                Ok(Inbound::Disposition {
+                    outcome,
+                    annotations,
+                    ..
+                }) => Ok((outcome, annotations)),
+                Ok(other) => panic!("{other:?}"),
+                Err(e) => Err(e.to_string()),
+            }
+        };
+        let entry = (
+            AmqpExtValue::Symbol("x-opt-reason".into()),
+            AmqpExtValue::Str("full".into()),
+        );
+        let modified = |annotations: AmqpExtValue| {
+            described(
+                desc::MODIFIED,
+                vec![
+                    AmqpExtValue::Boolean(true),
+                    AmqpExtValue::Boolean(false),
+                    annotations,
+                ],
+            )
+        };
+        assert_eq!(
+            read(modified(AmqpExtValue::Map(vec![entry.clone()]))),
+            Ok((
+                Outcome::Modified {
+                    delivery_failed: true,
+                    undeliverable_here: false
+                },
+                vec![entry]
+            ))
+        );
+        assert_eq!(
+            read(described(desc::RELEASED, vec![])),
+            Ok((Outcome::Released, vec![]))
+        );
+        let error = read(modified(AmqpExtValue::Uint(1))).unwrap_err();
+        assert!(error.contains("not a map"), "{error}");
+        let error = read(modified(AmqpExtValue::Map(vec![(
+            AmqpExtValue::Str("k".into()),
+            AmqpExtValue::Null,
+        )])))
+        .unwrap_err();
+        assert!(error.contains("not a symbol"), "{error}");
+    }
+
+    /// Part 4 §4.5.4: a `declared` with a txn-id of 36 octets (what
+    /// Apache ActiveMQ Artemis sends) is a protocol error of the reader by
+    /// default; after `set_txn_id_limit(36)` the reader takes it, and one
+    /// octet more is an error again.
+    #[test]
+    fn amqp10_4_5_4_the_reader_takes_longer_txn_ids_only_when_told() {
+        let read = |octets: usize, limit: Option<usize>| {
+            let (client, server) = pair();
+            let shared = Arc::new(Mutex::new(Shared::default()));
+            shared.lock().unwrap().channel_of.insert(0, 3);
+            let mut reader = BrokerReader {
+                frames: FrameReader {
+                    wire: Wire::Plain(client),
+                    buf: Vec::new(),
+                },
+                partial: None,
+                shared,
+                txn_id_limit: TxnId::MAX_LEN,
+            };
+            if let Some(limit) = limit {
+                reader.set_txn_id_limit(limit);
+            }
+            let declared = described(0x33, vec![AmqpExtValue::Binary(vec![b'a'; octets])]);
+            let body = encode_performative(
+                descriptor::DISPOSITION,
+                &AmqpExtValue::List(vec![
+                    AmqpExtValue::Boolean(true),
+                    AmqpExtValue::Uint(0),
+                    AmqpExtValue::Null,
+                    AmqpExtValue::Boolean(true),
+                    declared,
+                ]),
+            )
+            .unwrap();
+            write_frame(&mut Wire::Plain(server), FrameType::Amqp, 0, &body).unwrap();
+            match reader.next_event() {
+                Ok(Inbound::Disposition {
+                    state: Some(DeliveryState::Declared(id)),
+                    ..
+                }) => Ok(id.as_bytes().len()),
+                Ok(other) => panic!("{other:?}"),
+                Err(e) => Err(e.to_string()),
+            }
+        };
+        assert_eq!(read(32, None), Ok(32));
+        let error = read(36, None).unwrap_err();
+        assert!(error.contains("36 octets, more than 32"), "{error}");
+        assert_eq!(read(36, Some(36)), Ok(36));
+        let error = read(37, Some(36)).unwrap_err();
+        assert!(error.contains("37 octets, more than 36"), "{error}");
+        // A bound below the one of the specification keeps 32.
+        assert_eq!(read(32, Some(4)), Ok(32));
     }
 
     #[test]

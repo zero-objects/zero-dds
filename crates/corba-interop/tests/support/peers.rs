@@ -196,3 +196,40 @@ pub fn free_port() -> u16 {
         .map(|a| a.port())
         .expect("a free port")
 }
+
+/// Like [`run_client`] for a client that must fail: the exit status is not
+/// success; returns what it wrote.
+pub fn run_client_failing(mut command: Command) -> String {
+    let output = command
+        .stdin(Stdio::null())
+        .output()
+        .unwrap_or_else(|e| panic!("{command:?}: {e}"));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !output.status.success(),
+        "{command:?} succeeded, expected a failure:\n{text}"
+    );
+    text
+}
+
+/// The stringified IOR `ior` with the IIOP version of every IIOP profile
+/// set to `1.<minor>`: the reference a server publishing that version
+/// hands out (CORBA 3.3 Part 2 §9.7.2).
+pub fn with_profile_version(ior: &str, minor: u8) -> String {
+    use zerodds_corba_iiop::IiopVersion;
+    use zerodds_corba_ior::{TaggedProfile, from_stringified, to_stringified};
+    let mut parsed = from_stringified(ior).expect("a stringified IOR");
+    for profile in &mut parsed.profiles {
+        if let Some(body) = profile.as_iiop() {
+            let mut body = body.expect("an IIOP profile body");
+            body.iiop_version = IiopVersion::new(1, minor);
+            *profile = TaggedProfile::iiop(&body, zerodds_wire::Endianness::Big)
+                .expect("encode the IIOP profile");
+        }
+    }
+    to_stringified(&parsed, zerodds_wire::Endianness::Big).expect("stringify the IOR")
+}

@@ -56,6 +56,18 @@
 //!   number (a bit set in the 16-entry bitmap) by resending the exact
 //!   buffered bytes via `get_in_flight`, not just updating acknowledgment
 //!   bookkeeping.
+//! - **Bound** (§8.4.14.1, §8.3.5.14): the DATA the agent holds for a
+//!   reliable output stream are bounded by the stream's sender window
+//!   (`ReliableConfig::sender_window`, 16 messages). [`Self::pump_read`]
+//!   takes a sample out of a DataReader only while the stream holds fewer
+//!   messages than that (sent and not acknowledged, waiting for room, or
+//!   built in this call); the other samples stay in the DataReader, whose
+//!   History QoS decides what it keeps. Only the `FRAGMENT`s of a sample
+//!   larger than the client's MTU go beyond the window and wait in the
+//!   backlog. The client's ACKNACK that frees the window takes the next
+//!   samples at once ([`Self::refill`]). For a client routed upstream
+//!   (§10.4) the relay takes the answers of the upstream agent under the same
+//!   bound and leaves the rest unacknowledged at the upstream agent.
 //!
 //! `Vec<Submessage>` per message is bridged through `ReliableStreamState`'s
 //! byte-oriented buffering via [`encode_submessages`]/[`decode_submessages`]
@@ -100,6 +112,7 @@ use crate::daemon::entity_repr::{
     self, ContainerDescription, EndpointDescription, EndpointRole, ParticipantSource, ReprError,
     TopicDescription, TopicRef,
 };
+use crate::daemon::federation::{Upstream, UpstreamEvent, UpstreamRefusal};
 use crate::daemon::handshake::{AgentRepresentation, ClientRepresentation};
 use crate::daemon::profiles::AgentProfiles;
 use crate::{AgentError, TraceSink, XrceAgent};
@@ -517,6 +530,52 @@ pub enum SessionEvent {
         /// How many samples.
         samples: usize,
     },
+    /// The session of a routed client at the upstream agent is open
+    /// (DDS-XRCE 1.0 §10.4).
+    UpstreamConnected {
+        /// The client.
+        client: ClientKeyOrd,
+    },
+    /// The link of a routed client to the upstream agent was lost and is
+    /// being opened again; its requests wait.
+    UpstreamLost {
+        /// The client.
+        client: ClientKeyOrd,
+        /// Why.
+        reason: String,
+    },
+    /// The upstream agent refused the session of a routed client; its
+    /// requests are answered with `code`.
+    UpstreamRefused {
+        /// The client.
+        client: ClientKeyOrd,
+        /// The status of the upstream agent's `STATUS_AGENT`.
+        code: ResultStatusCode,
+    },
+    /// A request of a routed client found the queue of its link full and was
+    /// answered `STATUS_ERR_RESOURCES`.
+    UpstreamQueueFull {
+        /// The client.
+        client: ClientKeyOrd,
+    },
+    /// A `FRAGMENT` run of the upstream agent for a routed client could not
+    /// be reassembled; what it carried is lost.
+    UpstreamFragmentDiscarded {
+        /// The client.
+        client: ClientKeyOrd,
+        /// The stream.
+        stream_id: u8,
+    },
+    /// A request of a routed client cannot be carried upstream and was
+    /// answered `STATUS_ERR_RESOURCES`.
+    UpstreamUnsendable {
+        /// The client.
+        client: ClientKeyOrd,
+        /// The stream the request came on.
+        stream_id: u8,
+        /// Why.
+        reason: String,
+    },
 }
 
 /// What a READ_DATA without `delivery_control` reads.
@@ -544,7 +603,13 @@ pub struct SessionEngineConfig {
     /// Maximum objects one client's `ObjectStore` may hold
     /// (`STATUS_ERR_RESOURCES` beyond this).
     pub max_objects_per_client: usize,
-    /// Maximum samples buffered per `(client, reader)` pull queue.
+    /// Maximum samples per `(client, reader)` in the queue
+    /// [`SessionEngine::submit_sample`] fills (a sample beyond it is
+    /// [`AgentError::QueueFull`]). The samples of the [`DdsPort`] do not pass
+    /// that queue; they stay in the DataReader until a read takes them, and
+    /// a read on a reliable stream takes no more than the stream's sender
+    /// window has room for. The daemon does not fill the queue and has no
+    /// key for this value.
     pub max_pending_samples: usize,
     /// A session with no traffic for this long is torn down by
     /// [`SessionEngine::tick`] (spec §8.4.9-adjacent liveliness).
@@ -629,6 +694,20 @@ pub struct SessionEngineConfig {
     /// carry, and the per-client permissions for the object operations.
     /// The default restricts nothing.
     pub access: crate::daemon::access::AccessController,
+    /// The period of the HEARTBEATs on a reliable output stream with
+    /// unacknowledged messages (`heartbeat.period_ms`). DDS-XRCE 1.0
+    /// §8.3.5.12 dictates no timing.
+    pub heartbeat_period: Duration,
+    /// How long a client counts as active after the agent last heard it or
+    /// last sent a new message on the stream (`heartbeat.client_active_window_ms`).
+    /// DDS-XRCE 1.0 §8.3.5.12: "the XRCE Agent will only send HEARTBEAT
+    /// messages when it has some indication that the XRCE Client is active
+    /// and not in a sleep cycle".
+    pub client_active_window: Duration,
+    /// Whether HEARTBEATs also go to a client that is silent for longer than
+    /// [`Self::client_active_window`] (`heartbeat.silent_client: send`). By
+    /// default (`false`, `suppress`) they do not, as §8.3.5.12 expects.
+    pub heartbeat_to_silent_client: bool,
 }
 
 impl Default for SessionEngineConfig {
@@ -654,9 +733,16 @@ impl Default for SessionEngineConfig {
             timestamp_interval: None,
             client_applications: Vec::new(),
             access: crate::daemon::access::AccessController::default(),
+            heartbeat_period: zerodds_xrce::reliable::DEFAULT_HEARTBEAT_PERIOD,
+            client_active_window: DEFAULT_CLIENT_ACTIVE_WINDOW,
+            heartbeat_to_silent_client: false,
         }
     }
 }
+
+/// Default of [`SessionEngineConfig::client_active_window`]: four default
+/// heartbeat periods.
+pub const DEFAULT_CLIENT_ACTIVE_WINDOW: Duration = Duration::from_secs(2);
 
 /// Continuous-read registration for one `(client, reader)`.
 struct ActiveRead {
@@ -712,6 +798,10 @@ pub struct SessionEngine<P: DdsPort> {
     fragment_runs: BTreeMap<(ClientKeyOrd, u8), FragmentRun>,
     reads: BTreeMap<(ClientKeyOrd, ObjectId), ActiveRead>,
     liveliness: BTreeMap<ClientKeyOrd, Duration>,
+    /// When the agent last sent a new (not a retransmitted) message on each
+    /// reliable output stream: with `liveliness`, the indication of
+    /// §8.3.5.12 that the client is active.
+    stream_activity: BTreeMap<(ClientKeyOrd, u8), Duration>,
     session_ids: BTreeMap<ClientKeyOrd, u8>,
     /// Topics whose type is known — so `WRITE_DATA`/`READ_DATA` can tell
     /// [`DdsPort`] whether to key/track instances, and so
@@ -774,6 +864,8 @@ pub struct SessionEngine<P: DdsPort> {
     /// [`crate::daemon::handshake::DEFAULT_MTU`] if it sent none) — the
     /// outbound `DATA`/`FRAGMENT` split threshold in [`Self::pump_read`].
     client_mtu: BTreeMap<ClientKeyOrd, u16>,
+    /// The relay to an upstream agent (DDS-XRCE 1.0 §10.4), if configured.
+    upstream: Option<Box<dyn Upstream>>,
     events: Vec<SessionEvent>,
 }
 
@@ -794,6 +886,7 @@ impl<P: DdsPort> SessionEngine<P> {
             best_effort_in: BTreeMap::new(),
             reads: BTreeMap::new(),
             liveliness: BTreeMap::new(),
+            stream_activity: BTreeMap::new(),
             session_ids: BTreeMap::new(),
             known_type_topics: BTreeMap::new(),
             topics: BTreeMap::new(),
@@ -813,6 +906,7 @@ impl<P: DdsPort> SessionEngine<P> {
             read_sequence: BTreeMap::new(),
             session_start: BTreeMap::new(),
             client_mtu: BTreeMap::new(),
+            upstream: None,
             events: Vec::new(),
         }
     }
@@ -858,6 +952,209 @@ impl<P: DdsPort> SessionEngine<P> {
         self.config.session_timeout = session_timeout;
     }
 
+    /// Routes clients to an upstream agent (DDS-XRCE 1.0 §10.4): the object
+    /// operations of a client `upstream` routes go there unchanged instead of
+    /// to the [`DdsPort`], and the answers come back on their streams. The
+    /// upstream agent holds the objects of a routed client and its
+    /// AccessController decides their operations (§7.4); the rules of
+    /// [`SessionEngineConfig::access`] are not evaluated for them
+    /// (`server::check_routed_clients` refuses a configuration with a rule
+    /// that covers a routed client). Its ClientKeys and properties are
+    /// checked at the `CREATE_CLIENT`, for every client.
+    pub fn set_upstream(&mut self, upstream: Box<dyn Upstream>) {
+        self.upstream = Some(upstream);
+    }
+
+    /// Whether the operations of `client` go to the upstream agent.
+    fn routed(&self, client: ClientKeyOrd) -> bool {
+        self.upstream.as_ref().is_some_and(|u| u.routes(client))
+    }
+
+    /// Relays a request of a routed client; a request the link does not take
+    /// is answered here (`STATUS_ERR_RESOURCES` for a full queue, the status
+    /// of the upstream agent for a refused session), never dropped.
+    fn relay_upstream(
+        &mut self,
+        client: ClientKeyOrd,
+        header: &MessageHeader,
+        sm: &Submessage,
+        now: Duration,
+        out: &mut Vec<Outbound>,
+    ) {
+        let Some(upstream) = self.upstream.as_mut() else {
+            return;
+        };
+        let code = match upstream.forward(client, header.stream_id.0, sm.clone(), now) {
+            Ok(()) => return,
+            Err(UpstreamRefusal::QueueFull) => {
+                self.events.push(SessionEvent::UpstreamQueueFull { client });
+                ResultStatusCode::Resources
+            }
+            Err(UpstreamRefusal::Refused(code)) => code,
+            Err(UpstreamRefusal::NoLink) => ResultStatusCode::Resources,
+            Err(UpstreamRefusal::Unsendable) => {
+                self.events.push(SessionEvent::UpstreamUnsendable {
+                    client,
+                    stream_id: header.stream_id.0,
+                    reason: "the upstream mtu leaves no room for the FRAGMENTs it needs"
+                        .to_string(),
+                });
+                ResultStatusCode::Resources
+            }
+            Err(UpstreamRefusal::TooLarge { size, limit }) => {
+                self.events.push(SessionEvent::UpstreamUnsendable {
+                    client,
+                    stream_id: header.stream_id.0,
+                    reason: format!(
+                        "{size} octets on a stream without FRAGMENTs; one message of the \
+                         upstream link carries {limit}"
+                    ),
+                });
+                ResultStatusCode::Resources
+            }
+        };
+        self.answer_refused(client, header, sm, code, out);
+    }
+
+    /// The answer to a relayed request that cannot be carried out: an `INFO`
+    /// for a `GET_INFO`, a `STATUS` for the others.
+    fn answer_refused(
+        &self,
+        client: ClientKeyOrd,
+        header: &MessageHeader,
+        sm: &Submessage,
+        code: ResultStatusCode,
+        out: &mut Vec<Outbound>,
+    ) {
+        let Ok((base, _)) = BaseObjectRequest::decode(&sm.body) else {
+            return;
+        };
+        if sm.header.submessage_id == SubmessageId::GetInfo {
+            let request = InfoRequest {
+                header,
+                reply_to: client,
+                client: Some(client),
+                base,
+            };
+            self.answer_info(&request, code, &ObjectInfo::default(), out);
+        } else {
+            out.push(status_reply(
+                client,
+                header,
+                base.request_id,
+                base.object_id,
+                code,
+            ));
+        }
+    }
+
+    /// What the upstream agent sent: its answers go to the clients on the
+    /// streams they came on (a `FRAGMENT` split above the client's MTU), on a
+    /// reliable stream as far as the client's sender window has room
+    /// ([`stream_room`]); the others wait unacknowledged at the upstream
+    /// agent.
+    fn poll_upstream(&mut self, now: Duration, out: &mut Vec<Outbound>) {
+        let window = self.reliable_config().sender_window;
+        let Some(upstream) = self.upstream.as_mut() else {
+            return;
+        };
+        let events = {
+            let (reliable, backlog, building) = (&self.reliable, &self.reliable_backlog, &*out);
+            upstream.poll(now, &mut |client, stream_id| {
+                stream_room(reliable, backlog, building, window, client, stream_id)
+            })
+        };
+        self.upstream_events(events, out);
+    }
+
+    /// `client` acknowledged messages: the answers of the upstream agent for
+    /// it that waited for room in its sender window come now.
+    fn release_upstream(&mut self, client: ClientKeyOrd, now: Duration, out: &mut Vec<Outbound>) {
+        let window = self.reliable_config().sender_window;
+        let Some(upstream) = self.upstream.as_mut() else {
+            return;
+        };
+        let events = {
+            let (reliable, backlog, building) = (&self.reliable, &self.reliable_backlog, &*out);
+            upstream.release(client, now, &mut |client, stream_id| {
+                stream_room(reliable, backlog, building, window, client, stream_id)
+            })
+        };
+        self.upstream_events(events, out);
+    }
+
+    /// Carries out what [`Upstream::poll`] or [`Upstream::release`] observed.
+    fn upstream_events(&mut self, events: Vec<UpstreamEvent>, out: &mut Vec<Outbound>) {
+        for event in events {
+            match event {
+                UpstreamEvent::Reply {
+                    client,
+                    stream_id,
+                    submessage,
+                } => {
+                    let Some(session_id) = self.session_ids.get(&client).copied() else {
+                        continue; // the client's session ended at this agent
+                    };
+                    let mut header = reply_header(client, &default_header(), Some(session_id));
+                    header.stream_id = StreamId(stream_id);
+                    let mtu = self
+                        .client_mtu
+                        .get(&client)
+                        .copied()
+                        .unwrap_or(crate::daemon::handshake::DEFAULT_MTU);
+                    self.emit_possibly_fragmented(client, header, submessage, mtu, out);
+                }
+                UpstreamEvent::Connected { client } => {
+                    self.events.push(SessionEvent::UpstreamConnected { client });
+                }
+                UpstreamEvent::Lost { client, reason } => {
+                    self.events
+                        .push(SessionEvent::UpstreamLost { client, reason });
+                }
+                UpstreamEvent::Refused {
+                    client,
+                    code,
+                    pending,
+                } => {
+                    self.events
+                        .push(SessionEvent::UpstreamRefused { client, code });
+                    let session_id = self.session_ids.get(&client).copied();
+                    let mut header = reply_header(client, &default_header(), session_id);
+                    for (stream_id, sm) in pending {
+                        header.stream_id = StreamId(stream_id);
+                        self.answer_refused(client, &header, &sm, code, out);
+                    }
+                }
+                UpstreamEvent::FragmentDiscarded { client, stream_id } => {
+                    self.events
+                        .push(SessionEvent::UpstreamFragmentDiscarded { client, stream_id });
+                }
+                UpstreamEvent::Unsendable {
+                    client,
+                    stream_id,
+                    submessage,
+                    reason,
+                } => {
+                    self.events.push(SessionEvent::UpstreamUnsendable {
+                        client,
+                        stream_id,
+                        reason,
+                    });
+                    let session_id = self.session_ids.get(&client).copied();
+                    let mut header = reply_header(client, &default_header(), session_id);
+                    header.stream_id = StreamId(stream_id);
+                    self.answer_refused(
+                        client,
+                        &header,
+                        &submessage,
+                        ResultStatusCode::Resources,
+                        out,
+                    );
+                }
+            }
+        }
+    }
+
     /// The DDS side pushed a sample for `reader` — buffers it for
     /// delivery on the next [`Self::tick`] (continuous read) or the next
     /// `READ_DATA` (single-shot pull). Spec §7.3 client-pull model +
@@ -889,6 +1186,7 @@ impl<P: DdsPort> SessionEngine<P> {
     ) -> Vec<Outbound> {
         let mut out = Vec::new();
         let mut retransmits = Vec::new();
+        let mut freed: Vec<u8> = Vec::new();
         // §7.8.1: "With the exception of the operations create_client and
         // get_info on the XRCE Root, all other operations expect that the
         // ClientKey references an already existing XRCE ProxyClient. If this
@@ -919,6 +1217,9 @@ impl<P: DdsPort> SessionEngine<P> {
             });
             return out;
         }
+        // §8.3.5.12: the reliable output streams of a client that was silent
+        // get their HEARTBEAT with the answer to this message.
+        let woken = resolved_client.map_or_else(Vec::new, |c| self.silent_streams(c, now));
         if let Some(c) = resolved_client {
             self.liveliness.insert(c, now);
         }
@@ -937,12 +1238,11 @@ impl<P: DdsPort> SessionEngine<P> {
         // enforce.
         if header.stream_id.is_reliable() {
             if let Some(client) = resolved_client {
+                let config = self.reliable_config();
                 let rs = self
                     .reliable
                     .entry((client, header.stream_id.0))
-                    .or_insert_with(|| {
-                        ReliableStreamState::new(header.stream_id, ReliableConfig::default())
-                    });
+                    .or_insert_with(|| ReliableStreamState::new(header.stream_id, config));
                 match rs.recv_data(header.sequence_nr, encode_submessages(submessages)) {
                     Ok(()) => {
                         for (seq, bytes) in rs.drain_in_order() {
@@ -956,6 +1256,7 @@ impl<P: DdsPort> SessionEngine<P> {
                                 now,
                                 &mut out,
                                 &mut retransmits,
+                                &mut freed,
                             );
                         }
                     }
@@ -998,11 +1299,22 @@ impl<P: DdsPort> SessionEngine<P> {
                 now,
                 &mut out,
                 &mut retransmits,
+                &mut freed,
             );
         }
 
-        self.finalize_reliable_sequencing(&mut out);
+        // §8.4.14.1: what an ACKNACK freed in a sender window is filled now,
+        // not at the next tick.
+        if let Some(c) = resolved_client
+            && !freed.is_empty()
+        {
+            self.refill(c, &freed, now, &mut out);
+        }
+        self.finalize_reliable_sequencing(&mut out, now);
         out.append(&mut retransmits);
+        if let Some(c) = resolved_client {
+            self.wake_heartbeats(c, &woken, now, &mut out);
+        }
         out
     }
 
@@ -1092,7 +1404,9 @@ impl<P: DdsPort> SessionEngine<P> {
     /// between best-effort/`StreamId::NONE` traffic (called directly from
     /// [`Self::handle_message`]) and reliable-stream traffic (called once
     /// per message [`Self::handle_message`]'s `drain_in_order` loop
-    /// releases, in sequence order).
+    /// releases, in sequence order). The reliable output streams an ACKNACK
+    /// acknowledged messages of go to `freed`.
+    #[allow(clippy::too_many_arguments)]
     fn process_message_submessages(
         &mut self,
         resolved_client: Option<ClientKeyOrd>,
@@ -1101,6 +1415,7 @@ impl<P: DdsPort> SessionEngine<P> {
         now: Duration,
         out: &mut Vec<Outbound>,
         retransmits: &mut Vec<Outbound>,
+        freed: &mut Vec<u8>,
     ) {
         // §8.3.5.14: FRAGMENT reassembly happens before anything else —
         // a reassembled submessage is processed exactly like one that
@@ -1207,8 +1522,12 @@ impl<P: DdsPort> SessionEngine<P> {
         // merges them in only after it has run over everything freshly
         // built this call.
         for sm in &effective {
-            if sm.header.submessage_id == SubmessageId::AckNack {
-                self.handle_acknack(resolved_client, header, sm, retransmits);
+            if sm.header.submessage_id == SubmessageId::AckNack
+                && let Some(stream_id) =
+                    self.handle_acknack(resolved_client, header, sm, retransmits)
+                && !freed.contains(&stream_id)
+            {
+                freed.push(stream_id);
             }
         }
     }
@@ -1249,6 +1568,12 @@ impl<P: DdsPort> SessionEngine<P> {
                     // caller's transport-level "unresolved peer" counter.
                     return;
                 };
+                // §10.4: the object operations of a routed client go to the
+                // upstream agent.
+                if self.routed(client) && crate::daemon::federation::is_relayed(sm) {
+                    self.relay_upstream(client, header, sm, now, out);
+                    return;
+                }
                 match sm.header.submessage_id {
                     SubmessageId::Create => self.handle_create(client, header, sm, out),
                     SubmessageId::Delete => self.handle_delete(client, header, sm, out),
@@ -1373,6 +1698,10 @@ impl<P: DdsPort> SessionEngine<P> {
         // insert calls below, which leave the *object store* unchanged.
         let same_session = already_known && self.session_ids.get(&client) == Some(&rep.session_id);
         if already_known && !same_session {
+            // A routed client's new session starts a new one upstream.
+            if let Some(upstream) = self.upstream.as_mut() {
+                upstream.close(client);
+            }
             self.agent.unregister_client(rep.client_key);
             self.dds.unregister_client(client);
             self.reads.retain(|(c, _), _| *c != client);
@@ -1389,6 +1718,7 @@ impl<P: DdsPort> SessionEngine<P> {
         // resets the streams for them (`replay_foreign_session.rs`).
         if !same_session || self.config.restart_on_same_session {
             self.reliable.retain(|(c, _), _| *c != client);
+            self.stream_activity.retain(|(c, _), _| *c != client);
             self.fragments.remove(&client);
             self.fragment_runs.retain(|(c, _), _| *c != client);
             // The client's streams start over, its best-effort input
@@ -1428,9 +1758,17 @@ impl<P: DdsPort> SessionEngine<P> {
             client,
             session_id: rep.session_id,
         });
-        // §8.4.2, §8.4.3: the CREATE_CLIENT "triggers the creation or reuse of
-        // the corresponding XRCE objects".
-        self.make_client_applications(client);
+        if self.routed(client) {
+            // §10.4: the session at the upstream agent, with the client's
+            // ClientKey, session_id and properties.
+            if let Some(upstream) = self.upstream.as_mut() {
+                upstream.open(client, &rep, now);
+            }
+        } else {
+            // §8.4.2, §8.4.3: the CREATE_CLIENT "triggers the creation or
+            // reuse of the corresponding XRCE objects".
+            self.make_client_applications(client);
+        }
         out.push(agent_status_reply(
             client,
             header,
@@ -2964,9 +3302,13 @@ impl<P: DdsPort> SessionEngine<P> {
         }
         if deletes_client {
             let session_id = self.session_ids.get(&client).copied();
+            if let Some(upstream) = self.upstream.as_mut() {
+                upstream.close(client);
+            }
             self.agent.unregister_client(ClientKey(client));
             self.dds.unregister_client(client);
             self.reliable.retain(|(c, _), _| *c != client);
+            self.stream_activity.retain(|(c, _), _| *c != client);
             self.fragments.remove(&client);
             self.fragment_runs.retain(|(c, _), _| *c != client);
             self.reads.retain(|(c, _), _| *c != client);
@@ -3676,6 +4018,15 @@ impl<P: DdsPort> SessionEngine<P> {
     /// Feeds newly available samples (from `XrceAgent`'s pull queue and
     /// from `DdsPort::poll_samples`) into the reader's [`ReadStream`] and
     /// emits `DATA` for whatever it releases.
+    ///
+    /// On a reliable stream it takes no more samples than the stream's sender
+    /// window has room for ([`stream_room`], DDS-XRCE 1.0 §8.4.14.1): while
+    /// the client has not acknowledged a full window, the samples stay in the
+    /// DataReader, under its History QoS, and the next ACKNACK
+    /// ([`Self::refill`]) or tick takes them. A read without
+    /// `delivery_control` makes its one read call (§8.3.5.9.2) when the
+    /// stream has room, for as many samples as the room; the others stay in
+    /// the DataReader for the next READ_DATA.
     fn pump_read(
         &mut self,
         client: ClientKeyOrd,
@@ -3693,11 +4044,28 @@ impl<P: DdsPort> SessionEngine<P> {
             .get(&client)
             .copied()
             .unwrap_or(crate::daemon::handshake::DEFAULT_MTU);
+        let window = self.reliable_config().sender_window;
         loop {
+            let Some(active) = self.reads.get(&(client, reader)) else {
+                return;
+            };
+            let room = stream_room(
+                &self.reliable,
+                &self.reliable_backlog,
+                out,
+                window,
+                client,
+                active.reply_stream_id,
+            );
+            if active.stream.is_once() && room == 0 {
+                return; // the one read call waits for room
+            }
             let Some(active) = self.reads.get_mut(&(client, reader)) else {
                 return;
             };
-            let want = active.stream.capacity(now).min(BATCH);
+            // What the read has taken and not released yet fills the room too.
+            let free = room.saturating_sub(active.stream.queued_count());
+            let want = active.stream.capacity(now).min(BATCH).min(free);
             let mut taken = 0;
             while taken < want {
                 match self.agent.pull_sample(ClientKey(client), reader) {
@@ -3718,8 +4086,8 @@ impl<P: DdsPort> SessionEngine<P> {
                     taken += 1;
                 }
             }
-            // A read without delivery_control takes the whole cache before
-            // it returns it.
+            // A read without delivery_control takes the whole cache, as far
+            // as the stream has room, before it returns it.
             if active.stream.is_once() && want > 0 && taken == want {
                 continue;
             }
@@ -4088,7 +4456,9 @@ impl<P: DdsPort> SessionEngine<P> {
     /// until the client's ACKNACK frees the window — sent without a
     /// sequence number, a reliable client drops it (measured: a
     /// fragmented BigHelloWorld sample never arrived). Backlogged messages
-    /// go first, in order.
+    /// go first, in order. Of the DATA only the `FRAGMENT`s of a sample
+    /// larger than the client's MTU wait there: [`Self::pump_read`] takes no
+    /// sample the window has no room for.
     ///
     /// Best-effort streams (§8.3.2): a receiver discards a message whose
     /// sequence number is not newer than the last one it took, so each
@@ -4100,7 +4470,78 @@ impl<P: DdsPort> SessionEngine<P> {
     /// push into `out`, and before ACKNACK retransmissions (which already
     /// carry a real, previously assigned sequence number) are merged in —
     /// see the call sites in [`Self::handle_message`]/[`Self::tick`].
-    fn finalize_reliable_sequencing(&mut self, out: &mut Vec<Outbound>) {
+    /// The configuration of a reliable stream of this agent: the heartbeat
+    /// period of [`SessionEngineConfig::heartbeat_period`].
+    fn reliable_config(&self) -> ReliableConfig {
+        ReliableConfig {
+            heartbeat_period: self.config.heartbeat_period,
+            ..ReliableConfig::default()
+        }
+    }
+
+    /// Whether the agent has an indication that `client` is active on the
+    /// reliable output stream `stream_id` (DDS-XRCE 1.0 §8.3.5.12): it heard
+    /// the client, or sent a new message on the stream, within
+    /// [`SessionEngineConfig::client_active_window`]. A new message counts
+    /// because the client's own READ_DATA asked for it (§8.3.5.9); a
+    /// retransmission does not.
+    fn client_is_active(&self, client: ClientKeyOrd, stream_id: u8, now: Duration) -> bool {
+        if self.config.heartbeat_to_silent_client {
+            return true;
+        }
+        let heard = self.liveliness.get(&client).copied();
+        let sent = self.stream_activity.get(&(client, stream_id)).copied();
+        heard
+            .max(sent)
+            .is_some_and(|last| now.saturating_sub(last) <= self.config.client_active_window)
+    }
+
+    /// The reliable output streams of `client` with unacknowledged messages
+    /// whose HEARTBEATs [`Self::tick`] holds back because the client is not
+    /// active (§8.3.5.12).
+    fn silent_streams(&self, client: ClientKeyOrd, now: Duration) -> Vec<u8> {
+        self.reliable
+            .iter()
+            .filter(|((c, _), rs)| *c == client && rs.in_flight_count() > 0)
+            .map(|((_, stream_id), _)| *stream_id)
+            .filter(|stream_id| !self.client_is_active(client, *stream_id, now))
+            .collect()
+    }
+
+    /// The HEARTBEAT of each stream of `streams` that still has
+    /// unacknowledged messages, at once: the client was silent and has just
+    /// been heard, so it is awake now and may sleep again before the next
+    /// tick (§8.3.5.12).
+    fn wake_heartbeats(
+        &mut self,
+        client: ClientKeyOrd,
+        streams: &[u8],
+        now: Duration,
+        out: &mut Vec<Outbound>,
+    ) {
+        for stream_id in streams {
+            if let Some(rs) = self.reliable.get_mut(&(client, *stream_id)) {
+                rs.wake();
+                if let Some(hb) = rs.pending_heartbeat(now)
+                    && let Ok(sm) = hb.into_submessage()
+                {
+                    let mut h = reply_header(
+                        client,
+                        &default_header(),
+                        self.session_ids.get(&client).copied(),
+                    );
+                    h.stream_id = StreamId::NONE;
+                    out.push(Outbound {
+                        client,
+                        header: h,
+                        submessages: vec![sm],
+                    });
+                }
+            }
+        }
+    }
+
+    fn finalize_reliable_sequencing(&mut self, out: &mut Vec<Outbound>, now: Duration) {
         for mut ob in core::mem::take(out) {
             let stream = ob.header.stream_id;
             if stream.is_reliable() {
@@ -4121,10 +4562,12 @@ impl<P: DdsPort> SessionEngine<P> {
             }
         }
         let streams: Vec<(ClientKeyOrd, u8)> = self.reliable_backlog.keys().copied().collect();
+        let config = self.reliable_config();
         for key in streams {
-            let rs = self.reliable.entry(key).or_insert_with(|| {
-                ReliableStreamState::new(StreamId(key.1), ReliableConfig::default())
-            });
+            let rs = self
+                .reliable
+                .entry(key)
+                .or_insert_with(|| ReliableStreamState::new(StreamId(key.1), config));
             let Some(queue) = self.reliable_backlog.get_mut(&key) else {
                 continue;
             };
@@ -4135,6 +4578,7 @@ impl<P: DdsPort> SessionEngine<P> {
                             ob.header.sequence_nr = seq;
                             out.push(ob);
                         }
+                        self.stream_activity.insert(key, now);
                     }
                     // The window is full: the rest waits for an ACKNACK.
                     Err(zerodds_xrce::XrceError::ValueOutOfRange { .. }) => break,
@@ -4171,12 +4615,11 @@ impl<P: DdsPort> SessionEngine<P> {
         let Ok(hb) = HeartbeatPayload::try_from_submessage(sm) else {
             return;
         };
+        let config = self.reliable_config();
         let rs = self
             .reliable
             .entry((client, hb.stream_id))
-            .or_insert_with(|| {
-                ReliableStreamState::new(StreamId(hb.stream_id.max(128)), ReliableConfig::default())
-            });
+            .or_insert_with(|| ReliableStreamState::new(StreamId(hb.stream_id.max(128)), config));
         let last_seen = SerialNumber16::new(hb.last_unacked_seq_nr as u16);
         let ack = rs.pending_acknack(Some(last_seen));
         let Ok(sm) = ack.into_submessage() else {
@@ -4200,26 +4643,25 @@ impl<P: DdsPort> SessionEngine<P> {
     /// got acknowledgement bookkeeping updated but no retransmission —
     /// indistinguishable, from the client's side, from the agent having
     /// silently dropped it.
+    ///
+    /// Returns the stream when the ACKNACK acknowledged messages, so that the
+    /// caller fills the room it freed ([`Self::refill`]).
     fn handle_acknack(
         &mut self,
         resolved_client: Option<ClientKeyOrd>,
         header: &MessageHeader,
         sm: &Submessage,
         out: &mut Vec<Outbound>,
-    ) {
-        let Some(client) = resolved_client else {
-            return;
-        };
-        let Ok(ack) = AckNackPayload::try_from_submessage(sm) else {
-            return;
-        };
-        let Some(rs) = self.reliable.get_mut(&(client, ack.stream_id)) else {
-            return;
-        };
+    ) -> Option<u8> {
+        let client = resolved_client?;
+        let ack = AckNackPayload::try_from_submessage(sm).ok()?;
+        let rs = self.reliable.get_mut(&(client, ack.stream_id))?;
         let base = ack.first_unacked_seq_num as u16;
         let bitmap = u16::from_le_bytes(ack.nack_bitmap);
         let stream_id = ack.stream_id;
+        let before = rs.in_flight_count();
         rs.recv_acknack(ack);
+        let freed = (rs.in_flight_count() < before).then_some(stream_id);
         for i in 0u16..16 {
             if (bitmap >> i) & 1 == 0 {
                 continue; // bit clear = acknowledged, nothing to repair
@@ -4240,6 +4682,33 @@ impl<P: DdsPort> SessionEngine<P> {
                 header: h,
                 submessages,
             });
+        }
+        freed
+    }
+
+    /// `client` acknowledged messages of its reliable output `streams`: the
+    /// reads that answer on them take the samples the freed window has room
+    /// for, and the answers of the upstream agent that waited for that room
+    /// come (§8.4.14.1, §10.4). Without it the samples would wait for the
+    /// next tick.
+    fn refill(
+        &mut self,
+        client: ClientKeyOrd,
+        streams: &[u8],
+        now: Duration,
+        out: &mut Vec<Outbound>,
+    ) {
+        let readers: Vec<ObjectId> = self
+            .reads
+            .iter()
+            .filter(|((c, _), read)| *c == client && streams.contains(&read.reply_stream_id))
+            .map(|((_, reader), _)| *reader)
+            .collect();
+        for reader in readers {
+            self.pump_read(client, reader, out, now);
+        }
+        if self.routed(client) {
+            self.release_upstream(client, now, out);
         }
     }
 
@@ -4266,6 +4735,12 @@ impl<P: DdsPort> SessionEngine<P> {
         self.reliable_backlog.retain(|(c, _), _| *c != client);
         self.best_effort_seq.retain(|(c, _), _| *c != client);
         self.best_effort_in.retain(|(c, _), _| *c != client);
+        // §10.4: the reads of a routed client run at the upstream agent.
+        if self.routed(client)
+            && let Some(upstream) = self.upstream.as_mut()
+        {
+            upstream.reset(client);
+        }
         let _ = out; // RESET has no reply per §8.3.5.13
     }
 
@@ -4371,9 +4846,13 @@ impl<P: DdsPort> SessionEngine<P> {
             .map(|(&c, _)| c)
             .collect();
         for client in timed_out {
+            if let Some(upstream) = self.upstream.as_mut() {
+                upstream.close(client);
+            }
             self.agent.unregister_client(ClientKey(client));
             self.dds.unregister_client(client);
             self.reliable.retain(|(c, _), _| *c != client);
+            self.stream_activity.retain(|(c, _), _| *c != client);
             self.fragments.remove(&client);
             self.fragment_runs.retain(|(c, _), _| *c != client);
             self.reads.retain(|(c, _), _| *c != client);
@@ -4421,8 +4900,14 @@ impl<P: DdsPort> SessionEngine<P> {
         self.fragment_runs
             .retain(|_, run| now.saturating_sub(run.last_arrival) <= DEFAULT_GC_TTL);
 
+        // §8.3.5.12: HEARTBEATs only to a client that is active. A stream
+        // passed over here keeps its HEARTBEAT due; it goes out at once when
+        // the client is heard again (`wake_heartbeats`).
         let stream_keys: Vec<(ClientKeyOrd, u8)> = self.reliable.keys().copied().collect();
         for (client, stream_id) in stream_keys {
+            if !self.client_is_active(client, stream_id, now) {
+                continue;
+            }
             if let Some(rs) = self.reliable.get_mut(&(client, stream_id))
                 && let Some(hb) = rs.pending_heartbeat(now)
                 && let Ok(sm) = hb.into_submessage()
@@ -4441,11 +4926,14 @@ impl<P: DdsPort> SessionEngine<P> {
             }
         }
 
+        // §10.4: the answers of the upstream agent for routed clients.
+        self.poll_upstream(now, &mut out);
+
         let read_keys: Vec<(ClientKeyOrd, ObjectId)> = self.reads.keys().copied().collect();
         for (client, reader) in read_keys {
             self.pump_read(client, reader, &mut out, now);
         }
-        self.finalize_reliable_sequencing(&mut out);
+        self.finalize_reliable_sequencing(&mut out, now);
         out
     }
 }
@@ -4640,6 +5128,37 @@ fn dds_port_error_message(e: &DdsPortError) -> String {
         | DdsPortError::InvalidType(m)
         | DdsPortError::UnsplittableSequence(m) => m.to_string(),
     }
+}
+
+/// How many more messages the output stream `stream_id` of `client` takes
+/// before it holds a full sender window of `window` messages (DDS-XRCE 1.0
+/// §8.4.14.1): the window less the messages sent and not acknowledged, those
+/// waiting in `backlog` for room, and those built in `building` and not
+/// sequenced yet. A best-effort stream and `STREAMID_NONE` hold no message
+/// for the client's acknowledgement: no limit.
+fn stream_room(
+    reliable: &BTreeMap<(ClientKeyOrd, u8), ReliableStreamState>,
+    backlog: &BTreeMap<(ClientKeyOrd, u8), alloc::collections::VecDeque<Outbound>>,
+    building: &[Outbound],
+    window: usize,
+    client: ClientKeyOrd,
+    stream_id: u8,
+) -> usize {
+    if !StreamId(stream_id).is_reliable() {
+        return usize::MAX;
+    }
+    let key = (client, stream_id);
+    let in_flight = reliable
+        .get(&key)
+        .map_or(0, ReliableStreamState::in_flight_count);
+    let waiting = backlog
+        .get(&key)
+        .map_or(0, alloc::collections::VecDeque::len);
+    let built = building
+        .iter()
+        .filter(|ob| ob.client == client && ob.header.stream_id.0 == stream_id)
+        .count();
+    window.saturating_sub(in_flight + waiting + built)
 }
 
 /// Encodes a `Vec<Submessage>` as `[header(4) + body]*` with no outer
@@ -5326,7 +5845,7 @@ mod tests {
     /// set_read_filter`, which (correctly) answers a nonexistent reader
     /// with `STATUS_ERR_UNKNOWN_REFERENCE` rather than silently pumping
     /// nothing forever.
-    fn create_participant_topic_reader(e: &mut SessionEngine<NullDdsPort>, client: ClientKeyOrd) {
+    fn create_participant_topic_reader<P: DdsPort>(e: &mut SessionEngine<P>, client: ClientKeyOrd) {
         let now = Duration::ZERO;
         e.handle_message(
             Some(client),
@@ -6484,6 +7003,374 @@ mod tests {
         assert_eq!(payload.stream_id, 0x80);
     }
 
+    /// An engine whose client 0x51.. reads the reader of
+    /// `create_participant_topic_reader`, whose DataReader holds the
+    /// samples `[0]`, `[1]`, ... `[count - 1]`.
+    fn engine_with_cached_samples(
+        client: ClientKeyOrd,
+        count: u8,
+    ) -> (SessionEngine<TypeRecordingPort>, ObjectId) {
+        let mut e = SessionEngine::new(TypeRecordingPort::default(), test_config());
+        e.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            Duration::ZERO,
+        );
+        create_participant_topic_reader(&mut e, client);
+        let reader = ObjectId::new(0x002, ObjectKind::DataReader).unwrap();
+        e.dds_port_mut()
+            .cache
+            .insert((client, reader), (0..count).map(|b| vec![b]).collect());
+        (e, reader)
+    }
+
+    /// The DATA of `out` on the reliable stream 0x80, as `(sequence number,
+    /// sample)`, appended to `got`.
+    fn reliable_data(out: &[Outbound], got: &mut Vec<(u16, Vec<u8>)>) {
+        for ob in out {
+            if ob.header.stream_id == StreamId(0x80)
+                && ob.submessages[0].header.submessage_id == SubmessageId::Data
+            {
+                let d = DataPayload::try_from_submessage(&ob.submessages[0]).unwrap();
+                got.push((ob.header.sequence_nr.raw(), d.serialized_data));
+            }
+        }
+    }
+
+    /// The ACKNACK of a client that has every message of stream 0x80 before
+    /// `first_unacked`.
+    fn acknack_0x80(first_unacked: u16) -> Submessage {
+        AckNackPayload {
+            first_unacked_seq_num: first_unacked as i16,
+            nack_bitmap: [0, 0],
+            stream_id: 0x80,
+        }
+        .into_submessage()
+        .unwrap()
+    }
+
+    /// The messages the agent holds for the client's stream 0x80: sent and
+    /// not acknowledged, and waiting for room in the window.
+    fn held_on_0x80<P: DdsPort>(e: &SessionEngine<P>, client: ClientKeyOrd) -> (usize, usize) {
+        (
+            e.reliable
+                .get(&(client, 0x80))
+                .map_or(0, ReliableStreamState::in_flight_count),
+            e.reliable_backlog
+                .get(&(client, 0x80))
+                .map_or(0, alloc::collections::VecDeque::len),
+        )
+    }
+
+    /// DDS-XRCE 1.0 §8.4.14.1: a client that reads continuously on a
+    /// reliable stream and does not acknowledge gets one sender window of
+    /// DATA (16). However long it stays silent, the agent takes no more
+    /// samples out of the DataReader, which keeps the other 84, and holds no
+    /// DATA beyond the window. Each ACKNACK takes as many samples as it frees,
+    /// with the answer to the ACKNACK; once the client has acknowledged
+    /// everything it has every sample once, in order, on consecutive
+    /// sequence numbers. The agent used to take all 100 at the first tick
+    /// and hold 84 of them waiting for the window.
+    #[test]
+    fn xrce_8_4_14_1_a_slow_client_leaves_the_samples_in_the_data_reader() {
+        let client = [0x51; CLIENT_KEY_LEN];
+        let (mut e, reader) = engine_with_cached_samples(client, 100);
+        let mut got = Vec::new();
+        let unlimited = limited(zerodds_xrce::MAX_SAMPLES_UNLIMITED);
+        let out = e.handle_message(
+            Some(client),
+            &session_header(),
+            &[read_sm(reader, 1, 0x80, unlimited)],
+            Duration::ZERO,
+        );
+        reliable_data(&out, &mut got);
+        for t in 1..=50 {
+            reliable_data(&e.tick(ms(100 * t)), &mut got);
+        }
+        assert_eq!(got.len(), 16, "one window");
+        assert_eq!(
+            e.dds.cache[&(client, reader)].len(),
+            84,
+            "the other samples stay in the DataReader"
+        );
+        assert_eq!(held_on_0x80(&e, client), (16, 0));
+
+        // The client acknowledges four: four more come with the answer.
+        let mut now = ms(5_000);
+        let out = e.handle_message(Some(client), &session_header(), &[acknack_0x80(4)], now);
+        let before = got.len();
+        reliable_data(&out, &mut got);
+        assert_eq!(got.len() - before, 4, "{out:?}");
+        assert_eq!(e.dds.cache[&(client, reader)].len(), 80);
+        assert_eq!(held_on_0x80(&e, client), (16, 0));
+
+        // It acknowledges what it has, round after round.
+        for _ in 0..20 {
+            if got.len() == 100 {
+                break;
+            }
+            now += ms(100);
+            let next = got.last().map_or(0, |(seq, _)| seq + 1);
+            let out = e.handle_message(Some(client), &session_header(), &[acknack_0x80(next)], now);
+            reliable_data(&out, &mut got);
+            reliable_data(&e.tick(now), &mut got);
+            let (in_flight, waiting) = held_on_0x80(&e, client);
+            assert!(in_flight <= 16 && waiting == 0, "{in_flight} {waiting}");
+        }
+        assert_eq!(
+            got,
+            (0..100u16).map(|i| (i, vec![i as u8])).collect::<Vec<_>>(),
+            "every sample once, in order"
+        );
+        assert!(e.dds.cache[&(client, reader)].is_empty());
+    }
+
+    /// DDS-XRCE 1.0 §8.3.5.9.2 with §8.4.14.1: the one read call of a
+    /// READ_DATA without delivery_control on a reliable stream takes as many
+    /// samples as the window has room for; the others stay in the
+    /// DataReader. A second such READ_DATA while the window is full waits
+    /// for the client's ACKNACK and then makes its read call. The agent used
+    /// to take the whole cache and hold the rest beyond the window.
+    #[test]
+    fn xrce_8_3_5_9_a_read_without_delivery_control_on_a_reliable_stream_waits_for_room() {
+        let client = [0x52; CLIENT_KEY_LEN];
+        let (mut e, reader) = engine_with_cached_samples(client, 20);
+        let mut got = Vec::new();
+        let out = e.handle_message(
+            Some(client),
+            &session_header(),
+            &[read_sm(reader, 1, 0x80, None)],
+            Duration::ZERO,
+        );
+        reliable_data(&out, &mut got);
+        assert_eq!(got.len(), 16);
+        assert!(!e.reads.contains_key(&(client, reader)), "one read call");
+        assert_eq!(e.dds.cache[&(client, reader)].len(), 4);
+        assert_eq!(held_on_0x80(&e, client), (16, 0));
+
+        let out = e.handle_message(
+            Some(client),
+            &session_header(),
+            &[read_sm(reader, 2, 0x80, None)],
+            ms(10),
+        );
+        reliable_data(&out, &mut got);
+        reliable_data(&e.tick(ms(100)), &mut got);
+        assert_eq!(got.len(), 16, "no room, no read call");
+        assert!(e.reads.contains_key(&(client, reader)), "the read waits");
+        assert_eq!(e.dds.cache[&(client, reader)].len(), 4);
+
+        let out = e.handle_message(
+            Some(client),
+            &session_header(),
+            &[acknack_0x80(10)],
+            ms(200),
+        );
+        reliable_data(&out, &mut got);
+        assert_eq!(
+            got.iter().map(|(_, s)| s[0]).collect::<Vec<u8>>(),
+            (0..20u8).collect::<Vec<u8>>()
+        );
+        assert!(!e.reads.contains_key(&(client, reader)));
+        assert!(e.dds.cache[&(client, reader)].is_empty());
+    }
+
+    /// A client that reads continuously on the reliable stream 0x80 and has
+    /// one DATA, sent at `Duration::ZERO`, not acknowledged.
+    fn engine_with_unacknowledged_data(
+        config: SessionEngineConfig,
+        client: ClientKeyOrd,
+    ) -> (SessionEngine<NullDdsPort>, ObjectId) {
+        let mut e = SessionEngine::new(NullDdsPort::new(), config);
+        e.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm_with_mtu(client, 0x81, XRCE_VERSION, None)],
+            Duration::ZERO,
+        );
+        create_participant_topic_reader(&mut e, client);
+        let reader = ObjectId::new(0x002, ObjectKind::DataReader).unwrap();
+        let read_sm = ReadDataPayload {
+            base: BaseObjectRequest {
+                request_id: [0, 9],
+                object_id: reader,
+            },
+            read_specification: ReadSpecification {
+                preferred_stream_id: 0x80,
+                data_format: DataFormat::Data,
+                content_filter_expression: None,
+                delivery_control: Some(DataDeliveryControl {
+                    max_samples: zerodds_xrce::MAX_SAMPLES_UNLIMITED,
+                    max_elapsed_time: 0,
+                    max_bytes_per_second: 0,
+                    min_pace_period: 0,
+                }),
+            },
+        }
+        .into_submessage()
+        .unwrap();
+        e.handle_message(Some(client), &session_header(), &[read_sm], Duration::ZERO);
+        e.submit_sample(client, reader, vec![1, 2, 3, 4]).unwrap();
+        let data = e.tick(Duration::ZERO);
+        assert!(
+            data.iter().any(|ob| ob.header.stream_id == StreamId(0x80)),
+            "the sample goes on the reliable stream: {data:?}"
+        );
+        (e, reader)
+    }
+
+    fn heartbeats_in(out: &[Outbound]) -> Vec<HeartbeatPayload> {
+        out.iter()
+            .flat_map(|ob| ob.submessages.iter())
+            .filter(|sm| sm.header.submessage_id == SubmessageId::Heartbeat)
+            .map(|sm| HeartbeatPayload::try_from_submessage(sm).unwrap())
+            .collect()
+    }
+
+    fn ms(v: u64) -> Duration {
+        Duration::from_millis(v)
+    }
+
+    /// DDS-XRCE 1.0 §8.3.5.12: "the XRCE Agent will only send HEARTBEAT
+    /// messages when it has some indication that the XRCE Client is active".
+    /// Within the active window (2 s by default) after the agent last heard
+    /// the client or sent it a new message, the HEARTBEATs of the
+    /// unacknowledged DATA go out every period; after it, none, until the
+    /// session times out.
+    #[test]
+    fn xrce_8_3_5_12_no_heartbeat_goes_to_a_client_silent_for_the_active_window() {
+        let client = [0x51; CLIENT_KEY_LEN];
+        let (mut e, _) = engine_with_unacknowledged_data(test_config(), client);
+        assert_eq!(
+            heartbeats_in(&e.tick(ms(1_000))).len(),
+            1,
+            "active: HEARTBEAT"
+        );
+        assert_eq!(heartbeats_in(&e.tick(ms(1_600))).len(), 1, "next period");
+        assert_eq!(
+            heartbeats_in(&e.tick(ms(2_000))).len(),
+            0,
+            "within the period"
+        );
+        for t in [2_100, 2_600, 5_000, 10_000, 30_000, 59_000] {
+            assert!(
+                heartbeats_in(&e.tick(ms(t))).is_empty(),
+                "no HEARTBEAT to the silent client at {t} ms"
+            );
+        }
+        assert_eq!(e.reliable[&(client, 0x80)].in_flight_count(), 1);
+    }
+
+    /// §8.3.5.12: the client that was silent is heard again (here a
+    /// TIMESTAMP, which has nothing to do with the stream): its HEARTBEAT
+    /// goes out with the answer to that message, not at the next tick,
+    /// because the client may sleep again before it. Then the period runs
+    /// from there.
+    #[test]
+    fn xrce_8_3_5_12_a_message_of_the_client_brings_the_heartbeat_back_at_once() {
+        let client = [0x52; CLIENT_KEY_LEN];
+        let (mut e, _) = engine_with_unacknowledged_data(test_config(), client);
+        assert!(heartbeats_in(&e.tick(ms(5_000))).is_empty(), "silent");
+        let timestamp = || {
+            TimestampPayload {
+                transmit_timestamp: TimePoint {
+                    seconds: 1,
+                    nanoseconds: 0,
+                },
+            }
+            .into_submessage()
+            .unwrap()
+        };
+        let out = e.handle_message(Some(client), &session_header(), &[timestamp()], ms(5_050));
+        let hb = heartbeats_in(&out);
+        assert_eq!(hb.len(), 1, "HEARTBEAT with the answer: {out:?}");
+        assert_eq!(
+            (
+                hb[0].first_unacked_seq_nr,
+                hb[0].last_unacked_seq_nr,
+                hb[0].stream_id
+            ),
+            (0, 0, 0x80)
+        );
+        assert!(
+            heartbeats_in(&e.tick(ms(5_100))).is_empty(),
+            "the period runs"
+        );
+        assert_eq!(heartbeats_in(&e.tick(ms(5_600))).len(), 1, "active again");
+        // A client heard within the window gets no extra HEARTBEAT with the
+        // answer: the period alone sets the pace.
+        let out = e.handle_message(Some(client), &session_header(), &[timestamp()], ms(5_700));
+        assert!(heartbeats_in(&out).is_empty(), "{out:?}");
+        // Acknowledged: no HEARTBEAT at all.
+        let acked = AckNackPayload {
+            first_unacked_seq_num: 1,
+            nack_bitmap: [0, 0],
+            stream_id: 0x80,
+        }
+        .into_submessage()
+        .unwrap();
+        e.handle_message(Some(client), &session_header(), &[acked], ms(5_800));
+        assert!(heartbeats_in(&e.tick(ms(6_500))).is_empty());
+    }
+
+    /// §8.3.5.12 with §8.3.5.9: a new DATA the client's READ_DATA asked for
+    /// opens the active window of its stream again, so the HEARTBEAT that
+    /// lets the client recover a lost DATA follows it; the window closes
+    /// again after it.
+    #[test]
+    fn xrce_8_3_5_12_a_new_message_on_the_stream_opens_the_window() {
+        let client = [0x53; CLIENT_KEY_LEN];
+        let (mut e, reader) = engine_with_unacknowledged_data(test_config(), client);
+        assert!(heartbeats_in(&e.tick(ms(9_000))).is_empty(), "silent");
+        e.submit_sample(client, reader, vec![5, 6, 7, 8]).unwrap();
+        let out = e.tick(ms(10_000));
+        assert!(out.iter().any(|ob| ob.header.stream_id == StreamId(0x80)));
+        let hb = heartbeats_in(&e.tick(ms(10_100)));
+        assert_eq!(hb.len(), 1, "the new DATA opened the window");
+        assert_eq!(
+            (hb[0].first_unacked_seq_nr, hb[0].last_unacked_seq_nr),
+            (0, 1)
+        );
+        assert!(
+            heartbeats_in(&e.tick(ms(12_200))).is_empty(),
+            "closed again"
+        );
+    }
+
+    /// `heartbeat.silent_client: send` keeps the period for a silent client;
+    /// `heartbeat.period_ms` sets the period of the agent's streams.
+    #[test]
+    fn xrce_8_3_5_12_heartbeat_silent_client_send_keeps_the_period() {
+        let client = [0x54; CLIENT_KEY_LEN];
+        let config = SessionEngineConfig {
+            heartbeat_to_silent_client: true,
+            heartbeat_period: ms(200),
+            ..test_config()
+        };
+        let (mut e, _) = engine_with_unacknowledged_data(config, client);
+        assert_eq!(e.reliable[&(client, 0x80)].heartbeat_period(), ms(200));
+        assert_eq!(heartbeats_in(&e.tick(ms(100))).len(), 1);
+        assert!(
+            heartbeats_in(&e.tick(ms(200))).is_empty(),
+            "within the period"
+        );
+        assert_eq!(heartbeats_in(&e.tick(ms(300))).len(), 1);
+        assert_eq!(
+            heartbeats_in(&e.tick(ms(10_000))).len(),
+            1,
+            "silent, still sent"
+        );
+        // A shorter active window closes it sooner without `send`.
+        let config = SessionEngineConfig {
+            client_active_window: ms(300),
+            ..test_config()
+        };
+        let (mut e, _) = engine_with_unacknowledged_data(config, client);
+        assert_eq!(heartbeats_in(&e.tick(ms(100))).len(), 1);
+        assert!(heartbeats_in(&e.tick(ms(700))).is_empty());
+    }
+
     /// A sample too big for the client's negotiated MTU (spec item 1's
     /// outbound half: WRITE_DATA/DATA above the MTU) used to be sent as
     /// one oversized `DATA` submessage regardless of size —
@@ -6578,10 +7465,12 @@ mod tests {
     }
 
     /// A `DdsPort` that records which topics were created with a known
-    /// type.
+    /// type, and holds the samples of its DataReaders (`cache`, the oldest
+    /// first) until `poll_samples` takes them.
     #[derive(Default)]
     struct TypeRecordingPort {
         inner: NullDdsPort,
+        cache: BTreeMap<crate::daemon::dds_port::ObjectKey, alloc::collections::VecDeque<Vec<u8>>>,
         topics: Vec<(String, Option<String>)>,
         /// Each Publisher (`true`) or Subscriber (`false`) created, with
         /// its participant and spec.
@@ -6698,7 +7587,18 @@ mod tests {
             reader: crate::daemon::dds_port::ObjectKey,
             max: usize,
         ) -> Vec<crate::daemon::dds_port::PolledSample> {
-            self.inner.poll_samples(reader, max)
+            let Some(cache) = self.cache.get_mut(&reader) else {
+                return self.inner.poll_samples(reader, max);
+            };
+            let n = max.min(cache.len());
+            cache
+                .drain(..n)
+                .map(|bytes| crate::daemon::dds_port::PolledSample {
+                    bytes,
+                    state: 0,
+                    source_time: None,
+                })
+                .collect()
         }
         fn delete(&mut self, key: crate::daemon::dds_port::ObjectKey) {
             self.inner.delete(key);
@@ -8513,11 +9413,11 @@ mod tests {
         let client = [0x41; CLIENT_KEY_LEN];
         let mut out: Vec<Outbound> = (0..3).map(|_| outbound_on(client, 0x01)).collect();
         out.push(outbound_on(client, 0x00));
-        e.finalize_reliable_sequencing(&mut out);
+        e.finalize_reliable_sequencing(&mut out, Duration::ZERO);
         let seqs: Vec<u16> = out.iter().map(|o| o.header.sequence_nr.raw()).collect();
         assert_eq!(seqs, vec![0, 1, 2, 0]);
         let mut next = vec![outbound_on(client, 0x01)];
-        e.finalize_reliable_sequencing(&mut next);
+        e.finalize_reliable_sequencing(&mut next, Duration::ZERO);
         assert_eq!(next[0].header.sequence_nr.raw(), 3);
     }
 
@@ -8529,7 +9429,7 @@ mod tests {
         let mut e = engine();
         let client = [0x42; CLIENT_KEY_LEN];
         let mut out: Vec<Outbound> = (0..20).map(|_| outbound_on(client, 0x80)).collect();
-        e.finalize_reliable_sequencing(&mut out);
+        e.finalize_reliable_sequencing(&mut out, Duration::ZERO);
         let sent: Vec<u16> = out.iter().map(|o| o.header.sequence_nr.raw()).collect();
         assert_eq!(sent, (0..16).collect::<Vec<u16>>());
         assert!(
@@ -8546,7 +9446,7 @@ mod tests {
                 stream_id: 0x80,
             });
         let mut later = Vec::new();
-        e.finalize_reliable_sequencing(&mut later);
+        e.finalize_reliable_sequencing(&mut later, Duration::ZERO);
         let sent: Vec<u16> = later.iter().map(|o| o.header.sequence_nr.raw()).collect();
         assert_eq!(sent, vec![16, 17, 18, 19]);
     }
@@ -8569,6 +9469,1172 @@ mod tests {
             .0
             .result
             .status_code
+    }
+
+    // -----------------------------------------------------------------
+    // DDS-XRCE 1.0 §10.4: federation. A relay engine R routes its client to
+    // an upstream engine U over an in-memory link; U is a real
+    // `SessionEngine`, so what R sends is read by the agent code that reads
+    // any client.
+    // -----------------------------------------------------------------
+
+    #[derive(Default)]
+    struct PipeState {
+        to_agent: alloc::collections::VecDeque<Vec<u8>>,
+        from_agent: alloc::collections::VecDeque<Vec<u8>>,
+        /// What the upstream agent got, in order.
+        received: Vec<(u8, Submessage)>,
+        /// While set, nothing reaches the upstream agent.
+        down: bool,
+        /// What the relay sent while `down` was set.
+        lost: Vec<Vec<u8>>,
+        /// The largest message the link takes; a larger one fails to send,
+        /// as a UDP datagram above the limit does (`EMSGSIZE`).
+        max_message: Option<usize>,
+    }
+
+    #[derive(Clone, Default)]
+    struct MemPipe(std::sync::Arc<std::sync::Mutex<PipeState>>);
+
+    struct MemTransport(MemPipe);
+
+    impl zerodds_xrce_client::ClientTransport for MemTransport {
+        fn send(&mut self, payload: &[u8]) -> Result<(), zerodds_xrce_client::ClientError> {
+            let mut st = self.0.0.lock().unwrap();
+            if st.max_message.is_some_and(|max| payload.len() > max) {
+                return Err(zerodds_xrce_client::ClientError::Transport);
+            }
+            if st.down {
+                st.lost.push(payload.to_vec());
+            } else {
+                st.to_agent.push_back(payload.to_vec());
+            }
+            Ok(())
+        }
+        fn try_recv(&mut self) -> Result<Option<Vec<u8>>, zerodds_xrce_client::ClientError> {
+            Ok(self.0.0.lock().unwrap().from_agent.pop_front())
+        }
+    }
+
+    /// Carries what the relay sent to `upstream`, and its answers back.
+    fn pump(
+        pipe: &MemPipe,
+        upstream: &mut SessionEngine<NullDdsPort>,
+        client: ClientKeyOrd,
+        now: Duration,
+    ) {
+        let messages: Vec<Vec<u8>> = pipe.0.lock().unwrap().to_agent.drain(..).collect();
+        let mut answers = Vec::new();
+        for bytes in messages {
+            let m = zerodds_xrce::Message::decode(&bytes).unwrap();
+            {
+                let mut st = pipe.0.lock().unwrap();
+                for sm in &m.submessages {
+                    st.received.push((m.header.stream_id.0, sm.clone()));
+                }
+            }
+            answers.extend(upstream.handle_message(Some(client), &m.header, &m.submessages, now));
+        }
+        answers.extend(upstream.tick(now));
+        let mut st = pipe.0.lock().unwrap();
+        for ob in answers {
+            let m = zerodds_xrce::Message {
+                header: ob.header,
+                submessages: ob.submessages,
+            };
+            st.from_agent.push_back(m.encode().unwrap());
+        }
+    }
+
+    fn upstream_config(max_queued_messages: usize) -> crate::daemon::federation::UpstreamConfig {
+        crate::daemon::federation::UpstreamConfig {
+            keepalive: Duration::from_millis(100),
+            link_timeout: Duration::from_millis(400),
+            reconnect: Duration::from_millis(100),
+            max_queued_messages,
+            ..crate::daemon::federation::UpstreamConfig::new(
+                crate::daemon::federation::UpstreamLocator::Udp("127.0.0.1:1".parse().unwrap()),
+            )
+        }
+    }
+
+    fn relay(pipe: &MemPipe, max_queued_messages: usize) -> SessionEngine<NullDdsPort> {
+        relay_with(pipe, upstream_config(max_queued_messages))
+    }
+
+    fn relay_with(
+        pipe: &MemPipe,
+        config: crate::daemon::federation::UpstreamConfig,
+    ) -> SessionEngine<NullDdsPort> {
+        let mut r = engine();
+        let p = pipe.clone();
+        r.set_upstream(Box::new(
+            crate::daemon::federation::XrceUpstream::with_transport(
+                config,
+                Box::new(move || Ok(MemTransport(p.clone()))),
+            ),
+        ));
+        r
+    }
+
+    /// `rounds` rounds of 50 ms: the relay ticks, the link carries, the
+    /// relay ticks again. What the relay sent its client.
+    fn drive(
+        r: &mut SessionEngine<NullDdsPort>,
+        pipe: &MemPipe,
+        u: &mut SessionEngine<NullDdsPort>,
+        client: ClientKeyOrd,
+        now: &mut Duration,
+        rounds: usize,
+    ) -> Vec<Outbound> {
+        let mut out = Vec::new();
+        for _ in 0..rounds {
+            *now += Duration::from_millis(50);
+            out.extend(r.tick(*now));
+            pump(pipe, u, client, *now);
+            out.extend(r.tick(*now));
+        }
+        out
+    }
+
+    /// The `(request_id, object, status)` of every STATUS in `out`.
+    fn statuses(out: &[Outbound]) -> Vec<([u8; 2], ObjectId, ResultStatusCode)> {
+        out.iter()
+            .flat_map(|ob| ob.submessages.iter())
+            .filter(|sm| sm.header.submessage_id == SubmessageId::Status)
+            .map(|sm| {
+                let p = StatusPayload::try_from_submessage(sm).unwrap();
+                let reply = BaseObjectReply::decode(&p.representation).unwrap().0;
+                (
+                    reply.related_request.request_id,
+                    reply.related_request.object_id,
+                    reply.result.status_code,
+                )
+            })
+            .collect()
+    }
+
+    fn create_with_id(oid: ObjectId, xml: &str, request_id: [u8; 2]) -> Submessage {
+        let sm = create_object_sm(oid, xml, CreationMode::default());
+        let mut body = sm.body.clone();
+        body[0..2].copy_from_slice(&request_id);
+        Submessage {
+            header: sm.header,
+            body,
+        }
+    }
+
+    fn participant_xml() -> &'static str {
+        "<dds><participant><domain_id>0</domain_id></participant></dds>"
+    }
+
+    fn topic_oid() -> ObjectId {
+        ObjectId::new(0x003, ObjectKind::Topic).unwrap()
+    }
+
+    fn topic_create(request_id: [u8; 2]) -> Submessage {
+        create_with_id(
+            topic_oid(),
+            "<dds><topic name=\"Federated\" type_name=\"Opaque\"/></dds>",
+            request_id,
+        )
+    }
+
+    fn delete_sm(oid: ObjectId, request_id: [u8; 2]) -> Submessage {
+        DeletePayload {
+            representation: BaseObjectRequest {
+                request_id,
+                object_id: oid,
+            }
+            .encode()
+            .to_vec(),
+        }
+        .into_submessage()
+        .unwrap()
+    }
+
+    /// A relay R with its client registered and the session at the upstream
+    /// agent U open.
+    fn federated(
+        client: ClientKeyOrd,
+        pipe: &MemPipe,
+        max_queued_messages: usize,
+    ) -> (
+        SessionEngine<NullDdsPort>,
+        SessionEngine<NullDdsPort>,
+        Duration,
+    ) {
+        federated_with(client, pipe, upstream_config(max_queued_messages))
+    }
+
+    fn federated_with(
+        client: ClientKeyOrd,
+        pipe: &MemPipe,
+        config: crate::daemon::federation::UpstreamConfig,
+    ) -> (
+        SessionEngine<NullDdsPort>,
+        SessionEngine<NullDdsPort>,
+        Duration,
+    ) {
+        federated_to(client, pipe, config, engine())
+    }
+
+    /// As [`federated_with`], with the upstream agent `u`.
+    fn federated_to(
+        client: ClientKeyOrd,
+        pipe: &MemPipe,
+        config: crate::daemon::federation::UpstreamConfig,
+        mut u: SessionEngine<NullDdsPort>,
+    ) -> (
+        SessionEngine<NullDdsPort>,
+        SessionEngine<NullDdsPort>,
+        Duration,
+    ) {
+        let mut r = relay_with(pipe, config);
+        let out = r.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            Duration::ZERO,
+        );
+        assert_eq!(
+            agent_status_of(&out),
+            ResultStatusCode::Ok,
+            "the relay's own STATUS_AGENT"
+        );
+        let mut now = Duration::ZERO;
+        drive(&mut r, pipe, &mut u, client, &mut now, 2);
+        assert!(
+            u.agent.has_client(ClientKey(client)),
+            "the session at U has the client's key"
+        );
+        assert!(
+            r.drain_events().iter().any(
+                |e| matches!(e, SessionEvent::UpstreamConnected { client: c } if *c == client)
+            )
+        );
+        (r, u, now)
+    }
+
+    /// §10.4: a CREATE of a routed client goes to the upstream agent with its
+    /// bytes, `request_id` and `ObjectId`, and the upstream agent's STATUS
+    /// comes back to the client; the relay creates nothing itself. The
+    /// keepalive answers stay with the relay.
+    #[test]
+    fn xrce_10_4_a_create_goes_upstream_unchanged_and_its_status_comes_back() {
+        let client = [0x10, 0x04, 0x00, 0x01];
+        let pipe = MemPipe::default();
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        let create = create_with_id(participant_oid(), participant_xml(), [0x07, 0x01]);
+        let out = r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            core::slice::from_ref(&create),
+            now,
+        );
+        assert!(
+            statuses(&out).is_empty(),
+            "no answer of the relay's own: {out:?}"
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 2);
+        assert_eq!(
+            statuses(&out),
+            vec![([0x07, 0x01], participant_oid(), ResultStatusCode::Ok)]
+        );
+        let reply = out
+            .iter()
+            .find(|ob| ob.submessages[0].header.submessage_id == SubmessageId::Status)
+            .unwrap();
+        assert_eq!(reply.client, client);
+        assert_eq!(
+            reply.header.stream_id,
+            StreamId(0x80),
+            "on the stream of the request"
+        );
+        assert!(
+            pipe.0
+                .lock()
+                .unwrap()
+                .received
+                .iter()
+                .any(|(stream, sm)| *stream == 0x80 && *sm == create),
+            "the CREATE reached U byte for byte on stream 0x80"
+        );
+        assert!(
+            !r.scopes.contains_key(&(client, participant_oid())),
+            "R made nothing"
+        );
+        assert!(
+            u.scopes.contains_key(&(client, participant_oid())),
+            "U made it"
+        );
+        // Keepalives over a second: their INFO does not reach the client.
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 20);
+        assert!(
+            out.iter()
+                .flat_map(|ob| ob.submessages.iter())
+                .all(|sm| sm.header.submessage_id != SubmessageId::Info),
+            "{out:?}"
+        );
+    }
+
+    /// §10.4, Figure 26 "store-and-forward": while the upstream agent cannot
+    /// be reached the requests wait, and when it can they go in their order;
+    /// each answer reaches the client once.
+    #[test]
+    fn xrce_10_4_requests_wait_while_the_upstream_is_unreachable_and_leave_in_order() {
+        let client = [0x10, 0x04, 0x00, 0x02];
+        let pipe = MemPipe::default();
+        pipe.0.lock().unwrap().down = true;
+        let mut r = relay(&pipe, 16);
+        let mut u = engine();
+        r.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            Duration::ZERO,
+        );
+        let mut now = Duration::ZERO;
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 1])],
+            now,
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(1),
+            &[topic_create([0, 2])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 10);
+        assert!(
+            statuses(&out).is_empty(),
+            "nothing answered while U is away"
+        );
+        assert!(!u.agent.has_client(ClientKey(client)));
+        pipe.0.lock().unwrap().down = false;
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 20);
+        assert_eq!(
+            statuses(&out),
+            vec![
+                ([0, 1], participant_oid(), ResultStatusCode::Ok),
+                ([0, 2], topic_oid(), ResultStatusCode::Ok),
+            ]
+        );
+    }
+
+    /// §10.4: the upstream agent restarts and forgets the session. The relay
+    /// hears no keepalive answer, opens a session again (the other
+    /// session_id) and creates the objects again; the client sees none of
+    /// that, and its next request finds its objects at the new agent.
+    #[test]
+    fn xrce_10_4_a_lost_upstream_session_is_opened_again_with_its_objects() {
+        let client = [0x10, 0x04, 0x00, 0x03];
+        let pipe = MemPipe::default();
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 1])],
+            now,
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(1),
+            &[topic_create([0, 2])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert_eq!(statuses(&out).len(), 2);
+        r.drain_events();
+        // U restarts.
+        let mut u2 = engine();
+        let out = drive(&mut r, &pipe, &mut u2, client, &mut now, 30);
+        assert!(
+            statuses(&out).is_empty(),
+            "the replayed CREATEs are not the client's: {out:?}"
+        );
+        let events = r.drain_events();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::UpstreamLost { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::UpstreamConnected { .. }))
+        );
+        assert!(
+            u2.scopes.contains_key(&(client, topic_oid())),
+            "the topic again at U"
+        );
+        assert_eq!(
+            u2.session_ids.get(&client),
+            Some(&0x82),
+            "the other session_id"
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(2),
+            &[delete_sm(topic_oid(), [0, 3])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u2, client, &mut now, 3);
+        assert_eq!(
+            statuses(&out),
+            vec![([0, 3], topic_oid(), ResultStatusCode::Ok)]
+        );
+        // U restarts again: the session_id goes back to the client's, the
+        // other of the two; the deleted topic is not created again.
+        r.drain_events();
+        let mut u3 = engine();
+        let out = drive(&mut r, &pipe, &mut u3, client, &mut now, 30);
+        assert!(statuses(&out).is_empty(), "{out:?}");
+        assert_eq!(u3.session_ids.get(&client), Some(&0x81));
+        assert!(u3.scopes.contains_key(&(client, participant_oid())));
+        assert!(!u3.scopes.contains_key(&(client, topic_oid())));
+    }
+
+    /// §10.4 with §7.8.2.1: a new session after a lost one never takes the
+    /// session_id of the session that was open, also when the first attempt
+    /// is not answered: the upstream agent would keep that session and its
+    /// streams, which wait for the old sequence numbers.
+    #[test]
+    fn xrce_10_4_a_new_attempt_never_takes_the_session_id_of_the_open_session() {
+        let client = [0x10, 0x04, 0x00, 0x0B];
+        let pipe = MemPipe::default();
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        assert_eq!(u.session_ids.get(&client), Some(&0x81));
+        // The upstream agent is away long enough for the link to count as
+        // lost and for several attempts to go unanswered.
+        pipe.0.lock().unwrap().down = true;
+        drive(&mut r, &pipe, &mut u, client, &mut now, 40);
+        let attempts: Vec<u8> = pipe
+            .0
+            .lock()
+            .unwrap()
+            .lost
+            .iter()
+            .filter_map(|b| zerodds_xrce::Message::decode(b).ok())
+            .flat_map(|m| m.submessages)
+            .filter_map(|sm| CreateClientPayload::try_from_submessage(&sm).ok())
+            .map(|p| p.representation.session_id)
+            .collect();
+        assert!(attempts.len() >= 2, "several attempts: {attempts:?}");
+        assert!(
+            attempts.iter().all(|id| *id == 0x82),
+            "every attempt with the other session_id: {attempts:?}"
+        );
+        pipe.0.lock().unwrap().down = false;
+        drive(&mut r, &pipe, &mut u, client, &mut now, 10);
+        assert_eq!(
+            u.session_ids.get(&client),
+            Some(&0x82),
+            "the session of U was replaced"
+        );
+    }
+
+    /// The `session_id`s of the CREATE_CLIENTs the upstream agent got, in
+    /// order.
+    fn create_clients_at_upstream(pipe: &MemPipe) -> Vec<u8> {
+        pipe.0
+            .lock()
+            .unwrap()
+            .received
+            .iter()
+            .filter_map(|(_, sm)| CreateClientPayload::try_from_submessage(sm).ok())
+            .map(|p| p.representation.session_id)
+            .collect()
+    }
+
+    /// §10.4 with §7.8.2.1: the client's session at this agent ends while
+    /// the upstream agent cannot be reached, so the DELETE of the relay's
+    /// session is lost, and the upstream agent keeps that session with its
+    /// objects and its streams past sequence number 0. The client opens a
+    /// session with the same session_id again. The new link replaces the
+    /// session the upstream agent held, first with the other session_id and
+    /// then with the client's, and the client's requests, numbered from 0
+    /// again, are answered.
+    #[test]
+    fn xrce_10_4_a_new_link_replaces_a_session_the_upstream_agent_still_holds() {
+        let client = [0x10, 0x04, 0x00, 0x10];
+        let pipe = MemPipe::default();
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        assert_eq!(
+            create_clients_at_upstream(&pipe),
+            vec![0x82, 0x81],
+            "the first session of a link"
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 1])],
+            now,
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(1),
+            &[topic_create([0, 2])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert_eq!(statuses(&out).len(), 2);
+        // The client ends its session; the DELETE of the relay does not reach
+        // U.
+        pipe.0.lock().unwrap().down = true;
+        r.handle_message(
+            Some(client),
+            &reliable_header(2),
+            &[delete_sm(OBJECTID_CLIENT, [0, 3])],
+            now,
+        );
+        assert!(
+            r.drain_events().iter().any(
+                |e| matches!(e, SessionEvent::ClientUnregistered { client: c } if *c == client)
+            ),
+            "the session ended at the relay"
+        );
+        let lost: Vec<Submessage> = pipe
+            .0
+            .lock()
+            .unwrap()
+            .lost
+            .iter()
+            .filter_map(|b| zerodds_xrce::Message::decode(b).ok())
+            .flat_map(|m| m.submessages)
+            .collect();
+        assert!(
+            lost.iter()
+                .any(|sm| sm.header.submessage_id == SubmessageId::Delete),
+            "the relay sent the DELETE, and it was lost: {lost:?}"
+        );
+        pipe.0.lock().unwrap().down = false;
+        pipe.0.lock().unwrap().received.clear();
+        assert_eq!(u.session_ids.get(&client), Some(&0x81), "U holds it");
+        assert!(u.scopes.contains_key(&(client, topic_oid())));
+        // The same session again.
+        let out = r.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            now,
+        );
+        assert_eq!(agent_status_of(&out), ResultStatusCode::Ok);
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 4])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 10);
+        assert_eq!(
+            statuses(&out),
+            vec![([0, 4], participant_oid(), ResultStatusCode::Ok)]
+        );
+        assert_eq!(create_clients_at_upstream(&pipe), vec![0x82, 0x81]);
+        assert_eq!(u.session_ids.get(&client), Some(&0x81));
+        assert!(
+            !u.scopes.contains_key(&(client, topic_oid())),
+            "the session U held was replaced, its topic with it"
+        );
+    }
+
+    /// §10.4 with §8.3.5.13: a RESET of a routed client ends its continuous
+    /// read at the upstream agent, as it does at an agent that holds the
+    /// reader itself. A DATA the upstream agent sent before it had the
+    /// cancel, and a sample after the RESET, do not reach the client; a new
+    /// session at the upstream agent does not start the read again; a new
+    /// READ_DATA of the client reads again.
+    #[test]
+    fn xrce_10_4_a_reset_of_a_routed_client_ends_its_reads_at_the_upstream_agent() {
+        let client = [0x10, 0x04, 0x00, 0x11];
+        let pipe = MemPipe::default();
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        let reader = ObjectId::new(0x002, ObjectKind::DataReader).unwrap();
+        let reader_xml = format!(
+            "<dds><data_reader topic_ref=\"0x{:04x}\"/></dds>",
+            topic_oid().raw()
+        );
+        let creates = [
+            create_with_id(participant_oid(), participant_xml(), [0, 1]),
+            topic_create([0, 2]),
+            create_with_id(subscriber_oid(), "", [0, 3]),
+            create_with_id(reader, &reader_xml, [0, 4]),
+        ];
+        for (seq, create) in (0u16..).zip(creates) {
+            r.handle_message(Some(client), &reliable_header(seq), &[create], now);
+        }
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert!(
+            statuses(&out)
+                .iter()
+                .all(|(_, _, code)| *code == ResultStatusCode::Ok),
+            "{out:?}"
+        );
+        assert_eq!(statuses(&out).len(), 4);
+        let unlimited = limited(zerodds_xrce::MAX_SAMPLES_UNLIMITED);
+        r.handle_message(
+            Some(client),
+            &reliable_header(4),
+            &[read_sm(reader, 5, 0x80, unlimited)],
+            now,
+        );
+        drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert!(
+            u.reads.contains_key(&(client, reader)),
+            "the read runs at U"
+        );
+        u.submit_sample(client, reader, vec![1]).unwrap();
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert_eq!(data_of(&out), vec![(0x80, vec![1])]);
+
+        // U sends the DATA of a sample; before it reaches the relay, the
+        // client sends RESET.
+        u.submit_sample(client, reader, vec![2]).unwrap();
+        now += Duration::from_millis(50);
+        pump(&pipe, &mut u, client, now);
+        let reset = ResetPayload.into_submessage().unwrap();
+        let out = r.handle_message(Some(client), &session_header(), &[reset], now);
+        assert!(data_of(&out).is_empty());
+        u.submit_sample(client, reader, vec![3]).unwrap();
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 10);
+        assert!(data_of(&out).is_empty(), "no DATA after the RESET: {out:?}");
+        assert!(
+            !u.reads.contains_key(&(client, reader)),
+            "the read ended at U"
+        );
+
+        // U restarts: the relay opens a new session and creates the objects
+        // again, without the read.
+        let mut u2 = engine();
+        drive(&mut r, &pipe, &mut u2, client, &mut now, 30);
+        assert!(u2.scopes.contains_key(&(client, reader)));
+        assert!(
+            !u2.reads.contains_key(&(client, reader)),
+            "the ended read does not start again"
+        );
+        u2.submit_sample(client, reader, vec![4]).unwrap();
+        let out = drive(&mut r, &pipe, &mut u2, client, &mut now, 3);
+        assert!(data_of(&out).is_empty(), "{out:?}");
+        // A new read of the client, on its stream that starts at 0 again.
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[read_sm(reader, 6, 0x80, unlimited)],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u2, client, &mut now, 3);
+        assert_eq!(data_of(&out), vec![(0x80, vec![4])]);
+    }
+
+    /// DDS-XRCE 1.0 §10.4 with §8.4.14.1: a routed client reads continuously
+    /// on a reliable stream and does not acknowledge. The relay sends it one
+    /// window (16 DATA) and takes no more answers out of its link: the next
+    /// ones stay there unacknowledged, the upstream agent's window fills and
+    /// it takes no more samples out of its queue. Neither agent holds DATA
+    /// beyond a window, and the link stays up on the HEARTBEATs of the
+    /// upstream agent. When the client acknowledges, the samples follow, each
+    /// once and in order. The relay used to acknowledge every DATA of the
+    /// upstream agent on arrival and hold the samples itself, without a
+    /// limit.
+    #[test]
+    fn xrce_10_4_a_relay_holds_the_upstream_stream_while_its_client_does_not_acknowledge() {
+        let client = [0x10, 0x04, 0x00, 0x12];
+        let pipe = MemPipe::default();
+        let upstream = SessionEngine::new(
+            NullDdsPort::new(),
+            SessionEngineConfig {
+                heartbeat_period: ms(50),
+                ..test_config()
+            },
+        );
+        let (mut r, mut u, mut now) = federated_to(client, &pipe, upstream_config(16), upstream);
+        let reader = ObjectId::new(0x002, ObjectKind::DataReader).unwrap();
+        let reader_xml = format!(
+            "<dds><data_reader topic_ref=\"0x{:04x}\"/></dds>",
+            topic_oid().raw()
+        );
+        let creates = [
+            create_with_id(participant_oid(), participant_xml(), [0, 1]),
+            topic_create([0, 2]),
+            create_with_id(subscriber_oid(), "", [0, 3]),
+            create_with_id(reader, &reader_xml, [0, 4]),
+        ];
+        for (seq, create) in (0u16..).zip(creates) {
+            r.handle_message(Some(client), &reliable_header(seq), &[create], now);
+        }
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert_eq!(statuses(&out).len(), 4, "{out:?}");
+        r.handle_message(Some(client), &session_header(), &[acknack_0x80(4)], now);
+        let unlimited = limited(zerodds_xrce::MAX_SAMPLES_UNLIMITED);
+        r.handle_message(
+            Some(client),
+            &reliable_header(4),
+            &[read_sm(reader, 5, 0x80, unlimited)],
+            now,
+        );
+        drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert!(
+            u.reads.contains_key(&(client, reader)),
+            "the read runs at U"
+        );
+        for b in 0..100u8 {
+            u.submit_sample(client, reader, vec![b]).unwrap();
+        }
+        r.drain_events();
+
+        let mut got = Vec::new();
+        reliable_data(
+            &drive(&mut r, &pipe, &mut u, client, &mut now, 20),
+            &mut got,
+        );
+        assert_eq!(got.len(), 16, "one window to the client");
+        assert_eq!(
+            held_on_0x80(&r, client),
+            (16, 0),
+            "the relay holds no DATA beyond the client's window"
+        );
+        let at_u = u.agent.pending_samples(ClientKey(client), reader);
+        assert!(at_u >= 100 - 32, "U took {} samples", 100 - at_u);
+        // What waits at U for its window is no DATA (a keepalive INFO the
+        // relay asked for before it held may).
+        let (u_in_flight, _) = held_on_0x80(&u, client);
+        let u_waiting_data = u.reliable_backlog.get(&(client, 0x80)).map_or(0, |q| {
+            q.iter()
+                .filter(|ob| ob.submessages[0].header.submessage_id == SubmessageId::Data)
+                .count()
+        });
+        assert!(
+            u_in_flight <= 16 && u_waiting_data == 0,
+            "U holds {u_in_flight} in flight, {u_waiting_data} DATA waiting"
+        );
+        assert!(
+            !r.drain_events()
+                .iter()
+                .any(|e| matches!(e, SessionEvent::UpstreamLost { .. })),
+            "the link stays up"
+        );
+
+        // The client acknowledges what it has, round after round.
+        for _ in 0..60 {
+            if got.len() == 100 {
+                break;
+            }
+            let next = got.last().map_or(0, |(seq, _)| seq + 1);
+            let out = r.handle_message(Some(client), &session_header(), &[acknack_0x80(next)], now);
+            reliable_data(&out, &mut got);
+            reliable_data(&drive(&mut r, &pipe, &mut u, client, &mut now, 2), &mut got);
+            let (in_flight, waiting) = held_on_0x80(&r, client);
+            assert!(in_flight <= 16 && waiting == 0, "{in_flight} {waiting}");
+        }
+        assert_eq!(
+            got.iter().map(|(_, s)| s.clone()).collect::<Vec<_>>(),
+            (0..100u8).map(|b| vec![b]).collect::<Vec<_>>(),
+            "every sample once, in order"
+        );
+        assert!(
+            got.windows(2).all(|w| w[1].0 == w[0].0.wrapping_add(1)),
+            "on consecutive sequence numbers"
+        );
+        assert_eq!(u.agent.pending_samples(ClientKey(client), reader), 0);
+    }
+
+    /// The order and the bytes of the WRITE_DATAs the upstream agent took
+    /// on `stream_id`, its FRAGMENT runs reassembled.
+    fn writes_at_upstream(pipe: &MemPipe, stream_id: u8) -> Vec<Submessage> {
+        let mut run = Vec::new();
+        let mut out = Vec::new();
+        for (stream, sm) in &pipe.0.lock().unwrap().received {
+            if *stream != stream_id {
+                continue;
+            }
+            let whole = if sm.header.submessage_id == SubmessageId::Fragment {
+                let f = FragmentPayload::try_from_submessage(sm).unwrap();
+                run.extend_from_slice(&f.data);
+                if !f.last_fragment {
+                    continue;
+                }
+                zerodds_xrce::submessages::decode_submessages(&core::mem::take(&mut run)).unwrap()
+            } else {
+                vec![sm.clone()]
+            };
+            out.extend(
+                whole
+                    .into_iter()
+                    .filter(|w| w.header.submessage_id == SubmessageId::WriteData),
+            );
+        }
+        out
+    }
+
+    fn relayed_write(writer: ObjectId, request_id: [u8; 2], len: usize) -> Submessage {
+        zerodds_xrce::submessages::write_data::WriteDataPayload {
+            base: BaseObjectRequest {
+                request_id,
+                object_id: writer,
+            },
+            serialized_data: (0..len).map(|i| (i % 249) as u8).collect(),
+        }
+        .into_submessage()
+        .unwrap()
+    }
+
+    fn unknown_writer() -> ObjectId {
+        ObjectId::new(0x0F0, ObjectKind::DataWriter).unwrap()
+    }
+
+    /// §10.4 with §8.3.5.14: a WRITE_DATA above the upstream MTU is relayed
+    /// while ten requests wait for their acknowledgement: its FRAGMENTs go
+    /// out once, as one run, the part the window has no room for after the
+    /// upstream agent's ACKNACKs, and the request after it waits until the
+    /// run is out. The upstream agent reassembles every request whole and
+    /// answers each once, in order (STATUS_ERR_UNKNOWN_REFERENCE: there is no
+    /// such DataWriter).
+    #[test]
+    fn xrce_10_4_a_write_data_above_the_upstream_mtu_goes_upstream_whole_beside_waiting_requests() {
+        let client = [0x10, 0x04, 0x00, 0x0C];
+        let pipe = MemPipe::default();
+        let config = crate::daemon::federation::UpstreamConfig {
+            mtu: 128,
+            ..upstream_config(64)
+        };
+        let (mut r, mut u, mut now) = federated_with(client, &pipe, config);
+        let mut sent = Vec::new();
+        let mut seq = 0u16;
+        let mut send = |r: &mut SessionEngine<NullDdsPort>, sm: Submessage, now: Duration| {
+            let out = r.handle_message(
+                Some(client),
+                &reliable_header(seq),
+                core::slice::from_ref(&sm),
+                now,
+            );
+            seq += 1;
+            sent.push(sm);
+            assert!(statuses(&out).is_empty(), "{out:?}");
+        };
+        for i in 0..10u8 {
+            send(&mut r, relayed_write(unknown_writer(), [0x01, i], 8), now);
+        }
+        // 1 000 octets need 9 FRAGMENTs of 120; the window has room for 6.
+        send(
+            &mut r,
+            relayed_write(unknown_writer(), [0x02, 0], 1000),
+            now,
+        );
+        send(&mut r, relayed_write(unknown_writer(), [0x03, 0], 8), now);
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 40);
+        assert_eq!(
+            writes_at_upstream(&pipe, 0x80),
+            sent,
+            "whole, once, in order"
+        );
+        let answered: Vec<[u8; 2]> = statuses(&out).iter().map(|(rid, _, _)| *rid).collect();
+        let expected: Vec<[u8; 2]> = sent
+            .iter()
+            .map(|sm| BaseObjectRequest::decode(&sm.body).unwrap().0.request_id)
+            .collect();
+        assert_eq!(answered, expected);
+        assert!(
+            statuses(&out)
+                .iter()
+                .all(|(_, _, code)| *code == ResultStatusCode::UnknownReference),
+            "{:?}",
+            statuses(&out)
+        );
+        assert!(
+            !r.drain_events()
+                .iter()
+                .any(|e| matches!(e, SessionEvent::UpstreamLost { .. })),
+            "the link stays up while the run goes out"
+        );
+    }
+
+    /// §10.4 with §8.3.5.14: a WRITE_DATA on a best-effort stream that is
+    /// larger than one message of the upstream link (a UDP datagram over
+    /// IPv4, 65 507 octets) cannot go as FRAGMENTs. It is answered
+    /// STATUS_ERR_RESOURCES at once instead of failing at every attempt at
+    /// the head of the queue, and the requests after it go upstream.
+    #[test]
+    fn xrce_10_4_a_best_effort_request_above_one_link_message_is_answered_and_holds_up_nothing() {
+        let client = [0x10, 0x04, 0x00, 0x0E];
+        let pipe = MemPipe::default();
+        pipe.0.lock().unwrap().max_message = Some(65_507);
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        let best_effort = |seq: u16| MessageHeader {
+            session_id: SessionId(0x81),
+            stream_id: StreamId(0x01),
+            sequence_nr: SerialNumber16::new(seq),
+            client_key: None,
+        };
+        // The message: a header without ClientKey (session 0x81) and the
+        // WRITE_DATA.
+        let overhead = MessageHeader::WIRE_SIZE_NO_KEY
+            + relayed_write(unknown_writer(), [0, 0], 0).wire_size_unpadded();
+        let big = relayed_write(unknown_writer(), [0x0E, 1], 65_508 - overhead);
+        let out = r.handle_message(
+            Some(client),
+            &best_effort(0),
+            core::slice::from_ref(&big),
+            now,
+        );
+        assert_eq!(
+            statuses(&out),
+            vec![([0x0E, 1], unknown_writer(), ResultStatusCode::Resources)]
+        );
+        assert!(r.drain_events().iter().any(|e| matches!(
+            e,
+            SessionEvent::UpstreamUnsendable { client: c, stream_id: 0x01, .. } if *c == client
+        )));
+        // One octet less fits; the request behind it follows.
+        let fits = relayed_write(unknown_writer(), [0x0E, 2], 65_507 - overhead);
+        let behind = relayed_write(unknown_writer(), [0x0E, 3], 8);
+        for (seq, sm) in [(1, &fits), (2, &behind)] {
+            let out = r.handle_message(
+                Some(client),
+                &best_effort(seq),
+                core::slice::from_ref(sm),
+                now,
+            );
+            assert!(statuses(&out).is_empty(), "{out:?}");
+        }
+        drive(&mut r, &pipe, &mut u, client, &mut now, 4);
+        assert_eq!(writes_at_upstream(&pipe, 0x01), vec![fits, behind]);
+    }
+
+    /// §10.4 with §8.3.5.14: a WRITE_DATA that needs more FRAGMENTs (26) than
+    /// the sender window holds (16) leaves the relay whole, and the requests
+    /// of the client after it follow it.
+    #[test]
+    fn xrce_10_4_a_write_data_of_more_fragments_than_the_window_goes_upstream_whole() {
+        let client = [0x10, 0x04, 0x00, 0x0D];
+        let pipe = MemPipe::default();
+        let config = crate::daemon::federation::UpstreamConfig {
+            mtu: 128,
+            ..upstream_config(64)
+        };
+        let (mut r, mut u, mut now) = federated_with(client, &pipe, config);
+        let big = relayed_write(unknown_writer(), [0x04, 0], 3000);
+        let after = relayed_write(unknown_writer(), [0x05, 0], 8);
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            core::slice::from_ref(&big),
+            now,
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(1),
+            core::slice::from_ref(&after),
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 60);
+        assert_eq!(writes_at_upstream(&pipe, 0x80), vec![big, after]);
+        assert_eq!(
+            statuses(&out)
+                .iter()
+                .map(|(rid, _, _)| *rid)
+                .collect::<Vec<_>>(),
+            vec![[0x04, 0], [0x05, 0]]
+        );
+    }
+
+    /// §10.4 store and forward: the upstream agent goes away while a
+    /// WRITE_DATA and a DELETE it has not acknowledged are on their way, and
+    /// a new agent takes its place. The relay opens a session there, creates
+    /// the objects again (the topic too: its DELETE was not carried out) and
+    /// sends both requests again; each reaches the new agent and its answer
+    /// reaches the client once.
+    #[test]
+    fn xrce_10_4_requests_in_flight_when_the_link_is_lost_reach_the_next_agent() {
+        let client = [0x10, 0x04, 0x00, 0x0E];
+        let pipe = MemPipe::default();
+        let (mut r, mut u, mut now) = federated(client, &pipe, 16);
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 1])],
+            now,
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(1),
+            &[topic_create([0, 2])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 3);
+        assert_eq!(statuses(&out).len(), 2);
+        // U goes away; the two requests leave the relay and are lost.
+        pipe.0.lock().unwrap().down = true;
+        let write = relayed_write(unknown_writer(), [0, 3], 8);
+        r.handle_message(
+            Some(client),
+            &reliable_header(2),
+            core::slice::from_ref(&write),
+            now,
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(3),
+            &[delete_sm(topic_oid(), [0, 4])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 20);
+        assert!(statuses(&out).is_empty(), "{out:?}");
+        assert!(
+            r.drain_events()
+                .iter()
+                .any(|e| matches!(e, SessionEvent::UpstreamLost { .. }))
+        );
+        // A new agent U2 takes U's place.
+        pipe.0.lock().unwrap().received.clear();
+        pipe.0.lock().unwrap().down = false;
+        let mut u2 = engine();
+        let out = drive(&mut r, &pipe, &mut u2, client, &mut now, 20);
+        assert_eq!(
+            statuses(&out),
+            vec![
+                ([0, 3], unknown_writer(), ResultStatusCode::UnknownReference),
+                ([0, 4], topic_oid(), ResultStatusCode::Ok),
+            ],
+            "both requests reached U2, and only their answers reach the client"
+        );
+        assert_eq!(writes_at_upstream(&pipe, 0x80), vec![write]);
+        assert!(u2.scopes.contains_key(&(client, participant_oid())));
+        assert!(
+            !u2.scopes.contains_key(&(client, topic_oid())),
+            "deleted at U2"
+        );
+        // Nothing is repeated later.
+        let out = drive(&mut r, &pipe, &mut u2, client, &mut now, 20);
+        assert!(statuses(&out).is_empty(), "{out:?}");
+    }
+
+    /// §10.4: a request that finds the queue of the link full is answered
+    /// STATUS_ERR_RESOURCES at once, never dropped.
+    #[test]
+    fn xrce_10_4_a_full_queue_answers_status_err_resources() {
+        let client = [0x10, 0x04, 0x00, 0x04];
+        let pipe = MemPipe::default();
+        pipe.0.lock().unwrap().down = true;
+        let mut r = relay(&pipe, 1);
+        r.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            Duration::ZERO,
+        );
+        let first = r.handle_message(
+            Some(client),
+            &session_header(),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 1])],
+            Duration::ZERO,
+        );
+        assert!(statuses(&first).is_empty(), "the first waits");
+        let second = r.handle_message(
+            Some(client),
+            &session_header(),
+            &[topic_create([0, 2])],
+            Duration::ZERO,
+        );
+        assert_eq!(
+            statuses(&second),
+            vec![([0, 2], topic_oid(), ResultStatusCode::Resources)]
+        );
+        assert!(
+            r.drain_events()
+                .iter()
+                .any(|e| matches!(e, SessionEvent::UpstreamQueueFull { .. }))
+        );
+    }
+
+    /// §10.4 with §7.4: the upstream agent refuses the session of the client;
+    /// the requests that waited, and the later ones, are answered with its
+    /// status.
+    #[test]
+    fn xrce_10_4_a_refused_create_client_answers_the_waiting_requests() {
+        let client = [0x10, 0x04, 0x00, 0x05];
+        let pipe = MemPipe::default();
+        let mut r = relay(&pipe, 16);
+        let mut u = engine_with(crate::daemon::access::AccessController {
+            authorized_clients: vec![[9, 9, 9, 9]],
+            ..crate::daemon::access::AccessController::default()
+        });
+        r.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            Duration::ZERO,
+        );
+        let mut now = Duration::ZERO;
+        r.handle_message(
+            Some(client),
+            &session_header(),
+            &[create_with_id(participant_oid(), participant_xml(), [0, 1])],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 2);
+        assert_eq!(
+            statuses(&out),
+            vec![([0, 1], participant_oid(), ResultStatusCode::Denied)]
+        );
+        let later = r.handle_message(
+            Some(client),
+            &session_header(),
+            &[topic_create([0, 2])],
+            now,
+        );
+        assert_eq!(
+            statuses(&later),
+            vec![([0, 2], topic_oid(), ResultStatusCode::Denied)]
+        );
+    }
+
+    /// §10.4 with §7.4: the access rules of the upstream agent decide the
+    /// operations of a routed client. The upstream agent sees the client's
+    /// ClientKey; its STATUS_ERR_DENIED reaches the client through the relay,
+    /// and nothing is created on either side.
+    #[test]
+    fn xrce_10_4_the_access_rules_of_the_upstream_agent_decide_for_a_routed_client() {
+        let client = [0x10, 0x04, 0x00, 0x0A];
+        let pipe = MemPipe::default();
+        let mut r = relay(&pipe, 16);
+        let mut u = engine_with(deny_all_but(client, vec![Operation::GetInfo]));
+        r.handle_message(
+            None,
+            &bootstrap_header(),
+            &[create_client_sm(client, 0x81, XRCE_VERSION)],
+            Duration::ZERO,
+        );
+        let mut now = Duration::ZERO;
+        drive(&mut r, &pipe, &mut u, client, &mut now, 2);
+        assert!(
+            u.agent.has_client(ClientKey(client)),
+            "the session at U has the client's key"
+        );
+        r.handle_message(
+            Some(client),
+            &reliable_header(0),
+            &[create_with_id(
+                participant_oid(),
+                participant_xml(),
+                [0x0A, 1],
+            )],
+            now,
+        );
+        let out = drive(&mut r, &pipe, &mut u, client, &mut now, 2);
+        assert_eq!(
+            statuses(&out),
+            vec![([0x0A, 1], participant_oid(), ResultStatusCode::Denied)]
+        );
+        assert_eq!(u.agent.object_count(ClientKey(client)).unwrap(), 0);
+        assert!(!r.scopes.contains_key(&(client, participant_oid())));
+        assert!(u.drain_events().iter().any(|ev| matches!(
+            ev,
+            SessionEvent::OperationDenied { client: c, object, .. }
+                if *c == client && *object == participant_oid()
+        )));
     }
 
     const KEY_A: ClientKeyOrd = [0xAA, 0xBB, 0xCC, 0xDD];

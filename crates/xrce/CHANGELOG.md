@@ -6,9 +6,11 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Fixed
+- `ReliableStreamState::recv_acknack` acknowledges only the messages before `first_unacked_seq_num` (the HighestAcknowledgedSequenceNumber of DDS-XRCE 1.0 §8.4.14.1). A clear `nack_bitmap` bit was taken as an acknowledgement, also for a message sent after the HEARTBEAT the ACKNACK answered; when that message was lost, it was never sent again and the receiver waited for it.
 - `ReliableStreamState::recv_data` accepts the sample at `expected_seq` when the receiver buffer is full; it was refused with the others, so a full buffer never emptied (DDS-XRCE 1.0 §8.3.2.3: no message is lost on a reliable stream).
 
 ### Added
+- `ReliableStreamState::next_in_order`, `has_in_order` and `acknowledgement` (DDS-XRCE 1.0 §8.4.14.2, §8.3.5.11): a receiver that takes its messages one at a time and leaves the others unacknowledged, and an ACKNACK that acknowledges what was taken and asks for nothing again.
 - `StatusAgentPayload::result_and_position`: reads the `ResultStatus` of a `STATUS_AGENT` payload when there is one in front of the `AGENT_Representation` (the text of §8.3.5.5.2, the eProsima agent) and a success when the payload is the `AGENT_Representation` alone (the IDL of Annex A).
 - `encoding::SampleInfoForm` (`AnnexA` default, `Flat`), `set_sample_info_form`, `with_sample_info_form`; `SampleInfo` follows Annex A (`state` and a `SampleInfoDetail` union by `SampleInfoFormat`; written as `FORMAT_SEQN_TIMS`, which has the 12 octets of the flat struct of §7.7.1; read by its discriminator, 2, 8 or 12 octets) and `Flat` the struct with padding. `PendingSample` carries `state` and `source_time`.
 - `ObjectVariant::decode_for_kind_at`: a binary representation followed by zero octets up to the next multiple of four and then exactly the id of the container is read as the Annex B.2.4 example prints it (a padding octet before the `publisher_id`).

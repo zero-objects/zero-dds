@@ -257,7 +257,7 @@ impl<A: Clone> AgentDiscovery<A> {
 }
 
 #[cfg(feature = "std")]
-pub use net::{TcpTransport, connect_over_tcp, discover_over_udp};
+pub use net::{TcpTransport, UdpTransport, connect_over_tcp, discover_over_udp};
 
 #[cfg(feature = "std")]
 mod net {
@@ -311,6 +311,55 @@ mod net {
             }
         }
         Ok(None)
+    }
+
+    /// UDP (DDS-XRCE 1.0 §11.2): one message per datagram over a socket
+    /// connected to the agent. `try_recv` does not block.
+    #[derive(Debug)]
+    pub struct UdpTransport {
+        socket: UdpSocket,
+    }
+
+    impl UdpTransport {
+        /// Binds an ephemeral port of the address family of `agent` and
+        /// connects it to `agent`.
+        ///
+        /// # Errors
+        /// The `std::io::Error` of bind, connect or setting non-blocking.
+        pub fn connect(agent: SocketAddr) -> std::io::Result<Self> {
+            let local: SocketAddr = if agent.is_ipv4() {
+                SocketAddr::from(([0, 0, 0, 0], 0))
+            } else {
+                SocketAddr::from(([0u16; 8], 0))
+            };
+            let socket = UdpSocket::bind(local)?;
+            socket.connect(agent)?;
+            socket.set_nonblocking(true)?;
+            Ok(Self { socket })
+        }
+    }
+
+    impl ClientTransport for UdpTransport {
+        fn send(&mut self, payload: &[u8]) -> Result<(), ClientError> {
+            self.socket
+                .send(payload)
+                .map(|_| ())
+                .map_err(|_| ClientError::Transport)
+        }
+
+        fn try_recv(&mut self) -> Result<Option<Vec<u8>>, ClientError> {
+            let mut buf = [0u8; 65_507];
+            match self.socket.recv(&mut buf) {
+                Ok(n) => Ok(Some(buf[..n].to_vec())),
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                    Ok(None)
+                }
+                // An ICMP port unreachable of a peer that is not there (yet)
+                // is no failure of this transport: nothing has arrived.
+                Err(e) if e.kind() == ErrorKind::ConnectionRefused => Ok(None),
+                Err(_) => Err(ClientError::Transport),
+            }
+        }
     }
 
     /// The framing of TCP (DDS-XRCE 1.0 §11.3.3): a 2-octet little-endian

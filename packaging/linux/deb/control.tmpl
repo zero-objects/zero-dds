@@ -74,6 +74,12 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}),
 Description: ZeroDDS DDS to CORBA GIOP/IIOP bridge daemon
  Spec: zerodds-corba-bridge-1.0 §11.
 
+Package: zerodds-opcua-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS DDS to OPC UA bridge daemon
+ Spec: zerodds-opcua-bridge-1.0 §11.
+
 Package: zerodds-ros2
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version})

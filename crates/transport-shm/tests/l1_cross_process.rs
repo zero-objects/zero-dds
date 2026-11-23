@@ -126,3 +126,66 @@ fn shm_2_3_l1_shm_datagram_crosses_process_boundary() {
 
     let _ = child.wait_with_output();
 }
+
+const CHILD_ENV_WAKE: &str = "ZERODDS_SHM_L1_WAKE";
+
+/// §4.4 across processes: a consumer parked on the ring in this process
+/// is woken by the push of an owner in another process. The child opens
+/// the owner side once the consumer is there, waits 300 ms (the consumer
+/// is parked by then) and sends; the consumer's recv has a 20 s timeout,
+/// which a wake that does not cross the process boundary would run out.
+#[test]
+fn shm_4_4_l1_a_push_wakes_a_consumer_in_another_process() {
+    if let Ok(flink_dir) = env::var(CHILD_ENV_WAKE) {
+        let flink_dir = std::path::PathBuf::from(flink_dir);
+        let owner = PosixShmTransport::open_owner(id(0x04), id(0x03), cfg(&flink_dir))
+            .expect("child open_owner");
+        assert!(owner.peer_attached(), "the consumer opened first");
+        std::thread::sleep(Duration::from_millis(300));
+        owner
+            .send(&Locator::shm(id(0x03)), PAYLOAD)
+            .expect("child send");
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while owner.occupied_bytes() > 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        return;
+    }
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut config = cfg(tmp.path());
+    config.recv_timeout = Some(Duration::from_secs(20));
+    let consumer =
+        PosixShmTransport::open_consumer(id(0x03), id(0x04), config).expect("open_consumer");
+    let exe = env::current_exe().expect("current_exe");
+    let runner = env::var("ZERODDS_TEST_RUNNER").unwrap_or_default();
+    let mut runner = runner.split_whitespace();
+    let mut command = match runner.next() {
+        Some(program) => {
+            let mut c = Command::new(program);
+            c.args(runner).arg(&exe);
+            c
+        }
+        None => Command::new(&exe),
+    };
+    let child = command
+        .env(CHILD_ENV_WAKE, tmp.path())
+        .args([
+            "--exact",
+            "shm_4_4_l1_a_push_wakes_a_consumer_in_another_process",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn child");
+    let start = std::time::Instant::now();
+    let got = consumer.recv().expect("parent recv");
+    let waited = start.elapsed();
+    assert_eq!(&got.data[..], PAYLOAD);
+    assert!(
+        waited < Duration::from_secs(5),
+        "the push of the other process woke the consumer after {waited:?}"
+    );
+    let status = child.wait_with_output().expect("child").status;
+    assert!(status.success(), "child: {status}");
+}

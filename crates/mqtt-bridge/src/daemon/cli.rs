@@ -49,7 +49,7 @@ USAGE:
 
 OPTIONS:
     --broker <URL>         MQTT broker URL (mqtt://, mqtts://, ws://, wss://)
-    --client-id <ID>       MQTT client ID
+    --client-id <ID>       MQTT client ID (default zerodds-bridge-<host>)
     --domain <ID>          DDS domain ID (default 0)
     --username <USER>      MQTT username
     --password <PASS>      MQTT password
@@ -68,12 +68,15 @@ mqtt-bridged.yaml with mqtt-bridged.d/ in the system configuration
 directory unless --config names another.
 
 EXIT CODES:
-    0   normal shutdown
-    1   config error
-    2   broker connect error
+    0   normal shutdown (SIGTERM/SIGINT)
+    1   config error (also mqtt.session_dir not writable or held)
+    2   broker connect error (unreachable after mqtt.connect_timeout_secs,
+        or a CONNACK refusal other than those of 5)
     3   DDS discovery error
-    4   TLS error
-    5   auth error
+    4   TLS error (TLS material that does not load; a refused handshake:
+        the broker certificate not trusted or not for its name, no
+        common protocol)
+    5   auth error (CONNACK 0x86, 0x87, 0x8A, 0x8C; MQTT 3.1.1: 4, 5)
 ";
 
 /// Versions-String.

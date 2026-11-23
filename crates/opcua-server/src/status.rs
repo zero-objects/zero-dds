@@ -13,12 +13,26 @@ pub const GOOD_SUBSCRIPTION_TRANSFERRED: u32 = 0x002D_0000;
 
 /// `Bad_ServiceUnsupported`.
 pub const BAD_SERVICE_UNSUPPORTED: u32 = 0x800B_0000;
+/// `Bad_CommunicationError` (Part 6 Annex A): "A low level communication
+/// error occurred."
+pub const BAD_COMMUNICATION_ERROR: u32 = 0x8005_0000;
 /// `Bad_NothingToDo`.
 pub const BAD_NOTHING_TO_DO: u32 = 0x800F_0000;
 /// `Bad_TooManyOperations`.
 pub const BAD_TOO_MANY_OPERATIONS: u32 = 0x8010_0000;
 /// `Bad_UserAccessDenied`.
 pub const BAD_USER_ACCESS_DENIED: u32 = 0x801F_0000;
+/// `Bad_NotFound`.
+pub const BAD_NOT_FOUND: u32 = 0x803E_0000;
+/// `Bad_NoMatch`.
+pub const BAD_NO_MATCH: u32 = 0x806F_0000;
+/// `Bad_InvalidArgument`.
+pub const BAD_INVALID_ARGUMENT: u32 = 0x80AB_0000;
+/// `Bad_InvalidState`.
+pub const BAD_INVALID_STATE: u32 = 0x80AF_0000;
+/// `Bad_SecurityModeInsufficient`: "The operation is not permitted over the
+/// current secure channel."
+pub const BAD_SECURITY_MODE_INSUFFICIENT: u32 = 0x80E6_0000;
 /// `Bad_IdentityTokenInvalid`.
 pub const BAD_IDENTITY_TOKEN_INVALID: u32 = 0x8020_0000;
 /// `Bad_IdentityTokenRejected`.

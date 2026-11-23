@@ -75,9 +75,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if !ep.listen_uri.is_empty() {
                 cfg.listen_addr = strip_amqp_scheme(&ep.listen_uri);
             }
-            if ep.limits.max_frame_size > 0 {
-                cfg.max_frame_size = ep.limits.max_frame_size;
-            }
+            cfg.apply_limits(&ep.limits)?;
+            cfg.nodes = Arc::new(amqp_dds_endpoint::nodes::Nodes::with_limits(true, ep.nodes));
+            cfg.transactions = ep.transactions;
             if !ep.endpoint_name.is_empty() {
                 cfg.container_id = ep.endpoint_name;
             }

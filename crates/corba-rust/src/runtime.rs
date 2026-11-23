@@ -18,8 +18,15 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// A received request or reply body with its offset in the message: a
+/// generated skeleton reads its arguments with
+/// [`AlignedBody::reader`], so that their CDR alignment counts from the
+/// message start (CORBA 3.3 Part 2 §9.4, §9.4.2.1).
+pub use zerodds_corba_giop::AlignedBody;
 use zerodds_corba_giop::object_ops::{self, ObjectOpReply};
-pub use zerodds_corba_rt::{ObjectReference, TypeCode, ValueBase};
+pub use zerodds_corba_rt::{
+    CompletionStatus, ObjectReference, SystemException, SystemExceptionKind, TypeCode, ValueBase,
+};
 use zerodds_wire::{Endianness, Reader, WireError, Writer, WstringUnitOrder};
 
 /// CORBA system/user exception. Generated stubs/skeletons map
@@ -27,29 +34,29 @@ use zerodds_wire::{Endianness, Reader, WireError, Writer, WstringUnitOrder};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CorbaException {
-    /// CORBA system exception (Spec §3.17.1). Minor code per OMG.
-    SystemException {
-        /// Minor code from the spec standard (e.g. `0x4F4D000B` =
-        /// `BAD_OPERATION`).
-        minor: u32,
-        /// Static error description.
-        message: &'static str,
-    },
+    /// CORBA system exception (CORBA 3.3 Part 1 §8.12): which standard
+    /// system exception, its minor code and its completion status. The
+    /// server writes it with its repository id, the client reads it back
+    /// with the same identity.
+    System(SystemException),
     /// User exception from IDL `exception E { ... };` (§15.4.3 / §15.3.5.1).
     ///
     /// `body` is the **complete** UserException reply body as a
     /// contiguous CDR stream: `string repository_id` **followed** by the
-    /// exception members. Members are NOT extracted separately — their
-    /// CDR alignment is relative to the body start (which is 8-aligned in
-    /// the GIOP reply); a typed decoder first reads the repo-id (positioning
-    /// the reader), then the members. `endianness` is the byte order of `body`
-    /// (= reply byte order), required for correct member decoding.
+    /// exception members, at its offset in the reply message. The CDR
+    /// alignment of the members counts from the start of that message
+    /// (CORBA 3.3 Part 2 §9.4.3): a GIOP 1.0 or 1.1 reply of another ORB
+    /// may put the body on four modulo eight, and a typed decoder reads it
+    /// through [`AlignedBody::reader`], first the repository id, then the
+    /// members. A body a servant writes from its first octet has offset 0.
+    /// `endianness` is the byte order of `body` (= reply byte order).
     UserException {
         /// Repository ID of the exception type (for type selection + display);
         /// also appears at the start of `body`.
         repository_id: String,
-        /// Complete exception body: `string repo_id` + members (CDR).
-        body: Vec<u8>,
+        /// Complete exception body: `string repo_id` + members (CDR), at its
+        /// offset in the message.
+        body: AlignedBody,
         /// On-wire byte order of `body`.
         endianness: Endianness,
     },
@@ -58,9 +65,7 @@ pub enum CorbaException {
 impl ::core::fmt::Display for CorbaException {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self {
-            Self::SystemException { minor, message } => {
-                write!(f, "CORBA::SystemException(minor={minor}): {message}")
-            }
+            Self::System(e) => write!(f, "{e}"),
             Self::UserException { repository_id, .. } => {
                 write!(f, "CORBA::UserException({repository_id})")
             }
@@ -69,6 +74,40 @@ impl ::core::fmt::Display for CorbaException {
 }
 
 impl ::std::error::Error for CorbaException {}
+
+impl CorbaException {
+    /// A system exception of `kind` with a minor code as given.
+    #[must_use]
+    pub const fn system(
+        kind: SystemExceptionKind,
+        minor: u32,
+        completed: CompletionStatus,
+    ) -> Self {
+        Self::System(SystemException::new(kind, minor, completed))
+    }
+
+    /// A system exception of `kind` with a standard minor code of
+    /// CORBA 3.3 Part 1 Annex A.6 (or-ed with `OMGVMCID`).
+    #[must_use]
+    pub const fn omg(kind: SystemExceptionKind, code: u32, completed: CompletionStatus) -> Self {
+        Self::System(SystemException::omg(kind, code, completed))
+    }
+
+    /// The system exception, when this is one.
+    #[must_use]
+    pub const fn as_system(&self) -> Option<&SystemException> {
+        match self {
+            Self::System(e) => Some(e),
+            Self::UserException { .. } => None,
+        }
+    }
+}
+
+impl From<SystemException> for CorbaException {
+    fn from(e: SystemException) -> Self {
+        Self::System(e)
+    }
+}
 
 /// Result of a skeleton dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +163,7 @@ pub fn reply_writer(endianness: Endianness) -> Writer {
 #[must_use]
 pub fn dispatch_object_operation(
     operation: &str,
-    body: &[u8],
+    body: &AlignedBody,
     endianness: Endianness,
     repository_id: &str,
     base_repository_ids: &[&str],
@@ -138,16 +177,16 @@ pub fn dispatch_object_operation(
     )?;
     Some(match reply {
         ObjectOpReply::Ok(b) => SkeletonResult::Reply(b),
-        ObjectOpReply::Marshal => SkeletonResult::Exception(CorbaException::SystemException {
-            minor: 0,
-            message: "CORBA MARSHAL",
-        }),
-        ObjectOpReply::InterfaceRepositoryUnavailable => {
-            SkeletonResult::Exception(CorbaException::SystemException {
-                minor: 0,
-                message: "CORBA INTF_REPOS",
-            })
-        }
+        // The arguments did not decode: the operation never started.
+        ObjectOpReply::Marshal => SkeletonResult::Exception(CorbaException::system(
+            SystemExceptionKind::Marshal,
+            0,
+            CompletionStatus::No,
+        )),
+        // Annex A.6: INTF_REPOS minor 1, "Interface Repository not available".
+        ObjectOpReply::InterfaceRepositoryUnavailable => SkeletonResult::Exception(
+            CorbaException::omg(SystemExceptionKind::IntfRepos, 1, CompletionStatus::No),
+        ),
     })
 }
 
@@ -521,6 +560,56 @@ pub trait ComponentHome {
 // §7.3 GIOP wire wiring — connection stub.
 // ============================================================================
 
+/// The arguments of a request: writes them into the body writer it is
+/// given (CORBA 3.3 Part 2 §9.4.2).
+///
+/// The connection calls it once the request header is known, with a
+/// writer whose alignment counts from the start of the GIOP message: a
+/// GIOP 1.0 or 1.1 body follows the header without padding, so where an
+/// 8-octet argument goes depends on the header (its service contexts,
+/// object key, operation name). A request the connection sends again to
+/// another target (a forward, another addressing disposition) is
+/// marshaled again for that header. An error is the exception the
+/// invocation raises; the request is not sent.
+pub type MarshalArgs<'a> = dyn Fn(&mut Writer) -> Result<(), CorbaException> + 'a;
+
+/// The [`MarshalArgs`] of an operation without arguments.
+///
+/// # Errors
+/// None; the signature is that of [`MarshalArgs`].
+pub fn no_arguments(_: &mut Writer) -> Result<(), CorbaException> {
+    Ok(())
+}
+
+/// The [`MarshalArgs`] of a body that is already marshaled: `body`, as
+/// it was written at `offset` octets from the start of its message (a
+/// bridge passes on the body of a request it received; a caller that
+/// wrote its octets with a writer of its own wrote them at offset 0).
+///
+/// The octets go into the new body as they are, which keeps their
+/// alignment only where the new body starts at the same offset modulo
+/// 8. Elsewhere they are not sent: `MARSHAL`, `COMPLETED_NO`. An empty
+/// body goes anywhere.
+pub fn marshaled_body(
+    body: &[u8],
+    offset: usize,
+) -> impl Fn(&mut Writer) -> Result<(), CorbaException> + '_ {
+    move |w: &mut Writer| {
+        if body.is_empty() {
+            return Ok(());
+        }
+        if w.position() % 8 != offset % 8 {
+            return Err(CorbaException::system(
+                SystemExceptionKind::Marshal,
+                0,
+                CompletionStatus::No,
+            ));
+        }
+        w.write_bytes(body);
+        Ok(())
+    }
+}
+
 /// Connection handle used by stubs to send GIOP requests.
 /// Phase 1 is an adapter trait whose full implementation lives in
 /// `corba-iiop`.
@@ -529,9 +618,9 @@ pub trait CorbaConnection {
     /// system exception arrives.
     ///
     /// `target_ior` = object reference, `operation` = method name,
-    /// `request_endianness` = on-wire byte order in which `request_payload`
-    /// is CDR-encoded (set into the GIOP flag), `request_payload` =
-    /// already-encoded body (classic CDR of the in-params).
+    /// `request_endianness` = on-wire byte order of the body (set into
+    /// the GIOP flag), `arguments` = writes the in- and inout-parameters
+    /// into the body at its place in the message ([`MarshalArgs`]).
     ///
     /// Returns the reply body **plus its** on-wire byte order — the
     /// server may reply in its native order (CDR "receiver makes it
@@ -544,7 +633,7 @@ pub trait CorbaConnection {
         target_ior: &ObjectReference,
         operation: &str,
         request_endianness: Endianness,
-        request_payload: &[u8],
+        arguments: &MarshalArgs<'_>,
     ) -> Result<(Vec<u8>, Endianness), CorbaException>;
 
     /// Sends a oneway request (no reply expected).
@@ -556,13 +645,45 @@ pub trait CorbaConnection {
         target_ior: &ObjectReference,
         operation: &str,
         request_endianness: Endianness,
-        request_payload: &[u8],
+        arguments: &MarshalArgs<'_>,
     ) -> Result<(), CorbaException>;
+
+    /// As [`Self::invoke`], with the reply body at its offset in the
+    /// reply message.
+    ///
+    /// CORBA 3.3 Part 2 §9.4.3: a GIOP 1.0 or 1.1 reply body follows the
+    /// reply header without padding, and CDR aligns its values from the
+    /// start of the message. A body another ORB wrote at four modulo
+    /// eight holds its 8-octet values where a reader starting at the
+    /// body's first octet does not look for them; the generated stubs
+    /// read the reply through [`AlignedBody::reader`].
+    ///
+    /// The default answers the body of [`Self::invoke`] at offset 0, which
+    /// is right for a connection whose replies come from a peer that
+    /// places them on a multiple of eight (`Reply::place_body_at_eight`).
+    ///
+    /// # Errors
+    /// As [`Self::invoke`].
+    fn invoke_aligned(
+        &self,
+        target_ior: &ObjectReference,
+        operation: &str,
+        request_endianness: Endianness,
+        arguments: &MarshalArgs<'_>,
+    ) -> Result<(AlignedBody, Endianness), CorbaException> {
+        let (body, endianness) =
+            self.invoke(target_ior, operation, request_endianness, arguments)?;
+        Ok((AlignedBody::new(&body, 0), endianness))
+    }
 }
 
-/// Reply outcome of an asynchronous invocation (CORBA Messaging §22): the raw
-/// reply body + its on-wire byte order on success, otherwise the CORBA exception.
-pub type AsyncReply = Result<(Vec<u8>, Endianness), CorbaException>;
+/// Reply outcome of an asynchronous invocation (CORBA Messaging §22): the
+/// reply body at its offset in the reply message and its on-wire byte
+/// order on success, otherwise the CORBA exception. A GIOP 1.0/1.1 reply
+/// body follows the reply header without padding and CDR aligns its values
+/// from the message start (CORBA 3.3 Part 2 §9.4.3): the stubs read it
+/// through [`AlignedBody::reader`].
+pub type AsyncReply = Result<(AlignedBody, Endianness), CorbaException>;
 
 /// Callback for the AMI callback model (§22.5) — invoked exactly once.
 pub type AsyncReplyCallback = alloc::boxed::Box<dyn FnOnce(AsyncReply) + Send>;
@@ -576,24 +697,30 @@ pub type AsyncReplyCallback = alloc::boxed::Box<dyn FnOnce(AsyncReply) + Send>;
 /// reply in a typed way; this channel carries only opaque bytes + the
 /// `request_id` demux.
 pub trait AsyncCorbaChannel {
-    /// **Callback model** (§22.5): fires `operation(payload)` and registers
-    /// `cb` for the reply; returns the `request_id`.
+    /// **Callback model** (§22.5): fires `operation` with the body
+    /// `arguments` write ([`MarshalArgs`]) and registers `cb` for the
+    /// reply; returns the `request_id`.
     ///
     /// # Errors
-    /// Transport error during sending.
+    /// Transport error during sending; the error of `arguments`.
     fn send(
         &mut self,
         operation: &str,
-        payload: &[u8],
+        arguments: &MarshalArgs<'_>,
         cb: AsyncReplyCallback,
     ) -> Result<u32, CorbaException>;
 
-    /// **Polling model** (§22.6): fires `operation(payload)`, returns the
-    /// `request_id`; the reply is fetched via [`get_reply`](Self::get_reply).
+    /// **Polling model** (§22.6): fires `operation` with the body
+    /// `arguments` write, returns the `request_id`; the reply is fetched
+    /// via [`get_reply`](Self::get_reply).
     ///
     /// # Errors
-    /// Transport error during sending.
-    fn send_poll(&mut self, operation: &str, payload: &[u8]) -> Result<u32, CorbaException>;
+    /// Transport error during sending; the error of `arguments`.
+    fn send_poll(
+        &mut self,
+        operation: &str,
+        arguments: &MarshalArgs<'_>,
+    ) -> Result<u32, CorbaException>;
 
     /// Drives the channel until the reply for `request_id` (from
     /// [`send_poll`](Self::send_poll)) is available, and returns it.

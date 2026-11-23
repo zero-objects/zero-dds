@@ -11,7 +11,7 @@ homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-transport-shm"
 readme = "README.md"
 keywords = ["dds", "shared-memory", "ipc", "transport"]
-categories = ["network-programming", "memory-management"]
+categories = ["network-programming", "memory-management", "no-std"]
 publish = true
 
 [lints]
@@ -22,28 +22,38 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+# The named segments of an operating system (`posix`, `bell`).
+std = [
+  "alloc",
+  "dep:shared_memory",
+  "dep:libc",
+  "zerodds-rtps/std",
+  "zerodds-transport/std",
+]
+# The transport over a caller's region (`region`); without it the ring
+# (`ring`) alone.
+alloc = ["zerodds-rtps/alloc", "zerodds-transport/alloc"]
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.7", path = "../transport" }
-# POSIX shared-memory segment management (shm_open/mmap + Windows
-# CreateFileMapping). We wrap only the primitives; the ring-buffer
-# protocol on top is our own. Pinning 0.12 for the stable API.
-shared_memory = "0.12"
-# libc for POSIX advisory flock (race protection on owner-create).
-# Transitive dep via shared_memory, explicitly pinned for stability.
-libc = { workspace = true, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", default-features = false }
+zerodds-transport = { version = "1.0.0-rc.7", path = "../transport", default-features = false }
+# The error type of a mapping, which `PosixShmError::Shm` carries. The
+# mappings themselves are `src/mapping.rs`'s on every platform.
+shared_memory = { version = "0.12", optional = true }
+# libc for shm_open/mmap, flock and the waits on Unix.
+libc = { workspace = true, features = ["std"], optional = true }
 
-# Windows: LockFileEx for the owner-create race protection (the flock
-# equivalent). Auto-released on handle close / process death, like flock.
+# Windows: LockFileEx for the pair lock and the hold (the flock
+# equivalent, released on handle close and process death), the file
+# identity and deletion state of a lock file, and the mapping of a
+# segment's file through an unnamed file mapping object.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
+  "Win32_System_Memory",
   "Win32_System_Threading",
 ] }
 

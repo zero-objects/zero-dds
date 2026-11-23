@@ -5,6 +5,7 @@ package org.zerodds.bridge;
 import org.junit.jupiter.api.Tag;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -27,7 +28,7 @@ import org.junit.jupiter.api.Test;
  */
 final class GrpcBridgeClientTest {
 
-    private static final String SERVICE = "/zerodds.bridge.v1.DemoStream";
+    private static final String SERVICE = "/zerodds.demo.v1.DemoStream";
 
     private static Integer bridgePort() {
         String env = System.getenv("ZERODDS_BRIDGE_PORT");
@@ -59,8 +60,8 @@ final class GrpcBridgeClientTest {
         System.arraycopy(text, 0, msg, 4, text.length);
 
         // Ingress: Java → gRPC Publish → DDS DataWriter.
-        long accepted = client.publish(SERVICE, msg);
-        assertEquals(1L, accepted, "PublishAck.accepted should be 1 (DDS write ok)");
+        long sequence = client.publish(SERVICE, msg);
+        assertTrue(sequence >= 1L, "PublishAck.sequence_number names the DDS write: " + sequence);
 
         // Egress: DDS DataReader (loopback) → gRPC Subscribe → Java.
         byte[] got = client.subscribeBlocking(SERVICE, System.currentTimeMillis() + 8000);
@@ -70,9 +71,9 @@ final class GrpcBridgeClientTest {
     /** PublishAck varint decode. */
     @Test
     void javaomgdds_4_2_a_publish_ack_is_read_from_its_protobuf_varint() {
-        // PublishAck{accepted=1} = 0x08 0x01.
+        // PublishAck{sequence_number=1} = 0x08 0x01.
         assertEquals(1L, GrpcBridgeClient.decodePublishAck(new byte[] {0x08, 0x01}));
-        // accepted=300 = 0x08 0xAC 0x02 (varint).
+        // sequence_number=300 = 0x08 0xAC 0x02 (varint).
         assertEquals(300L, GrpcBridgeClient.decodePublishAck(new byte[] {0x08, (byte) 0xAC, 0x02}));
     }
 }

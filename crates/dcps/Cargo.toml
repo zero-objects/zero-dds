@@ -137,7 +137,7 @@ zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
 # SOURCE_TIMESTAMP / DESTINATION_ORDER=BY_SOURCE_TIMESTAMP / write_w_timestamp
 # defaults / the LIFESPAN reception clock can be driven from an OMG Time
 # Service 1.1 source instead of the system clock (config `time.source`).
-zerodds-time-service = { version = "1.0.0-rc.7", path = "../time-service" }
+zerodds-time-service = { version = "1.0.0-rc.7", path = "../time-service", default-features = false, features = ["std"] }
 zerodds-config = { version = "1.0.0-rc.7", path = "../config" }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
@@ -178,6 +178,15 @@ zerodds-rt-linux = { version = "1.0.0-rc.7", path = "../rt-linux", optional = tr
 # libc for gethostname(3) in the same-host detection path (all Unixes:
 # Linux, macOS, BSD).
 libc = { workspace = true }
+
+# Windows: the service control dispatcher of `cli::run_as_service`
+# (zerodds-deployment-1.0 §4.3) and the console control handler.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+  "Win32_Foundation",
+  "Win32_System_Console",
+  "Win32_System_Services",
+] }
 
 [dev-dependencies]
 # One DDS domain per test process, host-wide (the domain number is the UDP port).

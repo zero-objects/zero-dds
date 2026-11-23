@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! EntityFactoryQosPolicy (DDS 1.4 §2.2.3.27).
+//! EntityFactoryQosPolicy (DDS 1.4 §2.2.3.20).
 //!
 //! Wire format: bool (1 byte + 3 pad = 4 bytes). A local policy;
 //! normally not propagated over the wire, implemented only for

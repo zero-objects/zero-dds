@@ -1278,3 +1278,282 @@ fn idl_7_4_15_4_2_an_annotation_prefixing_a_typedefs_type_annotates_the_typedef(
         assert_eq!(xtypes.unit.as_deref(), Some("m"));
     }
 }
+
+// -- §7.4.12 Template Modules --------------------------------------------------
+
+/// The name of the type a parameter of `interface::operation` has.
+fn param_type(ast: &Ast, interface: &str, operation: &str, param: &str) -> String {
+    let (_, node) = ast
+        .interfaces()
+        .find(|(id, node)| {
+            ast.scoped_name_of(zerodds_ast::AnyId::Interface(*id, node.node_id))
+                .is_some_and(|name| name.segments().join("::") == interface)
+        })
+        .unwrap_or_else(|| panic!("no interface {interface}"));
+    let op = node
+        .operations
+        .iter()
+        .filter_map(|id| ast.operation(*id).ok())
+        .find(|op| op.name == operation)
+        .unwrap_or_else(|| panic!("no operation {operation}"));
+    let param = op
+        .params
+        .iter()
+        .filter_map(|id| ast.param(*id).ok())
+        .find(|p| p.name == param)
+        .unwrap_or_else(|| panic!("no parameter {param}"));
+    let id = param
+        .type_
+        .resolved()
+        .unwrap_or_else(|| panic!("{interface}::{operation}({}) is unresolved", param.name));
+    let node = ast.type_(id).unwrap();
+    ast.scoped_name_of(zerodds_ast::AnyId::Type(id, node.node_id))
+        .map(|name| name.segments().join("::"))
+        .unwrap_or_default()
+}
+
+/// §7.4.12.4.2: an instantiation gives "values to the template parameters
+/// and a name to the resulting module". The body keeps the meaning it was
+/// written with: a name it uses is one of the scope the template is
+/// declared in, wherever the instantiation stands. DDS for Lightweight CCM
+/// 1.1 Annex A writes `CCM_DDS::Typed` this way (`ReadInfo` and
+/// `InternalError` of `CCM_DDS` inside the template) and instantiates it
+/// outside `CCM_DDS`.
+#[test]
+fn idl_7_4_12_4_2_a_template_body_names_what_the_scope_of_its_declaration_declares() {
+    let source = "module Outer {
+             struct Info { long n; };
+             exception Bad { };
+             module Tpl<typename T> {
+                 interface Reader { void read(in T datum, out Info status) raises (Bad); };
+             };
+         };
+         struct Info { string other; };
+         struct Foo { long id; };
+         module Outer::Tpl<Foo> FooPorts;
+         module Site { module Outer::Tpl<Foo> Inner; };";
+    let (mut ast, found) = lowered(source);
+    assert!(found.is_empty(), "{found:?}");
+    let report = ast.resolve_all_by_name().expect("resolve");
+    assert!(report.broken.is_empty(), "{:?}", report.broken);
+    for instance in ["FooPorts::Reader", "Site::Inner::Reader"] {
+        // `Info` is the one of `Outer`, not the one at file scope where the
+        // instantiation is written.
+        assert_eq!(param_type(&ast, instance, "read", "status"), "Outer::Info");
+        assert_eq!(param_type(&ast, instance, "read", "datum"), "Foo");
+        let (_, node) = ast
+            .interfaces()
+            .find(|(id, node)| {
+                ast.scoped_name_of(zerodds_ast::AnyId::Interface(*id, node.node_id))
+                    .is_some_and(|name| name.segments().join("::") == instance)
+            })
+            .unwrap();
+        let read = ast.operation(node.operations[0]).unwrap();
+        let raised = read.raises[0].resolved().expect("raises (Bad) resolves");
+        let bad = ast.exception(raised).unwrap();
+        assert_eq!(
+            ast.scoped_name_of(zerodds_ast::AnyId::Exception(raised, bad.node_id))
+                .map(|name| name.segments().join("::"))
+                .as_deref(),
+            Some("Outer::Bad")
+        );
+    }
+    // A name of the instantiation's own scope is still found when the
+    // scope of the declaration has none of that name.
+    let (mut ast, found) = lowered(
+        "module Tpl<typename T> { interface R { void read(out Here found, in T datum); }; };
+         module Site { struct Here { long n; }; module Tpl<long> Inner; };",
+    );
+    assert!(found.is_empty(), "{found:?}");
+    ast.resolve_all_by_name().expect("resolve");
+    assert_eq!(
+        param_type(&ast, "Site::Inner::R", "read", "found"),
+        "Site::Here"
+    );
+}
+
+/// §7.4.12.4.1: a formal parameter can be "a sequence type declaration, to
+/// indicate that a compliant sequence type must be passed as parameter (the
+/// formal parameters of that sequence must appear previously in the module
+/// list of formal parameters)". `sequence<T> TSeq` after `typename T` is no
+/// type of the template; in an instance it is the sequence that was passed.
+#[test]
+fn idl_7_4_12_4_1_a_sequence_formal_over_an_earlier_formal_is_the_sequence_passed_for_it() {
+    let source = "module M<typename T, sequence<T> TSeq> {
+             interface Writer { void write_many(in TSeq data); void write_one(in T datum); };
+         };
+         struct Foo { long id; };
+         typedef sequence<Foo> FooSeq;
+         module M<Foo, FooSeq> FooM;";
+    let (mut ast, found) = lowered(source);
+    assert!(found.is_empty(), "{found:?}");
+    let report = ast.resolve_all_by_name().expect("resolve");
+    assert!(report.broken.is_empty(), "{:?}", report.broken);
+    assert_eq!(
+        param_type(&ast, "FooM::Writer", "write_many", "data"),
+        "FooSeq"
+    );
+    assert_eq!(
+        param_type(&ast, "FooM::Writer", "write_one", "datum"),
+        "Foo"
+    );
+
+    // The declaration keeps the two formals; the sequence over `T` has no
+    // type of its own.
+    let module = ast
+        .modules()
+        .find(|(_, m)| m.name == "M")
+        .map(|(id, m)| (id, m.node_id))
+        .expect("the template");
+    let params = ast
+        .facets(zerodds_ast::AnyId::Module(module.0, module.1))
+        .and_then(|f| f.corba.as_ref().map(|c| c.template_params.clone()))
+        .unwrap_or_default();
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[1].name, "TSeq");
+    assert_eq!(params[1].kind, zerodds_ast::TemplateParamKind::Sequence);
+    assert!(params[1].constraint.is_none());
+
+    // A bounded sequence formal takes the sequence of that bound, also
+    // through a typedef of the sequence.
+    assert_clean(
+        "module B<typename T, sequence<T, 4> S> { struct Bag { S items; }; };
+         struct Foo { long id; };
+         typedef sequence<Foo, 4> Four; typedef Four AlsoFour;
+         module B<Foo, AlsoFour> Ok;",
+    );
+}
+
+/// §7.4.12.4.2: "if the template parameter is of type 'sequence type
+/// declaration,' then an instantiated compliant sequence must be passed."
+/// An actual that is no sequence, a sequence of another element or of
+/// another bound is reported, and the instance is not built on it.
+#[test]
+fn idl_7_4_12_4_2_an_actual_that_is_not_the_sequence_of_its_formal_is_refused() {
+    let template = "module M<typename T, sequence<T> TSeq> { struct Bag { TSeq items; }; };
+                    struct Foo { long id; }; struct Bar { long id; };
+                    typedef sequence<Foo> FooSeq; typedef sequence<Bar> BarSeq;
+                    typedef sequence<Foo, 4> FooFour;";
+    for (actuals, what) in [
+        ("Foo, BarSeq", "a sequence of another element"),
+        ("Foo, Foo", "no sequence"),
+        ("Foo, FooFour", "a bounded sequence for an unbounded one"),
+        ("Foo, long", "a primitive"),
+    ] {
+        let found = diagnostics(&format!("{template}\nmodule M<{actuals}> Wrong;"));
+        assert!(
+            found
+                .iter()
+                .any(|d| d.code == DiagnosticCode::TypeMismatch && d.message.contains("TSeq")),
+            "{what} ({actuals}) is not reported: {found:?}"
+        );
+    }
+    // The compliant one, as the control.
+    assert_clean(&format!("{template}\nmodule M<Foo, FooSeq> Right;"));
+    // A sequence formal over a concrete element is checked the same way.
+    let concrete = "module L<sequence<long> S> { struct Bag { S items; }; };
+                    typedef sequence<long> Longs; typedef sequence<short> Shorts;";
+    assert_clean(&format!("{concrete}\nmodule L<Longs> Right;"));
+    assert_trips(
+        &format!("{concrete}\nmodule L<Shorts> Wrong;"),
+        DiagnosticCode::TypeMismatch,
+    );
+}
+
+/// §7.4.12.4.2 for elements that are written in place: `string`,
+/// `wstring`, `sequence`, `map`, `fixed`, and an array behind a `typedef`.
+/// Each occurrence of such a type is a node of its own in the model; a
+/// compliant sequence is the sequence of the same type, whichever node
+/// holds it. Another width, bound, digit count or element is refused.
+#[test]
+fn idl_7_4_12_4_2_a_sequence_formal_over_an_anonymous_element_takes_the_compliant_sequence() {
+    let compliant = [
+        ("sequence<string>", "typedef sequence<string> A;"),
+        ("sequence<string<8> >", "typedef sequence<string<8> > A;"),
+        (
+            "sequence<string<8> >",
+            "const long Eight = 8; typedef string<Eight> S8; typedef sequence<S8> A;",
+        ),
+        (
+            "sequence<wstring<4>, 3>",
+            "typedef sequence<wstring<4>, 3> A;",
+        ),
+        (
+            "sequence<sequence<long> >",
+            "typedef sequence<sequence<long> > A;",
+        ),
+        (
+            "sequence<sequence<string, 2> >",
+            "typedef sequence<string, 2> Inner; typedef sequence<Inner> A;",
+        ),
+        (
+            "sequence<map<long, string> >",
+            "typedef sequence<map<long, string> > A;",
+        ),
+        (
+            "sequence<fixed<5, 2> >",
+            "typedef sequence<fixed<5, 2> > A;",
+        ),
+        (
+            "sequence<Three>",
+            "typedef long Other[3]; typedef sequence<Other> A;",
+        ),
+    ];
+    for (formal, actual) in compliant {
+        let source = format!(
+            "typedef long Three[3];
+             module L<{formal} S> {{ struct Bag {{ S items; }}; }};
+             {actual}
+             module L<A> Right;"
+        );
+        assert_clean(&source);
+    }
+
+    let refused = [
+        ("sequence<string>", "typedef sequence<wstring> A;"),
+        ("sequence<string<8> >", "typedef sequence<string<9> > A;"),
+        ("sequence<string<8> >", "typedef sequence<string> A;"),
+        (
+            "sequence<sequence<long> >",
+            "typedef sequence<sequence<short> > A;",
+        ),
+        (
+            "sequence<sequence<long, 2> >",
+            "typedef sequence<sequence<long, 3> > A;",
+        ),
+        (
+            "sequence<map<long, string> >",
+            "typedef sequence<map<long, wstring> > A;",
+        ),
+        (
+            "sequence<fixed<5, 2> >",
+            "typedef sequence<fixed<5, 3> > A;",
+        ),
+        (
+            "sequence<Three>",
+            "typedef long Four[4]; typedef sequence<Four> A;",
+        ),
+    ];
+    for (formal, actual) in refused {
+        let found = diagnostics(&format!(
+            "typedef long Three[3];
+             module L<{formal} S> {{ struct Bag {{ S items; }}; }};
+             {actual}
+             module L<A> Wrong;"
+        ));
+        assert!(
+            found
+                .iter()
+                .any(|d| d.code == DiagnosticCode::TypeMismatch && d.message.contains("`S`")),
+            "{formal} over `{actual}` is not reported: {found:?}"
+        );
+    }
+
+    // A sequence formal over an earlier formal: the element written in the
+    // template is bound to an anonymous type of the instantiation.
+    assert_clean(
+        "module M<typename T, sequence<sequence<T> > S> { struct Bag { S items; }; };
+         typedef sequence<sequence<string> > Strings;
+         module M<string, Strings> Right;",
+    );
+}

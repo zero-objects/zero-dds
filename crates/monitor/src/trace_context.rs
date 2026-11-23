@@ -51,6 +51,15 @@ impl fmt::Display for TraceParent {
     }
 }
 
+impl std::str::FromStr for TraceParent {
+    type Err = TraceContextError;
+
+    /// W3C Trace Context §3.2: the value of a `traceparent` header.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_traceparent(s)
+    }
+}
+
 /// W3C tracestate header (Version 00, key=value;... per vendor).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TraceState {
@@ -200,18 +209,32 @@ fn decode_cdr_string(bytes: &[u8]) -> Result<(String, &[u8]), TraceContextError>
     Ok((s, rest))
 }
 
+/// W3C Trace Context §3.2: a `traceparent` header value. Version `00` is
+/// `00-<32 hex>-<16 hex>-<2 hex>` and nothing else; a higher version is read
+/// by the fields of `00` and may go on after a dash (§3.2.4), its flags
+/// reduced to the sampled flag (§4.3); version `ff` is invalid. The hex is
+/// lower case (`HEXDIGLC`); an all-zero trace-id or parent-id is invalid
+/// (§3.2.2.3, §3.2.2.4).
 fn parse_traceparent(s: &str) -> Result<TraceParent, TraceContextError> {
-    let parts: Vec<&str> = s.split('-').collect();
-    if parts.len() != 4 || parts[0] != "00" {
+    let b = s.as_bytes();
+    let lower_hex = |field: &[u8]| field.iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'));
+    if b.len() < 55 || b[2] != b'-' || b[35] != b'-' || b[52] != b'-' || !lower_hex(&b[..2]) {
         return Err(TraceContextError::InvalidTraceParent);
     }
-    if parts[1].len() != 32 || parts[2].len() != 16 || parts[3].len() != 2 {
+    let higher = match &b[..2] {
+        b"00" if b.len() == 55 => false,
+        b"00" | b"ff" => return Err(TraceContextError::InvalidTraceParent),
+        _ if b.len() == 55 || b[55] == b'-' => true,
+        _ => return Err(TraceContextError::InvalidTraceParent),
+    };
+    if !lower_hex(&b[3..35]) || !lower_hex(&b[36..52]) || !lower_hex(&b[53..55]) {
         return Err(TraceContextError::InvalidTraceParent);
     }
-    let trace_id = parse_hex_16(parts[1])?;
-    let parent_id = parse_hex_8(parts[2])?;
+    let trace_id = parse_hex_16(&s[3..35])?;
+    let parent_id = parse_hex_8(&s[36..52])?;
     let flags =
-        u8::from_str_radix(parts[3], 16).map_err(|_| TraceContextError::InvalidTraceParent)?;
+        u8::from_str_radix(&s[53..55], 16).map_err(|_| TraceContextError::InvalidTraceParent)?;
+    let flags = if higher { flags & 0x01 } else { flags };
 
     let trace_id_obj = TraceId(trace_id);
     let parent_id_obj = SpanId(parent_id);
@@ -342,6 +365,85 @@ mod tests {
         let back = pid.to_span_context();
         assert_eq!(back.trace_id, ctx.trace_id);
         assert_eq!(back.span_id, ctx.span_id);
+    }
+
+    /// W3C Trace Context §3.2.2, §3.2.3: the header of the examples is
+    /// read, the sampled flag with it.
+    #[test]
+    fn w3c_trace_context_3_2_2_a_traceparent_header_is_read() {
+        let tp: TraceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+            .parse()
+            .expect("the example of section 3.2.3");
+        assert_eq!(tp, sample_traceparent());
+        assert!(tp.is_sampled());
+        let unsampled: TraceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"
+            .parse()
+            .expect("the unsampled example");
+        assert!(!unsampled.is_sampled());
+    }
+
+    /// W3C Trace Context §3.2.2: upper-case hex, version ff, wrong field
+    /// lengths, a missing dash, all-zero identifiers and fields after a
+    /// version-00 value are refused.
+    #[test]
+    fn w3c_trace_context_3_2_2_a_malformed_traceparent_is_refused() {
+        for bad in [
+            "00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00F067AA0BA902B7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0A",
+            "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            "0-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e473-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736_00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-ab",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-+1",
+            "",
+        ] {
+            assert_eq!(
+                bad.parse::<TraceParent>(),
+                Err(TraceContextError::InvalidTraceParent),
+                "{bad}"
+            );
+        }
+        for zero in [
+            "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+        ] {
+            assert_eq!(
+                zero.parse::<TraceParent>(),
+                Err(TraceContextError::InvalidIdentifiers),
+                "{zero}"
+            );
+        }
+    }
+
+    /// W3C Trace Context §3.2.4, §4.3: a higher version is read by the
+    /// fields of version 00, followed by the end or a dash; only the
+    /// sampled flag is kept.
+    #[test]
+    fn w3c_trace_context_3_2_4_a_higher_version_is_read_by_the_00_fields() {
+        let tp: TraceParent =
+            "cc-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-09-what-the-future-holds"
+                .parse()
+                .expect("a higher version with more fields");
+        assert_eq!(tp.trace_id, sample_traceparent().trace_id);
+        assert_eq!(tp.parent_id, sample_traceparent().parent_id);
+        assert_eq!(tp.flags, 0x01);
+        assert!(
+            "cc-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+                .parse::<TraceParent>()
+                .is_ok()
+        );
+        assert_eq!(
+            "cc-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01x".parse::<TraceParent>(),
+            Err(TraceContextError::InvalidTraceParent)
+        );
+        assert_eq!(
+            "cc-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7".parse::<TraceParent>(),
+            Err(TraceContextError::InvalidTraceParent)
+        );
     }
 
     #[test]

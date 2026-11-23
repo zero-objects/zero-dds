@@ -28,6 +28,10 @@ retained messages + will messages, and an MQTT↔DDS topic bridge.
 - **`Broker` / `Session` / `RetainedMessage` / `Will`** — in-memory
   broker logic with session state, retained messages, will delivery
   on abnormal disconnect (§3 + §4.1).
+- **`MqttBrokerServer` / `ServerHandle`** (`std`) — a broker server on
+  the network for MQTT 5.0 and 3.1.1 clients: TCP, and with the features
+  `websocket` and `tls` MQTT over WebSocket (§6, subprotocol `mqtt`,
+  binary frames), TLS and WebSocket over TLS.
 - **`KeepAliveTracker`** — §3.1.2.10 keep-alive window tracking with a
   configurable 1.5x tolerance factor.
 - **`topic_matches` / `validate_filter` / `validate_topic_name`** —
@@ -71,6 +75,8 @@ assert!(!topic_matches("sensors/+/temp", "sensors/room1/humidity"));
 |---------|---------|-------|
 | `std` | ✅ | `std::error::Error` impls. |
 | `alloc` | ✅ (via std) | `Vec` / `String` / `BTreeMap`. |
+| `websocket` | ✅ (via `daemon`) | The WebSocket listener of the broker server (MQTT 5.0 §6). |
+| `tls` | ✅ (via `daemon`) | The TLS listeners of the broker server (`mqtts`, and `wss` with `websocket`). |
 
 `no_std`-capable: `default-features = false, features = ["alloc"]`.
 

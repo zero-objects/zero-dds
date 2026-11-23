@@ -148,16 +148,29 @@ roundtrip, reject of invalid/short/zero-trace-id payload.
 
 ## §6 Lifecycle and configuration
 
-**Spec:** §6.1–§6.3 — default registry, `MonitorConfig` (incl. the 1.1 policy
-fields), optional Prometheus server.
+**Spec:** §6.1–§6.5 — default registry, `MonitorConfig` (incl. the 1.1 policy
+fields), optional Prometheus server, the admin endpoints of a daemon
+(`/catalog`, `/healthz`, the metrics path, `/`) and the JSON log line.
 
 **Repo:** `crates/monitor/src/config.rs` (`MonitorConfig`, `set_config`,
-`active_config`), `crates/monitor/src/server.rs`, `crates/monitor/src/registry.rs`.
+`active_config`), `crates/monitor/src/server.rs`, `crates/monitor/src/registry.rs`,
+`crates/monitor/src/admin.rs` (`AdminEndpoints`, `serve_admin_endpoints`,
+`serve_connections`, `http_response`, `health_response`, `request_path`),
+`crates/monitor/src/json.rs` (`Level`, `Threshold`, `Value`, `render_line`,
+`push_escaped`, `escape`, `rfc3339_millis`, `unix_millis`). The bridge daemons
+(amqp, coap, corba, grpc, mqtt, websocket, webdds, zenoh) use both instead of
+copies of their own.
 
 **Tests:** `crates/monitor/src/config.rs::tests::defaults_match_spec`,
 `crates/monitor/src/registry.rs::tests::default_registry_is_singleton`,
 `crates/monitor/src/server.rs::tests::server_404s_unknown_path`,
-`server_serves_metrics_on_request`.
+`server_serves_metrics_on_request`,
+`crates/monitor/src/admin.rs::tests::monitor_6_4_http_response_carries_length_and_close`,
+`monitor_6_4_request_path_is_the_target_without_query`,
+`monitor_6_4_the_four_paths_and_404`, `monitor_6_4_serve_answers_and_stops`,
+`crates/monitor/src/json.rs::tests::monitor_6_5_escape_quotes_backslash_and_controls`,
+`monitor_6_5_rfc3339_utc_with_milliseconds`, `monitor_6_5_unix_millis_is_after_the_epoch`,
+`monitor_6_5_the_log_level_is_the_threshold`, `monitor_6_5_a_line_is_one_json_object`.
 
 **Status:** done
 

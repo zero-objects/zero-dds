@@ -204,6 +204,30 @@ const INTENDED: &[Intended] = &[
     },
 ];
 
+/// The include directories the files under a directory are read with,
+/// as the tests that read them give them (`zerodds-idlc check -I`).
+///
+/// A file that needs another directory on the include path is not out
+/// of spec, and it does not belong in [`INTENDED`]: read without that
+/// directory, its include is unresolved and every name it brings in is
+/// too. Each entry says which reader gives the directory.
+struct IncludePath {
+    /// Directory prefix from the repository root, ending in `/`.
+    prefix: &'static str,
+    /// Include directories from the repository root, in search order.
+    dirs: &'static [&'static str],
+    /// The test or build that reads the files with these directories.
+    reader: &'static str,
+}
+
+const INCLUDE_PATHS: &[IncludePath] = &[IncludePath {
+    prefix: "crates/dds4ccm/idl/",
+    dirs: &["crates/dlrl/idl"],
+    reader: "the IDL of DDS4CCM Annex B includes the generic DLRL IDL, `dds_dlrl.idl`, \
+             which crates/dds4ccm/tests/annex_idl.rs and tests/omniidl.rs find in \
+             crates/dlrl/idl",
+}];
+
 /// Every committed `.idl`, from `git ls-files`.
 ///
 /// `git ls-files` rather than a directory walk, for the reason the gap
@@ -232,12 +256,18 @@ fn committed_idl(repo: &std::path::Path) -> Vec<String> {
 fn codes_of(repo: &std::path::Path, path: &str) -> Vec<String> {
     let full = repo.join(path);
     let source = std::fs::read_to_string(&full).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let roots = INCLUDE_PATHS
+        .iter()
+        .filter(|i| path.starts_with(i.prefix))
+        .flat_map(|i| i.dirs.iter().map(|d| repo.join(d)))
+        .collect();
     let composed = zerodds_idl_compose::compose_source(
         &full.to_string_lossy(),
         &source,
         // The loader `check` uses, so an `#include` resolves here the
-        // way it resolves there.
-        &zerodds_idl_compose::PathLoader::bare(),
+        // way it resolves there, with the `-I` directories of
+        // INCLUDE_PATHS.
+        &zerodds_idl_compose::PathLoader::new(roots),
     );
     let mut codes: Vec<String> = composed
         .diagnostics
@@ -322,6 +352,25 @@ fn the_list_names_only_files_that_still_earn_their_place() {
         );
     }
     assert!(stale.is_empty(), "{}", stale.join("\n"));
+}
+
+#[test]
+fn every_include_path_names_directories_that_hold_idl() {
+    // An entry whose directories went away would read its files as
+    // `bare` again without anyone noticing, and one whose prefix holds
+    // no IDL any more describes nothing.
+    let repo = repo_root();
+    for include in INCLUDE_PATHS {
+        assert!(include.prefix.ends_with('/'), "{}", include.prefix);
+        assert!(!include.reader.is_empty(), "{}: no reader", include.prefix);
+        for dir in std::iter::once(&include.prefix).chain(include.dirs) {
+            let holds_idl = std::fs::read_dir(repo.join(dir))
+                .unwrap_or_else(|e| panic!("{dir}: {e}"))
+                .filter_map(Result::ok)
+                .any(|f| f.path().extension().is_some_and(|x| x == "idl"));
+            assert!(holds_idl, "{dir} holds no .idl file");
+        }
+    }
 }
 
 #[test]

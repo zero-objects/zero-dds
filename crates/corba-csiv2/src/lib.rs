@@ -64,6 +64,7 @@ pub mod association_options;
 pub mod authenticator;
 pub mod gssup;
 pub mod gssup_store;
+pub mod identity;
 pub mod mech_list;
 pub mod sas;
 pub mod session;
@@ -71,10 +72,12 @@ pub mod session;
 pub use association_options::AssociationOptions;
 pub use authenticator::{
     IDENTITY_TYPE_ANONYMOUS, IDENTITY_TYPE_DISTINGUISHED_NAME, IDENTITY_TYPE_PRINCIPAL_NAME,
-    IDENTITY_TYPE_X509_CERT_CHAIN, SasOutcome, authenticate_gssup,
+    IDENTITY_TYPE_X509_CERT_CHAIN, SasOutcome, authenticate_gssup, authenticate_gssup_with,
+    authenticate_with_verifier,
 };
 pub use gssup::{GssupCredentialToken, INITIAL_CONTEXT_TOKEN_TAG};
 pub use gssup_store::{GssupStoreError, GssupUserStore};
+pub use identity::{AssertedIdentity, AssertionTrust, IdentityError, ScopedUsername};
 pub use mech_list::{AsContextSec, CompoundSecMech, CompoundSecMechList, SasContextSec};
 pub use sas::{
     CompleteEstablishContext, ContextError, EstablishContext, IdentityToken, MessageInContext,

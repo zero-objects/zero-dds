@@ -38,6 +38,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use zerodds_foundation::observability::{Component, Event, Level, SharedSink};
 use zerodds_rtps::wire_types::{Locator, LocatorKind};
 use zerodds_transport::{ReceivedDatagram, RecvError, SendError, Transport};
 use zerodds_transport_shm::posix::{PosixShmTransport, ShmConfig};
@@ -55,6 +56,8 @@ pub struct ShmUserTransport {
     opening: Mutex<()>,
     inbound_cv: Arc<Condvar>,
     stop: Arc<std::sync::atomic::AtomicBool>,
+    /// Where a receive thread files a frame its ring dropped as corrupt.
+    sink: SharedSink,
 }
 
 struct AdapterState {
@@ -101,7 +104,17 @@ impl ShmUserTransport {
             opening: Mutex::new(()),
             inbound_cv: Arc::new(Condvar::new()),
             stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            sink: zerodds_foundation::observability::null_sink(),
         }
+    }
+
+    /// Files the events of the receive threads in `sink`: a frame a peer's
+    /// ring dropped as corrupt (`zerodds-shm-transport-1.0` §3.3) is the
+    /// event `shm.corrupt_frame` with the peer's id and the number dropped.
+    #[must_use]
+    pub fn with_observability(mut self, sink: SharedSink) -> Self {
+        self.sink = sink;
+        self
     }
 
     /// Stops all recv threads (idempotent).
@@ -145,6 +158,7 @@ impl ShmUserTransport {
         let peer_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let peer_stop_cl = Arc::clone(&peer_stop);
         let consumer_for_thread = Arc::clone(&consumer_arc);
+        let sink = Arc::clone(&self.sink);
         let join = thread::Builder::new()
             .name(format!(
                 "zdds-shm-recv-{:02x}{:02x}",
@@ -154,7 +168,10 @@ impl ShmUserTransport {
                 while !stop_cl.load(std::sync::atomic::Ordering::Relaxed)
                     && !peer_stop_cl.load(std::sync::atomic::Ordering::Relaxed)
                 {
-                    match consumer_for_thread.recv() {
+                    let corrupt_before = consumer_for_thread.corrupt_frames_seen();
+                    let received = consumer_for_thread.recv();
+                    report_corrupt_frames(&sink, peer_id, &consumer_for_thread, corrupt_before);
+                    match received {
                         Ok(dg) => {
                             if let Ok(mut st) = state_cl.lock() {
                                 st.inbound.push_back(dg);
@@ -191,6 +208,28 @@ impl ShmUserTransport {
             .lock()
             .ok()
             .and_then(|st| st.owners.get(&peer_id).map(Arc::clone))
+    }
+}
+
+/// Files the frames `consumer` dropped as corrupt since its count was
+/// `before` as the event `shm.corrupt_frame` (`zerodds-shm-transport-1.0`
+/// §3.3): the ring resumes at its `head`, and what the peer wrote up to
+/// there is lost.
+fn report_corrupt_frames(
+    sink: &SharedSink,
+    peer_id: [u8; 16],
+    consumer: &PosixShmTransport,
+    before: u64,
+) {
+    let dropped = consumer.corrupt_frames_seen().wrapping_sub(before);
+    if dropped > 0 {
+        let peer: alloc::string::String =
+            peer_id.iter().map(|b| alloc::format!("{b:02x}")).collect();
+        sink.record(
+            &Event::new(Level::Error, Component::Transport, "shm.corrupt_frame")
+                .with_attr("peer", peer)
+                .with_attr("count", alloc::format!("{dropped}")),
+        );
     }
 }
 
@@ -415,5 +454,83 @@ mod tests {
         );
         let st = a.state.lock().unwrap();
         assert!(st.consumers.is_empty() && st.owners.is_empty());
+    }
+
+    /// zerodds-shm-transport-1.0 §3.3: a frame a peer's ring drops as
+    /// corrupt is filed by the peer's receive thread as `shm.corrupt_frame`,
+    /// at level error, with the peer's id and the number dropped; the
+    /// peer's next datagram arrives.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shm_3_3_a_corrupt_frame_on_the_user_transport_is_reported_as_an_event() {
+        use std::os::unix::fs::FileExt;
+        use zerodds_foundation::observability::VecSink;
+        let tmp = tempfile::tempdir().unwrap();
+        let events = Arc::new(VecSink::new());
+        let a = ShmUserTransport::new(id(6), config(tmp.path()));
+        let b = ShmUserTransport::new(id(7), config(tmp.path())).with_observability(events.clone());
+        b.add_destination(&a.local_locator());
+        a.send(&b.local_locator(), b"first").unwrap();
+        assert_eq!(&b.recv().unwrap().data[..], b"first");
+
+        // A length above half the ring at the ring's head, published with 8
+        // bytes, written through the segment's file as another process
+        // would write it.
+        let ring = Arc::clone(&a.state.lock().unwrap().owners[&id(7)]);
+        let path =
+            std::path::Path::new("/dev/shm").join(ring.segment_name().trim_start_matches('/'));
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        let mut word = [0u8; 8];
+        file.read_exact_at(&mut word, 8).unwrap();
+        let capacity = u64::from_le_bytes(word);
+        file.read_exact_at(&mut word, 16).unwrap();
+        let head = u64::from_ne_bytes(word);
+        file.write_all_at(
+            &u32::try_from(capacity).unwrap().to_le_bytes(),
+            64 + head % capacity,
+        )
+        .unwrap();
+        file.write_all_at(&(head + 8).to_ne_bytes(), 16).unwrap();
+        // The parked receive thread wakes with the next frame; its recv
+        // drops the corrupt one and what follows it up to the head.
+        a.send(&b.local_locator(), b"after").unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let filed = loop {
+            let filed: Vec<(Level, Vec<(&str, String)>)> = events
+                .snapshot()
+                .iter()
+                .filter(|e| e.name == "shm.corrupt_frame")
+                .map(|e| {
+                    (
+                        e.level,
+                        e.attrs.iter().map(|a| (a.key, a.value.clone())).collect(),
+                    )
+                })
+                .collect();
+            if !filed.is_empty() || Instant::now() > deadline {
+                break filed;
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        let peer: String = id(6).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            filed,
+            vec![(Level::Error, vec![("peer", peer), ("count", "1".into())])]
+        );
+        a.send(&b.local_locator(), b"later").unwrap();
+        // "after" arrives only if the thread woke between the write above and
+        // that send, which leaves it out of the drop.
+        let mut got = b.recv().unwrap();
+        if &got.data[..] == b"after" {
+            got = b.recv().unwrap();
+        }
+        assert_eq!(&got.data[..], b"later");
+        b.close();
+        a.close();
     }
 }

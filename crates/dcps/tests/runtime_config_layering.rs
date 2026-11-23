@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use zerodds_dcps::runtime::{ConfigSource, RuntimeConfig, SETTINGS, setting_path};
+use zerodds_dcps::runtime::{
+    ConfigSource, RuntimeConfig, SETTINGS, UdsMode, UdsUserConfig, setting_path,
+};
 
 fn workdir(leaf: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -109,6 +111,11 @@ fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String
             .find(|(n, _)| *n == name)
             .map(|(_, v)| (*v).to_string())
     }
+}
+
+/// The settings of an environment alone, with no file.
+fn source_from_env(pairs: &[(&str, &str)]) -> ConfigSource {
+    ConfigSource::from_command_line_with_env(&cli(&[]), env_of(pairs)).expect("the environment")
 }
 
 #[test]
@@ -974,13 +981,19 @@ fn rtps_8_4_14_1_the_udp_message_size_is_a_setting() {
 /// default; `transport.tcp_locator_kinds: fast-dds` selects 4 and 8.
 #[test]
 fn rtps_9_3_2_4_the_tcp_locator_kinds_are_a_setting() {
+    use zerodds_rtps::wire_types::TcpKindSet;
     assert!(!RuntimeConfig::default().tcp_locator_kinds_fast_dds);
+    assert_eq!(RuntimeConfig::default().tcp_kind_set(), TcpKindSet::ZeroDds);
     let dir = workdir("tcp-kinds");
     let source = source_from(&dir, "transport:\n  tcp_locator_kinds: fast-dds\n", None);
     assert!(
         RuntimeConfig::from_source(&source)
             .unwrap()
             .tcp_locator_kinds_fast_dds
+    );
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().tcp_kind_set(),
+        TcpKindSet::Kinds4And8
     );
     let source = source_from(&dir, "transport:\n  tcp_locator_kinds: vendor\n", None);
     assert!(
@@ -990,6 +1003,324 @@ fn rtps_9_3_2_4_the_tcp_locator_kinds_are_a_setting() {
     );
     let bad = source_from(&dir, "transport:\n  tcp_locator_kinds: other\n", None);
     assert!(RuntimeConfig::from_source(&bad).is_err());
+}
+
+/// zerodds-tcp-transport-1.0 §3.3: the vendors a TCP listener takes are a
+/// setting, a list of vendor ids of four hex digits; unset takes every
+/// vendor, and the empty list is refused.
+#[test]
+fn tcp_3_3_the_accepted_vendors_are_a_setting() {
+    assert_eq!(RuntimeConfig::default().tcp_accepted_vendors, None);
+    let dir = workdir("tcp-vendors");
+    let source = source_from(
+        &dir,
+        "transport:\n  tcp_accepted_vendors: [01f0, 0110]\n",
+        None,
+    );
+    assert_eq!(
+        RuntimeConfig::from_source(&source)
+            .unwrap()
+            .tcp_accepted_vendors,
+        Some(vec![[0x01, 0xF0], [0x01, 0x10]])
+    );
+    let source = source_from(&dir, "transport:\n  tcp_accepted_vendors: 01F0\n", None);
+    assert_eq!(
+        RuntimeConfig::from_source(&source)
+            .unwrap()
+            .tcp_accepted_vendors,
+        Some(vec![[0x01, 0xF0]])
+    );
+    // The empty list is no value of the key: a transport reads it as "no
+    // vendor", the unset key means "every vendor".
+    for empty in ["[]", "\"\"", "\" \""] {
+        let text = format!("transport:\n  tcp_accepted_vendors: {empty}\n");
+        let source = source_from(&dir, &text, None);
+        assert!(RuntimeConfig::from_source(&source).is_err(), "{empty}");
+    }
+    for bad in ["1f0", "01f0,", "0x01f0", "01f00", "zzzz", "01 f0"] {
+        let text = format!("transport:\n  tcp_accepted_vendors: \"{bad}\"\n");
+        let source = source_from(&dir, &text, None);
+        assert!(RuntimeConfig::from_source(&source).is_err(), "{bad}");
+    }
+}
+
+/// zerodds-tcp-transport-1.0 §3.6: whether an outgoing TCP connection
+/// claims the port of the runtime's listener is a setting.
+#[test]
+fn tcp_3_6_the_logical_port_claim_is_a_setting() {
+    assert!(RuntimeConfig::default().tcp_logical_port_claim);
+    let dir = workdir("tcp-claim");
+    let source = source_from(&dir, "transport:\n  tcp_logical_port_claim: none\n", None);
+    assert!(
+        !RuntimeConfig::from_source(&source)
+            .unwrap()
+            .tcp_logical_port_claim
+    );
+    let source = source_from(
+        &dir,
+        "transport:\n  tcp_logical_port_claim: listener\n",
+        None,
+    );
+    assert!(
+        RuntimeConfig::from_source(&source)
+            .unwrap()
+            .tcp_logical_port_claim
+    );
+    let bad = source_from(&dir, "transport:\n  tcp_logical_port_claim: off\n", None);
+    assert!(RuntimeConfig::from_source(&bad).is_err());
+}
+
+/// zerodds-tcp-transport-1.0 §2.5: the dialect of the TCP connections is a
+/// setting; the default is the handshake and frames of §3 and §2.1.
+#[test]
+fn tcp_2_5_the_tcp_dialect_is_a_setting() {
+    use zerodds_transport_tcp::TcpDialect;
+    assert_eq!(RuntimeConfig::default().tcp_dialect, TcpDialect::ZeroDds);
+    let dir = workdir("tcp-dialect");
+    let source = source_from(&dir, "transport:\n  tcp_dialect: rtps\n", None);
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().tcp_dialect,
+        TcpDialect::Rtps
+    );
+    let source = source_from(&dir, "transport:\n  tcp_dialect: zerodds\n", None);
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().tcp_dialect,
+        TcpDialect::ZeroDds
+    );
+    let bad = source_from(&dir, "transport:\n  tcp_dialect: fast-dds\n", None);
+    assert!(RuntimeConfig::from_source(&bad).is_err());
+}
+
+/// zerodds-tcp-transport-1.0 §4.1: `cyclone` is a value of
+/// `transport.tcp_dialect`, in a file and by environment variable, and
+/// brings the locator kinds 4 and 8.
+#[test]
+fn tcp_4_1_the_cyclone_dialect_is_a_setting() {
+    use zerodds_rtps::wire_types::TcpKindSet;
+    use zerodds_transport_tcp::TcpDialect;
+    let dir = workdir("tcp-dialect-cyclone");
+    let source = source_from(&dir, "transport:\n  tcp_dialect: cyclone\n", None);
+    let config = RuntimeConfig::from_source(&source).unwrap();
+    assert_eq!(config.tcp_dialect, TcpDialect::Cyclone);
+    assert_eq!(config.tcp_kind_set(), TcpKindSet::Kinds4And8);
+    let source = source_from_env(&[("ZERODDS_TCP_DIALECT", "cyclone")]);
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().tcp_dialect,
+        TcpDialect::Cyclone
+    );
+    assert_eq!(RuntimeConfig::default().tcp_kind_set(), TcpKindSet::ZeroDds);
+}
+
+/// zerodds-tcp-transport-1.0 §6.1: the dialect of Fast DDS is a setting,
+/// by file and by environment, with the locator kinds 4 and 8, and a
+/// dialect a listener may take.
+#[test]
+fn tcp_6_1_the_fastdds_dialect_is_a_setting() {
+    use zerodds_rtps::wire_types::TcpKindSet;
+    use zerodds_transport_tcp::TcpDialect;
+    let dir = workdir("tcp-dialect-fastdds");
+    let source = source_from(
+        &dir,
+        "transport:\n  tcp_dialect: fastdds\n  tcp_accept_dialects: [fastdds]\n",
+        None,
+    );
+    let config = RuntimeConfig::from_source(&source).unwrap();
+    assert_eq!(config.tcp_dialect, TcpDialect::FastDds);
+    assert_eq!(config.tcp_kind_set(), TcpKindSet::Kinds4And8);
+    assert_eq!(config.tcp_accept_dialects, Some(vec![TcpDialect::FastDds]));
+    let source = source_from_env(&[("ZERODDS_TCP_DIALECT", "fastdds")]);
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().tcp_dialect,
+        TcpDialect::FastDds
+    );
+}
+
+/// zerodds-tcp-transport-1.0 §4.2: the dialects a listener takes are a
+/// setting, a list; unset is every dialect, and the empty list and a name
+/// that is no dialect are configuration errors.
+#[test]
+fn tcp_4_2_the_accepted_dialects_are_a_setting() {
+    use zerodds_transport_tcp::TcpDialect;
+    assert_eq!(RuntimeConfig::default().tcp_accept_dialects, None);
+    let dir = workdir("tcp-accept-dialects");
+    let source = source_from(
+        &dir,
+        "transport:\n  tcp_accept_dialects: [cyclone, zerodds]\n",
+        None,
+    );
+    assert_eq!(
+        RuntimeConfig::from_source(&source)
+            .unwrap()
+            .tcp_accept_dialects,
+        Some(vec![TcpDialect::Cyclone, TcpDialect::ZeroDds])
+    );
+    let source = source_from_env(&[("ZERODDS_TCP_ACCEPT_DIALECTS", "rtps")]);
+    assert_eq!(
+        RuntimeConfig::from_source(&source)
+            .unwrap()
+            .tcp_accept_dialects,
+        Some(vec![TcpDialect::Rtps])
+    );
+    for bad in [
+        "transport:\n  tcp_accept_dialects: []\n",
+        "transport:\n  tcp_accept_dialects: [zerodds, rti]\n",
+    ] {
+        let bad = source_from(&dir, bad, None);
+        assert!(RuntimeConfig::from_source(&bad).is_err());
+    }
+}
+
+/// zerodds-tcp-transport-1.0 §4.3: the port of the TCP listener is a
+/// setting; the default lets the system choose.
+#[test]
+fn tcp_4_3_the_listener_port_is_a_setting() {
+    assert_eq!(RuntimeConfig::default().tcp_port, 0);
+    let dir = workdir("tcp-port");
+    let source = source_from(&dir, "transport:\n  tcp_port: 7400\n", None);
+    assert_eq!(RuntimeConfig::from_source(&source).unwrap().tcp_port, 7400);
+    let source = source_from_env(&[("ZERODDS_TCP_PORT", "7411")]);
+    assert_eq!(RuntimeConfig::from_source(&source).unwrap().tcp_port, 7411);
+    let bad = source_from(&dir, "transport:\n  tcp_port: 70000\n", None);
+    assert!(RuntimeConfig::from_source(&bad).is_err());
+}
+
+/// zerodds-uds-transport-1.0 §3.5, §5.1, §6.2: the directory, the two
+/// modes, the datagram limit and the mode of the UDS user transport are
+/// settings, from a file and from the environment; the defaults are those
+/// of the transport, the mode `datagram` on Unix and `stream` on Windows.
+/// On Windows a directory from the root of the current drive
+/// (`/run/zerodds-uds`) is taken as well.
+#[test]
+fn uds_5_1_the_uds_directory_modes_and_datagram_limit_are_settings() {
+    assert_eq!(
+        RuntimeConfig::default().uds,
+        UdsUserConfig {
+            base_dir: PathBuf::from("/tmp/zerodds/uds"),
+            socket_mode: None,
+            base_dir_mode: 0o700,
+            max_datagram: 65_536,
+            mode: if cfg!(windows) {
+                UdsMode::Stream
+            } else {
+                UdsMode::Datagram
+            },
+        }
+    );
+    let dir = workdir("uds");
+    let source = source_from(
+        &dir,
+        "transport:\n  uds:\n    base_dir: /run/zerodds-uds\n    socket_mode: 0660\n    \
+         base_dir_mode: \"2770\"\n    max_datagram: 131072\n    mode: stream\n",
+        None,
+    );
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().uds,
+        UdsUserConfig {
+            base_dir: PathBuf::from("/run/zerodds-uds"),
+            socket_mode: Some(0o660),
+            base_dir_mode: 0o2770,
+            max_datagram: 131_072,
+            mode: UdsMode::Stream,
+        }
+    );
+    let source = source_from_env(&[
+        ("ZERODDS_UDS_BASE_DIR", "/var/run/zerodds"),
+        ("ZERODDS_UDS_SOCKET_MODE", "umask"),
+        ("ZERODDS_UDS_BASE_DIR_MODE", "0o750"),
+        ("ZERODDS_UDS_MAX_DATAGRAM", "8192"),
+        ("ZERODDS_UDS_MODE", "datagram"),
+    ]);
+    assert_eq!(
+        RuntimeConfig::from_source(&source).unwrap().uds,
+        UdsUserConfig {
+            base_dir: PathBuf::from("/var/run/zerodds"),
+            socket_mode: None,
+            base_dir_mode: 0o750,
+            max_datagram: 8192,
+            mode: UdsMode::Datagram,
+        }
+    );
+}
+
+/// zerodds-uds-transport-1.0 §5.1, §3.5: a value the transport cannot take
+/// — a relative directory (also one relative to a drive's working
+/// directory), a mode above its bits or not octal, a datagram limit of 0,
+/// a mode of transport other than `datagram` and `stream` — is refused
+/// with the variable's name, not replaced by the default.
+#[test]
+fn uds_5_1_a_bad_uds_value_is_refused_instead_of_falling_back() {
+    for (name, value) in [
+        ("ZERODDS_UDS_BASE_DIR", "relative/uds"),
+        ("ZERODDS_UDS_BASE_DIR", "C:relative"),
+        ("ZERODDS_UDS_MODE", "seqpacket"),
+        ("ZERODDS_UDS_MODE", "Stream"),
+        ("ZERODDS_UDS_SOCKET_MODE", "1777"),
+        ("ZERODDS_UDS_SOCKET_MODE", "0680"),
+        ("ZERODDS_UDS_SOCKET_MODE", "rw-rw----"),
+        ("ZERODDS_UDS_BASE_DIR_MODE", "17777"),
+        ("ZERODDS_UDS_BASE_DIR_MODE", "umask"),
+        ("ZERODDS_UDS_MAX_DATAGRAM", "0"),
+        ("ZERODDS_UDS_MAX_DATAGRAM", "64k"),
+    ] {
+        let source =
+            ConfigSource::from_command_line_with_env(&cli(&[]), env_of(&[(name, value)])).unwrap();
+        let error = RuntimeConfig::from_source(&source).unwrap_err().to_string();
+        assert!(error.contains(name), "{name}={value}: {error}");
+    }
+}
+
+/// zerodds-tcp-transport-1.0 §4.3: `discovery.peers` takes the TCP
+/// listener of a peer as `tcp://ip:port` and `tcp://[ipv6]:port`, beside
+/// the IPv4 forms; a TCP entry without a port is a configuration error.
+#[test]
+fn tcp_4_3_discovery_peers_take_tcp_locators() {
+    let dir = workdir("tcp-peers");
+    let source = source_from(
+        &dir,
+        "discovery:\n  peers: [\"tcp://192.0.2.7:7400\", \"tcp://[2001:db8::7]:7401\", 192.0.2.8]\n",
+        None,
+    );
+    assert_eq!(
+        RuntimeConfig::from_source(&source)
+            .unwrap()
+            .initial_peer_specs,
+        vec![
+            String::from("tcp://192.0.2.7:7400"),
+            String::from("tcp://[2001:db8::7]:7401"),
+            String::from("192.0.2.8"),
+        ]
+    );
+    for bad in [
+        "discovery:\n  peers: [\"tcp://192.0.2.7\"]\n",
+        "discovery:\n  peers: [\"tcp://192.0.2.7:0\"]\n",
+        "discovery:\n  peers: [\"tcp://example.org:7400\"]\n",
+    ] {
+        let bad = source_from(&dir, bad, None);
+        assert!(RuntimeConfig::from_source(&bad).is_err());
+    }
+}
+
+/// zerodds-tcp-transport-1.0 §4.3: what is announced as a metatraffic
+/// unicast locator is a setting, a list of `udp` and `tcp`; the default
+/// is both, and the empty list is a configuration error.
+#[test]
+fn tcp_4_3_the_unicast_transports_are_a_setting() {
+    let d = RuntimeConfig::default();
+    assert!(d.metatraffic_over_udp && d.metatraffic_over_tcp);
+    let dir = workdir("unicast-transports");
+    let source = source_from(&dir, "discovery:\n  unicast_transports: [tcp]\n", None);
+    let config = RuntimeConfig::from_source(&source).unwrap();
+    assert!(!config.metatraffic_over_udp && config.metatraffic_over_tcp);
+    let source = source_from_env(&[("ZERODDS_DISCOVERY_UNICAST_TRANSPORTS", "udp")]);
+    let config = RuntimeConfig::from_source(&source).unwrap();
+    assert!(config.metatraffic_over_udp && !config.metatraffic_over_tcp);
+    for bad in [
+        "discovery:\n  unicast_transports: []\n",
+        "discovery:\n  unicast_transports: [udp, shm]\n",
+    ] {
+        let bad = source_from(&dir, bad, None);
+        assert!(RuntimeConfig::from_source(&bad).is_err());
+    }
 }
 
 /// DDSI-RTPS 2.5 §9.6.2.3: PB, DG, PG and d0 to d3 are settings, in a file

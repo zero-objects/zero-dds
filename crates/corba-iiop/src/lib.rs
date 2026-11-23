@@ -41,6 +41,7 @@
 extern crate alloc;
 
 pub mod bidir;
+pub mod miop;
 pub mod profile_body;
 
 #[cfg(feature = "std")]
@@ -57,7 +58,7 @@ pub mod framing;
 pub mod tls;
 
 pub use bidir::{BiDirIiopListenPoint, BiDirIiopServiceContext, IIOP_BI_DIR_TAG};
-pub use profile_body::{IiopProfileBody, IiopVersion, TaggedComponent};
+pub use profile_body::{IiopProfileBody, IiopVersion, TaggedComponent, unbracketed_host};
 
 #[cfg(feature = "std")]
 pub use acceptor::{Acceptor, AcceptorConfig};

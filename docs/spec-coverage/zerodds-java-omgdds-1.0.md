@@ -206,10 +206,10 @@ die v1.0-Surface, nicht den heutigen Baum.
 ### §4.2 gRPC-Bridge für Multi-Process
 
 **Spec:** §5 — gRPC-Service exponiert DDS Publish/Subscribe
-(`zerodds.bridge.v1.<Topic>/Publish|Subscribe`), Pure-Java-Client verbindet sich.
+(`/<package>.<Service>/Publish|Subscribe`, etwa `/zerodds.demo.v1.DemoStream/Publish`), Pure-Java-Client verbindet sich.
 
 **Repo:** Daemon `zerodds-grpc-bridged` (Service-Routing `service_gen.rs`,
-`/zerodds.bridge.v1.<Topic>/Publish|Subscribe`) + Pure-Java-h2c-Client
+`/<package>.<Service>/Publish|Subscribe`, Paket `grpc_package` oder der Default `zerodds.<erster Namensteil>.v1` nach zerodds-grpc-bridge-1.0 §5.1, etwa `/zerodds.demo.v1.DemoStream`) + Pure-Java-h2c-Client
 `org/zerodds/bridge/GrpcBridgeClient.java` (raw HTTP/2 + HPACK + protobuf
 `Sample`/`PublishAck` — kein grpc-java, kein TLS, Java-8-kompatibel).
 

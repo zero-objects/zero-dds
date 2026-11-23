@@ -67,6 +67,53 @@ pub fn encode_links(links: &[CoreLink]) -> String {
     parts.join(",")
 }
 
+/// The links that match the query filter `query` of a resource discovery
+/// request (RFC 6690 §4.1): `name=value`, the value a Complete Value String
+/// or a Prefix Value String followed by `*`. `name` is `href` (the
+/// URI-reference of the link) or an attribute; the attribute must exist.
+/// The relation-type attributes `rt`, `if` and `rel` hold several values
+/// separated by spaces, each matched on its own. `None` for a query that
+/// is no `name=value` pair.
+#[must_use]
+pub fn filter_links(links: &[CoreLink], query: &str) -> Option<Vec<CoreLink>> {
+    let (name, value) = query.split_once('=')?;
+    if name.is_empty() {
+        return None;
+    }
+    let (wanted, prefix) = match value.strip_suffix('*') {
+        Some(stem) => (stem, true),
+        None => (value, false),
+    };
+    let matches = |target: &str| {
+        if prefix {
+            target.starts_with(wanted)
+        } else {
+            target == wanted
+        }
+    };
+    Some(
+        links
+            .iter()
+            .filter(|link| {
+                if name == "href" {
+                    return matches(&link.uri);
+                }
+                link.attrs
+                    .iter()
+                    .filter(|(key, _)| key == name)
+                    .any(|(_, v)| {
+                        if matches!(name, "rt" | "if" | "rel") {
+                            v.split_ascii_whitespace().any(&matches)
+                        } else {
+                            matches(v)
+                        }
+                    })
+            })
+            .cloned()
+            .collect(),
+    )
+}
+
 /// Decodes a `link-format` string into a link list. Spec §2.
 ///
 /// # Errors
@@ -212,5 +259,36 @@ mod tests {
     fn coap_2_4_encode_escapes_inner_quotes() {
         let s = encode_links(&[CoreLink::new("/p").attr("title", r#"a"b"#)]);
         assert!(s.contains(r#"\""#));
+    }
+
+    /// RFC 6690 §4.1: a Complete Value String matches bitwise, a Prefix
+    /// Value String with `*` as a prefix, an empty prefix every link that
+    /// has the attribute; `href` is the URI-reference; a relation type
+    /// matches each of its space-separated values.
+    #[test]
+    fn coap_7_2_rfc_6690_query_filtering() {
+        let links = alloc::vec![
+            CoreLink::new("/sensors/temp")
+                .attr("rt", "temperature-c dds.topic")
+                .attr("ct", "65000"),
+            CoreLink::new("/sensors/light").attr("rt", "light-lux"),
+            CoreLink::new("/actuators/door").attr("title", "Door"),
+        ];
+        let uris = |query: &str| -> Vec<String> {
+            filter_links(&links, query)
+                .expect("a filter")
+                .into_iter()
+                .map(|l| l.uri)
+                .collect()
+        };
+        assert_eq!(uris("rt=temperature-c"), ["/sensors/temp"]);
+        assert_eq!(uris("rt=dds.topic"), ["/sensors/temp"]);
+        assert_eq!(uris("rt=light*"), ["/sensors/light"]);
+        assert_eq!(uris("rt=*"), ["/sensors/temp", "/sensors/light"]);
+        assert_eq!(uris("href=/sensors*"), ["/sensors/temp", "/sensors/light"]);
+        assert_eq!(uris("title=Door"), ["/actuators/door"]);
+        assert!(uris("ct=0").is_empty());
+        assert!(uris("rt=temperature").is_empty());
+        assert_eq!(filter_links(&links, "nofilter"), None);
     }
 }

@@ -45,9 +45,10 @@ use zerodds_opcua_server::server::Server;
 use zerodds_types::dynamic::DynamicType;
 
 use super::config::DaemonConfig;
+use super::log::{self, Level, daemon_log};
 use super::security::{Acl, AclOp};
 use crate::address_space_build::{self, TopicAddressSpace};
-use crate::dds_bridge::DdsBridge;
+use crate::dds_bridge::{DdsBridge, TypeQuery, TypeQueryState};
 use crate::dynamic_value::{self, FlatField};
 use crate::pubsub_glue::{PublisherJob, SubscriberJob};
 use crate::ua_client::{ClientJob, NodeTarget};
@@ -60,6 +61,449 @@ pub const NS: u16 = 2;
 
 /// Poll interval for the pump loop.
 const PUMP_INTERVAL: Duration = Duration::from_millis(100);
+
+/// How often the pump looks for the types of the topics that wait for one
+/// (spec §5.1).
+const TYPE_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+/// How often a topic that waits for its type says so.
+const TYPE_WAIT_REPORT: Duration = Duration::from_secs(60);
+
+#[cfg(feature = "pubsub-security")]
+type PubSubSecurity = Option<crate::pubsub_glue::SharedKeys>;
+
+/// The key services of the daemon (spec §4.3), with the build features
+/// that carry them.
+#[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+type Keys = Option<Arc<super::keys::KeyService>>;
+/// Without the build features the daemon has no key services.
+#[cfg(not(all(feature = "crypto", feature = "pubsub-security")))]
+#[derive(Clone, Copy)]
+struct Keys;
+/// Without `pubsub-security` a PubSub connection has no message security.
+#[cfg(not(feature = "pubsub-security"))]
+#[derive(Clone)]
+struct PubSubSecurity;
+
+/// A `dds_to_ua_connection` or `ua_to_dds_connection` of the gateway file.
+struct ConnectionSpec {
+    domain_id: u32,
+    dds_topic: String,
+    dds_type: String,
+    writable: bool,
+    node_id_override: Option<NodeId>,
+    browse_path: Vec<String>,
+    historical_depth: Option<usize>,
+}
+
+/// A connection with its AddressSpace nodes and its DDS endpoint.
+enum BuiltConnection {
+    UaToDds(UaToDdsJob),
+    DdsToUa(DdsToUaJob),
+}
+
+/// An `opcua.pubsub.connections[].publishers[]` entry.
+struct PublisherSpec {
+    dds_topic: String,
+    dds_type: String,
+    keyed: bool,
+    publisher_id: u16,
+    writer_group_id: u16,
+    dataset_writer_id: u16,
+    dataset_name: String,
+    interval: Duration,
+    #[cfg_attr(not(feature = "pubsub-security"), allow(dead_code))]
+    security: PubSubSecurity,
+}
+
+/// An `opcua.pubsub.connections[].subscribers[]` entry.
+struct SubscriberSpec {
+    dds_topic: String,
+    dds_type: String,
+    keyed: bool,
+    dataset_name: String,
+    fields: Vec<String>,
+    #[cfg_attr(not(feature = "pubsub-security"), allow(dead_code))]
+    security: PubSubSecurity,
+}
+
+/// What waits for a type, with what it needs besides the type.
+enum PendingKind {
+    Connection(ConnectionSpec),
+    ClientNode {
+        endpoint_url: String,
+        node_id: NodeId,
+        keyed: bool,
+        field_path: String,
+    },
+    Publisher(PublisherSpec, UdpTransport),
+    Subscriber(SubscriberSpec, UdpTransport),
+}
+
+/// A configured topic whose type is in no `opcua.idl` file (spec §5.1):
+/// built when a remote endpoint of the topic gives its type over
+/// TypeLookup.
+struct PendingTopic {
+    dds_topic: String,
+    dds_type: String,
+    query: TypeQuery,
+    kind: PendingKind,
+    /// When the last line about the wait was written.
+    reported: Option<Instant>,
+}
+
+impl PendingTopic {
+    fn new(dds_topic: &str, dds_type: &str, kind: PendingKind) -> Self {
+        Self {
+            dds_topic: dds_topic.to_string(),
+            dds_type: dds_type.to_string(),
+            query: TypeQuery::new(dds_topic),
+            kind,
+            reported: None,
+        }
+    }
+}
+
+/// The jobs of the pump, to add a topic's job to once its type is there.
+struct Jobs<'a> {
+    dds_to_ua: &'a mut Vec<DdsToUaJob>,
+    ua_to_dds: &'a Mutex<Vec<UaToDdsJob>>,
+    client: &'a mut Vec<ClientJob>,
+    publisher: &'a mut Vec<PublisherJob>,
+    subscriber: &'a mut Vec<SubscriberJob>,
+}
+
+/// The topics that wait for their type, and the maps of the Write hook
+/// and the Write commit a `ua_to_dds_connection` adds its leaves to.
+struct LateTopics {
+    /// The key services, rotated with the pump.
+    #[cfg_attr(
+        not(all(feature = "crypto", feature = "pubsub-security")),
+        allow(dead_code)
+    )]
+    keys: Keys,
+    pending: Vec<PendingTopic>,
+    node_to_topic: Arc<Mutex<std::collections::HashMap<String, String>>>,
+    node_to_job: Arc<Mutex<std::collections::HashMap<String, usize>>>,
+    next_poll: Instant,
+}
+
+impl LateTopics {
+    /// Asks for the types of the waiting topics and builds each whose type
+    /// is there: its AddressSpace nodes, its DDS endpoint and its job.
+    fn resolve(
+        &mut self,
+        server: &Mutex<Server>,
+        dds_bridge: &DdsBridge,
+        jobs: &mut Jobs<'_>,
+        now: Instant,
+    ) {
+        let mut index = 0;
+        while index < self.pending.len() {
+            let state = self.pending[index].query.poll(dds_bridge, now);
+            let TypeQueryState::Resolved(support) = state else {
+                let topic = &mut self.pending[index];
+                if topic
+                    .reported
+                    .is_none_or(|at| now.saturating_duration_since(at) >= TYPE_WAIT_REPORT)
+                {
+                    topic.reported = Some(now);
+                    if let TypeQueryState::Waiting {
+                        endpoints,
+                        without_type,
+                    } = state
+                    {
+                        daemon_log!(
+                            Level::Info,
+                            "topic `{}`: waiting for type `{}`: {endpoints} remote endpoint(s) \
+                             of the topic, {without_type} of them announce no complete type",
+                            topic.dds_topic,
+                            topic.dds_type
+                        );
+                    }
+                }
+                index += 1;
+                continue;
+            };
+            let topic = self.pending.swap_remove(index);
+            match self.build(
+                topic.kind,
+                &topic.dds_topic,
+                &topic.dds_type,
+                support,
+                server,
+                dds_bridge,
+                jobs,
+            ) {
+                Ok(()) => daemon_log!(
+                    Level::Info,
+                    "topic `{}`: type `{}` came from a remote endpoint over TypeLookup; bridged",
+                    topic.dds_topic,
+                    topic.dds_type
+                ),
+                Err(e) => daemon_log!(
+                    Level::Error,
+                    "topic `{}`: type `{}` came over TypeLookup and the topic is not bridged: {e}",
+                    topic.dds_topic,
+                    topic.dds_type
+                ),
+            }
+        }
+    }
+
+    /// Builds what `kind` describes with the type `support` came with.
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        &self,
+        kind: PendingKind,
+        dds_topic: &str,
+        dds_type: &str,
+        support: Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
+        server: &Mutex<Server>,
+        dds_bridge: &DdsBridge,
+        jobs: &mut Jobs<'_>,
+    ) -> Result<(), String> {
+        // The endpoints of the daemon name the type as the gateway file
+        // does; the identity is the remote endpoint's.
+        let support = support.with_type_name(dds_type).unwrap_or(support);
+        let dyn_type = support.get_type()?;
+        match kind {
+            PendingKind::Connection(spec) => {
+                let mut guard = server
+                    .lock()
+                    .map_err(|_| "server mutex poisoned".to_string())?;
+                match build_connection(
+                    guard.address_space_mut(),
+                    dds_bridge,
+                    &spec,
+                    dyn_type,
+                    support,
+                )
+                .map_err(|e| e.to_string())?
+                {
+                    BuiltConnection::DdsToUa(job) => jobs.dds_to_ua.push(job),
+                    BuiltConnection::UaToDds(job) => {
+                        let leaves: Vec<String> = job
+                            .topic_space
+                            .writable_nodes()
+                            .map(NodeId::to_canonical_string)
+                            .collect();
+                        let position = {
+                            let mut list = jobs
+                                .ua_to_dds
+                                .lock()
+                                .map_err(|_| "job mutex poisoned".to_string())?;
+                            list.push(job);
+                            list.len() - 1
+                        };
+                        if let Ok(mut map) = self.node_to_job.lock() {
+                            for leaf in &leaves {
+                                map.insert(leaf.clone(), position);
+                            }
+                        }
+                        if let Ok(mut map) = self.node_to_topic.lock() {
+                            for leaf in leaves {
+                                map.insert(leaf, spec.dds_topic.clone());
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            PendingKind::ClientNode {
+                endpoint_url,
+                node_id,
+                keyed,
+                field_path,
+            } => {
+                let target = NodeTarget {
+                    node_id,
+                    dds_topic: dds_topic.to_string(),
+                    dds_type: dds_type.to_string(),
+                    dyn_type,
+                    type_support: support,
+                    keyed,
+                    field_path,
+                };
+                // A node of a server the daemon monitors already is one
+                // more MonitoredItem in that session.
+                match jobs
+                    .client
+                    .iter_mut()
+                    .find(|job| job.endpoint_url() == endpoint_url)
+                {
+                    Some(job) => job
+                        .add_targets(dds_bridge, vec![target])
+                        .map_err(|e| e.to_string()),
+                    None => {
+                        let job = ClientJob::connect(dds_bridge, &endpoint_url, vec![target])
+                            .map_err(|e| std::format!("client `{endpoint_url}`: {e}"))?;
+                        jobs.client.push(job);
+                        Ok(())
+                    }
+                }
+            }
+            PendingKind::Publisher(spec, transport) => {
+                jobs.publisher.push(build_publisher(
+                    dds_bridge, spec, transport, dyn_type, support,
+                )?);
+                Ok(())
+            }
+            PendingKind::Subscriber(spec, transport) => {
+                jobs.subscriber.push(build_subscriber(
+                    dds_bridge, spec, transport, dyn_type, support,
+                )?);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// The type `name` from the `opcua.idl` files: `None` when no file
+/// declares it, so that it comes from a remote endpoint (spec §5.1).
+fn idl_type(
+    models: &[Arc<zerodds_ast::Ast>],
+    name: &str,
+) -> Result<
+    Option<(
+        DynamicType,
+        Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
+    )>,
+    ServerError,
+> {
+    match crate::idl::find_type(models, name) {
+        Err(crate::idl::IdlError::NoSuchType { .. }) => Ok(None),
+        Err(e) => Err(ServerError::Config(e.to_string())),
+        Ok(dyn_type) => {
+            let support = crate::idl::type_support_for(models, name)
+                .map_err(|e| ServerError::Config(e.to_string()))?;
+            Ok(Some((dyn_type, support)))
+        }
+    }
+}
+
+/// Builds a connection of the gateway file: its nodes in `space` and its
+/// DDS reader (`dds_to_ua`) or writer (`ua_to_dds`).
+fn build_connection(
+    space: &mut AddressSpace,
+    dds_bridge: &DdsBridge,
+    spec: &ConnectionSpec,
+    dyn_type: DynamicType,
+    type_support: Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
+) -> Result<BuiltConnection, ServerError> {
+    let ddstype = crate::dynamic_type::to_dds_type(&dyn_type)
+        .map_err(|e| ServerError::Config(e.to_string()))?;
+    let topic_space = address_space_build::materialize_instance_with_override(
+        space,
+        NS,
+        spec.domain_id,
+        &spec.dds_topic,
+        &ddstype,
+        spec.writable,
+        spec.node_id_override.clone(),
+        &spec.browse_path,
+        spec.historical_depth,
+    )
+    .map_err(|e| ServerError::Config(std::format!("topic `{}`: {e}", spec.dds_topic)))?;
+    let keyed = crate::idl::is_keyed(&dyn_type);
+    if spec.writable {
+        dds_bridge
+            .add_writer(
+                &spec.dds_topic,
+                &spec.dds_type,
+                keyed,
+                false,
+                Some(Arc::clone(&type_support)),
+            )
+            .map_err(|e| ServerError::Dds(e.to_string()))?;
+        let sample = dynamic_value::default_data(&dyn_type)
+            .map_err(|e| ServerError::Config(std::format!("topic `{}`: {e}", spec.dds_topic)))?;
+        Ok(BuiltConnection::UaToDds(UaToDdsJob {
+            dds_topic: spec.dds_topic.clone(),
+            dyn_type,
+            type_support,
+            topic_space,
+            last: std::collections::HashMap::new(),
+            sample,
+        }))
+    } else {
+        let reader = dds_bridge
+            .add_reader(
+                &spec.dds_topic,
+                &spec.dds_type,
+                keyed,
+                false,
+                Some(Arc::clone(&type_support)),
+            )
+            .map_err(|e| ServerError::Dds(e.to_string()))?;
+        Ok(BuiltConnection::DdsToUa(DdsToUaJob {
+            dds_topic: spec.dds_topic.clone(),
+            dyn_type,
+            type_support,
+            reader,
+            topic_space,
+        }))
+    }
+}
+
+/// Builds a PubSub publisher of a DDS topic.
+#[cfg_attr(not(feature = "pubsub-security"), allow(unused_mut))]
+fn build_publisher(
+    dds_bridge: &DdsBridge,
+    spec: PublisherSpec,
+    transport: UdpTransport,
+    dyn_type: DynamicType,
+    type_support: Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
+) -> Result<PublisherJob, String> {
+    let mut job = PublisherJob::new(
+        dds_bridge,
+        spec.dds_topic,
+        &spec.dds_type,
+        dyn_type,
+        type_support,
+        spec.keyed,
+        transport,
+        spec.publisher_id,
+        spec.writer_group_id,
+        spec.dataset_writer_id,
+        spec.dataset_name,
+        spec.interval,
+    )
+    .map_err(|e| e.to_string())?;
+    #[cfg(feature = "pubsub-security")]
+    if let Some(keys) = spec.security {
+        job.set_keys(keys);
+    }
+    Ok(job)
+}
+
+/// Builds a PubSub subscriber that writes into a DDS topic.
+#[cfg_attr(not(feature = "pubsub-security"), allow(unused_mut))]
+fn build_subscriber(
+    dds_bridge: &DdsBridge,
+    spec: SubscriberSpec,
+    transport: UdpTransport,
+    dyn_type: DynamicType,
+    type_support: Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
+) -> Result<SubscriberJob, String> {
+    let mut job = SubscriberJob::new(
+        dds_bridge,
+        spec.dds_topic,
+        &spec.dds_type,
+        dyn_type,
+        type_support,
+        spec.keyed,
+        transport,
+        spec.dataset_name,
+        &spec.fields,
+    )
+    .map_err(|e| e.to_string())?;
+    #[cfg(feature = "pubsub-security")]
+    if let Some(keys) = spec.security {
+        job.set_keys(keys);
+    }
+    Ok(job)
+}
 
 /// Daemon top-level error.
 #[derive(Debug)]
@@ -163,6 +607,8 @@ pub struct DaemonHandle {
     signal_close: SignalClose,
     reload_thread: Option<JoinHandle<()>>,
     otlp_thread: Option<JoinHandle<()>>,
+    /// The threads that pull keys from a Security Key Service.
+    key_threads: Vec<JoinHandle<()>>,
     otlp: Option<Arc<OtlpExporter>>,
     /// Bound `opc.tcp` address (may differ from the config bind when port 0).
     pub local_addr: SocketAddr,
@@ -213,6 +659,9 @@ impl DaemonHandle {
         {
             let _ = h.join();
         }
+        for h in self.key_threads.drain(..) {
+            let _ = h.join();
+        }
         // A last flush after the otlp thread's own final one (joined
         // above) — covers a span [`accept_loop`] added between that
         // thread's last periodic flush and `stop` taking effect.
@@ -224,6 +673,7 @@ impl DaemonHandle {
 
 /// Everything the pump loop needs for one `dds_to_ua_connection` topic.
 struct DdsToUaJob {
+    dds_topic: String,
     dyn_type: DynamicType,
     type_support: Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
     reader: crate::dds_bridge::ReaderHandle,
@@ -238,6 +688,10 @@ struct UaToDdsJob {
     type_support: Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>,
     topic_space: TopicAddressSpace,
     last: std::collections::HashMap<String, zerodds_opcua_gateway::data_value::Variant>,
+    /// The sample last written to DDS (the type's zero value before the
+    /// first): a Write changes the members it names, the others keep
+    /// their value.
+    sample: zerodds_types::dynamic::DynamicData,
 }
 
 /// Starts the daemon. `reload` (if given) is called on SIGHUP to rebuild
@@ -255,11 +709,29 @@ pub fn start_with_reload(
     runtime_config: RuntimeConfig,
     reload: Option<ConfigLoader>,
 ) -> Result<DaemonHandle, ServerError> {
+    log::set_level(&cfg.log_level);
     let models =
         crate::idl::compile_all(&cfg.idl, &[]).map_err(|e| ServerError::Config(e.to_string()))?;
 
-    let mut dds_bridge = DdsBridge::start(cfg.domain, "zerodds-opcua-bridged", runtime_config)
-        .map_err(|e| ServerError::Dds(e.to_string()))?;
+    let bind_addr: SocketAddr = cfg
+        .server
+        .bind
+        .parse()
+        .map_err(|e| ServerError::Bind(std::format!("{}: {e}", cfg.server.bind)))?;
+    let listener = TcpListener::bind(bind_addr).map_err(|e| ServerError::Bind(e.to_string()))?;
+    let local_addr = listener
+        .local_addr()
+        .map_err(|e| ServerError::Bind(e.to_string()))?;
+    // The GUID prefix of the daemon's participant comes from its name and
+    // the address its server listens on: two daemons on one host and one
+    // domain had one prefix, and the readers of one acknowledged what the
+    // writers of the other had written.
+    let dds_bridge = DdsBridge::start(
+        cfg.domain,
+        &std::format!("zerodds-opcua-bridged-{local_addr}"),
+        runtime_config,
+    )
+    .map_err(|e| ServerError::Dds(e.to_string()))?;
 
     let acl = Arc::new(Mutex::new(Acl::new(
         cfg.acl_default_deny,
@@ -267,6 +739,9 @@ pub fn start_with_reload(
     )));
 
     let mut address_space = AddressSpace::new();
+    // OPC 10000-5 §8.3.2: the Server Object, whose NamespaceArray names the
+    // daemon's namespace at index `NS`.
+    address_space.ensure_server_object(&[crate::ua_types::NAMESPACE_URI]);
     let mut dds_to_ua_jobs = Vec::new();
     let mut ua_to_dds_jobs = Vec::new();
     // Tracks which `opcua.server.historical.topics` entries were actually
@@ -277,6 +752,8 @@ pub fn start_with_reload(
     // load-time error, not a silent no-op.
     let mut historical_topics_applied: std::collections::HashSet<String> =
         std::collections::HashSet::new();
+    // The configured topics whose type no `opcua.idl` file declares.
+    let mut pending: Vec<PendingTopic> = Vec::new();
 
     if let Some(gateway_config_path) = &cfg.gateway_config {
         let xml = std::fs::read_to_string(gateway_config_path).map_err(|e| {
@@ -292,18 +769,13 @@ pub fn start_with_reload(
                     .map_err(|_| ServerError::Config("acl mutex poisoned".to_string()))?
                     .topic_exposed(&connection.dds_topic, op)
                 {
-                    eprintln!(
-                        "[zerodds-opcua-bridged] topic `{}` not exposed by acl.rules for {op:?} — skipped",
+                    daemon_log!(
+                        Level::Warn,
+                        "topic `{}` not exposed by acl.rules for {op:?} — skipped",
                         connection.dds_topic
                     );
                     continue;
                 }
-                let dyn_type = crate::idl::find_type(&models, &connection.dds_type)
-                    .map_err(|e| ServerError::Config(e.to_string()))?;
-                let ddstype = crate::dynamic_type::to_dds_type(&dyn_type)
-                    .map_err(|e| ServerError::Config(e.to_string()))?;
-                let type_support = crate::idl::type_support_for(&models, &connection.dds_type)
-                    .map_err(|e| ServerError::Config(e.to_string()))?;
                 let node_id_override = connection
                     .node_id
                     .as_ref()
@@ -330,55 +802,35 @@ pub fn start_with_reload(
                     }
                     depth
                 };
-                let topic_space = address_space_build::materialize_instance_with_override(
-                    &mut address_space,
-                    NS,
-                    bridge.domain_id,
-                    &connection.dds_topic,
-                    &ddstype,
+                let spec = ConnectionSpec {
+                    domain_id: bridge.domain_id,
+                    dds_topic: connection.dds_topic.clone(),
+                    dds_type: connection.dds_type.clone(),
                     writable,
                     node_id_override,
-                    &connection.browse_path,
+                    browse_path: connection.browse_path.clone(),
                     historical_depth,
-                )
-                .map_err(|e| {
-                    ServerError::Config(std::format!("topic `{}`: {e}", connection.dds_topic))
-                })?;
-                if writable {
-                    let keyed = crate::idl::is_keyed(&dyn_type);
-                    dds_bridge
-                        .writer(
-                            &connection.dds_topic,
-                            &connection.dds_type,
-                            keyed,
-                            false,
-                            Some(Arc::clone(&type_support)),
-                        )
-                        .map_err(|e| ServerError::Dds(e.to_string()))?;
-                    ua_to_dds_jobs.push(UaToDdsJob {
-                        dds_topic: connection.dds_topic.clone(),
-                        dyn_type,
-                        type_support,
-                        topic_space,
-                        last: std::collections::HashMap::new(),
-                    });
-                } else {
-                    let keyed = crate::idl::is_keyed(&dyn_type);
-                    let reader = dds_bridge
-                        .reader(
-                            &connection.dds_topic,
-                            &connection.dds_type,
-                            keyed,
-                            false,
-                            Some(Arc::clone(&type_support)),
-                        )
-                        .map_err(|e| ServerError::Dds(e.to_string()))?;
-                    dds_to_ua_jobs.push(DdsToUaJob {
-                        dyn_type,
-                        type_support,
-                        reader,
-                        topic_space,
-                    });
+                };
+                // Spec §5.1: a type no `opcua.idl` file declares comes from
+                // a remote endpoint of the topic, over TypeLookup.
+                let Some((dyn_type, type_support)) = idl_type(&models, &connection.dds_type)?
+                else {
+                    pending.push(PendingTopic::new(
+                        &connection.dds_topic,
+                        &connection.dds_type,
+                        PendingKind::Connection(spec),
+                    ));
+                    continue;
+                };
+                match build_connection(
+                    &mut address_space,
+                    &dds_bridge,
+                    &spec,
+                    dyn_type,
+                    type_support,
+                )? {
+                    BuiltConnection::UaToDds(job) => ua_to_dds_jobs.push(job),
+                    BuiltConnection::DdsToUa(job) => dds_to_ua_jobs.push(job),
                 }
             }
         }
@@ -418,18 +870,26 @@ pub fn start_with_reload(
     // above) could never do. Every `ua_to_dds_connection` leaf maps back
     // to its DDS topic once, here, rather than searching `ua_to_dds_jobs`
     // on every Write.
-    let node_to_topic: std::collections::HashMap<String, String> = ua_to_dds_jobs
-        .iter()
-        .flat_map(|job| {
-            job.topic_space
-                .leaves
-                .values()
-                .map(move |id| (id.to_canonical_string(), job.dds_topic.clone()))
-        })
-        .collect();
+    // A topic whose type arrives later adds its leaves (spec §5.1).
+    let node_to_topic: Arc<Mutex<std::collections::HashMap<String, String>>> =
+        Arc::new(Mutex::new(
+            ua_to_dds_jobs
+                .iter()
+                .flat_map(|job| {
+                    job.topic_space
+                        .writable_nodes()
+                        .map(move |id| (id.to_canonical_string(), job.dds_topic.clone()))
+                })
+                .collect(),
+        ));
     let write_acl = Arc::clone(&acl);
+    let hook_topics = Arc::clone(&node_to_topic);
     server.set_write_hook(Box::new(move |wv, user| {
-        let Some(topic) = node_to_topic.get(&wv.node_id.to_canonical_string()) else {
+        let topic = hook_topics
+            .lock()
+            .ok()
+            .and_then(|topics| topics.get(&wv.node_id.to_canonical_string()).cloned());
+        let Some(topic) = topic else {
             // Not a DDS-mapped leaf (e.g. a server-internal node this
             // daemon never registered) — no ACL opinion; the normal
             // AccessLevel/WriteMask checks decide.
@@ -438,7 +898,7 @@ pub fn start_with_reload(
         let subject = super::security::client_subject(user);
         let allowed = write_acl
             .lock()
-            .map(|a| a.allow_write(&subject, topic))
+            .map(|a| a.allow_write(&subject, &topic))
             .unwrap_or(false);
         if allowed {
             None
@@ -457,18 +917,28 @@ pub fn start_with_reload(
                 .map_err(|_| ServerError::Config("acl mutex poisoned".to_string()))?
                 .topic_exposed(&node.dds_topic, AclOp::Write)
             {
-                eprintln!(
-                    "[zerodds-opcua-bridged] client target topic `{}` not exposed by acl.rules for Write — skipped",
+                daemon_log!(
+                    Level::Warn,
+                    "client target topic `{}` not exposed by acl.rules for Write — skipped",
                     node.dds_topic
                 );
                 continue;
             }
             let node_id = parse_node_id(&node.node_id)
                 .map_err(|e| ServerError::Config(std::format!("{}: {e}", node.node_id)))?;
-            let dyn_type = crate::idl::find_type(&models, &node.dds_type)
-                .map_err(|e| ServerError::Config(e.to_string()))?;
-            let type_support = crate::idl::type_support_for(&models, &node.dds_type)
-                .map_err(|e| ServerError::Config(e.to_string()))?;
+            let Some((dyn_type, type_support)) = idl_type(&models, &node.dds_type)? else {
+                pending.push(PendingTopic::new(
+                    &node.dds_topic,
+                    &node.dds_type,
+                    PendingKind::ClientNode {
+                        endpoint_url: foreign.endpoint_url.clone(),
+                        node_id,
+                        keyed: node.keyed,
+                        field_path: node.field_path.clone(),
+                    },
+                ));
+                continue;
+            };
             targets.push(NodeTarget {
                 node_id,
                 dds_topic: node.dds_topic.clone(),
@@ -482,10 +952,11 @@ pub fn start_with_reload(
         if targets.is_empty() {
             continue;
         }
-        match ClientJob::connect(&mut dds_bridge, &foreign.endpoint_url, targets) {
+        match ClientJob::connect(&dds_bridge, &foreign.endpoint_url, targets) {
             Ok(job) => client_jobs.push(job),
-            Err(e) => eprintln!(
-                "[zerodds-opcua-bridged] client `{}`: {e} — not connected",
+            Err(e) => daemon_log!(
+                Level::Warn,
+                "client `{}`: {e} — not connected",
                 foreign.endpoint_url
             ),
         }
@@ -493,13 +964,38 @@ pub fn start_with_reload(
 
     let mut publisher_jobs = Vec::new();
     let mut subscriber_jobs = Vec::new();
+    let stop = Arc::new(AtomicBool::new(false));
+    // Spec §4.3: the SecurityGroups this daemon hands keys out for, and the
+    // threads that pull keys from an SKS.
+    #[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+    let keys: Keys = Some(super::keys::KeyService::new(
+        &cfg.server.security_groups,
+        &cfg.server.roles,
+        NS,
+        Instant::now(),
+    ));
+    #[cfg(not(all(feature = "crypto", feature = "pubsub-security")))]
+    let keys = {
+        if !cfg.server.security_groups.is_empty() || cfg.server.roles != Default::default() {
+            return Err(ServerError::Config(
+                "opcua.server.security_groups and opcua.server.roles need the build features crypto and pubsub-security"
+                    .to_string(),
+            ));
+        }
+        Keys
+    };
+    #[cfg_attr(not(feature = "pubsub-security"), allow(unused_mut))]
+    let mut key_threads: Vec<JoinHandle<()>> = Vec::new();
     for connection in &cfg.pubsub.connections {
         let multicast: SocketAddr = connection
             .multicast_addr
             .parse()
             .map_err(|e| ServerError::Config(std::format!("{}: {e}", connection.multicast_addr)))?;
         #[cfg(feature = "pubsub-security")]
-        let pubsub_security = build_pubsub_security(&connection.security);
+        let pubsub_security =
+            build_pubsub_security(&connection.security, &keys, &stop, &mut key_threads)?;
+        #[cfg(not(feature = "pubsub-security"))]
+        let pubsub_security = PubSubSecurity;
         let local: SocketAddr = connection
             .local_addr
             .parse()
@@ -510,39 +1006,38 @@ pub fn start_with_reload(
                 .map_err(|_| ServerError::Config("acl mutex poisoned".to_string()))?
                 .topic_exposed(&publisher.dds_topic, AclOp::Read)
             {
-                eprintln!(
-                    "[zerodds-opcua-bridged] pubsub publisher topic `{}` not exposed by acl.rules for Read — skipped",
+                daemon_log!(
+                    Level::Warn,
+                    "pubsub publisher topic `{}` not exposed by acl.rules for Read — skipped",
                     publisher.dds_topic
                 );
                 continue;
             }
-            let dyn_type = crate::idl::find_type(&models, &publisher.dds_type)
-                .map_err(|e| ServerError::Config(e.to_string()))?;
-            let type_support = crate::idl::type_support_for(&models, &publisher.dds_type)
-                .map_err(|e| ServerError::Config(e.to_string()))?;
             let transport = UdpTransport::bind(local, multicast)
                 .map_err(|e| ServerError::Bind(e.to_string()))?;
-            #[allow(unused_mut)]
-            let mut job = PublisherJob::new(
-                &mut dds_bridge,
-                publisher.dds_topic.clone(),
-                &publisher.dds_type,
-                dyn_type,
-                type_support,
-                publisher.keyed,
-                transport,
-                connection.publisher_id,
-                publisher.writer_group_id,
-                publisher.dataset_writer_id,
-                publisher.dataset_name.clone(),
-                Duration::from_millis(u64::from(publisher.publish_interval_ms)),
-            )
-            .map_err(|e| ServerError::Dds(e.to_string()))?;
-            #[cfg(feature = "pubsub-security")]
-            if let Some((policy, sks)) = &pubsub_security {
-                job.set_security(*policy, sks.clone());
-            }
-            publisher_jobs.push(job);
+            let spec = PublisherSpec {
+                dds_topic: publisher.dds_topic.clone(),
+                dds_type: publisher.dds_type.clone(),
+                keyed: publisher.keyed,
+                publisher_id: connection.publisher_id,
+                writer_group_id: publisher.writer_group_id,
+                dataset_writer_id: publisher.dataset_writer_id,
+                dataset_name: publisher.dataset_name.clone(),
+                interval: Duration::from_millis(u64::from(publisher.publish_interval_ms)),
+                security: pubsub_security.clone(),
+            };
+            let Some((dyn_type, type_support)) = idl_type(&models, &publisher.dds_type)? else {
+                pending.push(PendingTopic::new(
+                    &publisher.dds_topic,
+                    &publisher.dds_type,
+                    PendingKind::Publisher(spec, transport),
+                ));
+                continue;
+            };
+            publisher_jobs.push(
+                build_publisher(&dds_bridge, spec, transport, dyn_type, type_support)
+                    .map_err(ServerError::Dds)?,
+            );
         }
         for subscriber in &connection.subscribers {
             if !acl
@@ -550,16 +1045,13 @@ pub fn start_with_reload(
                 .map_err(|_| ServerError::Config("acl mutex poisoned".to_string()))?
                 .topic_exposed(&subscriber.dds_topic, AclOp::Write)
             {
-                eprintln!(
-                    "[zerodds-opcua-bridged] pubsub subscriber topic `{}` not exposed by acl.rules for Write — skipped",
+                daemon_log!(
+                    Level::Warn,
+                    "pubsub subscriber topic `{}` not exposed by acl.rules for Write — skipped",
                     subscriber.dds_topic
                 );
                 continue;
             }
-            let dyn_type = crate::idl::find_type(&models, &subscriber.dds_type)
-                .map_err(|e| ServerError::Config(e.to_string()))?;
-            let type_support = crate::idl::type_support_for(&models, &subscriber.dds_type)
-                .map_err(|e| ServerError::Config(e.to_string()))?;
             // The subscriber's own receive socket must bind `multicast`'s own
             // *port*, not `local`'s (`0.0.0.0:0` by default): UDP multicast
             // delivery is demultiplexed by destination (ip, port) at the
@@ -572,7 +1064,9 @@ pub fn start_with_reload(
             // inert — still needs a syntactically valid one, which it
             // already is.
             let subscriber_local = SocketAddr::new(local.ip(), multicast.port());
-            let transport = UdpTransport::bind(subscriber_local, multicast)
+            // Shared: another subscriber of the group on this host binds the
+            // same port.
+            let transport = UdpTransport::bind_shared(subscriber_local, multicast)
                 .map_err(|e| ServerError::Bind(e.to_string()))?;
             if let Ok(local_bound) = transport.local_addr()
                 && let std::net::IpAddr::V4(group) = multicast.ip()
@@ -587,41 +1081,62 @@ pub fn start_with_reload(
                 );
             }
             let _ = transport.set_read_timeout(Some(Duration::from_millis(50)));
-            #[allow(unused_mut)]
-            let mut job = SubscriberJob::new(
-                &mut dds_bridge,
-                subscriber.dds_topic.clone(),
-                &subscriber.dds_type,
-                dyn_type,
-                type_support,
-                subscriber.keyed,
-                transport,
-                subscriber.dataset_name.clone(),
-                &subscriber.fields,
-            )
-            .map_err(|e| ServerError::Dds(e.to_string()))?;
-            #[cfg(feature = "pubsub-security")]
-            if let Some((policy, sks)) = &pubsub_security {
-                job.set_security(*policy, sks.clone());
-            }
-            subscriber_jobs.push(job);
+            let spec = SubscriberSpec {
+                dds_topic: subscriber.dds_topic.clone(),
+                dds_type: subscriber.dds_type.clone(),
+                keyed: subscriber.keyed,
+                dataset_name: subscriber.dataset_name.clone(),
+                fields: subscriber.fields.clone(),
+                security: pubsub_security.clone(),
+            };
+            let Some((dyn_type, type_support)) = idl_type(&models, &subscriber.dds_type)? else {
+                pending.push(PendingTopic::new(
+                    &subscriber.dds_topic,
+                    &subscriber.dds_type,
+                    PendingKind::Subscriber(spec, transport),
+                ));
+                continue;
+            };
+            subscriber_jobs.push(
+                build_subscriber(&dds_bridge, spec, transport, dyn_type, type_support)
+                    .map_err(ServerError::Dds)?,
+            );
         }
     }
 
-    let bind_addr: SocketAddr = cfg
-        .server
-        .bind
-        .parse()
-        .map_err(|e| ServerError::Bind(std::format!("{}: {e}", cfg.server.bind)))?;
-    let listener = TcpListener::bind(bind_addr).map_err(|e| ServerError::Bind(e.to_string()))?;
-    let local_addr = listener
-        .local_addr()
-        .map_err(|e| ServerError::Bind(e.to_string()))?;
+    // The key Methods and the SecurityGroup Objects (Part 14 §8), once the
+    // push targets of the connections are known.
+    #[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+    if let Some(service) = keys.as_ref() {
+        service.install(
+            server
+                .lock()
+                .map_err(|_| ServerError::Config("server mutex poisoned".to_string()))?
+                .address_space_mut(),
+        );
+        // Part 14 §8.6.2: the SKS pushes with the application identity of
+        // its server.
+        if let (Some(cert_path), Some(key_path)) =
+            (&cfg.server.certificate_der, &cfg.server.private_key_pem)
+        {
+            let certificate = super::security::load_der(cert_path)
+                .map_err(|e| ServerError::Security(e.to_string()))?;
+            let private_key = super::security::load_private_key_pem(key_path)
+                .map_err(|e| ServerError::Security(e.to_string()))?;
+            service.set_push_identity(super::push::SksIdentity {
+                certificate,
+                private_key,
+            });
+        }
+        key_threads.push(
+            super::push::spawn_pusher(Arc::clone(service), Arc::clone(&server), Arc::clone(&stop))
+                .map_err(|e| ServerError::Io(e.to_string()))?,
+        );
+    }
 
     let registry = Arc::new(Registry::new());
     let metrics = BridgeMetrics::register(&registry);
 
-    let stop = Arc::new(AtomicBool::new(false));
     let dds_bridge = Arc::new(dds_bridge);
 
     // `metrics.otlp_endpoint`: coarse-grained endpoint-lifecycle spans
@@ -650,7 +1165,7 @@ pub fn start_with_reload(
                     thread::sleep(PUMP_INTERVAL);
                     if Instant::now() >= next_flush {
                         if let Err(e) = exp.flush() {
-                            eprintln!("[zerodds-opcua-bridged] otlp flush error: {e}");
+                            daemon_log!(Level::Warn, "otlp flush error: {e}");
                         }
                         next_flush = Instant::now() + OTLP_FLUSH_INTERVAL;
                     }
@@ -661,6 +1176,64 @@ pub fn start_with_reload(
     let otlp_thread = otlp_thread
         .transpose()
         .map_err(|e: std::io::Error| ServerError::Io(e.to_string()))?;
+
+    // Spec §6.2: a client's Write of a `ua_to_dds_connection` leaf goes into
+    // DDS before the client is answered, and the answer is the outcome.
+    let node_to_job: Arc<Mutex<std::collections::HashMap<String, usize>>> = Arc::new(Mutex::new(
+        ua_to_dds_jobs
+            .iter()
+            .enumerate()
+            .flat_map(|(index, job)| {
+                job.topic_space
+                    .writable_nodes()
+                    .map(move |id| (id.to_canonical_string(), index))
+            })
+            .collect(),
+    ));
+    let ua_to_dds_jobs = Arc::new(Mutex::new(ua_to_dds_jobs));
+    {
+        let node_to_job = Arc::clone(&node_to_job);
+        let jobs = Arc::clone(&ua_to_dds_jobs);
+        let dds_bridge = Arc::clone(&dds_bridge);
+        let metrics = metrics.clone();
+        server
+            .lock()
+            .map_err(|_| ServerError::Config("server mutex poisoned".to_string()))?
+            .set_write_commit(Box::new(move |node, space| {
+                // The map is let go before the jobs are locked: a topic whose
+                // type arrives later takes the jobs first, then the map.
+                let index = node_to_job
+                    .lock()
+                    .ok()
+                    .and_then(|map| map.get(&node.to_canonical_string()).copied());
+                let Some(index) = index else {
+                    return zerodds_opcua_server::status::GOOD;
+                };
+                let Ok(mut jobs) = jobs.lock() else {
+                    return zerodds_opcua_server::status::BAD_COMMUNICATION_ERROR;
+                };
+                let Some(job) = jobs.get_mut(index) else {
+                    return zerodds_opcua_server::status::BAD_COMMUNICATION_ERROR;
+                };
+                match flush_ua_to_dds(job, space, &dds_bridge, false) {
+                    Ok(written) => {
+                        if written {
+                            metrics.ua_to_dds_samples_total.inc();
+                        }
+                        zerodds_opcua_server::status::GOOD
+                    }
+                    Err(e) => {
+                        daemon_log!(
+                            Level::Error,
+                            "topic `{}`: DDS write of a client's Write: {e}",
+                            job.dds_topic
+                        );
+                        metrics.errors_total.inc();
+                        zerodds_opcua_server::status::BAD_COMMUNICATION_ERROR
+                    }
+                }
+            }));
+    }
 
     let accept_thread = {
         let server = Arc::clone(&server);
@@ -673,6 +1246,22 @@ pub fn start_with_reload(
             .map_err(|e| ServerError::Io(e.to_string()))?
     };
 
+    for topic in &pending {
+        daemon_log!(
+            Level::Warn,
+            "topic `{}`: type `{}` is in no opcua.idl file; the topic is bridged once a remote \
+             endpoint of it gives its type over TypeLookup",
+            topic.dds_topic,
+            topic.dds_type
+        );
+    }
+    let late = LateTopics {
+        keys,
+        pending,
+        node_to_topic,
+        node_to_job,
+        next_poll: Instant::now(),
+    };
     let pump_thread = {
         let server = Arc::clone(&server);
         let stop = Arc::clone(&stop);
@@ -691,6 +1280,7 @@ pub fn start_with_reload(
                     client_jobs,
                     publisher_jobs,
                     subscriber_jobs,
+                    late,
                 )
             })
             .map_err(|e| ServerError::Io(e.to_string()))?
@@ -714,11 +1304,18 @@ pub fn start_with_reload(
                             match reload_fn() {
                                 Ok(new_cfg) => {
                                     if let Ok(mut guard) = acl.lock() {
-                                        *guard = Acl::new(new_cfg.acl_default_deny, new_cfg.acl_rules);
+                                        *guard =
+                                            Acl::new(new_cfg.acl_default_deny, new_cfg.acl_rules);
                                     }
-                                    eprintln!("[zerodds-opcua-bridged] configuration reloaded (acl only — see man page)");
+                                    daemon_log!(
+                                        Level::Info,
+                                        "configuration reloaded (acl only — see man page)"
+                                    );
                                 }
-                                Err(e) => eprintln!("[zerodds-opcua-bridged] reload failed, configuration unchanged: {e}"),
+                                Err(e) => daemon_log!(
+                                    Level::Error,
+                                    "reload failed, configuration unchanged: {e}"
+                                ),
                             }
                         }
                         thread::sleep(Duration::from_millis(200));
@@ -744,9 +1341,9 @@ pub fn start_with_reload(
                     admin_addr = Some(bound);
                     admin_thread = Some(handle);
                 }
-                Err(e) => eprintln!("[zerodds-opcua-bridged] metrics bind error: {e}"),
+                Err(e) => daemon_log!(Level::Error, "metrics bind error: {e}"),
             },
-            Err(e) => eprintln!("[zerodds-opcua-bridged] metrics addr parse error: {e}"),
+            Err(e) => daemon_log!(Level::Error, "metrics addr parse error: {e}"),
         }
     }
 
@@ -759,6 +1356,7 @@ pub fn start_with_reload(
         signal_close,
         reload_thread,
         otlp_thread,
+        key_threads,
         otlp,
         local_addr,
         admin_addr,
@@ -799,22 +1397,7 @@ fn opcua_ticks_now() -> i64 {
 /// Parses `metrics.otlp_endpoint` (`host:port` or `http(s)://host:port`)
 /// into an [`OtlpConfig`] for this daemon's service name.
 fn otlp_config_from_endpoint(raw: &str) -> OtlpConfig {
-    let trimmed = raw
-        .strip_prefix("http://")
-        .or_else(|| raw.strip_prefix("https://"))
-        .unwrap_or(raw)
-        .trim_end_matches('/');
-    let (host, port) = match trimmed.rsplit_once(':') {
-        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(4318)),
-        None => (trimmed.to_string(), 4318),
-    };
-    OtlpConfig {
-        host,
-        port,
-        service_name: "zerodds-opcua-bridged".to_string(),
-        service_version: env!("CARGO_PKG_VERSION").to_string(),
-        timeout: Duration::from_secs(5),
-    }
+    OtlpConfig::from_endpoint("zerodds-opcua-bridged", env!("CARGO_PKG_VERSION"), raw)
 }
 
 /// Builds a root, already-completed [`zerodds_foundation::tracing::Span`]
@@ -872,36 +1455,85 @@ fn new_span_id() -> zerodds_foundation::tracing::SpanId {
     zerodds_foundation::tracing::SpanId(bytes)
 }
 
-/// Builds the `(SecurityPolicy, SecurityKeyService)` pair
-/// [`PublisherJob::set_security`]/[`SubscriberJob::set_security`] need
-/// from `opcua.pubsub.connections[].security`, or `None` for cleartext
-/// UADP (no `security:` key at all — this daemon's unchanged default).
+/// The keys of a PubSub connection by its `security.key_source` (spec
+/// §4.3): one fixed key, the daemon's own SecurityGroup, keys pulled from
+/// an SKS (a thread for each, in `threads`) or pushed by one.
 #[cfg(feature = "pubsub-security")]
 fn build_pubsub_security(
     cfg: &Option<super::config::PubSubSecurityConfig>,
-) -> Option<(
-    zerodds_opcua_pubsub::security::SecurityPolicy,
-    zerodds_opcua_pubsub::security::SecurityKeyService,
-)> {
-    use super::config::PubSubSecurityPolicy;
+    keys: &Keys,
+    stop: &Arc<AtomicBool>,
+    threads: &mut Vec<JoinHandle<()>>,
+) -> Result<PubSubSecurity, ServerError> {
+    use super::config::{KeySource, PubSubSecurityPolicy};
     use zerodds_opcua_pubsub::security::{SecurityKey, SecurityKeyService, SecurityPolicy};
 
-    let cfg = cfg.as_ref()?;
+    let Some(cfg) = cfg.as_ref() else {
+        return Ok(None);
+    };
     let policy = match cfg.policy {
         PubSubSecurityPolicy::Aes128Ctr => SecurityPolicy::Aes128Ctr,
         PubSubSecurityPolicy::Aes256Ctr => SecurityPolicy::Aes256Ctr,
         PubSubSecurityPolicy::Aes256Gcm => SecurityPolicy::Aes256Gcm,
     };
-    let key = SecurityKey {
-        token_id: cfg.token_id,
-        signing_key: cfg.signing_key.clone(),
-        encrypting_key: cfg.encrypting_key.clone(),
-        key_nonce: cfg.key_nonce.clone(),
-    };
-    Some((
-        policy,
-        SecurityKeyService::new(policy, cfg.security_group_id.clone(), key),
-    ))
+    let _ = (keys, stop, &threads);
+    match &cfg.key_source {
+        KeySource::Static => {
+            let key = SecurityKey {
+                token_id: cfg.token_id,
+                signing_key: cfg.signing_key.clone(),
+                encrypting_key: cfg.encrypting_key.clone(),
+                key_nonce: cfg.key_nonce.clone(),
+            };
+            Ok(Some(crate::pubsub_glue::KeyState::fixed(
+                policy,
+                SecurityKeyService::new(policy, cfg.security_group_id.clone(), key),
+            )))
+        }
+        #[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+        KeySource::Local => keys
+            .as_ref()
+            .and_then(|k| k.local_keys(&cfg.security_group_id))
+            .map(Some)
+            .ok_or_else(|| {
+                ServerError::Config(std::format!(
+                    "key_source local: `{}` is in no opcua.server.security_groups entry",
+                    cfg.security_group_id
+                ))
+            }),
+        #[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+        KeySource::Pull(sks) => {
+            let shared = crate::pubsub_glue::KeyState::waiting(policy);
+            if let Some(service) = keys.as_ref() {
+                service.add_pulled(Arc::clone(&shared));
+            }
+            threads.push(
+                super::keys::spawn_puller(
+                    sks.clone(),
+                    cfg.security_group_id.clone(),
+                    Arc::clone(&shared),
+                    Arc::clone(stop),
+                )
+                .map_err(|e| ServerError::Io(e.to_string()))?,
+            );
+            Ok(Some(shared))
+        }
+        #[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+        KeySource::Push { push_subject } => {
+            let shared = crate::pubsub_glue::KeyState::waiting(policy);
+            if let Some(service) = keys.as_ref() {
+                service.add_push_target(&cfg.security_group_id, push_subject, Arc::clone(&shared));
+            }
+            Ok(Some(shared))
+        }
+        #[cfg(not(all(feature = "crypto", feature = "pubsub-security")))]
+        KeySource::Local | KeySource::Pull(_) | KeySource::Push { .. } => {
+            Err(ServerError::Config(std::format!(
+                "security group `{}`: keys from a Security Key Service need the build features crypto and pubsub-security",
+                cfg.security_group_id
+            )))
+        }
+    }
 }
 
 /// Converts a Spec §10 XML `<node_id>` (numeric or string, no namespace of
@@ -1095,7 +1727,7 @@ fn accept_loop(
                     .spawn(move || serve_connection_locked(&server, stream));
             }
             Err(e) => {
-                eprintln!("[zerodds-opcua-bridged] accept error: {e}");
+                daemon_log!(Level::Warn, "accept error: {e}");
                 break;
             }
         }
@@ -1138,9 +1770,129 @@ fn serve_connection_locked(server: &Arc<Mutex<Server>>, mut stream: std::net::Tc
             }
             Ok(None) => return, // CloseSecureChannel — Part 6 §6.7.2.5.
             Err(e) => {
-                eprintln!("[zerodds-opcua-bridged] connection error: {e}");
+                daemon_log!(Level::Warn, "connection error: {e}");
                 return;
             }
+        }
+    }
+}
+
+/// Writes into DDS what changed in the AddressSpace Variables of `job`
+/// since the last call: `Ok(true)` when a sample went out, `Ok(false)` when
+/// nothing changed. The sample is the one last written with the changes put
+/// in: the value of an aggregate Variable (a structure, a union, a
+/// collection of structures, a `map`, Gateway 1.0 §9.2.4.1.1) replaces
+/// that part, outermost first, then each leaf its member. After the write
+/// every Variable of the topic shows the sample. A change that could not be
+/// written is remembered as seen with `forget_on_failure` (the poll reports
+/// it once); without it the next call finds it again (a Write the commit
+/// refuses is taken back by the server, so there is nothing left to find).
+fn flush_ua_to_dds(
+    job: &mut UaToDdsJob,
+    space: &mut AddressSpace,
+    dds_bridge: &DdsBridge,
+    forget_on_failure: bool,
+) -> Result<bool, String> {
+    let changed = |nodes: &std::collections::HashMap<String, NodeId>| -> Vec<FlatField> {
+        nodes
+            .iter()
+            .filter_map(|(path, node_id)| {
+                let value = space.value(node_id)?.value.clone()?;
+                (job.last.get(path) != Some(&value)).then(|| FlatField {
+                    path: path.clone(),
+                    value,
+                })
+            })
+            .collect()
+    };
+    let changed_leaves = changed(&job.topic_space.leaves);
+    let mut changed_aggregates = changed(&job.topic_space.aggregates);
+    if changed_leaves.is_empty() && changed_aggregates.is_empty() {
+        return Ok(false);
+    }
+    changed_aggregates.sort_by_key(|field| {
+        (
+            if field.path.is_empty() {
+                0
+            } else {
+                field.path.matches('.').count() + 1
+            },
+            field.path.clone(),
+        )
+    });
+    let data = (|| -> Result<zerodds_types::dynamic::DynamicData, String> {
+        let mut data = job.sample.clone();
+        for field in &changed_aggregates {
+            let part_type = part_type(&job.dyn_type, &data, &field.path)?;
+            let part =
+                crate::ua_structure::data_of_variant(&part_type, &field.value, NS, &field.path)
+                    .map_err(|e| e.to_string())?;
+            crate::ua_structure::replace_at(&job.dyn_type, &mut data, &field.path, part)
+                .map_err(|e| e.to_string())?;
+        }
+        dynamic_value::unflatten(&job.dyn_type, &changed_leaves, &data).map_err(|e| e.to_string())
+    })()?;
+    let written = (|| -> Result<(), String> {
+        let sample = job
+            .type_support
+            .from_dynamic_data(data.clone())
+            .map_err(|e| e.to_string())?;
+        let body = job
+            .type_support
+            .write_body(&sample, 2, false)
+            .map_err(|e| e.to_string())?;
+        dds_bridge
+            .write(&job.dds_topic, &body)
+            .map_err(|e| e.to_string())
+    })();
+    if written.is_ok() || forget_on_failure {
+        job.sample = data;
+        show_sample(job, space);
+    }
+    written.map(|()| true)
+}
+
+/// The type of the part of a sample of `ty` at `path` (as
+/// [`crate::ua_structure::aggregate_values`] names it).
+fn part_type(
+    ty: &DynamicType,
+    data: &zerodds_types::dynamic::DynamicData,
+    path: &str,
+) -> Result<DynamicType, String> {
+    crate::ua_structure::type_at(ty, data, path).map_err(|e| e.to_string())
+}
+
+/// Sets every Variable of `job` to the sample last written, and remembers
+/// the values as seen.
+fn show_sample(job: &mut UaToDdsJob, space: &mut AddressSpace) {
+    let now = opcua_ticks_now();
+    let mut fields = match dynamic_value::flatten(&job.dyn_type, &job.sample) {
+        Ok((fields, _)) => fields,
+        Err(e) => {
+            daemon_log!(Level::Warn, "topic `{}`: {e}", job.dds_topic);
+            return;
+        }
+    };
+    match crate::ua_structure::aggregate_values(&job.dyn_type, &job.sample, NS) {
+        Ok((aggregates, _)) => fields.extend(aggregates),
+        Err(e) => daemon_log!(Level::Warn, "topic `{}`: {e}", job.dds_topic),
+    }
+    let unmatched = address_space_build::apply_sample(space, &mut job.topic_space, &fields, now);
+    for path in unmatched {
+        daemon_log!(
+            Level::Warn,
+            "topic `{}`: sample field `{path}` matches no AddressSpace node",
+            job.dds_topic
+        );
+    }
+    for (path, node_id) in job
+        .topic_space
+        .leaves
+        .iter()
+        .chain(job.topic_space.aggregates.iter())
+    {
+        if let Some(value) = space.value(node_id).and_then(|dv| dv.value.clone()) {
+            job.last.insert(path.clone(), value);
         }
     }
 }
@@ -1151,19 +1903,42 @@ fn pump_loop(
     dds_bridge: Arc<DdsBridge>,
     stop: Arc<AtomicBool>,
     metrics: BridgeMetrics,
-    dds_to_ua_jobs: Vec<DdsToUaJob>,
-    mut ua_to_dds_jobs: Vec<UaToDdsJob>,
+    mut dds_to_ua_jobs: Vec<DdsToUaJob>,
+    ua_to_dds_jobs: Arc<Mutex<Vec<UaToDdsJob>>>,
     mut client_jobs: Vec<ClientJob>,
     mut publisher_jobs: Vec<PublisherJob>,
     mut subscriber_jobs: Vec<SubscriberJob>,
+    mut late: LateTopics,
 ) {
     let mut replaced_reported: Vec<u64> = vec![0; dds_to_ua_jobs.len()];
     while !stop.load(Ordering::SeqCst) {
-        for (i, job) in dds_to_ua_jobs.iter().enumerate() {
+        let now = Instant::now();
+        #[cfg(all(feature = "crypto", feature = "pubsub-security"))]
+        if let Some(service) = late.keys.as_ref() {
+            service.tick(now);
+        }
+        if !late.pending.is_empty() && now >= late.next_poll {
+            late.next_poll = now + TYPE_POLL_INTERVAL;
+            late.resolve(
+                &server,
+                &dds_bridge,
+                &mut Jobs {
+                    dds_to_ua: &mut dds_to_ua_jobs,
+                    ua_to_dds: &ua_to_dds_jobs,
+                    client: &mut client_jobs,
+                    publisher: &mut publisher_jobs,
+                    subscriber: &mut subscriber_jobs,
+                },
+                now,
+            );
+            replaced_reported.resize(dds_to_ua_jobs.len(), 0);
+        }
+        for (i, job) in dds_to_ua_jobs.iter_mut().enumerate() {
             let replaced = job.reader.replaced();
             if replaced > replaced_reported[i] {
-                eprintln!(
-                    "[zerodds-opcua-bridged] reader {:?}: {} sample(s) gave way to newer ones \
+                daemon_log!(
+                    Level::Warn,
+                    "reader {:?}: {} sample(s) gave way to newer ones \
                      at the {}-sample buffer bound before they were mapped ({replaced} so far)",
                     job.reader.entity_id(),
                     replaced - replaced_reported[i],
@@ -1178,9 +1953,24 @@ fn pump_loop(
                     sample.big_endian,
                 ) {
                     Ok(decoded) => match dynamic_value::flatten(&job.dyn_type, decoded.data()) {
-                        Ok((fields, skipped)) => {
+                        Ok((mut fields, mut skipped)) => {
+                            // Gateway 1.0 §9.2.4.1.1: the value of each
+                            // aggregate Variable is the whole structure.
+                            match crate::ua_structure::aggregate_values(
+                                &job.dyn_type,
+                                decoded.data(),
+                                NS,
+                            ) {
+                                Ok((aggregates, not_encoded)) => {
+                                    fields.extend(aggregates);
+                                    skipped.extend(not_encoded);
+                                }
+                                Err(e) => {
+                                    daemon_log!(Level::Warn, "topic `{}`: {e}", job.dds_topic);
+                                }
+                            }
                             for skip in &skipped {
-                                eprintln!("[zerodds-opcua-bridged] {skip}");
+                                daemon_log!(Level::Warn, "topic `{}`: {skip}", job.dds_topic);
                             }
                             let source_timestamp = sample
                                 .source_timestamp
@@ -1189,86 +1979,46 @@ fn pump_loop(
                             if let Ok(mut guard) = server.lock() {
                                 let unmatched = address_space_build::apply_sample(
                                     guard.address_space_mut(),
-                                    &job.topic_space,
+                                    &mut job.topic_space,
                                     &fields,
                                     source_timestamp,
                                 );
                                 for path in unmatched {
-                                    eprintln!(
-                                        "[zerodds-opcua-bridged] sample field `{path}` matches no AddressSpace leaf"
+                                    daemon_log!(
+                                        Level::Warn,
+                                        "topic `{}`: sample field `{path}` matches no AddressSpace leaf",
+                                        job.dds_topic
                                     );
                                 }
                             }
                             metrics.dds_to_ua_samples_total.inc();
                         }
                         Err(e) => {
-                            eprintln!("[zerodds-opcua-bridged] {e}");
+                            daemon_log!(Level::Error, "topic `{}`: {e}", job.dds_topic);
                             metrics.errors_total.inc();
                         }
                     },
                     Err(e) => {
-                        eprintln!("[zerodds-opcua-bridged] decode: {e}");
+                        daemon_log!(Level::Error, "topic `{}`: decode: {e}", job.dds_topic);
                         metrics.errors_total.inc();
                     }
                 }
             }
         }
 
-        for job in &mut ua_to_dds_jobs {
-            let changed: Vec<FlatField> = {
-                let Ok(mut guard) = server.lock() else {
-                    continue;
-                };
-                job.topic_space
-                    .leaves
-                    .iter()
-                    .filter_map(|(path, node_id)| {
-                        let value = guard.address_space_mut().value(node_id)?.value.clone()?;
-                        if job.last.get(path) == Some(&value) {
-                            return None;
-                        }
-                        job.last.insert(path.clone(), value.clone());
-                        Some(FlatField {
-                            path: path.clone(),
-                            value,
-                        })
-                    })
-                    .collect()
-            };
-            if changed.is_empty() {
-                continue;
-            }
-            let default = match dynamic_value::default_data(&job.dyn_type) {
-                Ok(d) => d,
-                Err(e) => {
-                    eprintln!("[zerodds-opcua-bridged] {e}");
-                    metrics.errors_total.inc();
-                    continue;
-                }
-            };
-            match dynamic_value::unflatten(&job.dyn_type, &changed, &default) {
-                Ok(data) => match job.type_support.from_dynamic_data(data) {
-                    Ok(sample) => match job.type_support.write_body(&sample, 2, false) {
-                        Ok(body) => match dds_bridge.write(&job.dds_topic, &body) {
-                            Ok(()) => metrics.ua_to_dds_samples_total.inc(),
-                            Err(e) => {
-                                eprintln!("[zerodds-opcua-bridged] {e}");
-                                metrics.errors_total.inc();
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("[zerodds-opcua-bridged] {e}");
-                            metrics.errors_total.inc();
-                        }
-                    },
+        // The values a Write left in the AddressSpace that the commit did
+        // not carry (there is none for a value set by the daemon itself).
+        if let Ok(mut guard) = server.lock()
+            && let Ok(mut jobs) = ua_to_dds_jobs.lock()
+        {
+            for job in jobs.iter_mut() {
+                match flush_ua_to_dds(job, guard.address_space_mut(), &dds_bridge, true) {
+                    Ok(true) => metrics.ua_to_dds_samples_total.inc(),
+                    Ok(false) => {}
                     Err(e) => {
-                        eprintln!("[zerodds-opcua-bridged] {e}");
+                        daemon_log!(Level::Error, "topic `{}`: DDS write: {e}", job.dds_topic);
                         metrics.errors_total.inc();
                     }
-                },
-                Err(e) => {
-                    eprintln!("[zerodds-opcua-bridged] {e}");
-                    metrics.errors_total.inc();
                 }
             }
         }
@@ -1281,10 +2031,7 @@ fn pump_loop(
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[zerodds-opcua-bridged] client `{}`: {e}",
-                        job.endpoint_url()
-                    );
+                    daemon_log!(Level::Warn, "client `{}`: {e}", job.endpoint_url());
                     metrics.errors_total.inc();
                 }
             }
@@ -1294,7 +2041,7 @@ fn pump_loop(
         for job in &mut publisher_jobs {
             let dds_topic = job.dds_topic().to_string();
             match job.tick(now, &mut |topic, skip| {
-                eprintln!("[zerodds-opcua-bridged] pubsub publisher `{topic}`: {skip}")
+                daemon_log!(Level::Warn, "pubsub publisher `{topic}`: {skip}")
             }) {
                 Ok((_, published)) => {
                     if published {
@@ -1302,7 +2049,7 @@ fn pump_loop(
                     }
                 }
                 Err(e) => {
-                    eprintln!("[zerodds-opcua-bridged] pubsub publisher `{dds_topic}`: {e}");
+                    daemon_log!(Level::Error, "pubsub publisher `{dds_topic}`: {e}");
                     metrics.errors_total.inc();
                 }
             }
@@ -1315,10 +2062,7 @@ fn pump_loop(
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[zerodds-opcua-bridged] pubsub subscriber `{}`: {e}",
-                        job.dds_topic()
-                    );
+                    daemon_log!(Level::Error, "pubsub subscriber `{}`: {e}", job.dds_topic());
                     metrics.errors_total.inc();
                 }
             }

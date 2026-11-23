@@ -13,6 +13,7 @@
 //! `integration-bridges-vendor-corba`.
 
 use std::path::PathBuf;
+use zerodds_corba_rust::no_arguments;
 
 use zerodds_corba_interop::runtime::{IiopCorbaConnection, object_reference_from_ior};
 use zerodds_corba_rust::CorbaConnection;
@@ -54,7 +55,7 @@ fn corbarust_13_a_jacorb_target_accepts_a_gssup_credential_and_refuses_a_wrong_o
     // Valid credential (JacORB auth_data = {jay/test}).
     let conn = IiopCorbaConnection::new().with_csiv2_credentials("jay", "test");
     // printSAS() has a void/empty body. Success = the JacORB TSS accepted the GSSUP.
-    let r = conn.invoke(&oref, "printSAS", Endianness::Big, &[]);
+    let r = conn.invoke(&oref, "printSAS", Endianness::Big, &no_arguments);
     assert!(
         r.is_ok(),
         "JacORB TSS rejected a valid ZeroDDS GSSUP: {r:?}"
@@ -62,7 +63,7 @@ fn corbarust_13_a_jacorb_target_accepts_a_gssup_credential_and_refuses_a_wrong_o
 
     // Negative: wrong password → JacORB must throw NO_PERMISSION.
     let bad = IiopCorbaConnection::new().with_csiv2_credentials("jay", "wrong");
-    let rb = bad.invoke(&oref, "printSAS", Endianness::Big, &[]);
+    let rb = bad.invoke(&oref, "printSAS", Endianness::Big, &no_arguments);
     assert!(
         rb.is_err(),
         "an invalid credential should have been rejected"

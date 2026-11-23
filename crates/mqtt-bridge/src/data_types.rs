@@ -23,6 +23,8 @@ pub enum DataTypeError {
     InvalidUtf8,
     /// String/BinaryData over the u16 limit (>65535).
     LengthTooLarge,
+    /// String contains U+0000 ([MQTT-1.5.4-2]).
+    NullCharacter,
 }
 
 impl core::fmt::Display for DataTypeError {
@@ -31,6 +33,7 @@ impl core::fmt::Display for DataTypeError {
             Self::Truncated => "input truncated",
             Self::InvalidUtf8 => "invalid UTF-8 in MQTT string",
             Self::LengthTooLarge => "length exceeds u16 max",
+            Self::NullCharacter => "U+0000 in MQTT string",
         })
     }
 }
@@ -77,7 +80,8 @@ pub fn encode_utf8_string(s: &str) -> Result<Vec<u8>, DataTypeError> {
 /// # Errors
 /// * `Truncated` if fewer than 2 length bytes or the string-length
 ///   bytes are missing.
-/// * `InvalidUtf8` if the string is not valid UTF-8.
+/// * `InvalidUtf8` if the string is not valid UTF-8 ([MQTT-1.5.4-1]).
+/// * `NullCharacter` if it contains U+0000 ([MQTT-1.5.4-2]).
 pub fn decode_utf8_string(bytes: &[u8]) -> Result<(String, usize), DataTypeError> {
     let (len, hdr) = decode_two_byte_int(bytes)?;
     let end = hdr + usize::from(len);
@@ -87,6 +91,9 @@ pub fn decode_utf8_string(bytes: &[u8]) -> Result<(String, usize), DataTypeError
     let s = core::str::from_utf8(&bytes[hdr..end])
         .map_err(|_| DataTypeError::InvalidUtf8)?
         .to_owned();
+    if s.contains('\0') {
+        return Err(DataTypeError::NullCharacter);
+    }
     Ok((s, end))
 }
 
@@ -123,6 +130,18 @@ pub fn decode_binary_data(bytes: &[u8]) -> Result<(Vec<u8>, usize), DataTypeErro
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mqtt5_1_5_4_a_string_with_u0000_is_refused() {
+        assert_eq!(
+            decode_utf8_string(&[0, 3, b'a', 0, b'b']),
+            Err(DataTypeError::NullCharacter)
+        );
+        assert_eq!(
+            decode_utf8_string(&[0, 3, b'a', b'b', b'c']),
+            Ok(("abc".into(), 5))
+        );
+    }
 
     #[test]
     fn mqtt5_1_5_2_a_two_byte_integer_is_big_endian() {

@@ -154,6 +154,22 @@ impl DataSetWriter {
         }
     }
 
+    /// The `ConfigurationVersion` this writer advertises.
+    #[must_use]
+    pub fn config_version(&self) -> ConfigurationVersion {
+        self.config_version
+    }
+
+    /// The DataSet this writer publishes got fields appended at its end
+    /// (Part 14 §6.2.3.2.5: such a change is a new `MinorVersion`, the
+    /// `MajorVersion` stays). The next message is a key frame: a delta
+    /// frame counts against a baseline that does not have the new fields.
+    pub fn fields_appended(&mut self, minor_version: u32) {
+        self.config_version.minor_version = minor_version;
+        self.has_baseline = false;
+        self.last_values.clear();
+    }
+
     /// The writer configuration.
     #[must_use]
     pub fn config(&self) -> &DataSetWriterConfig {

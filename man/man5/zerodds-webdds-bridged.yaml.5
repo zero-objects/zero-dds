@@ -100,7 +100,10 @@ Subject that single token authenticates as. Default
 Sub-map for
 .BR jwt :
 .B public_key
-(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+(PEM file: an RSA key, PKCS#1 or SubjectPublicKeyInfo, for RS256; a P-256
+SubjectPublicKeyInfo for ES256; the token's
+.I alg
+has to be the key's algorithm),
 .BR issuer ,
 .BR audience ,
 .B required_claim

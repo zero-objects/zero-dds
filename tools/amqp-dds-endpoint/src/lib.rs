@@ -47,6 +47,7 @@ pub mod client;
 pub mod dds_host;
 pub mod frame_io;
 pub mod handler;
+pub mod nodes;
 pub mod server;
 #[cfg(feature = "tls")]
 pub mod tls;
@@ -56,8 +57,8 @@ pub use client::{
     connect_with_reconnect,
 };
 pub use frame_io::{
-    AmqpProtocol, FrameIoError, ProtocolHeader, read_frame, read_protocol_header, write_frame,
-    write_protocol_header,
+    AmqpProtocol, FrameIoError, ProtocolHeader, Transport, read_frame, read_protocol_header,
+    write_frame, write_protocol_header,
 };
 pub use handler::{ConnectionStats, HandlerError, handle_connection};
 pub use server::{ServerConfig, ServerError, run_server};

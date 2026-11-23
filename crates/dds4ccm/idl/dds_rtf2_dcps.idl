@@ -1,0 +1,111 @@
+// The declarations of the DCPS IDL of DDS that ccm_dds.idl refers to.
+//
+// Annex A of DDS for Lightweight CCM 1.1 (formal/2012-02-01) includes
+// "dds_rtf2_dcps.idl", the IDL PSM of the DDS specification. This file is
+// not that file: it declares, under the same names, the types of module
+// DDS that Annex A uses, so that ccm_dds.idl compiles on its own. The
+// typedefs, the structures and the status kinds have the definitions of
+// the DCPS IDL, with long for the types the DCPS IDL leaves native. The
+// entity interfaces are declared without their operations: Annex A passes
+// and returns Entity, Topic, DataWriter and DataReader and calls none of
+// them. DomainParticipant, Publisher and Subscriber are those the DLRL IDL
+// of Annex B refers to (dds_rtf2_dlrl.idl): the attributes the_publisher
+// and the_subscriber of DDS::Cache and the member domain of
+// DDS::CacheDescription.
+
+#ifndef DDS_RTF2_DCPS_IDL
+#define DDS_RTF2_DCPS_IDL
+
+module DDS {
+    typedef long DomainId_t;
+    typedef long InstanceHandle_t;
+    typedef long ReturnCode_t;
+    typedef long QosPolicyId_t;
+    typedef sequence<string> StringSeq;
+
+    struct Duration_t {
+        long sec;
+        unsigned long nanosec;
+    };
+
+    struct Time_t {
+        long sec;
+        unsigned long nanosec;
+    };
+
+    // The return codes the comment of CCM_DDS::InternalError names.
+    const ReturnCode_t RETCODE_OK                   = 0;
+    const ReturnCode_t RETCODE_ERROR                = 1;
+    const ReturnCode_t RETCODE_UNSUPPORTED          = 2;
+    const ReturnCode_t RETCODE_BAD_PARAMETER        = 3;
+    const ReturnCode_t RETCODE_PRECONDITION_NOT_MET = 4;
+    const ReturnCode_t RETCODE_OUT_OF_RESOURCES     = 5;
+
+    typedef unsigned long StatusKind;
+
+    struct InconsistentTopicStatus {
+        long total_count;
+        long total_count_change;
+    };
+
+    struct SampleLostStatus {
+        long total_count;
+        long total_count_change;
+    };
+
+    enum SampleRejectedStatusKind {
+        NOT_REJECTED,
+        REJECTED_BY_INSTANCES_LIMIT,
+        REJECTED_BY_SAMPLES_LIMIT,
+        REJECTED_BY_SAMPLES_PER_INSTANCE_LIMIT
+    };
+
+    struct SampleRejectedStatus {
+        long total_count;
+        long total_count_change;
+        SampleRejectedStatusKind last_reason;
+        InstanceHandle_t last_instance_handle;
+    };
+
+    struct OfferedDeadlineMissedStatus {
+        long total_count;
+        long total_count_change;
+        InstanceHandle_t last_instance_handle;
+    };
+
+    struct RequestedDeadlineMissedStatus {
+        long total_count;
+        long total_count_change;
+        InstanceHandle_t last_instance_handle;
+    };
+
+    struct QosPolicyCount {
+        QosPolicyId_t policy_id;
+        long count;
+    };
+    typedef sequence<QosPolicyCount> QosPolicyCountSeq;
+
+    struct OfferedIncompatibleQosStatus {
+        long total_count;
+        long total_count_change;
+        QosPolicyId_t last_policy_id;
+        QosPolicyCountSeq policies;
+    };
+
+    struct RequestedIncompatibleQosStatus {
+        long total_count;
+        long total_count_change;
+        QosPolicyId_t last_policy_id;
+        QosPolicyCountSeq policies;
+    };
+
+    local interface Entity {};
+    local interface Topic : Entity {};
+    local interface DataWriter : Entity {};
+    local interface DataReader : Entity {};
+    local interface DomainParticipant : Entity {};
+    local interface Publisher : Entity {};
+    local interface Subscriber : Entity {};
+};
+
+#endif

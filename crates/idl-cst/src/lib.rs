@@ -36,8 +36,8 @@ pub mod tree;
 pub use lex::{Lexer, lex, literal_value};
 pub use span::{LineColumn, Span};
 pub use token::{
-    KEYWORDS, Radix, Token, TokenKind, TokenValue, Trivia, TriviaKind, identifier_name,
-    keyword_collision,
+    CIDL_KEYWORDS, KEYWORDS, Radix, Token, TokenKind, TokenValue, Trivia, TriviaKind, cidl_keyword,
+    cidl_keyword_collision, identifier_name, keyword_collision,
 };
 pub use tree::{
     Checkpoint, CstKind, GreenChild, GreenNode, GreenToken, SyntaxNode, SyntaxSpans, TreeBuilder,

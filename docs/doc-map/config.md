@@ -54,7 +54,7 @@ Regeln des Loaders (`crates/config/src/load.rs`, `crates/config/src/lib.rs`):
 | `zerodds-mqtt-bridged` | `mqtt-bridged` | 25 | `crates/mqtt-bridge/src/daemon/config.rs:21` |
 | `zerodds-coap-bridged` | `coap-bridged` | 32 | `crates/coap-bridge/src/daemon/config.rs:21` |
 | `zerodds-amqp-bridged` | `amqp-bridged` | 28 | `crates/amqp-endpoint/src/bin/zerodds-amqp-bridged.rs:30` |
-| `zerodds-grpc-bridged` | `grpc-bridged` | 19 | `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs:1457` |
+| `zerodds-grpc-bridged` | `grpc-bridged` | 33 | `CONFIG_STEM`, `crates/grpc-bridge/src/bridge_daemon/config.rs:193` |
 | `zerodds-corba-bridged` | `corba-bridged` | 23 | `crates/corba-dds-bridge/src/bin/zerodds-corba-bridged.rs:30` |
 
 Ein Bridge-Daemon liest ohne `--config` seine eigene Systemdatei (`/etc/zerodds/ws-bridged.yaml` usw.) und nicht `zerodds.yaml`. Die Laufzeit-Schlüssel (`transport.*`, `discovery.*` …) dürfen in derselben Bridge-Datei stehen und gelten dort für die DDS-Seite des Daemons. Gemessen: `transport.recv_batch: 64` in einer `--config`-Datei von `zerodds-ws-bridged` erscheint unter `values:` mit Datei und Zeile.
@@ -119,7 +119,7 @@ Wahrheitswerte: `true`/`false` oder `1`/`0` (`runtime_boolean`, `runtime.rs:4182
 | `transport.recv_batch` | Ganzzahl > 0 | 32 | `ZERODDS_RECV_BATCH` | Datagramme pro `recv_batch`-Aufruf; `1` = einzelnes `recv()` | 4353 |
 | `transport.batch_at_zero_budget` | bool | false | `ZERODDS_BATCH_AT_ZERO_BUDGET` | Messschalter für Batching bei Latenzbudget 0 | 4358 |
 | `transport.interface` | IPv4-Adresse | (auto) | `ZERODDS_INTERFACE` | Interface für Announce und Bind; unset = Routenprobe | 4409 |
-| `transport.user_transport` | `UDPv4`, `UDPv6`, `TCPv4`, `TCPv6`; `SHM`, `UDS`, `TSN` nur mit Feature | UDPv4 | `ZERODDS_USER_TRANSPORT` | Transport der Nutzdaten; Discovery bleibt UDPv4 | 4469 |
+| `transport.user_transport` | `UDPv4`, `UDPv6`, `TCPv4`, `TCPv6`; `SHM`, `UDS`, `TSN` nur mit Feature | UDPv4 | `ZERODDS_USER_TRANSPORT` | Transport der Nutzdaten; Discovery läuft über UDPv4 und, mit einem TCP-Transport, auch über dessen Listener (`discovery.unicast_transports`) | 4469 |
 | `transport.user_transports` | Liste derselben Werte | (none) | `ZERODDS_USER_TRANSPORTS` | mehrere Nutzdaten-Transporte, erster bevorzugt; nicht leer = `user_transport` ignoriert | 4473 |
 | `transport.user_multicast` | bool | true | `ZERODDS_USER_MULTICAST` | tritt der SPDP-Gruppe auf dem Port PB + DG · domainId + d2 bei (DDSI-RTPS 2.5 §9.6.2.3), empfängt dort Nutzdaten und kündigt den Locator in der `defaultMulticastLocatorList` an; ein Peer darf dann Nutzdaten per Multicast senden, die Writer von ZeroDDS senden nur an Unicast-Locatoren; ein abgelehnter Beitritt wird protokolliert, der Participant läuft ohne; `false` für einen Host ohne Multicast | 4340 |
 | `transport.interface_bindings` | Liste von Maps (§2.3), nur Datei | (none) | – | Interface-Bindungen für `NetInterface`-gebundene Security-Regeln | 4492 |
@@ -133,7 +133,7 @@ Wahrheitswerte: `true`/`false` oder `1`/`0` (`runtime_boolean`, `runtime.rs:4182
 | `writer.nack_response_delay_ms` | ms, Ganzzahl ≥ 0 | 200 | `ZERODDS_NACK_RESPONSE_DELAY_MS` | Wartezeit eines zuverlässigen Writers zwischen NACK und Reparatur (DDSI-RTPS 2.5 §8.4.7.1 `nackResponseDelay`; Spec-Default) | 4507 |
 | `writer.heartbeat_period_ms` | ms, Ganzzahl > 0 | 100 | `ZERODDS_WRITER_HEARTBEAT_PERIOD_MS` | wie oft ein zuverlässiger Writer einem Reader, der nicht alles bestätigt hat, seine History ankündigt (DDSI-RTPS 2.5 §8.4.7.1 `heartbeatPeriod`; §8.4.7.1 nennt keinen Wert) | 4514 |
 | `writer.nack_suppression_duration_ms` | ms, Ganzzahl ≥ 0 | 0 | `ZERODDS_NACK_SUPPRESSION_DURATION_MS` | ein NACK für eine Änderung, die vor weniger als dieser Zeit gesendet wurde, wird ignoriert (§8.4.7.1 `nackSuppressionDuration`) | 4539 |
-| `writer.unacked_window_bytes` | Bytes, Ganzzahl ≥ 0 | 524288 | `ZERODDS_WRITER_UNACKED_WINDOW` | Flusskontrolle eines Writers mit zuverlässigen Readern: so viele Bytes Nutzdaten dürfen unbestätigt unterwegs sein, darüber wartet `write()` auf ACKs, bis `max_blocking_time`, und sendet dann trotzdem (TIMEOUT kommt nur von den RESOURCE_LIMITS); `0` = keine | 4546 |
+| `writer.unacked_window_bytes` | Bytes, Ganzzahl ≥ 0 | 8388608 | `ZERODDS_WRITER_UNACKED_WINDOW` | Flusskontrolle eines Writers mit zuverlässigen Readern: so viele Bytes Nutzdaten der History dürfen unbestätigt sein (was KEEP_LAST ersetzt hat, zählt nicht mehr), darüber wartet `write()` auf ACKs, bis `max_blocking_time`, und sendet dann trotzdem (TIMEOUT kommt nur von den RESOURCE_LIMITS); `0` = keine | 4546 |
 | `writer.unregister_on_delete` | bool | true | `ZERODDS_WRITER_UNREGISTER_ON_DELETE` | beim Löschen eines DataWriters ein Unregister je Instanz senden und, mit WRITER_DATA_LIFECYCLE `autodispose_unregistered_instances`, ein Dispose (DDS 1.4 §2.2.2.4.1.6, §2.2.3.21); `false` sendet beides nicht, die Reader setzen die Instanzen auf NOT_ALIVE_NO_WRITERS, sobald das Dispose der Publikation über SEDP ankommt, wie bei Connext, Fast DDS, CoreDX und HDDS als Publisher (OMG dds-rtps Test_FinalInstanceState_2) | 4560 |
 | `writer.linger_ms` | ms, Ganzzahl ≥ 0 | 1000 | `ZERODDS_WRITER_LINGER_MS` | wie lange das Löschen eines zuverlässigen DataWriters auf die Bestätigung seiner zuverlässigen Reader wartet, die Marker für Unregister und Dispose aus DDS 1.4 §2.2.2.4.1.6 eingeschlossen, bevor der Writer geht und sein Dispose über SEDP gesendet wird; ein Writer, dessen Reader alles bestätigt haben, geht sofort; `0` = sofort | 4563 |
 | `writer.group_coherent_set_pid` | bool | true | `ZERODDS_WRITER_GROUP_COHERENT_SET_PID` | `PID_GROUP_COHERENT_SET` auf den DATA eines gruppenkohärenten Sets unter PRESENTATION `access_scope` GROUP, wie DDSI-RTPS 2.5 §8.7.6 verlangt; `false` lässt es für jeden Reader weg: HDDS und Connext lesen gruppenkohärente Sets nur ohne es richtig (OMG dds-rtps Test_CoherentSets_12, _18, _21), ein Subscriber von ZeroDDS kennt dann die Mitglieder eines Sets nicht mehr | 4567 |
@@ -148,7 +148,8 @@ Wahrheitswerte: `true`/`false` oder `1`/`0` (`runtime_boolean`, `runtime.rs:4182
 | `discovery.initial_announce_period_ms` | ms, > 0 | 200 | `ZERODDS_INITIAL_ANNOUNCE_PERIOD_MS` | Abstand der Start-Announcements und der Antworten | 4307 |
 | `discovery.participant_lease_duration_ms` | ms, > 0 | 100000 | `ZERODDS_PARTICIPANT_LEASE_MS` | angekündigte Participant-Lease | 4275 |
 | `discovery.wlp_period_ms` | ms, 0 = ein Drittel der Lease | 0 | `ZERODDS_WLP_PERIOD_MS` | WLP-Periode | 4503 |
-| `discovery.peers` | Liste IPv4 oder IPv4:Port | (none) | `ZERODDS_PEERS` | Unicast-Peers; ohne Port domänenabhängig expandiert | 4442 |
+| `discovery.peers` | Liste IPv4, IPv4:Port, `tcp://IPv4:Port` oder `tcp://[IPv6]:Port` | (none) | `ZERODDS_PEERS` | Unicast-Peers; ohne Port domänenabhängig expandiert; `tcp://…` nennt den TCP-Listener eines Peers (dessen `transport.tcp_port`), die SPDP-Nachricht geht über den TCP-Transport dorthin (ZeroDDS-TCP-Transport 1.0 §4.3); im Dialekt `fastdds` wird er an den Metatraffic-Unicast-Ports der ersten Teilnehmer-IDs gefragt, und `tcp://IPv4:Port/logischer-Port` nennt den logischen Port eines Listeners von Fast DDS (§6.1) | 4442 |
+| `discovery.unicast_transports` | Liste aus `udp`, `tcp` | udp,tcp | `ZERODDS_DISCOVERY_UNICAST_TRANSPORTS` | was als Metatraffic-Unicast-Locator angekündigt wird (ZeroDDS-TCP-Transport 1.0 §4.3): `udp` = der UDP-Metatraffic-Socket, `tcp` = die TCP-Listener der Runtime; nur `tcp` für ein Netz ohne UDP (ohne TCP-Transport startet die Runtime damit nicht); gelesen wird Metatraffic über beide, unabhängig von der Einstellung | 4442 |
 | `discovery.max_peer_participants` | 1..=120 | 10 | `ZERODDS_MAX_PEER_PARTICIPANTS` | Participant-IDs je Peer bei der Expansion | 4446 |
 | `discovery.no_multicast` | bool | false | `ZERODDS_NO_MULTICAST` | SPDP-Multicast-Senden aus, reine Unicast-Discovery | 4423 |
 | `discovery.multicast_allowlist` | Liste IPv4-Multicast | (none) | `ZERODDS_MULTICAST_ALLOWLIST` | erlaubte Multicast-Gruppen; leer = keine Einschränkung | 4414 |
@@ -188,7 +189,12 @@ Wahrheitswerte: `true`/`false` oder `1`/`0` (`runtime_boolean`, `runtime.rs:4182
 | `wire.pl_cdr1_reading` | `strict`, `tolerant` | strict | `ZERODDS_WIRE_PL_CDR1_READING` | `strict`: der reflektive Leser von PL_CDR1 nimmt die Rahmung, auf die er eingestellt ist, und meldet Flags, Kopfform und Längenregel einer anderen; `tolerant` nimmt beliebige Flags an PID_EXTENDED und PID_LIST_END, kurzen und erweiterten Kopf und eine Länge, die die des Members oder auf vier aufgerundet ist (DDS-XTypes 1.3 §7.4.1.2.1, §7.4.1.2.2); gilt für den ganzen Prozess | 4710 |
 | `wire.type_lookup_encoding` | `xcdr1`, `xcdr2` | xcdr2 | `ZERODDS_WIRE_TYPE_LOOKUP_ENCODING` | Kodierung der Requests und Replies des Dienstes TypeLookup: `xcdr2` = CDR2_LE {0x00,0x07} mit Kodierungsversion 2, die Form von DDS-XTypes 1.4 Beta 1 §7.6.3.3.3 (OMG-Issue DDSXTY14-29), wie Cyclone DDS 11.0.1, Fast DDS 3.6.1, OpenDDS 3.34.0, RTI Connext 7.7.0 und InterCom DDS 4.3.1 schreiben; `xcdr1` = CDR_LE {0x00,0x01} mit Version 1, die Lesart von DDS-XTypes 1.3 und DDSI-RTPS 2.5 §10.4 Table 10.2; Cyclone DDS, OpenDDS und RTI Connext lehnen CDR_LE ab, Fast DDS beantwortet es (gemessen); empfangen wird jede Kodierung nach ihrer Kennung | 4714 |
 | `wire.data_representation_offer` | Liste `XCDR1`/`XCDR`/`1`, `XCDR2`/`2` | XCDR1 | `ZERODDS_DATA_REPR_OFFER` | angebotene DataRepresentation, erste = Encoding der Writer; Default XTypes 1.3 §7.6.3.1.1; ein Reader fragt zusätzlich XCDR2 und XCDR an | 4642 |
-| `transport.tcp_locator_kinds` | `vendor`, `fast-dds` | vendor | `ZERODDS_TCP_LOCATOR_KINDS` | LocatorKind der TCP-Locatoren: eigene Werte im Herstellerbereich (§9.3.2.4) oder 4 und 8 wie Fast DDS; Lesen nimmt beide | 4660 |
+| `transport.tcp_locator_kinds` | `vendor`, `fast-dds` | vendor | `ZERODDS_TCP_LOCATOR_KINDS` | LocatorKind der TCP-Locatoren, die diese Runtime ankündigt: `vendor` = die Arten des Herstellers, dessen Dialekt sie spricht (eigene Werte im Herstellerbereich, §9.3.2.4, für `zerodds` und `rtps`; 4 und 8 für `cyclone`); `fast-dds` = 4 und 8 wie Cyclone DDS und Fast DDS in jedem Dialekt; gilt je Runtime, nicht prozessweit; Lesen nimmt beide und behält den Wert des Peers | 4660 |
+| `transport.tcp_dialect` | `zerodds`, `rtps`, `cyclone`, `fastdds` | zerodds | `ZERODDS_TCP_DIALECT` | Aufbau und Abgrenzung der TCP-Verbindungen, die diese Runtime öffnet: `zerodds` = Handshake und Längenfeld vor jeder Nachricht (ZeroDDS-TCP-Transport 1.0 §3, §2.1); `rtps` = kein Handshake, RTPS-Nachrichten hintereinander, jede über `messageLength` ihrer HeaderExtension abgegrenzt (DDSI-RTPS 2.5 §8.3.3; ZeroDDS-TCP-Transport 1.0 §2.5), die die Runtime dann in jede über TCP gesendete Nachricht setzt; `cyclone` = der Stream von Cyclone DDS (§4.1): kein Handshake, hinter dem RTPS-Header jeder Nachricht die Längen-Submessage `0x81`, die der Transport einsetzt und entfernt, Nachrichten bis 65528 Oktette, Locator-Arten 4 und 8; `fastdds` = das TCP-Protokoll von Fast DDS, RTCP (§6.1): ein Header von 14 Oktetten vor jeder Nachricht, der Bind jeder Verbindung, die darauf geöffneten logischen Ports, Locator-Arten 4 und 8 mit dem Metatraffic-Unicast-Port des Teilnehmers als logischem Port in den oberen 16 Bit des Ports, Nachrichten bis 65500 Oktette; ein Ziel, dessen Locator einen logischen Port nennt, wird unabhängig von der Einstellung in `fastdds` erreicht; den Dialekt einer angenommenen Verbindung erkennt der Listener (`transport.tcp_accept_dialects`) | 4813 |
+| `transport.tcp_accept_dialects` | Liste aus `zerodds`, `rtps`, `cyclone`, `fastdds` | (jeder Dialekt) | `ZERODDS_TCP_ACCEPT_DIALECTS` | Dialekte, in denen eine TCP-Verbindung zum Listener dieser Runtime beginnen darf (ZeroDDS-TCP-Transport 1.0 §4.2); der Listener liest die ersten vier Oktette: `ZDDS` = Handshake, `RTCP` = Bind des Dialekts `fastdds`, `RTPS` = Stream, dessen erste Submessage `cyclone` von `rtps` unterscheidet; eine Verbindung in einem anderen Dialekt wird geschlossen und gezählt; die leere Liste wird abgelehnt | 4813 |
+| `transport.tcp_port` | 0..=65535 | 0 | `ZERODDS_TCP_PORT` | Port der TCP-Listener dieser Runtime, den ein Peer in `discovery.peers` nennt (ZeroDDS-TCP-Transport 1.0 §4.3); 0 = vom System gewählt; TCPv4- und TCPv6-Listener einer Runtime halten denselben Port; ein belegter Port lässt den Start scheitern | 4813 |
+| `transport.tcp_accepted_vendors` | Liste von mindestens einer Vendor-ID, je vier Hex-Ziffern (`01f0` = ZeroDDS); die leere Liste wird abgelehnt | (jeder Hersteller) | `ZERODDS_TCP_ACCEPTED_VENDORS` | Hersteller, deren TCP-Verbindungen der Listener dieser Runtime annimmt; der Request eines anderen wird mit Reject `VendorNotAccepted` beantwortet (ZeroDDS-TCP-Transport 1.0 §3.3) | 4780 |
+| `transport.tcp_logical_port_claim` | `listener`, `none` | listener | `ZERODDS_TCP_LOGICAL_PORT_CLAIM` | ob eine ausgehende TCP-Verbindung den Port des eigenen TCP-Listeners als Logical-Port beansprucht (ZeroDDS-TCP-Transport 1.0 §3.6); `none` für Hosts hinter einer übersetzten Adresse | 4784 |
 | `wire.data_representation_match` | `strict`, `tolerant` | strict | `ZERODDS_DATA_REPR_MATCH` | Matching-Regel der DataRepresentation | 4654 |
 | `wire.big_endian` | bool | false | `ZERODDS_WIRE_BIG_ENDIAN` | Writer kodieren Big Endian (`*_BE`) | 4361 |
 | `wire.clock_skew_threshold_s` | s, Ganzzahl ≥ 0 | 0 (off) | `ZERODDS_WIRE_CLOCK_SKEW_THRESHOLD_S` | CLOCK_SKEW_DETECTED (DDSI-RTPS 2.5 §8.3.7.4): größte Differenz zwischen Empfangszeit und `rtpsSendTimestamp` der HeaderExtension; darüber wird `clockSkewDetected` gesetzt und das folgende InfoTimestamp um die Differenz verschoben (§8.3.8.11); die Spec nennt keinen Schwellwert, `0` = aus | 4553 |
@@ -214,8 +220,13 @@ Wahrheitswerte: `true`/`false` oder `1`/`0` (`runtime_boolean`, `runtime.rs:4182
 | `transport.udp.recv_buffer` | Bytes, 0 = Kernel-Default | 1048576 | `ZERODDS_UDP_RCVBUF` | `SO_RCVBUF` jedes gebundenen UDP-Sockets | 4211 (`udp_config_from`) |
 | `transport.udp.dont_route` | bool | false | `ZERODDS_UDP_DONTROUTE` | `SO_DONTROUTE`; nur ohne Routing über Subnetzgrenzen | 4213 (`udp_config_from`) |
 | `transport.udp.max_message_size` | Bytes, 20 bis 65507 | 1472 | `ZERODDS_UDP_MAX_MESSAGE_SIZE` | größte RTPS-Nachricht je Datagramm; die Fragmentgröße eines Writers folgt dem kleinsten Wert seiner Transporte (DDSI-RTPS 2.5 §8.4.14.1) | 4216 (`udp_config_from`) |
+| `transport.uds.base_dir` | absoluter Pfad (Windows: ab der Wurzel eines Laufwerks) | /tmp/zerodds/uds | `ZERODDS_UDS_BASE_DIR` | Verzeichnis der Socket-Dateien des UDS-User-Transports, der Mountpunkt eines gemeinsamen Volumes (ZeroDDS-UDS-Transport 1.0 §5.1); auf Windows erhält ein angelegtes Verzeichnis eine Zugriffsliste des Benutzers und von SYSTEM (§6.2) | 2075 (`uds_config_from`) |
+| `transport.uds.socket_mode` | `umask` oder oktal ≤ 0777 | umask | `ZERODDS_UDS_SOCKET_MODE` | Mode jeder Socket-Datei, direkt nach dem Bind gesetzt; 0660 lässt einen Peer unter anderer UID mit gemeinsamer Gruppe senden (§5.1) | 2078 (`uds_config_from`) |
+| `transport.uds.base_dir_mode` | oktal ≤ 07777 | 0700 | `ZERODDS_UDS_BASE_DIR_MODE` | Mode des Verzeichnisses, wenn die Runtime es anlegt; ein bestehendes behält seinen Mode; 3770 für die UIDs einer Gruppe (Set-Group-ID-Bit für die Gruppe der Socket-Dateien, Sticky-Bit gegen das Löschen fremder Socket-Dateien); ein Mode, den der Kernel nicht setzt, lässt den Start scheitern (§2.2, §5.1) | 2082 (`uds_config_from`) |
+| `transport.uds.max_datagram` | Bytes, > 0 | 65536 | `ZERODDS_UDS_MAX_DATAGRAM` | größtes Datagramm des UDS-User-Transports; der Start scheitert, wenn der Kernel die Socket-Puffer dafür nicht gewährt (§3.3, §3.4) | 2086 (`uds_config_from`) |
+| `transport.uds.mode` | `datagram` oder `stream` | datagram, auf Windows stream | `ZERODDS_UDS_MODE` | `datagram`: ein `SOCK_DGRAM`-Datagramm je Nachricht (nur Unix); `stream`: eine `SOCK_STREAM`-Verbindung je Peer, jede Nachricht ein Frame aus Länge (`u32` little endian) und Oktetten (§3.5); auf Windows scheitert `datagram` beim Start, ebenso `socket_mode` und ein `base_dir_mode` außer 0700 (§6.2) | 2090 (`uds_config_from`) |
 
-Anzahl der Zeilen: 101. Man-Page `man/man5/zerodds.yaml.5`, Beispiel `packaging/linux/configs/zerodds.yaml.example` (alle Schlüssel mit Default); `runtime_config_layering.rs::the_shipped_example_and_the_man_page_name_every_setting` hält beide an `SETTINGS`.
+Anzahl der Zeilen: 105. Man-Page `man/man5/zerodds.yaml.5`, Beispiel `packaging/linux/configs/zerodds.yaml.example` (alle Schlüssel mit Default); `runtime_config_layering.rs::the_shipped_example_and_the_man_page_name_every_setting` hält beide an `SETTINGS`.
 
 Programmatische Voreinstellungen ohne Dateischlüssel: `RuntimeConfig::ros_defaults()` (`runtime.rs:4882`), `multi_robot()` (`:4894`, Multicast aus), `discovery_server()` (`:4920`). `RuntimeConfig::default()` liest weder Dateien noch Umgebung (`runtime.rs:4247`).
 
@@ -257,11 +268,11 @@ Gemessen: `zerodds-ros2-shim --config packaging/linux/configs/ros2.yaml.example 
 
 | Datei | Daemon | Schlüssel (`KEYS`) | eigene Umgebungsvariablen | Man-Page | Beispiel |
 |---|---|---|---|---|---|
-| `ws-bridged.yaml` | `zerodds-ws-bridged` | 17, `crates/websocket-bridge/src/daemon/config.rs:29` | – | `man/man5/zerodds-ws-bridged.yaml.5` | `packaging/linux/configs/ws-bridged.yaml.example` |
+| `ws-bridged.yaml` | `zerodds-ws-bridged` | 25, `crates/websocket-bridge/src/daemon/config.rs:29` | – | `man/man5/zerodds-ws-bridged.yaml.5` | `packaging/linux/configs/ws-bridged.yaml.example` |
 | `mqtt-bridged.yaml` | `zerodds-mqtt-bridged` | 25, `crates/mqtt-bridge/src/daemon/config.rs:25` | `MQTT_PASSWORD` → `mqtt.password` (`:55`) | `man/man5/zerodds-mqtt-bridged.yaml.5` | `packaging/linux/configs/mqtt-bridged.yaml.example` |
 | `coap-bridged.yaml` | `zerodds-coap-bridged` | 32, `crates/coap-bridge/src/daemon/config.rs:24` | – | `man/man5/zerodds-coap-bridged.yaml.5` | `packaging/linux/configs/coap-bridged.yaml.example` |
-| `amqp-bridged.yaml` | `zerodds-amqp-bridged` | 28, `crates/amqp-endpoint/src/bridge_daemon.rs:243` | `AMQP_PASSWORD` → `amqp.sasl.password` (`:281`) | `man/man5/zerodds-amqp-bridged.yaml.5` | `packaging/linux/configs/amqp-bridged.yaml.example` |
-| `grpc-bridged.yaml` | `zerodds-grpc-bridged` | 19, `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs:1460` | – | `man/man5/zerodds-grpc-bridged.yaml.5` | `packaging/linux/configs/grpc-bridged.yaml.example` |
+| `amqp-bridged.yaml` | `zerodds-amqp-bridged` | 33, `crates/amqp-endpoint/src/bridge_daemon/config.rs:298` | `AMQP_PASSWORD` → `amqp.sasl.password` (`:342`) | `man/man5/zerodds-amqp-bridged.yaml.5` | `packaging/linux/configs/amqp-bridged.yaml.example` |
+| `grpc-bridged.yaml` | `zerodds-grpc-bridged` | 33, `crates/grpc-bridge/src/bridge_daemon/config.rs:197` | – | `man/man5/zerodds-grpc-bridged.yaml.5` | `packaging/linux/configs/grpc-bridged.yaml.example` |
 | `corba-bridged.yaml` | `zerodds-corba-bridged` | 23, `crates/corba-dds-bridge/src/bridge_daemon.rs:275` | – | `man/man5/zerodds-corba-bridged.yaml.5` | `packaging/linux/configs/corba-bridged.yaml.example` |
 
 Alle sechs Beispiel-Dateien wurden mit dem jeweiligen Binary geprüft (`--config <beispiel> --check-config`): jeweils `configuration valid`, Exit 0. Jeder Name aus `KEYS` kommt in der zugehörigen Man-Page vor (Textsuche nach dem letzten Pfadsegment).
@@ -285,7 +296,18 @@ Defaults: `DaemonConfig::default_for_dev`, `crates/websocket-bridge/src/daemon/c
 | `auth.mode` | `none` | `none`, `bearer`, `jwt`, `mtls` |
 | `auth.bearer_token`, `auth.bearer_subject` | – | Token und zugehöriges Subjekt für `bearer` |
 | `auth.jwt.public_key`, `.issuer`, `.audience`, `.required_claim` | – | JWT-Prüfung für `jwt` |
-| `topics[]` | leer | `name` (Pflicht), `type` (Default = `name`), `direction` (`in` = Client → DDS, `out` = DDS → Client, `bidir`; Default `bidir`), `ws_path` (Default `/topics/<slug>`, `Chat::Message` → `/topics/chat/message`), `qos.reliability` (`reliable`, `best_effort`), `qos.durability` (`volatile`, `transient_local`, `transient`, `persistent`), `qos.history.depth` (≥ 1, Default 10), `acl.read`, `acl.write` (Subjektlisten) |
+| `limits.max_frame_size` | 16777216 (16 MiB) | größte Nutzlast eines Frames eines Clients in Oktetten; mindestens 125; ein größerer Frame wird mit 1009 geschlossen (RFC 6455 §10.4) |
+| `limits.max_message_size` | 16777216 (16 MiB) | größte Nachricht eines Clients nach Zusammensetzen und Dekomprimieren in Oktetten; mindestens 1; eine größere Nachricht wird mit 1009 geschlossen |
+| `origin.allowed` | leer | die Origins, die im Feld `Origin` des Opening Handshake erwartet werden (RFC 6455 §10.2): `scheme://host[:port]` ohne Pfad, `null` oder `*` für jeden Origin; jeder andere Origin erhält HTTP 403; leer: keine Prüfung; ein Eintrag mit `*` in einem Host wird beim Start abgelehnt |
+| `origin.required` | false | true: auch ein Handshake ohne `Origin` erhält HTTP 403; braucht `origin.allowed` |
+| `metrics.path` | `/metrics` | Pfad der Prometheus-Metriken am Admin-Endpoint; beginnt mit `/`, nicht `/`, `/catalog`, `/healthz` |
+| `max_send_queue_per_connection` | 1024 | Samples, die je Verbindung höchstens in der Sendewarteschlange stehen; voll: `reliable` wartet auf den Client, `best_effort` verwirft das älteste (§6) |
+| `max_burst_samples` | 1000 | Samples, die ein Topic mit Durability außer `volatile` höchstens hält und einer später abonnierenden Verbindung sendet |
+| `ping_interval_ms` | 30000 | WebSocket-Ping des Daemons; ohne Pong bis zum nächsten Ping Close 1011; 0 = aus, sonst ≥ 100 |
+| `shutdown_drain_ms` | 30000 | Obergrenze des Abbaus beim Beenden: gehaltene Samples an die Clients, `{"op":"shutdown"}`, Close 1001; ≥ 1 (§9.2) |
+| `catalog_on_connect` | false | true: jede WebSocket-Verbindung erhält den Catalog als ersten Text-Frame, nicht nur eine von `/topics/__catalog__` (§5.2) |
+| `topics[]` | leer | `name` (Pflicht), `type` (Default = `name`), `direction` (`in` = Client → DDS, `out` = DDS → Client, `bidir`; Default `bidir`), `ws_path` (Default `/topics/<slug>`, `Chat::Message` → `/topics/chat/message`; ersetzt den Default-Pfad, absoluter Pfad ohne `?`/`#`, nicht `/topics/__catalog__` oder `/healthz`, je Topic ein eigener), `qos.reliability` (`reliable`, `best_effort`), `qos.durability` (`volatile`, `transient_local`, `transient`, `persistent`), `qos.history.kind` (`keep_last`, `keep_all`; Default `keep_last`), `qos.history.depth` (≥ 1, Default 10), `qos.deadline_ms`, `qos.liveliness_lease_ms` (1 bis 2147483647), `qos.partition` (Liste), `acl.read`, `acl.write` (Subjektlisten); Kurzform `NAME[:WS_PATH]` |
+| `tenants[]` | leer | weitere DomainParticipants (§1 L6): `name` (Pflicht, eindeutig, ohne `/`), `domain` (Default: `domain`), `subjects` (Pflicht; authentifizierte Subjekte, die an den Mandanten gebunden sind, je Subjekt höchstens ein Mandant), `topics` (wie `topics[]`, mit eigener ACL); eine Verbindung eines genannten Subjekts sieht nur die Topics des Mandanten; Metrik-Label `<Mandant>/<Topic>` |
 
 ### 3.3 `mqtt-bridged.yaml`
 
@@ -300,12 +322,12 @@ Defaults: `default_for_dev`, `crates/mqtt-bridge/src/daemon/config.rs`.
 | `mqtt.drain_timeout_secs` | 30 | Wartezeit auf Broker-Acks beim Beenden |
 | `mqtt.clean_start` | true | Clean Start |
 | `mqtt.tls.enabled`, `.ca_file`, `.cert_file`, `.key_file`, `.server_name` | false, leer | TLS zum Broker, mTLS, SNI-Name |
-| `auth.mode` | `none` | `none`, `bearer`, `sasl`, `sasl_plain`, `mtls` |
-| `auth.bearer_token`, `auth.bearer_subject` | – | Token als CONNECT-Passwort, lokales Subjekt |
-| `auth.username`, `auth.password` | – | ausgehende CONNECT-Anmeldung (SASL-PLAIN) |
-| `auth.sasl_users.<user>` | leer | Benutzer → Passwort |
-| `acl.default_deny` | true | wirkt ohne Regel und ohne Auth-Modus nur, wenn explizit gesetzt |
-| `acl.rules[]` | leer | `subject`, `allow_publish`, `allow_subscribe` (Topic-Muster) |
+| `auth.mode` | aus dem Konfigurierten | `none` (anonym, nur Broker auf Loopback), `password` (auch `bearer`, `sasl`, `sasl_plain`), `mtls`, `enhanced`; nicht gesetzt: `enhanced` mit `auth.enhanced.method`, `password` mit Benutzer, Passwort oder Token, `mtls` mit Client-Zertifikat, sonst `none` |
+| `auth.bearer_token`, `auth.bearer_subject` | – | Token (CONNECT-Passwort unter `password`, Token unter `enhanced`), Subjekt des Daemons für die ACL anstelle des eigenen |
+| `auth.username`, `auth.password` | – | Benutzer und Passwort von `password` und SCRAM-SHA-256; vor `mqtt.username`/`mqtt.password` |
+| `auth.enhanced.method` | – | Authentication Method unter `enhanced`: `SCRAM-SHA-256`, `OAUTHBEARER` oder eine andere mit `auth.bearer_token` als Data |
+| `acl.default_deny` | true mit Regeln, sonst false | entscheidet die Topics, die keine Regel nennt |
+| `acl.rules[]` | leer | `subject` (`*` = jedes), `allow_publish`, `allow_subscribe` (MQTT-Topic-Filter); Subjekt = DN des Client-Zertifikats, sonst Benutzername, sonst `sub` des JWT |
 | `topics[]` | leer | `dds_name`, `dds_type`, `mqtt_topic`, `direction` (Default `bidir`), `mqtt_qos` (`0`, `1`, `2`), `retain`, `qos.reliability`, `qos.durability`, `qos.history.depth` (Default 10); Kurzform `DDS[:MQTT]` |
 
 ### 3.4 `coap-bridged.yaml`
@@ -334,12 +356,12 @@ Defaults: `default_for_dev` und `OscoreSettings::default`, `crates/coap-bridge/s
 
 ### 3.5 `amqp-bridged.yaml`
 
-Defaults: `impl Default for DaemonConfig`, `crates/amqp-endpoint/src/bridge_daemon.rs`.
+Defaults: `impl Default for DaemonConfig`, `crates/amqp-endpoint/src/bridge_daemon/config.rs`.
 
 | Schlüssel | Default | Bedeutung |
 |---|---|---|
 | `amqp.broker_url` | leer | `amqp://` oder `amqps://host[:port]` |
-| `amqp.container_id` | `zerodds-bridge-<HOSTNAME>` (Punkte → `-`, 32 Zeichen), ohne `HOSTNAME` `zerodds-bridge-pid<PID>` | AMQP-Container-ID |
+| `amqp.container_id` | `zerodds-bridge-<host>` mit dem Hostnamen aus `zerodds_dcps::participant::host_name` (`gethostname`, danach `HOSTNAME`, `COMPUTERNAME`, `/etc/hostname`; Punkte → `-`, 32 Zeichen), ohne Hostnamen `zerodds-bridge-pid<PID>` (`default_container_id`, `container_id_for` in `crates/amqp-endpoint/src/bridge_daemon/config.rs`) | AMQP-Container-ID |
 | `amqp.channel_max` | 256 | 0..=65535 |
 | `amqp.max_frame_size` | 65536 | ≥ 512 |
 | `amqp.idle_time_out_ms` | 30000 | 0 = keine |
@@ -359,7 +381,7 @@ Defaults: `impl Default for DaemonConfig`, `crates/amqp-endpoint/src/bridge_daem
 
 ### 3.6 `grpc-bridged.yaml`
 
-Defaults: `impl Default for DaemonConfig`, `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs:1424`.
+Defaults: `impl Default for DaemonConfig`, `crates/grpc-bridge/src/bridge_daemon/config.rs:67`.
 
 | Schlüssel | Default | Bedeutung |
 |---|---|---|
@@ -440,7 +462,7 @@ let dw_qos: zerodds_dcps::DataWriterQos = wq.into();                // From, cra
 |---|---|
 | Dokument | `<dds>` mit `<qos_library name>` (`parse_qos_libraries`) |
 | Bibliothek | `<qos_profile name base_name>`; Kurzform: ein benannter QoS-Container direkt in der Bibliothek ist ein eigenes Profil (`parse_single_qos_shortcut`) |
-| Profil | `datawriter_qos`, `datareader_qos`, `topic_qos`, `publisher_qos`, `subscriber_qos`, `domain_participant_qos`; Topic-Filter als Attribut `topic_filter` des Containers. Herstellerformen (`domainparticipant_qos`, `participant_qos`, `<topic_filter>` als Kindelement) sind ein Fehler, der die Form der Spezifikation nennt; `ReadOptions { vendor_forms: VendorForms::Accept, .. }` (`zerodds-admin --vendor-forms`, `zerodds-xmlc --vendor-forms`) liest sie und meldet jede mit Pfad |
+| Profil | `datawriter_qos`, `datareader_qos`, `topic_qos`, `publisher_qos`, `subscriber_qos`, `domain_participant_qos`; Topic-Filter als Attribut `topic_filter` des Containers. Herstellerformen (`domainparticipant_qos`, `participant_qos`, `<topic_filter>` als Kindelement; die Booleans von DDS4CCM 1.1 Table 7.1, `yes`, `no`, `BOOLEAN_TRUE`, `BOOLEAN_FALSE` in jeder Schreibweise; die Formen eines Long in Table 7.1 von DDS-XML 1.0 und DDS4CCM 1.1, die das Schema von DDS-XML 1.0 auslässt: hexadezimale Zahlen in jedem Zahlenfeld einer QoS-Policy, negative Werte und `LENGTH_UNLIMITED` in `ownership_strength`/`transport_priority`; mit `VendorForms::Accept` verlieren Partitionsnamen ihre Leerzeichen am Anfang und Ende) sind ein Fehler, der die Form der Spezifikation nennt; `ReadOptions { vendor_forms: VendorForms::Accept, .. }` (`zerodds-admin --vendor-forms`, `zerodds-xmlc --vendor-forms`) liest sie und meldet jede mit Pfad |
 | Policies (`parse_entity_qos`, Zeile 489) | `durability`, `durability_service`, `presentation`, `deadline`, `latency_budget`, `ownership`, `ownership_strength`, `liveliness`, `time_based_filter`, `partition`, `reliability`, `transport_priority`, `lifespan`, `destination_order`, `history`, `resource_limits`, `entity_factory`, `writer_data_lifecycle`, `reader_data_lifecycle`, `user_data`, `topic_data`, `group_data` |
 | Werte | Konstanten `LENGTH_UNLIMITED`, `DURATION_INFINITE_SEC`/`_NSEC`, `DURATION_ZERO_*`; Booleans nur `true`, `false`, `1`, `0` (`parse_bool_strict`) |
 
@@ -503,11 +525,11 @@ Suche: `env::var`/`env::var_os` in `crates/` und `tools/` (Rust, ohne `tests/`, 
 | Variable | Leser | Fundstelle | Wirkung |
 |---|---|---|---|
 | `MQTT_PASSWORD` | `zerodds-mqtt-bridged` | `crates/mqtt-bridge/src/daemon/config.rs:55` | Ebene 2 für `mqtt.password` |
-| `AMQP_PASSWORD` | `zerodds-amqp-bridged` | `crates/amqp-endpoint/src/bridge_daemon.rs:281` | Ebene 2 für `amqp.sasl.password` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | alle sechs Bridge-Daemons | ws `daemon/runtime_common.rs:370`, mqtt `daemon/runtime_common.rs:327`, coap `daemon/runtime_common.rs:308`, amqp `daemon_runtime.rs:497`, grpc `daemon_runtime.rs:303`, corba `daemon_runtime.rs:316` | OTLP-Export aktiv, `host:port`; einzige gelesene `OTEL_*`-Variable |
+| `AMQP_PASSWORD` | `zerodds-amqp-bridged` | `crates/amqp-endpoint/src/bridge_daemon/config.rs:342` | Ebene 2 für `amqp.sasl.password` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | alle sechs Bridge-Daemons | ws `daemon/runtime_common.rs:370`, mqtt `daemon/runtime_common.rs:327`, coap `daemon/runtime_common.rs:308`, amqp `daemon_runtime.rs:497`, grpc `daemon_runtime.rs:422`, corba `daemon_runtime.rs:316` | OTLP-Export aktiv, `host:port`; einzige gelesene `OTEL_*`-Variable |
 | `ZERODDS_CORBA_ADVERTISE_HOST` | `zerodds-corba-bridged` | `crates/corba-dds-bridge/src/bridge_daemon.rs` (`ENV`) | Ebene 2 für `corba.iiop.advertise_host` |
-| `HOSTNAME` | amqp-Daemon; `zerodds-dcps`; C-API | `bridge_daemon.rs:196`; `crates/dcps/src/participant.rs:437`; `crates/zerodds-c-api/src/shm_loan_ffi.rs:851` | Default `amqp.container_id`; Fallback für die Host-ID nach `gethostname`; Hostname im SHM-Loan-Pfad |
-| `COMPUTERNAME` | `zerodds-dcps` | `participant.rs:438` | Host-ID-Fallback (Windows) |
+| `HOSTNAME` | `zerodds-dcps` (`host_name`, damit auch der Default von `amqp.container_id`); C-API | `crates/dcps/src/participant.rs:463`; `crates/zerodds-c-api/src/shm_loan_ffi.rs:851` | Fallback für den Hostnamen nach `gethostname` (Host-ID, Default `amqp.container_id`); Hostname im SHM-Loan-Pfad |
+| `COMPUTERNAME` | `zerodds-dcps` | `participant.rs:464` | Host-ID-Fallback (Windows) |
 | `PROGRAMDATA` | `zerodds-config` | `crates/config/src/layers.rs:424` | Systemverzeichnis unter Windows |
 | `${NAME}` in Konfigurationsdateien | `zerodds-config` | `crates/config/src/parse.rs:36` | beliebige Variable, Ersetzung vor dem Parsen |
 | `ROS_DOMAIN_ID` | `zerodds-ros2-shim` | `crates/rmw-zerodds-shim/src/bin/zerodds-ros2-shim.rs:172`, `:566` | Domain der Unterbefehle, Default 0; `doctor` |

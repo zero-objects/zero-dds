@@ -18,9 +18,13 @@
 //! * **L4 — Config**: the shared layered loader `zerodds-config` (see
 //!   [`config`]).
 //!
-//! L5 (auth/TLS) and L6 (multi-tenant) are laid out as stubs — the
-//! wire path is L1-complete, the L5/L6 wireup is added in a follow-up
-//! sprint.
+//! L5 (TLS, authentication, the topic ACL) is in [`security`]. L6: each
+//! entry of `tenants` ([`config::TenantConfig`]) is a DomainParticipant of
+//! its own with its topics; [`server`] binds a connection to the tenant of
+//! its authenticated subject.
+//!
+//! The OTLP spans of spec §8.3 (one trace per connection) are in
+//! [`trace`].
 //!
 //! # Architecture
 //!
@@ -48,8 +52,12 @@
 pub mod cli;
 pub mod config;
 pub mod json_frames;
+pub mod log;
+pub mod pump;
 pub mod qos_translation;
 pub mod router;
 pub mod runtime_common;
+pub mod schema;
 pub mod security;
 pub mod server;
+pub mod trace;

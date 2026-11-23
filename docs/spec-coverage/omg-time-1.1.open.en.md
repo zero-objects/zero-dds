@@ -5,10 +5,14 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
-## App. A — Secure time-source criteria
+## §1.2 General object model — service-object pattern
 
-**Status:** `open` — a documented handling of the criteria is missing; `TimeService::secure_universal_time` (`crates/time-service/src/service.rs`) returns the time when the caller marks the source as secure via `secure_source`.
+**Status:** `partial` — the CosTime service (TimeService, UTO, TIO) is built as a CORBA object, checked with a GIOP client in the process (`time_svc_e2e`, GIOP 1.0 and 1.2, both byte orders) and against omniORB 4.3.3: `omniorb_e2e` ran on the Linux test host in a Debian trixie container with omniidl and libomniORB4, 3 of 3 green (with both `RemoteTimePolicy` values, `absolute_time` included); registered in the CI job `integration-bridges-vendor-corba`, not yet run there. The second service as a CORBA object is missing: `TimerEventService` and `TimerEventHandler` have no GIOP dispatch, `register` takes no remote `PushConsumer` reference, and a timer event does not go out over GIOP as an `any` with a TypeCode.
 
-## App. B — Administration
+## §1.2.1 Conformance points (Basic + Timer Event)
 
-**Status:** `open` — `TimeService::with_source` and the field `secure_source` (`crates/time-service/src/service.rs`) are reachable without an authorization check and without an audit; a statement on the security of the implementation is missing.
+**Status:** `partial` — CosTimerEvent is complete as a Rust API but not reachable as a CORBA object over GIOP (§1.2); CosTime is reachable as a CORBA object; the statement on the criteria of App. A for the Basic Time Service is in `crates/time-service/README.md` (§2.5, App. A).
+
+## §2.5 Conformance statement
+
+**Status:** `partial` — the Timer Event Service is complete as a Rust API, not reachable over GIOP (§1.2). Basic Time Service: met; the statement how the criteria of App. A are handled is in `crates/time-service/README.md` ("Secure time (Appendix A and B)"), and `secure_universal_time` returns a time only under these criteria (§2.1.2, App. A).

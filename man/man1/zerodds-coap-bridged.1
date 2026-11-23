@@ -49,6 +49,8 @@ Topic override (repeatable).
 .BR \-\-log\-level =\fILEVEL\fR
 One of
 .IR trace ", " debug ", " info ", " warn ", " error .
+The log is one JSON object per line on stdout; errors of the command line
+before the configuration is read go to stderr as text.
 .TP
 .BR \-\-metrics =\fIADDR\fR
 Prometheus listener.
@@ -77,7 +79,11 @@ not load changes nothing.
 .SH ENVIRONMENT
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optional OTLP endpoint, such as http://localhost:4318.
+Optional OTLP endpoint, such as http://localhost:4318: a span
+.I coap.request
+per exchange with the child
+.I dds.write
+for its DDS write, sent every 5 s and at the shutdown.
 .SH EXIT STATUS
 .TP
 .B 0

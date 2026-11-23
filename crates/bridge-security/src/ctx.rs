@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::acl::{Acl, AclEntry, AclOp};
-use crate::auth::{AuthError, AuthInput, AuthMode, AuthSubject};
+use crate::auth::{AuthError, AuthInput, AuthMode, AuthSubject, JwtKey};
 use crate::tls::{TlsConfigError, load_server_config, load_server_config_with_client_auth};
 
 /// The security context a running daemon checks against, replaced as a
@@ -80,8 +80,11 @@ pub struct SecurityConfig {
     pub auth_mode: String,
     /// Bearer tokens as a map `token → subject name`.
     pub bearer_tokens: HashMap<String, String>,
-    /// JWT RSA public key (PKCS#1 DER).
+    /// JWT RSA public key (PKCS#1 DER), an RS256 key; [`Self::jwt_key`]
+    /// takes precedence.
     pub jwt_pubkey_der: Option<Vec<u8>>,
+    /// JWT public key, RS256 or ES256 (`auth.jwt.public_key`).
+    pub jwt_key: Option<JwtKey>,
     /// JWT expected `iss` claim.
     pub jwt_expected_iss: Option<String>,
     /// JWT expected `aud` claim.
@@ -97,10 +100,11 @@ pub struct SecurityConfig {
 }
 
 /// The `auth.jwt` block of a daemon's configuration (bridge specs §3):
-/// the RS256 key as a PEM file and the claim checks.
+/// the RS256 or ES256 key as a PEM file and the claim checks.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct JwtSettings {
-    /// `auth.jwt.public_key` — PEM, PKCS#1 or SubjectPublicKeyInfo.
+    /// `auth.jwt.public_key` — PEM: an RSA key (PKCS#1 or
+    /// SubjectPublicKeyInfo) for RS256, a P-256 SubjectPublicKeyInfo for ES256.
     pub public_key: String,
     /// `auth.jwt.issuer` — the `iss` claim.
     pub issuer: Option<String>,
@@ -124,8 +128,8 @@ impl SecurityConfig {
         let pem = std::fs::read_to_string(&jwt.public_key).map_err(|e| {
             SecurityError::Config(format!("auth.jwt.public_key {}: {e}", jwt.public_key))
         })?;
-        self.jwt_pubkey_der = Some(
-            crate::auth::jwt_public_key_from_pem(&pem)
+        self.jwt_key = Some(
+            crate::auth::jwt_key_from_pem(&pem)
                 .map_err(|e| SecurityError::Config(format!("auth.jwt.public_key: {e}")))?,
         );
         self.jwt_expected_iss = jwt.issuer.clone();
@@ -207,12 +211,13 @@ pub fn build_ctx(cfg: &SecurityConfig) -> Result<SecurityCtx, SecurityError> {
             AuthMode::Bearer { tokens }
         }
         "jwt" => {
-            let der = cfg
-                .jwt_pubkey_der
+            let key = cfg
+                .jwt_key
                 .clone()
+                .or_else(|| cfg.jwt_pubkey_der.clone().map(JwtKey::Rs256))
                 .ok_or(SecurityError::MissingAuthInput("jwt_pubkey_der"))?;
             AuthMode::Jwt {
-                pkcs1_pubkey_der: der,
+                key,
                 expected_issuer: cfg.jwt_expected_iss.clone(),
                 expected_audience: cfg.jwt_expected_aud.clone(),
                 required_claim: cfg.jwt_required_claim.clone(),

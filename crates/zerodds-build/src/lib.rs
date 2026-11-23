@@ -780,54 +780,13 @@ impl Config {
             }
         }
 
-        let mut composed = zerodds_idl_compose::compose_all(
-            &paths,
-            &loader,
-            ComposeOptions {
-                default_extensibility: self.compose_default_extensibility(),
-                default_nested: None,
-                defines: self.defines.clone(),
-                // The specification's readings by default — Cyclone's
-                // and Fast DDS's for the counter, IDL 4.2 §7.5.2's
-                // refusal for the enclosing scope — and `self.dialect`'s
-                // once [`Self::dialect`] has been called: a build script
-                // has no reason to take RTI's or Fast DDS's reading
-                // unless it is talking to that peer, and `Self::dialect`
-                // is the knob for saying so.
-                hashed_id_advances_the_counter: if self.lowering().hashed_id_advances_the_counter {
-                    zerodds_idl_compose::HashedIdCounter::Advances
-                } else {
-                    zerodds_idl_compose::HashedIdCounter::Skipped
+        let mut composed =
+            zerodds_idl_compose::compose_all(&paths, &loader, self.compose_options()).map_err(
+                |detail| Error::Read {
+                    path: paths.first().cloned().unwrap_or_default(),
+                    detail,
                 },
-                hashed_name_spelling: if self.lowering().hashid_reads_the_escaped_spelling {
-                    zerodds_idl_compose::HashedNameSpelling::AsWritten
-                } else {
-                    zerodds_idl_compose::HashedNameSpelling::Stripped
-                },
-                name_of_the_enclosing_scope: if self.lowering().admits_name_of_enclosing_scope {
-                    zerodds_idl_compose::NameOfTheEnclosingScope::Admitted
-                } else {
-                    zerodds_idl_compose::NameOfTheEnclosingScope::Refused
-                },
-                // `@key` on a union discriminator is carried (DDS-XTypes 1.3
-                // Table 21, §7.2.2.4.4.4.8): the union is a keyed topic
-                // type and its key holder is the discriminator.
-                key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Carried,
-                // A build reads the IDL it was pointed at, which may be a
-                // vendor's. Refusing an extension here would fail the
-                // build over a portability question nobody asked;
-                // `zerodds-idlc --strict` is where that question is put.
-                dialect: {
-                    let mut dialect = zerodds_idl_compose::ComposeOptions::default().dialect;
-                    dialect.case_sensitive = self.case_sensitive_identifiers;
-                    dialect
-                },
-            },
-        )
-        .map_err(|detail| Error::Read {
-            path: paths.first().cloned().unwrap_or_default(),
-            detail,
-        })?;
+            )?;
 
         if self.emit_cargo_directives {
             for opened in loader.opened() {
@@ -892,59 +851,61 @@ impl Config {
         self.every_rust_type_found(&found)
     }
 
+    /// The options of composing a unit: the specification's readings, or
+    /// `self.dialect`'s once [`Self::dialect`] has been called.
+    fn compose_options(&self) -> ComposeOptions {
+        ComposeOptions {
+            default_extensibility: self.compose_default_extensibility(),
+            default_nested: None,
+            defines: self.defines.clone(),
+            // The specification's readings by default — Cyclone's
+            // and Fast DDS's for the counter, IDL 4.2 §7.5.2's
+            // refusal for the enclosing scope — and `self.dialect`'s
+            // once [`Self::dialect`] has been called: a build script
+            // has no reason to take RTI's or Fast DDS's reading
+            // unless it is talking to that peer, and `Self::dialect`
+            // is the knob for saying so.
+            hashed_id_advances_the_counter: if self.lowering().hashed_id_advances_the_counter {
+                zerodds_idl_compose::HashedIdCounter::Advances
+            } else {
+                zerodds_idl_compose::HashedIdCounter::Skipped
+            },
+            hashed_name_spelling: if self.lowering().hashid_reads_the_escaped_spelling {
+                zerodds_idl_compose::HashedNameSpelling::AsWritten
+            } else {
+                zerodds_idl_compose::HashedNameSpelling::Stripped
+            },
+            name_of_the_enclosing_scope: if self.lowering().admits_name_of_enclosing_scope {
+                zerodds_idl_compose::NameOfTheEnclosingScope::Admitted
+            } else {
+                zerodds_idl_compose::NameOfTheEnclosingScope::Refused
+            },
+            // `@key` on a union discriminator is carried (DDS-XTypes 1.3
+            // Table 21, §7.2.2.4.4.4.8): the union is a keyed topic
+            // type and its key holder is the discriminator.
+            key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Carried,
+            // A build reads the IDL it was pointed at, which may be a
+            // vendor's. Refusing an extension here would fail the
+            // build over a portability question nobody asked;
+            // `zerodds-idlc --strict` is where that question is put.
+            dialect: {
+                let mut dialect = zerodds_idl_compose::ComposeOptions::default().dialect;
+                dialect.case_sensitive = self.case_sensitive_identifiers;
+                dialect
+            },
+        }
+    }
+
     /// Compile one unit, answering per `rust_type` override whether the
     /// unit declares its path.
     fn compile_one(&self, idl: &Path, out_dir: &Path) -> Result<Vec<bool>, Error> {
         let loader = PathLoader::new(self.include_dirs.clone());
         let path = idl.to_string_lossy().into_owned();
-        let mut composed = compose_with(
-            &path,
-            &loader,
-            ComposeOptions {
-                default_extensibility: self.compose_default_extensibility(),
-                default_nested: None,
-                defines: self.defines.clone(),
-                // The specification's readings by default — Cyclone's
-                // and Fast DDS's for the counter, IDL 4.2 §7.5.2's
-                // refusal for the enclosing scope — and `self.dialect`'s
-                // once [`Self::dialect`] has been called: a build script
-                // has no reason to take RTI's or Fast DDS's reading
-                // unless it is talking to that peer, and `Self::dialect`
-                // is the knob for saying so.
-                hashed_id_advances_the_counter: if self.lowering().hashed_id_advances_the_counter {
-                    zerodds_idl_compose::HashedIdCounter::Advances
-                } else {
-                    zerodds_idl_compose::HashedIdCounter::Skipped
-                },
-                hashed_name_spelling: if self.lowering().hashid_reads_the_escaped_spelling {
-                    zerodds_idl_compose::HashedNameSpelling::AsWritten
-                } else {
-                    zerodds_idl_compose::HashedNameSpelling::Stripped
-                },
-                name_of_the_enclosing_scope: if self.lowering().admits_name_of_enclosing_scope {
-                    zerodds_idl_compose::NameOfTheEnclosingScope::Admitted
-                } else {
-                    zerodds_idl_compose::NameOfTheEnclosingScope::Refused
-                },
-                // `@key` on a union discriminator is carried (DDS-XTypes 1.3
-                // Table 21, §7.2.2.4.4.4.8): the union is a keyed topic
-                // type and its key holder is the discriminator.
-                key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Carried,
-                // A build reads the IDL it was pointed at, which may be a
-                // vendor's. Refusing an extension here would fail the
-                // build over a portability question nobody asked;
-                // `zerodds-idlc --strict` is where that question is put.
-                dialect: {
-                    let mut dialect = zerodds_idl_compose::ComposeOptions::default().dialect;
-                    dialect.case_sensitive = self.case_sensitive_identifiers;
-                    dialect
-                },
-            },
-        )
-        .map_err(|detail| Error::Read {
-            path: idl.to_path_buf(),
-            detail,
-        })?;
+        let mut composed =
+            compose_with(&path, &loader, self.compose_options()).map_err(|detail| Error::Read {
+                path: idl.to_path_buf(),
+                detail,
+            })?;
 
         if self.emit_cargo_directives {
             // The unit itself, and every file it pulled in. The second

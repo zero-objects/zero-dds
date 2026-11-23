@@ -34,7 +34,7 @@ ORB's own IDL compiler; a test whose program is missing fails.
 long/char/string/**wstring**/any/sequence/out/inout/object-ref/typed
 exception), CosNaming (a foreign client drives the ZeroDDS
 `NamingContext`; ZeroDDS binds and resolves in omniNames and in JacORB's
-NameServer), SSLIOP with omniORB in both directions, the AMI client
+NameServer), SSLIOP and ZIOP with omniORB in both directions, the AMI client
 against omniORB's Bench, JacORB's transactional client propagating its OTS
 context, and every operation of `Features` and `Shapes` (boolean, octet,
 short, unsigned long, sequence<string>, inout pairs, oneway, attributes,
@@ -51,6 +51,8 @@ daemon, so the ZeroDDS naming client meets omniNames and JacORB's.
 | CosNaming: foreign client → ZeroDDS `NamingContext` | yes | yes | yes |
 | CosNaming: ZeroDDS client → foreign daemon | omniNames | – (no daemon in the OpenDDS build) | NameServer |
 | SSLIOP | both directions | – | – |
+| ZIOP (zlib; request and reply compressed, seen by a relay) | both directions | – | – |
+| MIOP (oneway requests to a group, one packet and several) | – | – | both directions |
 | AMI client (callback, polling) | yes | – | – |
 | OTS context from a transactional client | – | – | yes |
 | Features and Shapes (generated stubs and skeletons) | both directions | – | – |

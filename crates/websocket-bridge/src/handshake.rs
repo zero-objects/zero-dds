@@ -59,6 +59,69 @@ pub enum HandshakeError {
     /// The server agreed to an extension the client did not offer
     /// (RFC 6455 §4.1, client step 5).
     ExtensionNotOffered(String),
+    /// The request method is not `GET` (RFC 6455 §4.2.1 item 1).
+    MethodNotGet(String),
+    /// The request is not HTTP/1.1 or higher (RFC 6455 §4.2.1 item 1).
+    HttpVersion(String),
+    /// The `Host` header field is missing (RFC 6455 §4.2.1 item 2).
+    MissingHost,
+    /// `Sec-WebSocket-Key` is not the base64 of 16 octets (RFC 6455
+    /// §4.2.1 item 5).
+    InvalidKey,
+    /// The `Origin` of the request is not one the server expects (RFC 6455
+    /// §10.2, §4.2.2 /origin/); the field's value.
+    OriginNotExpected(String),
+    /// The request has no `Origin` and the server requires one (RFC 6455
+    /// §10.2).
+    MissingOrigin,
+}
+
+impl HandshakeError {
+    /// The HTTP status code a server answers a client's opening handshake
+    /// with for this error (RFC 6455 §4.2.1: "the server MUST stop
+    /// processing the client's handshake and return an HTTP response with
+    /// an appropriate error code"; §4.2.2 /version/; §10.7): 426 for a
+    /// version the server does not speak, 405 for a method other than GET,
+    /// 403 for an origin the server does not expect (§10.2), 400 for every
+    /// other invalid request.
+    #[must_use]
+    pub const fn http_status(&self) -> u16 {
+        match self {
+            Self::UnsupportedVersion(_) => 426,
+            Self::MethodNotGet(_) => 405,
+            Self::OriginNotExpected(_) | Self::MissingOrigin => 403,
+            _ => 400,
+        }
+    }
+
+    /// The HTTP response of [`Self::http_status`], complete with the empty
+    /// line and the body. A 426 names the version the server speaks in
+    /// `Sec-WebSocket-Version` (RFC 6455 §4.2.2 /version/, §4.4) and the
+    /// protocol in `Upgrade` (RFC 9110 §15.5.22); a 405 names `GET` in
+    /// `Allow` (RFC 9110 §15.5.6). The connection is closed after it.
+    #[must_use]
+    pub fn render_error_response(&self) -> String {
+        let body = alloc::format!("{self}\n");
+        let (reason, extra) = match self.http_status() {
+            426 => (
+                "Upgrade Required",
+                alloc::format!(
+                    "Sec-WebSocket-Version: {WEBSOCKET_VERSION}\r\nUpgrade: websocket\r\nConnection: close, Upgrade\r\n"
+                ),
+            ),
+            405 => (
+                "Method Not Allowed",
+                String::from("Allow: GET\r\nConnection: close\r\n"),
+            ),
+            403 => ("Forbidden", String::from("Connection: close\r\n")),
+            _ => ("Bad Request", String::from("Connection: close\r\n")),
+        };
+        alloc::format!(
+            "HTTP/1.1 {} {reason}\r\n{extra}Content-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\n\r\n{body}",
+            self.http_status(),
+            body.len()
+        )
+    }
 }
 
 impl core::fmt::Display for HandshakeError {
@@ -74,6 +137,15 @@ impl core::fmt::Display for HandshakeError {
             Self::NoProtocolSelected => f.write_str("server selected no subprotocol"),
             Self::ProtocolNotOffered(p) => write!(f, "server selected subprotocol {p} not offered"),
             Self::ExtensionNotOffered(e) => write!(f, "server agreed to extension {e} not offered"),
+            Self::MethodNotGet(m) => write!(f, "the opening handshake is a GET request, not {m}"),
+            Self::HttpVersion(v) => {
+                write!(f, "the opening handshake is HTTP/1.1 or higher, not {v}")
+            }
+            Self::MissingHost => f.write_str("missing Host"),
+            Self::InvalidKey => f.write_str("Sec-WebSocket-Key is not the base64 of 16 octets"),
+            // The value is the client's; the response does not repeat it.
+            Self::OriginNotExpected(_) => f.write_str("the Origin is not one this server expects"),
+            Self::MissingOrigin => f.write_str("this server requires an Origin"),
         }
     }
 }
@@ -94,6 +166,12 @@ pub struct ClientHandshake {
     pub protocols: Vec<String>,
     /// Optional `Sec-WebSocket-Extensions`.
     pub extensions: Vec<String>,
+    /// The `Origin` header field (RFC 6455 §4.2.1 item 7): the origin of
+    /// the page whose script opens the connection, as a browser names it.
+    /// `None` when the request has none. A server that expects certain
+    /// origins checks it with
+    /// [`OriginPolicy::check`](crate::origin::OriginPolicy::check) (§10.2).
+    pub origin: Option<String>,
 }
 
 /// Server response builder.
@@ -119,19 +197,59 @@ pub fn compute_accept(client_key: &str) -> String {
     base64_encode(&digest)
 }
 
-/// Parses a client-handshake HTTP request.
+/// Whether `version` is `HTTP/<major>.<minor>` of 1.1 or higher.
+fn http_1_1_or_higher(version: &str) -> bool {
+    let Some((major, minor)) = version
+        .strip_prefix("HTTP/")
+        .and_then(|v| v.split_once('.'))
+    else {
+        return false;
+    };
+    match (major.parse::<u32>(), minor.parse::<u32>()) {
+        (Ok(major), Ok(minor)) => major > 1 || (major == 1 && minor >= 1),
+        _ => false,
+    }
+}
+
+/// Whether `key` is the base64 of 16 octets (RFC 4648 §4): 22 characters
+/// of the alphabet and `==`.
+fn is_key_of_16_octets(key: &str) -> bool {
+    let k = key.as_bytes();
+    k.len() == 24
+        && k[22..] == *b"=="
+        && k[..22]
+            .iter()
+            .all(|c| c.is_ascii_alphanumeric() || *c == b'+' || *c == b'/')
+}
+
+/// Parses a client-handshake HTTP request and checks it against RFC 6455
+/// §4.2.1: an HTTP/1.1 or higher GET request with `Host`, `Upgrade:
+/// websocket`, `Connection: Upgrade`, a `Sec-WebSocket-Key` that is the
+/// base64 of 16 octets, and `Sec-WebSocket-Version: 13`.
 ///
 /// # Errors
-/// See [`HandshakeError`].
+/// See [`HandshakeError`]; [`HandshakeError::render_error_response`] is
+/// the HTTP response for it.
 pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeError> {
     let mut lines = input.split("\r\n");
     let request_line = lines.next().ok_or(HandshakeError::MalformedRequest)?;
-    let mut req_parts = request_line.split_whitespace();
-    let _method = req_parts.next().ok_or(HandshakeError::MalformedRequest)?;
+    let mut req_parts = request_line.split(' ');
+    let method = req_parts.next().ok_or(HandshakeError::MalformedRequest)?;
     let path = req_parts
         .next()
+        .filter(|p| !p.is_empty())
         .ok_or(HandshakeError::MalformedRequest)?
         .to_string();
+    let version = req_parts.next().ok_or(HandshakeError::MalformedRequest)?;
+    if req_parts.next().is_some() || !version.starts_with("HTTP/") {
+        return Err(HandshakeError::MalformedRequest);
+    }
+    if method != "GET" {
+        return Err(HandshakeError::MethodNotGet(method.to_string()));
+    }
+    if !http_1_1_or_higher(version) {
+        return Err(HandshakeError::HttpVersion(version.to_string()));
+    }
 
     let mut hs = ClientHandshake {
         path,
@@ -139,7 +257,8 @@ pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeErr
     };
     let mut upgrade_ok = false;
     let mut connection_ok = false;
-    let mut version_seen = false;
+    let mut host_seen = false;
+    let mut version: Option<String> = None;
     for line in lines {
         if line.is_empty() {
             break;
@@ -150,20 +269,33 @@ pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeErr
         let k = k.trim().to_ascii_lowercase();
         let v = v.trim();
         match k.as_str() {
-            "host" => hs.host = v.to_string(),
-            "upgrade" => upgrade_ok = v.eq_ignore_ascii_case("websocket"),
+            "host" => {
+                host_seen = true;
+                hs.host = v.to_string();
+            }
+            // RFC 9110 §7.8: a list of protocols; `websocket` is one of
+            // them, compared without case (RFC 6455 §4.2.1 item 3).
+            "upgrade" => {
+                upgrade_ok |= v
+                    .split(',')
+                    .any(|part| part.trim().eq_ignore_ascii_case("websocket"));
+            }
             "connection" => {
-                connection_ok = v
+                connection_ok |= v
                     .split(',')
                     .any(|part| part.trim().eq_ignore_ascii_case("upgrade"));
             }
             "sec-websocket-key" => hs.key = v.to_string(),
-            "sec-websocket-version" => {
-                version_seen = true;
-                if v != WEBSOCKET_VERSION {
-                    return Err(HandshakeError::UnsupportedVersion(v.to_string()));
-                }
+            // RFC 6454 §7.3 allows one `Origin` field; the origins of a
+            // second one are read as more origins of the same list, so
+            // each of them is checked.
+            "origin" => {
+                hs.origin = Some(match hs.origin.take() {
+                    Some(first) => alloc::format!("{first} {v}"),
+                    None => v.to_string(),
+                });
             }
+            "sec-websocket-version" => version = Some(v.to_string()),
             "sec-websocket-protocol" => {
                 hs.protocols
                     .extend(v.split(',').map(|s| s.trim().to_string()));
@@ -181,55 +313,51 @@ pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeErr
     if !connection_ok {
         return Err(HandshakeError::NotUpgradeConnection);
     }
+    // §4.2.2 /version/: a request for the upgrade whose version is not the
+    // server's is answered with the versions the server speaks, whatever
+    // else the request lacks.
+    match version {
+        Some(v) if v == WEBSOCKET_VERSION => {}
+        other => {
+            return Err(HandshakeError::UnsupportedVersion(
+                other.unwrap_or_default(),
+            ));
+        }
+    }
+    if !host_seen {
+        return Err(HandshakeError::MissingHost);
+    }
     if hs.key.is_empty() {
         return Err(HandshakeError::MissingKey);
     }
-    if !version_seen {
-        return Err(HandshakeError::UnsupportedVersion(String::new()));
+    if !is_key_of_16_octets(&hs.key) {
+        return Err(HandshakeError::InvalidKey);
     }
     Ok(hs)
 }
 
-/// Produces the server response bytes. RFC 6455 §4.2.2.
+/// Produces the server response. RFC 6455 §4.2.2.
 ///
-/// The response agrees to a subprotocol or an extension only if this crate
-/// can actually perform it, which today means neither.
+/// The response names no subprotocol and no extension: §4.2.2 item 8
+/// allows only a subprotocol "the server has selected" from those it
+/// supports, item 9 only extensions the server has agreed to use, and
+/// which those are is the caller's knowledge. Echoing the client's offer
+/// would turn every offer into an agreement. A caller writes its choice
+/// into the returned [`ServerHandshake`] before rendering it:
 ///
-/// It used to echo the client's offer back: `protocol` was
-/// `req.protocols.first()` and `extensions` was `req.extensions.clone()`.
-/// Both are what §4.2.2 forbids — item 8 allows only a subprotocol "the
-/// server has selected" from those it supports, item 9 only extensions the
-/// server has "agreed" to use — and echoing turns every offer into an
-/// agreement the frame layer never made:
-///
-/// * **No extension is implemented in a frame path.**
-///   `permessage_deflate` supplies §7.1 parameter parsing and the §7.2.2
-///   tail helpers, and neither [`codec::encode`](crate::codec::encode) nor
-///   [`codec::decode`](crate::codec::decode) consults them; `rsv1` is
-///   carried through untouched and the crate has no DEFLATE dependency at
-///   all. A `Sec-WebSocket-Extensions: permessage-deflate` in the response
-///   therefore promised compression that never arrived, and a client that
-///   believed it would fail on the first message.
-/// * **The echo was not even well-formed.** RFC 7692 §7.1.2.1 lets a client
-///   offer a bare `client_max_window_bits`; §7.1.2.2 requires a *value* in
-///   the server's reply. Echoing the offer verbatim reproduced the bare
-///   form, and Python's `websockets` rejects the handshake with
-///   `NegotiationError: Unsupported extension` — which is how this was
-///   found. `tests/websockets_py_interop_e2e.rs` holds that measurement;
-///   no client written from this source tree had contradicted it, because
-///   `tests/cross_vendor.rs` offers no extensions at all.
-/// * **No subprotocol is defined.** The bridge carries DDS samples over
-///   `ws_path`, not over a subprotocol token, so accepting whatever the
-///   client happened to list first claimed a protocol this server does not
-///   speak.
-///
-/// A caller that does support one selects it itself —
-/// [`negotiation::select_subprotocol`](crate::negotiation::select_subprotocol)
-/// against its own preference list, and
-/// [`permessage_deflate::parse_offer`](crate::permessage_deflate::parse_offer)
-/// plus [`render_accept`](crate::permessage_deflate::render_accept) for the
-/// §7.1.2.2 reply form — and writes the result into the returned
-/// [`ServerHandshake`] before rendering it.
+/// * a subprotocol with
+///   [`negotiation::select_subprotocol`](crate::negotiation::select_subprotocol)
+///   against its own list;
+/// * `permessage-deflate` with
+///   [`permessage_deflate::accept_offers`](crate::permessage_deflate::accept_offers)
+///   on `req.extensions` and
+///   [`render_accept`](crate::permessage_deflate::render_accept) for the
+///   response element (RFC 7692 §7.1; a bare `client_max_window_bits` of
+///   the offer is not echoed, a response needs a value), and it gives the
+///   agreed parameters to
+///   [`Receiver::with_permessage_deflate`](crate::connection::Receiver::with_permessage_deflate)
+///   and
+///   [`Sender::with_permessage_deflate`](crate::connection::Sender::with_permessage_deflate).
 #[must_use]
 pub fn build_server_response(req: &ClientHandshake) -> ServerHandshake {
     ServerHandshake {
@@ -238,8 +366,7 @@ pub fn build_server_response(req: &ClientHandshake) -> ServerHandshake {
         // §4.2.2 item 8 — a subprotocol this server does not support must
         // not be named, and omitting the header is how "none" is said.
         protocol: None,
-        // §4.2.2 item 9 — likewise for extensions, and none of them reaches
-        // the frame path.
+        // §4.2.2 item 9 — likewise for extensions.
         extensions: Vec::new(),
     }
 }
@@ -279,6 +406,21 @@ pub fn client_key(nonce: &[u8; 16]) -> String {
 /// of preference. No extension is offered.
 #[must_use]
 pub fn render_client_request(host: &str, path: &str, key: &str, protocols: &[&str]) -> String {
+    render_client_request_with_extensions(host, path, key, protocols, &[])
+}
+
+/// [`render_client_request`] with the extensions the client offers in
+/// `Sec-WebSocket-Extensions`, in order of preference (RFC 6455 §9.1);
+/// each element is an extension with its parameters, e.g. the result of
+/// [`permessage_deflate::render_offer`](crate::permessage_deflate::render_offer).
+#[must_use]
+pub fn render_client_request_with_extensions(
+    host: &str,
+    path: &str,
+    key: &str,
+    protocols: &[&str],
+    extensions: &[&str],
+) -> String {
     let mut out = alloc::format!(
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: {WEBSOCKET_VERSION}\r\n"
     );
@@ -288,8 +430,24 @@ pub fn render_client_request(host: &str, path: &str, key: &str, protocols: &[&st
             protocols.join(", ")
         ));
     }
+    if !extensions.is_empty() {
+        out.push_str(&alloc::format!(
+            "Sec-WebSocket-Extensions: {}\r\n",
+            extensions.join(", ")
+        ));
+    }
     out.push_str("\r\n");
     out
+}
+
+/// What the server agreed to in its handshake response.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ServerAnswer {
+    /// The subprotocol the server selected.
+    pub protocol: Option<String>,
+    /// The elements of `Sec-WebSocket-Extensions`: the extensions the
+    /// server agreed to, each with its parameters.
+    pub extensions: Vec<String>,
 }
 
 /// Validates the server's handshake response on the client side, RFC 6455
@@ -308,6 +466,35 @@ pub fn validate_server_response(
     offered: &[&str],
     require: bool,
 ) -> Result<Option<String>, HandshakeError> {
+    validate_server_response_with_extensions(response, key, offered, require, &[])
+        .map(|answer| answer.protocol)
+}
+
+/// [`validate_server_response`] for a client that offered the extensions
+/// `offered_extensions` (the elements it sent): the response may name
+/// extensions out of them, and one the client did not offer fails the
+/// handshake (RFC 6455 §4.1 step 5). The parameters of an agreed
+/// extension are the extension's to check, for `permessage-deflate`
+/// [`permessage_deflate::accept_response`](crate::permessage_deflate::accept_response).
+///
+/// # Errors
+/// See [`HandshakeError`].
+pub fn validate_server_response_with_extensions(
+    response: &str,
+    key: &str,
+    offered: &[&str],
+    require: bool,
+    offered_extensions: &[&str],
+) -> Result<ServerAnswer, HandshakeError> {
+    let name_of = |element: &str| {
+        element
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+    };
+    let mut extensions: Vec<String> = Vec::new();
     let mut lines = response.split("\r\n");
     let status_line = lines.next().ok_or(HandshakeError::MalformedRequest)?;
     let mut parts = status_line.split_whitespace();
@@ -343,8 +530,14 @@ pub fn validate_server_response(
             }
             "sec-websocket-accept" => accept = Some(v.to_string()),
             "sec-websocket-protocol" => protocol = Some(v.to_string()),
-            "sec-websocket-extensions" if !v.is_empty() => {
-                return Err(HandshakeError::ExtensionNotOffered(v.to_string()));
+            "sec-websocket-extensions" => {
+                for element in v.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+                    let name = name_of(element);
+                    if !offered_extensions.iter().any(|o| name_of(o) == name) {
+                        return Err(HandshakeError::ExtensionNotOffered(element.to_string()));
+                    }
+                    extensions.push(element.to_string());
+                }
             }
             _ => {}
         }
@@ -361,7 +554,10 @@ pub fn validate_server_response(
     match protocol {
         Some(p) if !offered.contains(&p.as_str()) => Err(HandshakeError::ProtocolNotOffered(p)),
         None if require => Err(HandshakeError::NoProtocolSelected),
-        other => Ok(other),
+        protocol => Ok(ServerAnswer {
+            protocol,
+            extensions,
+        }),
     }
 }
 
@@ -549,7 +745,7 @@ mod tests {
                    Host: x\r\n\
                    Upgrade: websocket\r\n\
                    Connection: Upgrade\r\n\
-                   Sec-WebSocket-Key: a\r\n\
+                   Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
                    Sec-WebSocket-Version: 13\r\n\
                    Sec-WebSocket-Protocol: chat, superchat\r\n\
                    Sec-WebSocket-Extensions: permessage-deflate\r\n\
@@ -566,7 +762,7 @@ mod tests {
     fn ws_4_1_rejects_missing_upgrade() {
         let req = "GET / HTTP/1.1\r\n\
                    Connection: Upgrade\r\n\
-                   Sec-WebSocket-Key: a\r\n\
+                   Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
                    Sec-WebSocket-Version: 13\r\n\
                    \r\n";
         assert_eq!(
@@ -580,7 +776,7 @@ mod tests {
         let req = "GET / HTTP/1.1\r\n\
                    Upgrade: websocket\r\n\
                    Connection: Upgrade\r\n\
-                   Sec-WebSocket-Key: a\r\n\
+                   Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
                    Sec-WebSocket-Version: 8\r\n\
                    \r\n";
         assert!(matches!(
@@ -592,6 +788,7 @@ mod tests {
     #[test]
     fn ws_4_1_rejects_missing_key() {
         let req = "GET / HTTP/1.1\r\n\
+                   Host: x\r\n\
                    Upgrade: websocket\r\n\
                    Connection: Upgrade\r\n\
                    Sec-WebSocket-Version: 13\r\n\
@@ -701,9 +898,238 @@ mod tests {
                    Host: x\r\n\
                    Upgrade: WebSocket\r\n\
                    Connection: keep-alive, Upgrade\r\n\
-                   Sec-WebSocket-Key: a\r\n\
+                   Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
                    Sec-WebSocket-Version: 13\r\n\
                    \r\n";
         assert!(parse_client_request(req).is_ok());
+    }
+
+    /// A valid request with one line replaced or removed.
+    fn request(change: impl Fn(&str) -> Option<String>) -> String {
+        let lines = [
+            "GET /chat HTTP/1.1",
+            "Host: server.example.com",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+            "Sec-WebSocket-Version: 13",
+        ];
+        let mut out = String::new();
+        for line in lines {
+            if let Some(l) = change(line) {
+                out.push_str(&l);
+                out.push_str("\r\n");
+            }
+        }
+        out.push_str("\r\n");
+        out
+    }
+
+    fn replace(what: &'static str, with: &'static str) -> impl Fn(&str) -> Option<String> {
+        move |line| {
+            if line.starts_with(what) {
+                (!with.is_empty()).then(|| with.to_string())
+            } else {
+                Some(line.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn ws_4_2_2_an_unsupported_version_gets_426_and_the_version_the_server_speaks() {
+        // §4.2.2 /version/: "the server MUST abort the WebSocket handshake
+        // [...] and instead send an appropriate HTTP error code (such as
+        // 426 Upgrade Required) and a |Sec-WebSocket-Version| header field
+        // indicating the version(s) the server is capable of
+        // understanding." 25 is the version of the example in §4.4.
+        for line in ["Sec-WebSocket-Version: 25", "Sec-WebSocket-Version: 8", ""] {
+            let err = parse_client_request(&request(replace("Sec-WebSocket-Version", line)))
+                .expect_err("not version 13");
+            assert!(matches!(err, HandshakeError::UnsupportedVersion(_)));
+            assert_eq!(err.http_status(), 426);
+            let response = err.render_error_response();
+            assert!(
+                response.starts_with("HTTP/1.1 426 Upgrade Required\r\n"),
+                "{response}"
+            );
+            assert!(response.contains("\r\nSec-WebSocket-Version: 13\r\n"));
+            // RFC 9110 §15.5.22: a 426 names the protocol in Upgrade.
+            assert!(response.contains("\r\nUpgrade: websocket\r\n"));
+        }
+    }
+
+    #[test]
+    fn ws_4_2_1_a_request_that_is_not_get_gets_405() {
+        // §4.2.1 item 1: "An HTTP/1.1 or higher GET request".
+        let err = parse_client_request(&request(replace("GET", "POST /chat HTTP/1.1")))
+            .expect_err("a POST");
+        assert_eq!(err, HandshakeError::MethodNotGet("POST".to_string()));
+        assert_eq!(err.http_status(), 405);
+        let response = err.render_error_response();
+        assert!(response.starts_with("HTTP/1.1 405 Method Not Allowed\r\n"));
+        assert!(response.contains("\r\nAllow: GET\r\n"));
+        // The method is case-sensitive (RFC 9110 §9.1).
+        assert!(matches!(
+            parse_client_request(&request(replace("GET", "get /chat HTTP/1.1"))),
+            Err(HandshakeError::MethodNotGet(_))
+        ));
+    }
+
+    #[test]
+    fn ws_4_2_1_a_request_below_http_1_1_is_refused() {
+        for (line, ok) in [
+            ("GET /chat HTTP/1.0", false),
+            ("GET /chat HTTP/0.9", false),
+            ("GET /chat HTTP/1.1", true),
+            ("GET /chat HTTP/1.2", true),
+            ("GET /chat HTTP/2.0", true),
+        ] {
+            let result = parse_client_request(&request(replace("GET", line)));
+            assert_eq!(result.is_ok(), ok, "{line}: {result:?}");
+            if let Err(err) = result {
+                assert!(matches!(err, HandshakeError::HttpVersion(_)));
+                assert_eq!(err.http_status(), 400);
+            }
+        }
+        // A request line that is none.
+        for line in [
+            "GET /chat",
+            "GET  HTTP/1.1",
+            "GET /chat FTP/1.1",
+            "GET /a b HTTP/1.1",
+        ] {
+            assert_eq!(
+                parse_client_request(&request(replace("GET", line))),
+                Err(HandshakeError::MalformedRequest),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn ws_4_2_1_a_request_without_host_or_with_a_wrong_key_gets_400() {
+        // §4.2.1 items 2 and 5.
+        let err = parse_client_request(&request(replace("Host", ""))).expect_err("no Host");
+        assert_eq!(err, HandshakeError::MissingHost);
+        for key in [
+            "Sec-WebSocket-Key: a",
+            // 15 octets and 17 octets.
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25j",
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZWU=",
+            // 24 characters, one outside the alphabet.
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25j*Q==",
+        ] {
+            let err = parse_client_request(&request(replace("Sec-WebSocket-Key", key)))
+                .expect_err("no 16 octets");
+            assert_eq!(err, HandshakeError::InvalidKey, "{key}");
+            assert_eq!(err.http_status(), 400);
+            let response = err.render_error_response();
+            assert!(response.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+            assert!(response.contains("\r\nConnection: close\r\n"));
+            // The body is as long as Content-Length says.
+            let (head, body) = response.split_once("\r\n\r\n").expect("head and body");
+            assert!(head.contains(&alloc::format!("Content-Length: {}", body.len())));
+        }
+    }
+
+    #[test]
+    fn ws_4_2_1_upgrade_may_list_several_protocols() {
+        // RFC 9110 §7.8: Upgrade is a list.
+        let req = request(replace("Upgrade", "Upgrade: h2c, WebSocket"));
+        assert!(parse_client_request(&req).is_ok());
+    }
+
+    #[test]
+    fn ws_4_1_the_client_accepts_only_extensions_it_offered() {
+        // §4.1 step 5 of the response check.
+        let key = "dGhlIHNhbXBsZSBub25jZQ==";
+        let offer = "permessage-deflate; client_max_window_bits";
+        let req = render_client_request_with_extensions("h", "/", key, &[], &[offer]);
+        assert_eq!(
+            parse_client_request(&req).unwrap().extensions,
+            alloc::vec![offer.to_string()]
+        );
+        let response = |ext: &str| {
+            alloc::format!(
+                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+                 Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: {ext}\r\n\r\n"
+            )
+        };
+        let answer = validate_server_response_with_extensions(
+            &response("permessage-deflate; server_max_window_bits=10"),
+            key,
+            &[],
+            false,
+            &[offer],
+        )
+        .expect("offered");
+        assert_eq!(
+            answer.extensions,
+            alloc::vec!["permessage-deflate; server_max_window_bits=10".to_string()]
+        );
+        assert_eq!(
+            validate_server_response_with_extensions(
+                &response("x-webkit-deflate-frame"),
+                key,
+                &[],
+                false,
+                &[offer]
+            ),
+            Err(HandshakeError::ExtensionNotOffered(
+                "x-webkit-deflate-frame".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn ws_4_2_1_the_origin_field_is_read() {
+        // §4.2.1 item 7: "Optionally, an |Origin| header field."
+        assert_eq!(
+            parse_client_request(&request(|l| Some(l.to_string())))
+                .unwrap()
+                .origin,
+            None
+        );
+        let with = |origin: &'static str| request(replace("Host", origin));
+        let req = parse_client_request(&with(
+            "Host: server.example.com\r\nOrigin: http://example.com",
+        ))
+        .unwrap();
+        assert_eq!(req.origin.as_deref(), Some("http://example.com"));
+        // The field name has no case (RFC 9110 §5.1).
+        let req = parse_client_request(&with("Host: h\r\nORIGIN:  null ")).unwrap();
+        assert_eq!(req.origin.as_deref(), Some("null"));
+        // A second field adds to the list of the first, so that a check of
+        // the list sees both.
+        let req = parse_client_request(&with(
+            "Host: h\r\nOrigin: https://a.example\r\nOrigin: https://b.example",
+        ))
+        .unwrap();
+        assert_eq!(
+            req.origin.as_deref(),
+            Some("https://a.example https://b.example")
+        );
+    }
+
+    #[test]
+    fn ws_10_2_an_origin_the_server_does_not_expect_gets_403() {
+        // §10.2: "it SHOULD respond to the WebSocket handshake with a reply
+        // containing HTTP 403 Forbidden status code."
+        for err in [
+            HandshakeError::OriginNotExpected("https://evil.example".to_string()),
+            HandshakeError::MissingOrigin,
+        ] {
+            assert_eq!(err.http_status(), 403);
+            let response = err.render_error_response();
+            assert!(
+                response.starts_with("HTTP/1.1 403 Forbidden\r\n"),
+                "{response}"
+            );
+            assert!(response.contains("\r\nConnection: close\r\n"));
+            let (head, body) = response.split_once("\r\n\r\n").expect("head and body");
+            assert!(head.contains(&alloc::format!("Content-Length: {}", body.len())));
+            // The response does not carry the client's text back.
+            assert!(!response.contains("evil.example"));
+        }
     }
 }

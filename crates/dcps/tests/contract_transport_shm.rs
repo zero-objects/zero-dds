@@ -29,7 +29,10 @@
 //! semantics of `SweepReport::and` and of a sweep of a directory that does
 //! not exist. No segment and no doorbell is created; the pair, doorbell
 //! and receive uses are left to the integration pillar. The sweeps run
-//! against a `tempfile` directory and write nothing.
+//! against a `tempfile` directory and write nothing, except
+//! `sweep_orphaned_segments_once`, the sweep a participant runs at its
+//! start (`runtime.rs`), which goes over the host's directories as a start
+//! does and removes what it would remove there.
 #![allow(clippy::unwrap_used)]
 
 use std::time::Duration;
@@ -37,6 +40,7 @@ use std::time::Duration;
 use zerodds_dcps::same_host_shm::{
     DEFAULT_CAPACITY, DEFAULT_MAX_DATAGRAM, shm_config_for_pair, shm_config_for_pair_with_limit,
 };
+use zerodds_foundation::observability::{SharedSink, VecSink};
 use zerodds_rtps::wire_types::GuidPrefix;
 use zerodds_transport::Transport;
 use zerodds_transport_shm::posix::SweepReport;
@@ -106,7 +110,7 @@ fn sweep_reports_add_up_field_by_field() {
     );
 }
 
-#[cfg(unix)]
+// Every platform, Windows included (zerodds-shm-transport-1.0 §6.2).
 #[test]
 fn a_sweep_of_a_fresh_or_missing_flink_directory_removes_nothing() {
     // The runtime sweeps its flink directory once on the first start, when
@@ -136,6 +140,28 @@ fn a_sweep_of_a_fresh_or_missing_flink_directory_removes_nothing() {
     }
     // Nothing was written.
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+/// zerodds-shm-transport-1.0 §6.2, §6.3: the sweep a participant runs at
+/// its start goes through on every platform, on Windows over the pair
+/// directory, the segment files and the flinks: no
+/// `shm.orphan_sweep_failed`. What it removes is not asserted: the host can
+/// hold what other processes left.
+#[test]
+fn the_participants_start_sweep_runs_without_a_failure() {
+    let sink = std::sync::Arc::new(VecSink::new());
+    let shared: SharedSink = sink.clone();
+    zerodds_dcps::same_host_shm::sweep_orphaned_segments_once(
+        &shared,
+        GuidPrefix::from_bytes([0x5A; 12]),
+        231,
+    );
+    let failed: Vec<_> = sink
+        .snapshot()
+        .into_iter()
+        .filter(|event| event.name == "shm.orphan_sweep_failed")
+        .collect();
+    assert!(failed.is_empty(), "{failed:?}");
 }
 
 #[test]

@@ -144,6 +144,19 @@ const FEATURE_MATRIX_IDL: &str = r#"
             sequence<string> ids();
         };
 
+        // A GIOP 1.0/1.1 body follows the header without padding: an
+        // 8-octet argument after an octet is aligned from the message
+        // start (CORBA 3.3 Part 2 §9.4.2.1), and so are the 8-octet
+        // members of a user exception after its repository id (§9.4.3),
+        // and the result of a reply the AMI stubs read (`@ami`, CORBA
+        // Messaging §22), tests/giop_body_offset.rs.
+        exception AlignedLate { long long value; double ratio; };
+        interface Aligned {
+            long long after_octet(in octet tag, in long long value);
+            @ami double after_octet_double(in octet tag, in double value);
+            void      late(in long long value) raises(AlignedLate);
+        };
+
         // Provided facet of a CCM component (live over GIOP, lifecycle-gated).
         interface Calculator {
             long add(in long a, in long b);

@@ -113,7 +113,7 @@ pub struct EventTypeEquivalent {
 /// specification's own IDL, which may or may not be in this model. A
 /// pending reference says "this names `::Components::CCMObject`" without
 /// claiming to have found it.
-fn spec_ref<T>(parts: &[&str]) -> Ref<T> {
+pub(crate) fn spec_ref<T>(parts: &[&str]) -> Ref<T> {
     Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(
         parts.iter().map(|part| (*part).to_string()).collect(),
     )))
@@ -131,14 +131,14 @@ fn named_ref<T>(name: &str) -> Ref<T> {
 /// module of the component, home or event type they derive from, and a
 /// reference anchored at the root reached them only when that module was
 /// the root.
-fn sibling_ref<T>(ast: &Ast, module: Id<zerodds_ast::ModuleNode>, name: &str) -> Ref<T> {
+pub(crate) fn sibling_ref<T>(ast: &Ast, module: Id<zerodds_ast::ModuleNode>, name: &str) -> Ref<T> {
     let mut segments: Vec<String> = module_path(ast, module);
     segments.push(name.to_string());
     Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(segments)))
 }
 
 /// The scoped name of a module, outermost segment first.
-fn module_path(ast: &Ast, module: Id<zerodds_ast::ModuleNode>) -> Vec<String> {
+pub(crate) fn module_path(ast: &Ast, module: Id<zerodds_ast::ModuleNode>) -> Vec<String> {
     ast.module(module)
         .ok()
         .and_then(|node| ast.scoped_name_of(zerodds_ast::AnyId::Module(module, node.node_id)))
@@ -855,7 +855,7 @@ fn connection_types(
     Ok(Ref::Resolved(connections))
 }
 
-fn object_reference(
+pub(crate) fn object_reference(
     ast: &mut Ast,
     interface: &Ref<InterfaceNode>,
 ) -> Result<Ref<TypeNode>, TransformError> {
@@ -895,7 +895,7 @@ fn consumer_type_ref(
 }
 
 /// The simple name behind a type reference, resolved or not.
-fn type_name(ast: &Ast, reference: &Ref<TypeNode>) -> String {
+pub(crate) fn type_name(ast: &Ast, reference: &Ref<TypeNode>) -> String {
     match reference {
         Ref::Resolved(id) => ast
             .type_(*id)

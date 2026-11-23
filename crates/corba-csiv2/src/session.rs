@@ -56,9 +56,8 @@ use crate::sas::{
 /// this session — the shape below (`1`=invalid evidence, `4`=no
 /// context) is carried over from this crate's own earlier reading of
 /// it (not re-checked now) plus JacORB's measured agreement on `1`.
-/// `CONTEXT_ERROR_INVALID_MECHANISM = (2, 1)` is defined from that same
-/// earlier reading; nothing in this crate emits it yet (see its own
-/// doc). A third table entry some readings call "conflicting evidence"
+/// `CONTEXT_ERROR_INVALID_MECHANISM = (2, 1)` is the value of CORBA 3.3
+/// Part 2 Table 10.10 (see its own doc for when it is emitted). A third table entry some readings call "conflicting evidence"
 /// is not represented here at all — neither this round's JacORB
 /// measurement nor this crate's earlier one attached a confirmed value
 /// or a caller to it, and guessing one would be exactly the kind of
@@ -77,22 +76,21 @@ pub const CONTEXT_ERROR_NO_CONTEXT: (u32, u32) = (4, 1);
 /// (JacORB 3.9's measured `"Could not parse service context"`), a GSSUP
 /// username/password that does not authenticate (JacORB 3.9's measured
 /// `"Could not validate context EstablishContext"`), or an
-/// `IdentityToken` of a form `target_supports` does not list. JacORB
-/// 3.9 answers every one of these with `(1, 1)` (measured this round,
-/// see the block above); this module and `crate::authenticator` do the
-/// same.
+/// malformed identity token, or an identity the authenticated user is
+/// not trusted to assert (CORBA 3.3 Part 2 §10.3.1.1, Table 10.10).
+/// JacORB 3.9 answers the first ones with `(1, 1)` (measured, see the
+/// block above).
 pub const CONTEXT_ERROR_INVALID_EVIDENCE: (u32, u32) = (1, 1);
 
 /// `<major_status, minor_status>` for a client authentication token
 /// this target's one supported mechanism (GSSUP) cannot parse at all —
 /// as opposed to one that parses as GSSUP and fails on its own terms
 /// (wrong password: [`CONTEXT_ERROR_INVALID_EVIDENCE`]). JacORB 3.9
-/// builds `(2, 1)` for some rejection path this round's measurement did
-/// not identify by name; this crate is not confident enough in the
-/// mapping to emit it from `authenticate_gssup` yet — see that
-/// function's own doc for which of its rejections use which constant,
-/// and this module's own doc block above for what was and was not
-/// checked.
+/// builds `(2, 1)` for some rejection path. `crate::authenticator`
+/// answers with it what CORBA 3.3 Part 2 §10.2.5 and Table 10.10 call
+/// an invalid mechanism: an identity token of a type the target does
+/// not support, a principal name of another mechanism than GSSUP, an
+/// identity extension.
 pub const CONTEXT_ERROR_INVALID_MECHANISM: (u32, u32) = (2, 1);
 
 /// What the target does with one incoming SAS message — §10.3.

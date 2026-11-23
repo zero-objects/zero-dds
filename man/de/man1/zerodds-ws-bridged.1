@@ -43,7 +43,7 @@ Pfad zur YAML-Konfiguration. Siehe
 .TP
 .BR \-\-listen =\fIADR\fR
 Bind-Adresse. Standard:
-.IR 0.0.0.0:8080 .
+.IR 127.0.0.1:8080 .
 .TP
 .BR \-\-domain =\fIID\fR
 DDS-Domain-ID. Standard: 0.
@@ -89,19 +89,38 @@ aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
 .SH SIGNALE
 .TP
 .B SIGTERM
-Geordnetes Beenden (WS-Frames in Übertragung abarbeiten, DDS-Reader
-abmelden).
+Geordnetes Beenden innerhalb von
+.B shutdown_drain_ms
+(Vorgabe 30 s): keine neue Verbindung, die Samples, die der Daemon hält,
+erreichen die Clients, jede Verbindung bekommt
+.I {"op":"shutdown"}
+und einen Close-Frame mit Status 1001, dann werden die DDS-Entitäten entfernt
+und der Prozess endet mit 0.
 .TP
 .B SIGHUP
 Liest die Konfiguration neu: Die TLS-Zertifikats- und -Schlüsseldateien an
 ihren konfigurierten Pfaden, die Authentifizierungs-Einstellungen und die
 Topic-ACL gelten ab dann (das Zertifikat für neue Verbindungen). Geänderte
-TLS-Dateipfade, Topics, Listen-Adresse oder Domäne brauchen einen Neustart und
-werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+TLS-Dateipfade, Topics, limits, origin, metrics, max_send_queue_per_connection,
+max_burst_samples, ping_interval_ms, shutdown_drain_ms, catalog_on_connect, tenants (außer der acl
+eines Topics eines Mandanten), Listen-Adresse oder Domäne brauchen einen
+Neustart und werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
 .SH UMGEBUNGSVARIABLEN
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318. Ist er gesetzt, sendet
+der Daemon OTLP/HTTP/JSON-Spans an dessen
+.I /v1/traces
+alle 5 s und am Ende eines Beendens: ein Trace je WebSocket-Verbindung mit der
+Wurzel
+.BR ws.connection ,
+einem
+.B ws.frame.in
+je Nachricht des Clients (mit dem Kind
+.BR dds.write ,
+wenn sie in DDS schrieb) und einem
+.B ws.frame.out
+je Nachricht des Daemons.
 .SH EXIT-STATUS
 .TP
 .B 0

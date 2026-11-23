@@ -5,10 +5,11 @@
 //!
 //! What this tool uses of `zerodds-transport-uds` (a Unix-only dependency;
 //! `src/main.rs`, `run_uds` and, on Linux, `run_uds_abstract`):
-//! `UdsConfig { base_dir, max_datagram: 8192, recv_timeout: Some(10 s) }`
+//! `UdsConfig { base_dir, max_datagram: 8192, recv_timeout: Some(10 s),
+//! ..UdsConfig::default() }`
 //! and `UdsTransport::bind(local_id, cfg)`;
 //! `abstract_dgram::AbstractDgramConfig { address: UdsAddress::Abstract {
-//! prefix }, recv_buf: 8192, recv_timeout }` and
+//! prefix }, max_datagram: 8192, recv_timeout, ..AbstractDgramConfig::default() }` and
 //! `UdsAbstractDgramTransport::bind(local_id, cfg)`; then `send` / `recv` of
 //! `Transport`; an error is printed with `{}`.
 //!
@@ -29,6 +30,7 @@ fn the_calls_run_uds_makes() {
         base_dir: PathBuf::from("/nonexistent/zerodds-contract"),
         max_datagram: 8192,
         recv_timeout: Some(Duration::from_secs(10)),
+        ..UdsConfig::default()
     };
     assert_eq!(config.max_datagram, 8192);
     let _: fn([u8; 16], UdsConfig) -> std::io::Result<UdsTransport> = UdsTransport::bind;
@@ -46,10 +48,11 @@ fn the_calls_run_uds_abstract_makes_on_linux() {
         address: UdsAddress::Abstract {
             prefix: String::from("zerodds"),
         },
-        recv_buf: 8192,
+        max_datagram: 8192,
         recv_timeout: Some(Duration::from_secs(10)),
+        ..AbstractDgramConfig::default()
     };
-    assert_eq!(config.recv_buf, 8192);
+    assert_eq!(config.max_datagram, 8192);
     let _: fn([u8; 16], AbstractDgramConfig) -> std::io::Result<UdsAbstractDgramTransport> =
         UdsAbstractDgramTransport::bind;
     fn loops<T: Transport>() {}

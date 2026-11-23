@@ -10,10 +10,10 @@ operations onto DDS topics. The schema is the one of
 the reader is
 .I DaemonConfig::from_config
 in
-.IR crates/corba-dds-bridge/src/bridge_daemon.rs .
+.IR crates/corba-dds-bridge/src/bridge_daemon/config.rs .
 .PP
 Top-level keys:
-.BR domain ", " log_level ", " corba ", " acl ", " mappings ", " metrics .
+.BR domain ", " log_level ", " corba ", " acl ", " mappings ", " tenants ", " metrics .
 .PP
 An unknown top-level key is
 .I not
@@ -33,7 +33,7 @@ URL depends on that.
 .SS Top level
 .TP
 .B domain
-Integer DDS domain ID. Default
+Integer DDS domain ID of the daemon's participant. Default
 .IR 0 .
 .TP
 .B log_level
@@ -42,6 +42,14 @@ Integer DDS domain ID. Default
 .TP
 .B orb_id
 ORB identifier of this daemon.
+.TP
+.B idl_dir
+The directory the IDL generated from the
+.B idl_file
+of the mappings is written to at start, one file per
+.B idl_file
+under its file name. Default
+.IR /var/lib/zerodds/corba-bridge .
 .TP
 .B iiop
 Sub-map with
@@ -60,7 +68,7 @@ environment
 .RI ( 1.0 " | " 1.1 " | " 1.2 ;
 a mapped operation reached over 1.0 or 1.1 is answered NO_IMPLEMENT),
 .B fragment_size
-(replies above it go out in GIOP 1.2 fragments) and
+(replies above it go out in GIOP 1.2 and 1.1 fragments) and
 .B max_message_size
 (a larger inbound message is answered MessageError).
 .TP
@@ -70,25 +78,31 @@ Sub-map with
 the server material
 .BR cert_file " / " key_file ,
 .B ca_file
-and
+(the server asks for a client certificate and checks one against it; its
+subject DN, RFC 4514, and its fingerprint are the ACL subjects),
 .B require_client_cert
-(the client certificate is checked against
-.BR ca_file ;
-its subject DN, RFC 4514, is the ACL subject).
+(a session without a certificate fails; without it the session goes on
+without a subject) and
+.B required
+(the objects are reached over SSLIOP only: the IORs name IIOP port 0, and the
+plain IIOP listener answers a LocateRequest with OBJECT_FORWARD and a
+Request with LOCATION_FORWARD to that IOR; needs
+.BR enabled ).
 .TP
 .B ior
 Sub-map with
 .B ior_file
 (one line per mapping:
-.IR "repo_id operation IOR:..." ),
+.IR "repo_id operation IOR:..." ,
+a tenant's as
+.IR "@tenant repo_id operation IOR:..." ),
 .B naming_service
 (a
-.IR corbaname: " or " corbaloc:
-URL, CORBA 3.4 Part 2 \(sc13.6.10; only an
+.IR corbaname: ", " corbaloc: " or " rir:
+URL, CORBA 3.4 Part 2 \(sc13.6.10, over
 .I iiop:
-or protocol-less endpoint is resolved \(em
-.IR rir: " and " ssliop:/tls:
-naming-service connections are refused by name, not attempted),
+or
+.IR ssliop: / tls: ),
 .B publish_to_naming
 (boolean: rebinds every receiving mapping's IOR into
 .B naming_service
@@ -96,16 +110,30 @@ at start, under
 .I <corbaname-fragment-path>/<repo_id-operation slug>
 \(em every missing intermediate context in the path is created;
 .I unbind
-at a clean stop; requires
-.BR naming_service )
-and
+at a clean stop, before the drain; requires
+.BR naming_service ),
 .B naming_retry_ms
 (total retry budget against
 .BR naming_service ,
 exponential backoff from 200\ ms capped at 5\ s; default
 .IR 30000 ,
 matching this daemon's own shutdown drain and its packaged unit's
-.BR TimeoutStopSec ).
+.BR TimeoutStopSec ),
+.B naming_ssliop
+(for a NameService on
+.IR ssliop: / tls: :
+.B ca_file
+its certificate is checked against, and
+.BR cert_file " / " key_file
+of this daemon when it asks for one) and
+.B initial_references
+(a map from a name to the
+.IR corbaname: / corbaloc:
+URL a
+.I rir:
+URL of that name resolves to, as
+.I \-ORBInitRef
+does for other ORBs).
 .TP
 .B naming
 Sub-map with
@@ -114,7 +142,12 @@ Sub-map with
 .I zerodds-corba-cosnaming
 NamingContext, object key
 .IR NameService ,
-on this daemon's own IIOP/SSLIOP listener \(em not built).
+on this daemon's own IIOP/SSLIOP listener, the servant of
+.BR zerodds-naming-svc (1))
+and
+.B persist_file
+(its graph is loaded from here at start and saved after every change and at
+the stop; empty: in memory).
 .TP
 .B csiv2
 Sub-map with
@@ -125,15 +158,17 @@ is evaluated; a rejected one is
 .B NO_PERMISSION
 with a SAS
 .B ContextError
-attached; additive next to SSLIOP client certificates and the ACL \(em
-this daemon has both, unlike
-.BR zerodds-naming-svc (1)),
+attached, and so is a request with neither GSSUP credentials nor a verified
+client certificate; the IOR carries
+.B TAG_CSI_SEC_MECH_LIST
+with a mechanism over TLS and one over plain IIOP),
 .B target_supports
 (list of accepted
 .I IdentityToken
 forms for CSIv2 identity assertion, Spec \(sc24.2.5: any of
 .IR anonymous ", " principal_name ", " x509_cert_chain ", " distinguished_name ;
-an asserted identity of an unlisted form is refused) and
+an asserted identity of an unlisted form is refused, and so is one other
+than the authenticated GSSUP user itself or the anonymous identity) and
 .BR gssup ,
 a sub-map with
 .B password_file
@@ -144,9 +179,7 @@ daemon's configuration; required when
 .B enabled
 is true) and
 .B target_name
-(the AS-context target name this daemon's
-.B TAG_CSI_SEC_MECH_LIST
-IOR component advertises).
+(the AS-context target name the IOR advertises).
 A CSIv2-accepted identity is added to the ACL's subjects as
 .IR gssup:<username> ,
 or, for an accepted identity assertion, the asserted name verbatim.
@@ -161,8 +194,10 @@ List of maps with
 .RI ( * ,
 the client certificate's subject DN such as
 .IR CN=trader,O=Example ,
-or its fingerprint
-.IR mtls:<SHA-256 hex> )
+its fingerprint
+.IR mtls:<SHA-256 hex> ,
+or
+.IR gssup:<username> )
 and
 .BR allow_invoke ,
 repository ids, a trailing
@@ -212,9 +247,28 @@ Sub-map as request_topic.
 Sub-map as request_topic, for dds_to_corba.
 .TP
 .B correlation_id
-Only
-.IR request_id ,
-the first member of the request and reply types.
+The name of the first member of the request and reply types, which the
+bridge fills. Default
+.IR request_id ;
+another name needs
+.BR idl_file .
+.TP
+.B idl_file
+The IDL of the interface (Spec \(sc5.2). The daemon looks up the operation
+in the interface of
+.B repo_id
+(an attribute as
+.IR _get_<name> " and " _set_<name> )
+and generates the types
+.IR <Interface>::<operation>::Request ", " Reply " and " Notify ,
+which are then the types of the topics;
+.B dds_type
+beside it is refused. A user exception is a variant of the reply type by
+its
+.IR exception_kind ;
+the daemon writes the GIOP exception from it. An operation with
+.IR wchar ", " wstring ", " fixed ", " any ,
+an object reference or a valuetype is refused at start.
 .TP
 .B timeout_ms
 Reply wait; without a reply by then the caller gets TIMEOUT.
@@ -223,13 +277,55 @@ Reply wait; without a reply by then the caller gets TIMEOUT.
 Sub-map with
 .B reliability
 .RI ( reliable " | " best_effort ;
-request-reply needs reliable) and
+request-reply needs reliable),
 .B durability
-.RI ( volatile " | " transient_local ).
+.RI ( volatile " | " transient_local ;
+with transient_local the replies are kept per request, and a request whose
+reply is kept is answered from it),
+.B history
+(sub-map with
+.B kind
+.RI ( keep_last " | " keep_all )
+and
+.BR depth :
+how many kept replies; keep_all with transient_local needs
+.BR lifespan_ms ),
+.B lifespan_ms
+(of the request and notify samples and of a kept reply),
+.B deadline_ms
+(offered by the request writer, requested by the reply and notify readers; a
+reply topic without a sample for that long answers the requests that waited
+that long with TRANSIENT),
+.B liveliness_lease_ms
+(the lease of the DDS endpoints) and
+.B partition
+(list: the partitions of the DDS endpoints).
 .TP
 .B targets
 For dds_to_corba: corbaloc URLs or stringified IORs every notify sample is
 sent to as a oneway request.
+.TP
+.B target_object_keys
+Not accepted: an object key names no host. The key stops the start with
+that reason; list the targets as corbaloc URLs or IORs in
+.BR targets .
+.SS tenants (list)
+Participants beside the one of
+.B domain
+(Spec \(sc1 L6). Each entry is a DDS participant of its own with
+.B name
+(in the IOR lines, the log, the spans and the metrics),
+.B domain
+(its DDS domain),
+.B subjects
+(the client certificates bound to it: a subject DN or
+.IR mtls:<SHA-256 hex> ;
+an SSLIOP session whose certificate names one is served by this tenant for
+its life) and
+.B mappings
+(as above). Plain IIOP and every other session are the participant of
+.BR domain .
+A subject is bound to one tenant at most.
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/corba-bridged.yaml.example .

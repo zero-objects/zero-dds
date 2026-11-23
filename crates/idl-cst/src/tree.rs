@@ -92,6 +92,70 @@ pub enum CstKind {
     /// A home's `manages X primarykey K` clause.
     ManagesClause,
 
+    // -- PSDL (Persistent State Service 2.0 §3.2.3) ----------------------
+    /// `abstract storagetype X [: B, …] { … };`, or its forward
+    /// declaration without a body. Productions (5) to (12).
+    AbstractStorageTypeDecl,
+    /// `abstract storagehome H of T [: B, …] { … };`, or its forward
+    /// declaration without a body. Productions (16) to (22).
+    AbstractStorageHomeDecl,
+    /// `storagetype S [: B] [implements A, …] [ref(…)] { … };`, or its
+    /// forward declaration. Productions (26) to (39).
+    StorageTypeDecl,
+    /// `storagehome H of S [: B] [implements A, …] [primary key …] { … };`.
+    /// Productions (40) to (46).
+    StorageHomeDecl,
+    /// `of <name>` of a storage home header.
+    OfClause,
+    /// `implements A, B` of a storage type or storage home header.
+    ImplementsClause,
+    /// `[readonly] state <type> a, b;`, production (13).
+    StateDecl,
+    /// `[strong] ref<T>`, productions (15) and (35).
+    StorageRefType,
+    /// `key k [(a, b)];`, production (25).
+    KeyDecl,
+    /// `factory f(a, b);`, productions (47) and (48).
+    PsdlFactoryDecl,
+    /// `stores m as T [scope H];`, production (37).
+    StoreDirective,
+    /// `ref(a, b)`, production (39).
+    RefRepDirective,
+    /// `primary key k` or `primary key ref`, production (46).
+    PrimaryKeyDecl,
+
+    // -- CIDL (CORBA 3.3 Part 3 §8.3) ------------------------------------
+    /// `composition <category> X { … };`, productions (4) to (6).
+    CompositionDecl,
+    /// `home executor X { … };`, productions (7) and (8).
+    HomeExecutorDef,
+    /// `implements <home>;`, production (9).
+    HomeImplDecl,
+    /// `bindsTo <abstract storage home>;`, production (11).
+    StorageHomeBinding,
+    /// `storedOn <abstract storage home>;`, productions (12) and (18).
+    PersistenceDecl,
+    /// `manages X [{ … }];`, productions (13) to (15).
+    ExecutorDef,
+    /// `segment X { … }`, productions (16) and (17).
+    SegmentDef,
+    /// `provides facet a, b;`, production (19).
+    FacetDecl,
+    /// `delegatesTo storage (f: m, …)`, productions (20) to (24).
+    FeatureDelegationSpec,
+    /// `f: m` inside a feature delegation list, production (22).
+    FeatureDelegation,
+    /// `delegatesTo abstract storagehome (…);`,
+    /// `delegatesTo executor (…);` or `delegatesTo home (…)`,
+    /// productions (25), (26) and (34).
+    DelegationSpec,
+    /// `op [: target]` inside a delegation list, production (28).
+    Delegation,
+    /// `abstract (a, b);`, productions (30) and (31).
+    AbstractSpec,
+    /// `proxy home X { … };`, productions (32) and (33).
+    ProxyHomeDef,
+
     // -- members and parts -----------------------------------------------
     /// One member of a struct, exception or valuetype.
     Member,

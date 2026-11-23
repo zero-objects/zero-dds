@@ -13,12 +13,13 @@
 //!   (`new`, `from_bytes`), `GuidPrefix::zerodds`, `VendorId::ZERODDS`,
 //!   `ProtocolVersion`, `SequenceNumber`, `Locator`, `LocatorKind::{UdpV4,
 //!   Shm}`, `PortMapping` (`SPEC`, `Default`), `spdp_unicast_port`,
-//!   `SPDP_DEFAULT_MULTICAST_ADDRESS`, `set_tcp_kinds_fast_dds`.
+//!   `SPDP_DEFAULT_MULTICAST_ADDRESS`, `TcpKindSet` with
+//!   `Locator::with_tcp_kind_set` and `LocatorKind::transport_kind`.
 //! - `header::RtpsHeader`, `submessage_header::{SubmessageHeader,
 //!   SubmessageId::from_u8, FLAG_E_LITTLE_ENDIAN}`, `datagram::{decode_datagram,
 //!   decode_datagram_shared, decode_datagram_shared_into, encode_datagram,
 //!   ParsedDatagram, SubmessageFrame, ParsedSubmessage, ReceiveContext,
-//!   ReceptionClock, ReceiverWalk, Rejection, set_rejection_hook,
+//!   ReceptionClock, ReceiverWalk, Rejection, RejectionKind, set_rejection_hook,
 //!   refused_messages, invalid_message_rests,
 //!   skipped_must_understand_submessages}`, `receiver_state::ReceiverState`,
 //!   `header_extension::{HeTimestamp, HeaderExtension::restate_for_rebuilt_message}`.
@@ -72,9 +73,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zerodds_rtps::datagram::{
-    ParsedDatagram, ParsedSubmessage, ReceiveContext, ReceptionClock, Rejection, SubmessageFrame,
-    decode_datagram, decode_datagram_shared, decode_datagram_shared_into, encode_datagram,
-    invalid_message_rests, refused_messages, set_rejection_hook,
+    ParsedDatagram, ParsedSubmessage, ReceiveContext, ReceptionClock, Rejection, RejectionKind,
+    SubmessageFrame, decode_datagram, decode_datagram_shared, decode_datagram_shared_into,
+    encode_datagram, invalid_message_rests, refused_messages, set_rejection_hook,
     skipped_must_understand_submessages,
 };
 use zerodds_rtps::dialect::{
@@ -142,7 +143,7 @@ use zerodds_rtps::subscription_data::{
 use zerodds_rtps::topic_data::TopicBuiltinTopicData;
 use zerodds_rtps::wire_types::{
     EntityId, EntityKind, Guid, GuidPrefix, Locator, LocatorKind, PortMapping, ProtocolVersion,
-    SPDP_DEFAULT_MULTICAST_ADDRESS, SequenceNumber, TopicKind, VendorId, set_tcp_kinds_fast_dds,
+    SPDP_DEFAULT_MULTICAST_ADDRESS, SequenceNumber, TcpKindSet, TopicKind, VendorId,
     spdp_unicast_port,
 };
 use zerodds_rtps::writer_group::WriterGroup;
@@ -243,12 +244,16 @@ fn the_locator_kinds_the_runtime_routes_by() {
         LocatorKind::UdpV4
     );
     assert_eq!(Locator::shm([3; 16]).kind, LocatorKind::Shm);
-    // `transport.tcp_locator_kinds: fast-dds` switches the wire value.
-    set_tcp_kinds_fast_dds(true);
-    let fast = LocatorKind::Tcpv4.as_i32();
-    set_tcp_kinds_fast_dds(false);
-    assert_eq!(fast, 4);
-    assert_ne!(LocatorKind::Tcpv4.as_i32(), 4);
+    // `transport.tcp_locator_kinds: fast-dds` makes the runtime's TCP
+    // locators with 4 and 8; the default set is untouched by it, and both
+    // sets are routed to the same transport.
+    let own = Locator::tcp_v4([10, 0, 0, 1], 7411);
+    let fast = own.with_tcp_kind_set(TcpKindSet::Kinds4And8);
+    assert_eq!(fast.kind.as_i32(), 4);
+    assert_eq!(own.kind.as_i32(), 0x01F0_0004);
+    assert_eq!(fast.kind.transport_kind(), LocatorKind::Tcpv4);
+    assert_eq!(own.kind.transport_kind(), LocatorKind::Tcpv4);
+    assert_eq!(LocatorKind::UdpV4.transport_kind(), LocatorKind::UdpV4);
 }
 
 #[test]
@@ -448,8 +453,15 @@ fn rtps_9_4_2_6_an_acknack_with_bitmap_base_zero_needs_the_interop_setting() {
 
 static HOOK_CALLS: AtomicUsize = AtomicUsize::new(0);
 
+/// Counts the refusal of a whole message at its header, which one test of
+/// this file causes. The hook is the process's: the tests beside it that
+/// decode a message with an invalid rest or an unknown must-understand PID
+/// call it too, at any time.
 fn hook(rejection: &Rejection) {
-    if rejection.vendor_id == VendorId::ZERODDS.to_bytes() {
+    if rejection.vendor_id == VendorId::ZERODDS.to_bytes()
+        && rejection.kind == RejectionKind::Refused
+        && rejection.submessage_id.is_none()
+    {
         HOOK_CALLS.fetch_add(1, Ordering::SeqCst);
     }
 }

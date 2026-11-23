@@ -30,6 +30,20 @@ pub const MAGIC_BYTES: [u8; 4] = *b"GIOP";
 /// `MAGIC` as a constant for tests.
 pub const MAGIC: u32 = u32::from_be_bytes(MAGIC_BYTES);
 
+/// `"ZIOP"` — the magic of a ZIOP message, a GIOP message whose body is
+/// compressed (CORBA 3.3 Part 2 §12.1).
+pub const ZIOP_MAGIC_BYTES: [u8; 4] = *b"ZIOP";
+
+/// The protocol a message header names with its four magic octets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Magic {
+    /// `"GIOP"`: the body is the GIOP body.
+    Giop,
+    /// `"ZIOP"`: the body is a `ZIOP::CompressionData` holding the
+    /// compressed GIOP body (Part 2 §12.1).
+    Ziop,
+}
+
 /// GIOP header size in bytes (always 12).
 pub const HEADER_SIZE: usize = 12;
 
@@ -99,11 +113,28 @@ impl MessageHeader {
     /// if necessary.
     ///
     /// # Errors
-    /// * `InvalidMagic` if bytes 0..4 are not `"GIOP"`.
-    /// * `UnsupportedVersion` if major/minor is none of 1.0/1.1/1.2.
+    /// * `InvalidMagic` if bytes 0..4 are not `"GIOP"` (a `"ZIOP"`
+    ///   header is refused here too; [`Self::decode_frame`] reads it).
+    /// * `UnsupportedVersion` if major/minor is none of 1.0 to 1.4
+    ///   (Part 2 §7.9; 1.3 and 1.4 have the 1.2 header).
     /// * `UnknownMessageType` if the octet is not in 0..=7.
     /// * Buffer read error.
     pub fn decode(bytes: &[u8]) -> GiopResult<(Self, &[u8])> {
+        match Self::decode_frame(bytes)? {
+            (Magic::Giop, header, rest) => Ok((header, rest)),
+            (Magic::Ziop, ..) => Err(GiopError::InvalidMagic(ZIOP_MAGIC_BYTES)),
+        }
+    }
+
+    /// Decodes the 12-byte header of a GIOP or a ZIOP message (Part 2
+    /// §12.1): the magic says which. A ZIOP header has the fields of the
+    /// GIOP header; ZIOP exists for GIOP 1.2 and later only.
+    ///
+    /// # Errors
+    /// As [`Self::decode`]; `InvalidMagic` for a magic that is neither
+    /// `"GIOP"` nor `"ZIOP"`; `UnsupportedVersion` for a ZIOP header
+    /// below 1.2.
+    pub fn decode_frame(bytes: &[u8]) -> GiopResult<(Magic, Self, &[u8])> {
         if bytes.len() < HEADER_SIZE {
             return Err(GiopError::Malformed(alloc::format!(
                 "header needs {HEADER_SIZE} bytes, got {}",
@@ -113,17 +144,26 @@ impl MessageHeader {
         // Magic + version + flags + message_type are endian-free
         // (bytes 0..8). We start with BigEndian, then adjust.
         let mut tmp = Reader::new(&bytes[..8], Endianness::Big);
-        let magic = tmp.read_bytes(4)?;
-        if magic != MAGIC_BYTES {
+        let magic_bytes = tmp.read_bytes(4)?;
+        let magic = if magic_bytes == MAGIC_BYTES {
+            Magic::Giop
+        } else if magic_bytes == ZIOP_MAGIC_BYTES {
+            Magic::Ziop
+        } else {
             let mut m = [0u8; 4];
-            m.copy_from_slice(magic);
+            m.copy_from_slice(magic_bytes);
             return Err(GiopError::InvalidMagic(m));
-        }
+        };
         let major = tmp.read_u8()?;
         let minor = tmp.read_u8()?;
         let version = Version::new(major, minor);
-        // Spec §15.4.1: only 1.0, 1.1, 1.2 are currently standardized.
-        if !matches!((major, minor), (1, 0) | (1, 1) | (1, 2)) {
+        // Part 2 §7.9 and §9.4: 1.0 to 1.4; `MessageHeader_1_3` is a
+        // typedef of `MessageHeader_1_1`, and so is the 1.4 header.
+        if !version.is_supported() {
+            return Err(GiopError::UnsupportedVersion { major, minor });
+        }
+        // Part 2 §12.1: compression applies to GIOP 1.2 and later.
+        if magic == Magic::Ziop && !version.supports_ziop() {
             return Err(GiopError::UnsupportedVersion { major, minor });
         }
         let flags_byte = tmp.read_u8()?;
@@ -139,6 +179,7 @@ impl MessageHeader {
         let mut size_reader = Reader::new(&bytes[8..12], flags.endianness());
         let message_size = size_reader.read_u32()?;
         Ok((
+            magic,
             Self {
                 version,
                 flags,
@@ -237,6 +278,37 @@ mod tests {
         assert!(matches!(
             err,
             GiopError::UnsupportedVersion { major: 2, minor: 0 }
+        ));
+    }
+
+    /// Part 2 §9.4.1: `typedef MessageHeader_1_1 MessageHeader_1_3`; the
+    /// 1.3 and 1.4 headers are the 1.1/1.2 header with their own minor
+    /// version, both byte orders and the fragment bit.
+    #[test]
+    fn corba_p2_7_9_giop_1_3_and_1_4_headers_are_the_1_2_headers() {
+        for (v, e) in [
+            (Version::V1_3, Endianness::Big),
+            (Version::V1_4, Endianness::Little),
+        ] {
+            let h = MessageHeader::new(
+                v,
+                Flags::from_endianness(e).with_fragment(true),
+                MessageType::Request,
+                0x0102_0304,
+            );
+            let mut w = Writer::new(e);
+            h.encode(&mut w).unwrap();
+            let bytes = w.finish();
+            assert_eq!(&bytes[0..4], b"GIOP");
+            assert_eq!((bytes[4], bytes[5]), (1, v.minor));
+            let (decoded, _) = MessageHeader::decode(&bytes).unwrap();
+            assert_eq!(decoded, h);
+        }
+        // 1.5 is above the highest supported minor version.
+        let bytes = [b'G', b'I', b'O', b'P', 1, 5, 0, 0, 0, 0, 0, 0];
+        assert!(matches!(
+            MessageHeader::decode(&bytes).unwrap_err(),
+            GiopError::UnsupportedVersion { major: 1, minor: 5 }
         ));
     }
 

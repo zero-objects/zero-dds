@@ -28,10 +28,13 @@
     missing_docs
 )]
 
-use std::net::UdpSocket;
+#[path = "support/udp_client.rs"]
+mod udp_client;
+
 use std::time::Duration;
 
-use zerodds_coap_bridge::codec::{decode, encode};
+use udp_client::{client_socket, recv_msg};
+use zerodds_coap_bridge::codec::encode;
 use zerodds_coap_bridge::daemon::config::{DaemonConfig, TopicConfig};
 use zerodds_coap_bridge::daemon::server;
 use zerodds_coap_bridge::message::{CoapCode, CoapMessage, MessageType};
@@ -61,6 +64,7 @@ fn make_secure_cfg(with_acl: bool) -> (DaemonConfig, zerodds_test_domains::Domai
         reliability: "best_effort".to_string(),
         durability: "volatile".to_string(),
         history_depth: 10,
+        ..Default::default()
     });
     cfg.topics.push(TopicConfig {
         dds_name: "Forbidden".to_string(),
@@ -70,6 +74,7 @@ fn make_secure_cfg(with_acl: bool) -> (DaemonConfig, zerodds_test_domains::Domai
         reliability: "best_effort".to_string(),
         durability: "volatile".to_string(),
         history_depth: 10,
+        ..Default::default()
     });
     if with_acl {
         cfg.topic_acl.insert(
@@ -98,21 +103,9 @@ fn make_open_cfg() -> (DaemonConfig, zerodds_test_domains::DomainLease) {
         reliability: "best_effort".to_string(),
         durability: "volatile".to_string(),
         history_depth: 10,
+        ..Default::default()
     });
     (cfg, lease)
-}
-
-fn client_socket() -> UdpSocket {
-    let s = UdpSocket::bind("127.0.0.1:0").expect("bind client");
-    s.set_read_timeout(Some(Duration::from_secs(2)))
-        .expect("timeout");
-    s
-}
-
-fn recv_msg(socket: &UdpSocket) -> CoapMessage {
-    let mut buf = [0u8; 65535];
-    let (n, _peer) = socket.recv_from(&mut buf).expect("recv");
-    decode(&buf[..n]).expect("decode")
 }
 
 #[test]

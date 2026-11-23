@@ -68,7 +68,7 @@ use zerodds_corba_giop::{
     Version,
 };
 use zerodds_corba_iiop::{Connector, ConnectorConfig, tls};
-use zerodds_corba_ior::url::CorbalocEndpoint;
+use zerodds_corba_ior::url::{CorbalocEndpoint, IiopAddress, parse_iiop_address};
 use zerodds_corba_ior::{Ior, parse_corbaloc, parse_corbaname};
 use zerodds_wire::{Endianness, Reader};
 
@@ -125,14 +125,15 @@ fn resolve_naming_service(
     initial_references: &std::collections::BTreeMap<String, String>,
 ) -> Result<Resolved, NamingClientError> {
     let resolved = parse_naming_url(url)?;
-    let Some(rir) = resolved
+    if !resolved
         .endpoints
         .iter()
-        .find(|e| e.protocol.eq_ignore_ascii_case("rir"))
-    else {
+        .any(|e| matches!(e, CorbalocEndpoint::Rir))
+    {
         return Ok(resolved);
-    };
-    let _ = rir; // the endpoint itself carries no address; the object key does
+    }
+    // The `rir` endpoint carries no address; the object key names the
+    // initial reference (`NameService` for an empty key).
     let reference_name = String::from_utf8_lossy(&resolved.root_key).into_owned();
     let mapped_url = initial_references.get(&reference_name).ok_or_else(|| {
         NamingClientError(format!(
@@ -159,19 +160,35 @@ enum Transport {
 
 fn pick_endpoint(
     endpoints: &[CorbalocEndpoint],
-) -> Result<(&CorbalocEndpoint, Transport), NamingClientError> {
-    if let Some(e) = endpoints
-        .iter()
-        .find(|e| e.protocol.is_empty() || e.protocol.eq_ignore_ascii_case("iiop"))
-    {
-        return Ok((e, Transport::Plain));
-    }
-    if let Some(e) = endpoints.iter().find(|e| {
-        e.protocol.eq_ignore_ascii_case("ssliop") || e.protocol.eq_ignore_ascii_case("tls")
+) -> Result<(IiopAddress, Transport), NamingClientError> {
+    if let Some(a) = endpoints.iter().find_map(|e| match e {
+        CorbalocEndpoint::Iiop(a) => Some(a),
+        _ => None,
     }) {
-        return Ok((e, Transport::Ssliop));
+        return Ok((a.clone(), Transport::Plain));
     }
-    let protocols: Vec<&str> = endpoints.iter().map(|e| e.protocol.as_str()).collect();
+    // `ssliop:`/`tls:` take the address syntax of `iiop:`.
+    if let Some(address) = endpoints.iter().find_map(|e| match e {
+        CorbalocEndpoint::Other { protocol, address }
+            if protocol.eq_ignore_ascii_case("ssliop") || protocol.eq_ignore_ascii_case("tls") =>
+        {
+            Some(address)
+        }
+        _ => None,
+    }) {
+        let a = parse_iiop_address(address).map_err(|e| {
+            NamingClientError(format!("corba.ior.naming_service: ssliop address: {e:?}"))
+        })?;
+        return Ok((a, Transport::Ssliop));
+    }
+    let protocols: Vec<&str> = endpoints
+        .iter()
+        .map(|e| match e {
+            CorbalocEndpoint::Iiop(_) => "iiop",
+            CorbalocEndpoint::Rir => "rir",
+            CorbalocEndpoint::Other { protocol, .. } => protocol.as_str(),
+        })
+        .collect();
     Err(NamingClientError(format!(
         "corba.ior.naming_service names no iiop:/ssliop:/tls: endpoint (only {protocols:?})"
     )))
@@ -192,7 +209,7 @@ enum NamingConnector {
 impl NamingConnector {
     fn build(
         cfg: &DaemonConfig,
-        endpoint: &CorbalocEndpoint,
+        endpoint: &IiopAddress,
         transport: &Transport,
     ) -> Result<Self, NamingClientError> {
         match transport {
@@ -380,7 +397,7 @@ fn rebind_once(
     // prior behaviour here) silently pinned the connection to whichever
     // address the resolver listed first, so a target listening only on
     // the other family was refused even though it was reachable.
-    let connector = NamingConnector::build(cfg, endpoint, &transport)?;
+    let connector = NamingConnector::build(cfg, &endpoint, &transport)?;
     let mut next_id = 1u32;
 
     create_intermediate_contexts(
@@ -482,7 +499,7 @@ pub fn unbind_all(cfg: &DaemonConfig, names: &[Name]) {
     let Ok((endpoint, transport)) = pick_endpoint(&resolved.endpoints) else {
         return;
     };
-    let Ok(connector) = NamingConnector::build(cfg, endpoint, &transport) else {
+    let Ok(connector) = NamingConnector::build(cfg, &endpoint, &transport) else {
         return;
     };
     for (i, name) in names.iter().enumerate() {
@@ -527,6 +544,20 @@ mod tests {
         assert_eq!(r.path[1].id, "Trader");
     }
 
+    /// The example of the spec: no key before `#` is `NameService`
+    /// (CORBA 3.3 Part 2 §7.6.10.5); an IPv6 host in brackets.
+    #[test]
+    fn resolve_corbaname_without_a_key_takes_nameservice() {
+        let r = resolve_naming_service("corbaname::naming.example:2809#zerodds/bridge", &no_refs())
+            .unwrap();
+        assert_eq!(r.root_key, b"NameService");
+        assert_eq!(r.path.len(), 2);
+        let r = resolve_naming_service("corbaname::[::1]#zerodds/bridge", &no_refs()).unwrap();
+        let (endpoint, transport) = pick_endpoint(&r.endpoints).unwrap();
+        assert_eq!((endpoint.host.as_str(), endpoint.port), ("::1", 2809));
+        assert_eq!(transport, Transport::Plain);
+    }
+
     #[test]
     fn resolve_corbaname_without_a_fragment_has_an_empty_path() {
         let r = resolve_naming_service("corbaname::host:2809/NameService", &no_refs()).unwrap();
@@ -553,8 +584,9 @@ mod tests {
         );
         let r = resolve_naming_service("corbaname:rir:/NameService#App/Trader", &refs).unwrap();
         assert_eq!(r.root_key, b"NS");
-        assert_eq!(r.endpoints[0].host, "ns.example");
-        assert_eq!(r.endpoints[0].port, 2809);
+        let (endpoint, _) = pick_endpoint(&r.endpoints).unwrap();
+        assert_eq!(endpoint.host, "ns.example");
+        assert_eq!(endpoint.port, 2809);
         assert_eq!(r.path.len(), 2);
         assert_eq!(r.path[0].id, "App");
     }
@@ -655,7 +687,15 @@ mod tests {
                 timeout_ms: 1000,
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
+                history_depth: Some(1),
+                lifespan_ms: None,
+                deadline_ms: None,
+                liveliness_lease_ms: None,
+                partition: Vec::new(),
                 targets: Vec::new(),
+                idl_file: None,
+                correlation_id: "request_id".into(),
+                raises: Vec::new(),
             }],
             ..Default::default()
         };

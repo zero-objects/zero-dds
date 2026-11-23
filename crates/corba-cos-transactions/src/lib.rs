@@ -20,6 +20,10 @@
 //!   read-only optimization + one-phase commit ([`two_phase`]).
 //! - **`Current` / `Coordinator` / `Terminator` / `Control`** — the OTS
 //!   orchestration interfaces as Rust types ([`transaction`]).
+//! - **`TransactionCurrent`** (feature `std`) — `CosTransactions::Current`
+//!   as the local interface CORBA 3.3 Part 3 §6.13.2.2 makes it: the
+//!   ORB's initial reference `"TransactionCurrent"`, no object reference,
+//!   a `Current` per thread ([`current`]).
 //! - **`TransactionLog` / `RecoveryCoordinator`** (§10.3.7) — durability: the
 //!   commit decision is force-written before phase 2; a restart resolves
 //!   in-doubt transactions as presumed-abort ([`recovery`]).
@@ -33,13 +37,21 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
+#[cfg(feature = "std")]
+pub mod current;
 pub mod otid;
 pub mod propagation;
 pub mod recovery;
 pub mod transaction;
 pub mod two_phase;
 
+#[cfg(feature = "std")]
+pub use current::{
+    CURRENT_REPOSITORY_ID, TRANSACTION_CURRENT_INITIAL_REFERENCE, TransactionCurrent,
+};
 pub use otid::Otid;
 pub use propagation::{PropagationContext, TRANSACTION_SERVICE_CONTEXT_ID, TransIdentity};
 pub use recovery::{

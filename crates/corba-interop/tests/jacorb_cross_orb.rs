@@ -116,6 +116,26 @@ fn corbarust_13_a_jacorb_client_calls_echo_and_bench_on_a_zerodds_server() {
     jacorb_client("InteropClient", &["bench", &bench]);
 }
 
+/// CORBA 3.3 Part 2 §9.7.2: a client "must accept any profile with a major
+/// version of 1, regardless of the minor version number" and sends at most
+/// its own version. Measured: JacORB 3.9 calls a ZeroDDS server through its
+/// IIOP 1.2 profile and raises `MARSHAL` ("Unknown GIOP minor: 4") on the
+/// same profile written as IIOP 1.4, which the server processes (GIOP 1.0
+/// to 1.4). This is why `runtime::DEFAULT_PROFILE_VERSION` is 1.2.
+#[test]
+#[ignore = "needs JacORB 3.9 and a Java 8 JDK (integration-bridges-vendor-corba)"]
+fn corba_p2_9_7_2_a_jacorb_client_takes_a_1_2_profile_and_refuses_a_1_4_profile() {
+    let mut server = peers::zerodds_server();
+    let echo = server.ior("ECHO_IOR=");
+    jacorb_client("InteropClient", &["echo", &echo]);
+    let output = peers::run_client_failing(jacorb(
+        "InteropClient",
+        &[],
+        &["echo", &peers::with_profile_version(&echo, 4)],
+    ));
+    assert!(output.contains("Unknown GIOP minor: 4"), "{output}");
+}
+
 #[test]
 #[ignore = "needs JacORB 3.9 and a Java 8 JDK (integration-bridges-vendor-corba)"]
 fn corbarust_13_a_jacorb_client_drives_a_zerodds_naming_context() {
@@ -154,7 +174,9 @@ fn corbarust_13_a_jacorb_transactional_client_propagates_its_ots_context_to_a_ze
 
     let captured: Arc<Mutex<Option<PropagationContext>>> = Arc::new(Mutex::new(None));
     let server = CorbaServer::new();
-    server.register(b"Ots", |_op, body, _e| SkeletonResult::Reply(body.to_vec()));
+    server.register(b"Ots", |_op, body, _e| {
+        SkeletonResult::Reply(body.bytes().to_vec())
+    });
     {
         let sink = Arc::clone(&captured);
         server.on_request_contexts(move |contexts| {

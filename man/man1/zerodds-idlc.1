@@ -29,12 +29,33 @@ The model, as a tree.
 .B print-deps
 The types each declaration names.
 .TP
+.B dump-cidl
+The compositions and PSDL declarations of an OMG CIDL file (CORBA 3.3
+Part 3 \(sc8): categories, home executors, bindings, segments with their
+segment identifiers, delegations and proxy homes. A file whose name ends
+in
+.I .cdl
+is read as CIDL by every subcommand; its keywords (Table 8.2 and PSDL's
+Table 3\-2) are identifiers in an
+.I .idl
+file.
+.BR generate ,
+.BR dlrl ,
+.B lint
+and
+.B format
+refuse a
+.I .cdl
+file.
+.TP
 .B generate
 One language's source for the model.
 .TP
 .B dlrl
 OMG DDS 1.2 \(sc8 DLRL object and home classes, from the three DLRL
-pragmas.
+pragmas, and the implied IDL (\(sc8.2.1.2.2) of the valuetypes that derive
+from
+.IR DDS::ObjectRoot .
 .SS "dlrl and the DCPS_DATA_TYPE/DCPS_DATA_KEY collision"
 DDS 1.2 \(sc8.2.2's Generation Process reads three pragmas out of the
 IDL text:
@@ -238,7 +259,7 @@ valid ones for the subcommand it was given to.
 .B generate
 takes one of \fIrust\fR, \fIc++\fR, \fIc\fR, \fIjava\fR, \fIc#\fR, \fIpython\fR, \fItypescript\fR, \fIgo\fR, \fIocaml\fR, \fIada\fR, \fId\fR, \fIelixir\fR, \fIjulia\fR, \fIlua\fR, \fInim\fR, \fIswift\fR, \fIzig\fR, \fInode\fR, \fIada83\fR, \fIf#\fR, \fIkotlin\fR, or \fIall\fR for every one in one run.
 .B dlrl
-takes one of \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, or \fIall\fR for those four.
+takes one of \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, \fIidl\fR, or \fIall\fR for the four languages and the implied IDL, each written where the file has input for it: the three pragmas for the four languages, a valuetype deriving from \fIDDS::ObjectRoot\fR for \fIidl\fR.
 \fIcpp\fR/\fIcxx\fR, \fIcsharp\fR/\fIcs\fR, \fIfsharp\fR/\fIfs\fR and \fIts\fR are accepted besides, under either subcommand.
 .TP
 .BR \-\-java\-mapping " " \fIpsm\fR | \fIomg\fR | \fIidl4\fR
@@ -696,6 +717,21 @@ writes one bundled file per input for C++/C#/TypeScript, named
 .IR <out>/<stem>_dlrl.<ext> ,
 and one object file plus one home file per DLRL type for Java, named
 .IR <out>/<Type>.java " and " <out>/<Type>Home.java .
+With
+.IR idl ,
+it writes
+.IR <out>/<stem>_dlrl.idl :
+it includes the input file and declares the implied IDL of each
+valuetype that derives, directly or through other valuetypes, from
+.IR DDS::ObjectRoot .
+The input includes
+.IR dds_dlrl.idl ,
+the IDL of the generic DLRL entities; give
+.B \-I
+the directory that holds it
+.RI ( crates/dlrl/idl
+in the source tree). A file without such a valuetype gets no IDL file
+and a warning.
 The same second-input-same-name refusal applies.
 .SH SEE ALSO
 .BR zerodds-xmlc (1).

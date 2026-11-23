@@ -66,7 +66,7 @@ use zerodds_rtps::wire_types::EntityId;
 /// per-representation framing lives in `DdsType::{decode, decode_be,
 /// decode_xcdr1, decode_xcdr1_be}` (XTypes 1.3 §7.4.3.4.2).
 #[inline]
-fn decode_for_encap<T: DdsType>(
+pub(crate) fn decode_for_encap<T: DdsType>(
     codec: &dyn crate::topic::TopicCodec<T>,
     bytes: &[u8],
     representation: u8,
@@ -6591,6 +6591,31 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
         Self::or_no_data(self.query_core(condition, max, true, None))
     }
 
+    /// The samples of the instance `handle` that `condition` accepts: the
+    /// read of `read_instance` (DDS 1.4 §2.2.2.5.3.14) with the condition of
+    /// `read_w_condition` (§2.2.2.5.3.7), which is the read
+    /// [`Self::read_next_instance_w_condition`] does once it has found its
+    /// instance. Only the samples returned become READ; the samples of the
+    /// other instances are not touched.
+    ///
+    /// # Errors
+    /// `BadParameter` for `HANDLE_NIL`; `NoData` if the instance has no
+    /// sample the condition accepts; `PreconditionNotMet` for a condition
+    /// this reader did not create; the errors of [`Self::read_w_condition`].
+    #[cfg(feature = "std")]
+    pub fn read_instance_w_condition<C: crate::condition::ReadConditionArg>(
+        &self,
+        handle: InstanceHandle,
+        condition: &C,
+    ) -> Result<Vec<Sample<T>>> {
+        if handle.is_nil() {
+            return Err(DdsError::BadParameter {
+                what: "read_instance_w_condition with HANDLE_NIL",
+            });
+        }
+        Self::or_no_data(self.query_core(condition, usize::MAX, false, Some(handle)))
+    }
+
     /// DDS 1.4 §2.2.2.5.3.10: the condition of `read_w_condition` and
     /// `take_w_condition` "must be a ReadCondition created by the
     /// DataReader"; any other is PRECONDITION_NOT_MET.
@@ -9297,6 +9322,7 @@ mod tests {
     fn dispose(writer: [u8; 16], set: Option<i64>) -> crate::runtime::UserSample {
         crate::runtime::UserSample::Lifecycle {
             key_hash: [0; 16],
+            key_hash_unavailable: false,
             kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
             key_holder: None,
             source_timestamp: None,

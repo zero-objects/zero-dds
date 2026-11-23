@@ -6,6 +6,54 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Added
 
+- `time_source::KernelClock` (Linux): the kernel clock as a `zerodds_time_service::secure::SecureTimeSource` (OMG Time Service 1.1 §1.1.3, App. A). One read-only `adjtimex(2)` gives the time, `maxerror` as the error bound and the state of synchronization (not synchronized with `STA_UNSYNC`, `STA_CLOCKERR`, `TIME_ERROR`, `TIME_OOP`); `time_source::kernel_reading` maps a `KernelTimex` to the reading.
+
+- The value `fastdds` of `transport.tcp_dialect` and `transport.tcp_accept_dialects` (`runtime::TcpDialect::FastDds`, zerodds-tcp-transport-1.0 §6.1): the TCP protocol of Fast DDS. The TCP locators of the runtime are of kind 4 and 8 and hold the metatraffic unicast port of the participant as their logical port; the listener grants that port and the user unicast port. An entry `tcp://ip:port` of `discovery.peers` is asked at the metatraffic unicast ports of the first participant ids in this dialect, and `tcp://ip:port/logical` names the logical port. Tested with a running Fast DDS 3.6.1 over TCP alone (`tests/fastdds_live_tcp.rs`, job `vendor-live-dcps`).
+
+- The value `cyclone` of `transport.tcp_dialect` (`runtime::TcpDialect::Cyclone`):
+  the TCP connections the runtime opens have the stream framing of Cyclone
+  DDS, its TCP locators carry the kinds 4 and 8
+  (`RuntimeConfig::tcp_kind_set`), and a message is 65528 octets at most
+  (`zerodds-tcp-transport-1.0` §4.1). `RuntimeConfig::tcp_accept_dialects`,
+  the setting `transport.tcp_accept_dialects` (a list of `zerodds`, `rtps`,
+  `cyclone`; environment `ZERODDS_TCP_ACCEPT_DIALECTS`; unset takes every
+  dialect): the dialects a connection to the runtime's TCP listener may
+  begin in (§4.2). BREAKING: `transport.tcp_dialect` names the dialect of
+  the connections the runtime opens; its listener took that dialect alone
+  and takes every dialect by default now.
+- Discovery over TCP (`zerodds-tcp-transport-1.0` §4.3).
+  `RuntimeConfig::tcp_port`, the setting `transport.tcp_port` (environment
+  `ZERODDS_TCP_PORT`, default 0): the port of the runtime's TCP listeners.
+  `discovery.peers` takes `tcp://ip:port` and `tcp://[ipv6]:port`.
+  `RuntimeConfig::metatraffic_over_udp` and `metatraffic_over_tcp`, the
+  setting `discovery.unicast_transports` (a list of `udp` and `tcp`,
+  default both; environment `ZERODDS_DISCOVERY_UNICAST_TRANSPORTS`): what
+  is announced as a metatraffic unicast locator. BREAKING: a runtime with a
+  TCP transport announces its TCP listener as a metatraffic unicast locator
+  beside the UDP one, sends metatraffic to a peer's TCP locator over the
+  TCP leg, and handles a message from the TCP leg that addresses a builtin
+  entity as metatraffic. A participant that announces no unicast locator
+  and whose SPDP announcement came over a TCP connection is held under the
+  source of that connection. `DcpsRuntime::metatraffic_tcp_send_errors`.
+
+- `RuntimeConfig::tcp_dialect` (`runtime::TcpDialect`), the setting
+  `transport.tcp_dialect` (`zerodds` default, `rtps`; environment
+  `ZERODDS_TCP_DIALECT`): with `rtps` the TCP connections of the runtime
+  have no handshake and carry RTPS messages back to back, each delimited by
+  the messageLength of its HeaderExtension (`zerodds-tcp-transport-1.0`
+  §2.5). `stream_length_leg::StreamLengthLeg` puts the HeaderExtension with
+  the messageLength into every message sent over such a leg.
+
+- `RuntimeConfig::tcp_accepted_vendors`, the setting
+  `transport.tcp_accepted_vendors` (a list of vendor ids of four hex digits,
+  environment `ZERODDS_TCP_ACCEPTED_VENDORS`; unset takes every vendor), and
+  `RuntimeConfig::tcp_logical_port_claim`, the setting
+  `transport.tcp_logical_port_claim` (`listener` default, `none`;
+  environment `ZERODDS_TCP_LOGICAL_PORT_CLAIM`), both handed to the TCP
+  transport of the runtime (`zerodds-tcp-transport-1.0` §3.3, §3.6). With
+  the claim the source of a datagram received over TCP is the locator of the
+  sender's listener; it was the port the sender connected from.
+
 - `DomainParticipant::set_minimal_type_flags_kept` (and the runtime's): the
   minimal `TypeObject`s the participant announces and serves keep every type
   flag of a structure or union, as RTI Connext, CoreDX, Cyclone DDS and HDDS
@@ -38,6 +86,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Fixed
 
+- Under `rtps_protection_kind` the HEARTBEAT of the secure SPDP writer
+  (`0xff0101c2`) and the ACKNACK, DATA and HEARTBEAT replies of the secure
+  SPDP endpoints went out without the RTPS message protection. They are
+  none of the RTPS Bootstrapping Messages of DDS-Security 1.2 §7.5.7 and
+  §9.4.2.4 Table 33 (`is_rtps_axk_protected`) and are now protected as a whole like the secure
+  SPDP DATA; a message that cannot be protected is not sent.
 - The security builtin stack has the local `ParticipantBuiltinTopicData`
   before `install_security_stack` makes it reachable for the receive path.
   A handshake begun in between sent a request with an empty `c.pdata`,
@@ -116,6 +170,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ### Changed
 
+- `transport.tcp_locator_kinds` is the runtime's: each runtime announces its TCP locators with the kinds of its own setting (`RuntimeConfig::tcp_kind_set`), and two runtimes of one process can differ. It set a process-wide switch of `zerodds-rtps`. A TCP locator read with kind 4 or 8 keeps that kind and is sent to over the TCP transport (`zerodds-tcp-transport-1.0` §1.1).
 - `UserReaderConfig::default()` has `reliable: false`, the BEST_EFFORT that
   DDS 1.4 §2.2.3.14 gives a DataReader ("This is the default value for
   DataReaders and Topics"); it was `true`. A caller that fills the rest with

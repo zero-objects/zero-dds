@@ -448,6 +448,7 @@ fn every_corba_field_survives_the_round_trip() {
         )
         .expect("Event");
     let expr = ast.add_int_expr(3).expect("expr");
+    let failure = ast.add_exception(root, "Failure").expect("Failure");
     let s = ast
         .add_type(
             root,
@@ -475,6 +476,8 @@ fn every_corba_field_survives_the_round_trip() {
     });
     c.template_args.push(TemplateArg::Type(Ref::Resolved(long)));
     c.template_args.push(TemplateArg::Const(expr));
+    c.template_args
+        .push(TemplateArg::Exception(Ref::Resolved(failure)));
     c.native_mapping = Some("void*".to_string());
     c.is_service = true;
     c.is_ami = true;

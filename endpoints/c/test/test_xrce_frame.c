@@ -44,14 +44,6 @@ static int lb_receive(void *c, unsigned char *o, size_t cap, size_t *n)
     return ZDW_T_OK;
 }
 
-static void fill(sensor_reading *s)
-{
-    s->id = 0xA1B2C3D4uL; s->kind = 0x1234u; s->flags = 0x5Au; s->value = 3.5f;
-    s->stamp.hi = 0x01020304uL; s->stamp.lo = 0x05060708uL;
-    strcpy(s->label, "bay-12");
-    s->raw[0] = 0xDE; s->raw[1] = 0xAD; s->raw[2] = 0xBE; s->raw[3] = 0xEF; s->raw_len = 4;
-}
-
 /* The 16-bit submessage_length is the bound on the body (BaseObjectRequest +
  * sample): a body of exactly 0xFFFF frames, one octet more is refused. The
  * builder must also refuse a frame its output buffer cannot hold, and never
@@ -112,7 +104,7 @@ int main(int argc, char **argv)
     if (argc < 2) { fprintf(stderr, "usage: %s <golden_xrce_le.bin>\n", argv[0]); return 2; }
 
     /* endpoint: encode the sample body, then wrap it in an XRCE WRITE_DATA */
-    fill(&tx);
+    sensor_fill_golden(&tx);
     zdw_writer_init(&w, body, sizeof(body), ZDW_LE);
     if (sensor_encode(&w, &tx) != ZDW_OK) { fprintf(stderr, "encode\n"); return 1; }
     blen = w.len;

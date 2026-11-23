@@ -1,0 +1,15 @@
+# The daemon of docker-compose.yml (zerodds-grpc-bridge-1.0 §12.3): h2c on
+# the loopback address of the container's network namespace, which the
+# tonic client shares; the topic of cyclone_chat.c.
+domain: 0
+log_level: info
+grpc:
+  bind: "127.0.0.1:50051"
+topics:
+  - dds_name: "ChatMessage"
+    dds_type: "Chat::Message"
+    grpc_service: ChatMessageStream
+    grpc_package: zerodds.chat.v1
+    keyed: true
+    qos:
+      reliability: reliable

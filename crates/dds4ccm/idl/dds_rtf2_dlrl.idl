@@ -1,0 +1,26 @@
+// The DLRL IDL of DDS that ccm_dds_dlrl.idl refers to.
+//
+// Annex B of DDS for Lightweight CCM 1.1 (formal/2012-02-01) includes
+// "dds_rtf2_dlrl.idl", the DLRL IDL of the DDS specification. This file is
+// not a copy of it: it includes the generic DLRL IDL of DDS 1.2
+// §8.2.1.2.1 that the package zerodds-dlrl holds, dds_dlrl.idl in its
+// directory idl/ (crates/dlrl/idl in the repository). That directory must
+// be on the include path, as the IDL directory of a DDS installation is.
+//
+// dds_dlrl.idl starts with #include "dds_dcps.idl", its own declarations of
+// the DCPS types it uses: StringSeq, Entity, DomainParticipant, Publisher
+// and Subscriber of module DDS. dds_rtf2_dcps.idl beside this file declares
+// the same names for Annex A, and IDL does not allow to declare a typedef
+// or an interface twice. This file includes dds_rtf2_dcps.idl and then
+// defines the guard of dds_dcps.idl, DDS_DCPS_IDL, so that dds_rtf2_dcps.idl
+// is the one declaration of these names and Annex A and Annex B compile in
+// one unit.
+
+#ifndef DDS_RTF2_DLRL_IDL
+#define DDS_RTF2_DLRL_IDL
+
+#include "dds_rtf2_dcps.idl"
+#define DDS_DCPS_IDL
+#include "dds_dlrl.idl"
+
+#endif

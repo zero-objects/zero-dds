@@ -848,6 +848,7 @@ impl MultiTopicEngine {
             };
             produced.push(crate::runtime::UserSample::Lifecycle {
                 key_hash: combo.key_hash,
+                key_hash_unavailable: false,
                 key_holder: (!combo.key_holder.is_empty()).then(|| combo.key_holder.clone()),
                 kind,
                 writer_guid: [0u8; 16],

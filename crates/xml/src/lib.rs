@@ -86,7 +86,8 @@ pub use errors::XmlError;
 pub use inheritance::{MAX_INHERITANCE_DEPTH, resolve_chain};
 pub use options::{Diagnostic, DiagnosticKind, Parsed, ReadOptions, UnknownElements, VendorForms};
 pub use parser::{
-    DDS_XML_NS, DdsXmlDocument, MAX_LIST_ELEMENTS, MAX_TOTAL_ELEMENTS, XmlElement, parse_xml_tree,
+    DDS_XML_NS, DdsXmlDocument, MAX_LIST_ELEMENTS, MAX_TOTAL_ELEMENTS, XmlElement, XmlEncoding,
+    parse_xml_tree, parse_xml_tree_bytes,
 };
 pub use participant::{
     DataReaderEntry, DataWriterEntry, DomainParticipantEntry, DomainParticipantLibrary, FilterDef,
@@ -112,7 +113,8 @@ pub use sample::{
 pub use schemas::{
     ALL_SCHEMAS, APPLICATIONS_NAMESPACED_XSD, APPLICATIONS_NONAMESPACE_XSD, COMMON_XSD,
     DATA_SAMPLES_NAMESPACED_XSD, DATA_SAMPLES_NONAMESPACE_XSD, DDS_SYSTEM_NAMESPACED_XSD,
-    DDS_SYSTEM_NONAMESPACE_XSD, DOMAIN_PARTICIPANTS_NAMESPACED_XSD,
+    DDS_SYSTEM_NONAMESPACE_XSD, DDS4CCM_DEFAULT_QOS_PROFILE_XML, DDS4CCM_QOS_PROFILE_NAMESPACE,
+    DDS4CCM_QOS_PROFILE_XSD, DOMAIN_PARTICIPANTS_NAMESPACED_XSD,
     DOMAIN_PARTICIPANTS_NONAMESPACE_XSD, DOMAINS_NAMESPACED_XSD, DOMAINS_NONAMESPACE_XSD,
     QOS_NAMESPACED_XSD, QOS_NONAMESPACE_XSD, TYPES_NAMESPACED_XSD, TYPES_NONAMESPACE_XSD,
     XTYPES_TYPES_NAMESPACE, XTYPES_TYPES_NONAMESPACE_XSD, XTYPES_TYPES_XSD, embedded_block_names,
@@ -125,8 +127,8 @@ pub use typeobject_bridge::{
 pub use types::{
     DURATION_INFINITE_NSEC, DURATION_INFINITE_SEC, DURATION_ZERO_NSEC, DURATION_ZERO_SEC, Duration,
     LENGTH_UNLIMITED, MAX_STRING_BYTES, TIME_INVALID_NSEC, TIME_INVALID_SEC, parse_bool,
-    parse_duration_nsec, parse_duration_sec, parse_enum, parse_long, parse_octet_sequence,
-    parse_positive_long_unlimited, parse_string, parse_ulong,
+    parse_bool_dds4ccm, parse_duration_nsec, parse_duration_sec, parse_enum, parse_long,
+    parse_octet_sequence, parse_positive_long_unlimited, parse_string, parse_ulong,
 };
 pub use xsd_schema::parse_xsd_schema;
 pub use xsd_writer::type_library_to_xsd;

@@ -24,15 +24,22 @@
 //!
 //! ## Implemented (RC1)
 //!
-//! - POSIX `shm_open` + `mmap` via the `shared_memory` crate.
+//! - POSIX `shm_open` + `mmap` on Unix, `CreateFileMapping` without a
+//!   name over a file per segment on Windows.
 //! - SpSc ring buffer per (writer, reader) pair — lock-free
 //!   `head`/`tail` AcqRel atomics on shared memory.
 //! - Owner crash recovery via a predictable `os_id` + `shm_unlink`
-//!   before every owner `create()`. Idempotent.
-//! - Advisory `flock` race protection on owner-create (Linux/macOS).
+//!   before every owner `create()` (on Windows the removal of the backing
+//!   file). Idempotent.
+//! - Pair lock and liveness lock: `flock` on Unix, `LockFileEx` on
+//!   Windows; sweeps of what ended processes left on every platform.
 //! - Length-prefix frame format with a wraparound padding marker.
 //! - Shutdown flag in the segment header for owner→consumer
 //!   termination signaling.
+//! - Without `std` (§6.4): the ring ([`ring`]) over a region the integrator
+//!   gives, and [`RegionShmTransport`] on it with a wait the integrator
+//!   chooses ([`RingWait`]); a session rule takes the place of names and
+//!   locks.
 //!
 //! ## Platform support
 //!
@@ -40,38 +47,75 @@
 //! |---|---|
 //! | Linux | ✅ primary |
 //! | macOS | ✅ supported |
-//! | Windows | untested (the `shared_memory` crate provides the mapping primitives, but our `flock` race protection and `shm_unlink` cleanup are unix-only) |
+//! | other Unixes | the same protocol, the pair directory `/tmp/zerodds-shm-<euid>`, the wait over a FIFO |
+//! | Windows | the same protocol over `LockFileEx` and a file per segment; CI job `platform-windows-transport-shm` |
+//! | no operating system (`no_std` + `alloc`) | [`RegionShmTransport`] over a region the integrator gives; a target with 32-bit atomics with compare-and-swap |
 //!
 //! ## Public API
 //!
-//! - [`PosixShmTransport`] — `Transport` trait impl.
-//! - [`ShmConfig`] — segment configuration.
+//! - `PosixShmTransport` (with `std`) — `Transport` over a named segment.
+//! - `ShmConfig` — segment configuration.
 //! - [`ShmRole`] — owner / consumer.
-//! - [`PosixShmError`] — typed errors.
+//! - `PosixShmError` — typed errors.
+//! - [`ring`] — the ring over a region, in `core`.
+//! - [`RegionShmTransport`], [`RegionConfig`], [`RingWait`], [`Parked`],
+//!   [`SpinWait`] (with `alloc`) — `Transport` over a caller's region.
 //!
 //! ## Unsafe scope
 //!
-//! Limited to the `posix` module: two `ptr::read`/`ptr::write` on
-//! mapped memory plus the `libc::flock` FFI. Everything else is
-//! `AtomicU{32,64}` over shared memory; Rust guarantees well-defined
-//! behavior of atomic operations across process boundaries when both
-//! processes map the same address.
+//! Six modules hold `unsafe` code:
+//! - `ring`: the header words and positions as atomics in the region, and
+//!   the bounded copies in and out of its data region;
+//! - `region`: the construction of a ring over the caller's region (the
+//!   caller vouches for the region);
+//! - `posix`: the probe of a segment's header in a sweep, `flock`,
+//!   `geteuid`, `confstr` and `shm_unlink` on Unix, `LockFileEx`,
+//!   `GetFileInformationByHandle` and `GetFileInformationByHandleEx` on
+//!   Windows;
+//! - `mapping`: `shm_open`, `ftruncate`, `mmap`, `munmap` and
+//!   `shm_unlink` of the segments on Unix, `CreateFileMappingW`,
+//!   `MapViewOfFile`, `UnmapViewOfFile` and `CloseHandle` on Windows;
+//! - `wait`: the waits and wakes of §4.4, the `futex` syscall on Linux,
+//!   `os_sync_wait_on_address_with_timeout`, `os_sync_wake_by_address_all`,
+//!   `__ulock_wait` and `__ulock_wake` on macOS, looked up with `dlsym` and
+//!   called through a `transmute`d pointer, `mkfifo`,
+//!   `poll` and `uname` for the FIFO, `CreateEventW`, `SetEvent` and
+//!   `WaitForSingleObject` on Windows;
+//! - `bell`: the doorbell's words in its mapping and `Send`/`Sync` for the
+//!   type that holds the mapping.
+//!
+//! Everything else is `AtomicU{32,64}` over shared memory; Rust guarantees
+//! well-defined behavior of atomic operations across process boundaries
+//! when both processes map the same address.
 
-// Needs `std`: shared memory is an operating-system service (shared_memory, libc).
+// Without `std` the ring and the transport over a caller's region remain
+// (§6.4); the named segments need an operating system.
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "std")]
+pub mod ring;
+pub use ring::ShmRole;
+
+#[cfg(all(feature = "alloc", target_has_atomic = "32"))]
+pub mod region;
+#[cfg(all(feature = "alloc", target_has_atomic = "32"))]
+pub use region::{Parked, RegionConfig, RegionShmError, RegionShmTransport, RingWait, SpinWait};
+
+#[cfg(all(feature = "std", any(unix, windows)))]
 pub mod posix;
 
-#[cfg(feature = "std")]
-pub use posix::{PosixShmError, PosixShmTransport, ShmConfig, ShmRole};
+#[cfg(all(feature = "std", any(unix, windows)))]
+pub use posix::{PosixShmError, PosixShmTransport, ShmConfig};
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", any(unix, windows)))]
 pub mod bell;
+#[cfg(all(feature = "std", any(unix, windows)))]
 mod mapping;
+#[cfg(all(feature = "std", any(unix, windows)))]
+mod wait;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", any(unix, windows)))]
 pub use bell::ShmDoorbell;

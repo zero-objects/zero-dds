@@ -5,26 +5,6 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ---
 
-## §8.1 Strukturiertes JSON-Logging
+## §11 Linux/macOS/Windows/Docker Layout
 
-**Status:** `open` — kein Test prüft die JSON-Log-Form oder den `--log-level`-Switch.
-
-## §8.3 OTLP-Spans + W3C-Traceparent
-
-**Status:** `partial` — die OTLP-Konfiguration ist geprüft, das W3C-Traceparent-Parsing nicht; der fehlende Teil wird als §8.3a `open` geführt.
-
-## §8.3a W3C-Traceparent-Parsing
-
-**Status:** `open` — der Traceparent-Teil von §8.3. Kein Test und keine Fundstelle im Baum nennt `traceparent`.
-
-## §10 RTPS-Peer + grpc-go/java/grpcurl/ghz/Bloom-RPC/tonic
-
-**Status:** `partial` — grpcurl ist gemessen, die fünf weiteren Clients nicht; der fehlende Teil wird als §10a `open` geführt.
-
-## §10a Client-Matrix grpc-go/grpc-java/ghz/BloomRPC/tonic
-
-**Status:** `open` — der Teil von §10 und §12.3 jenseits grpcurl. `crates/grpc-bridge/tests/cross_vendor.rs` kennt nur grpcurl.
-
-## §12.3 Multi-Vendor cross_vendor.rs
-
-**Status:** `partial` — grpcurl und die DDS-Seite sind geprüft, ein tonic-Client nicht.
+**Status:** `partial` — die Tests liefen grün auf dem Linux-Testrechner; der Windows-Code wurde dort mit `cargo clippy --target x86_64-pc-windows-gnu --all-targets` übersetzt, nicht ausgeführt. Der wöchentliche Job `platform-windows-grpc-bridge-build` (`ci/platform_jobs.py` `WINDOWS_BUILD`, `ci/platforms.yml`) baut alle Targets von `zerodds-grpc-bridge` auf dem Windows-Runner, darunter den Watcher des Dienstes und den Aufruf von `run_as_service`; er ist noch nicht gelaufen. Es fehlt der Lauf des Dienstes `ZeroDDSGrpcBridge` unter `sc.exe` (Start, `READY=1` als `SERVICE_RUNNING`, Stopp mit dem Drain, `paramchange` als Reload); er braucht einen Windows-Rechner mit dem registrierten Dienst.

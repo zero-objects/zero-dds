@@ -14,8 +14,38 @@ zerodds-mqtt-bridged \- DDS to MQTT 5 bridge daemon
 mirrors DDS topics to MQTT 5 broker topics and vice versa. Implements
 .IR docs/specs/zerodds-mqtt-bridge-1.0.md .
 Talks to any MQTT 5 broker (Mosquitto, EMQX, HiveMQ) over TCP/TLS,
-auto-reconnects with exponential back-off, supports per-route MQTT QoS
-(0/1/2), Retain, MessageExpiry, ContentType and UserProperties.
+MQTT 3.1.1 as a compatibility mode,
+retries the broker at start and after a lost connection with exponential
+back-off
+.RB ( mqtt.reconnect ;
+a connection the broker ended with DISCONNECT 0x8E Session taken over is
+tried again after
+.BR max_delay_ms ),
+supports per-topic MQTT QoS (0/1/2), Retain, Message Expiry Interval,
+Content Type and user properties, and one participant and broker
+connection per tenant.
+.PP
+The log is JSON on stdout, one object per line with
+.BR timestamp ,
+.BR level ,
+.BR event
+and the fields of the event
+.RB ( mqtt_topic ,
+.BR dds_topic ,
+.BR bytes ,
+.BR mqtt_qos ,
+.BR latency_us ,
+.BR connect_state ,
+.BR tenant ,
+\&...), written when its level reaches
+.BR log_level ;
+an error that ends the start goes to stderr as well.
+On Linux the daemon integrates with
+.BR systemd (1)
+via Type=notify; on macOS with
+.BR launchd (8);
+on Windows it runs as service
+.BR ZeroDDSMQTTBridge .
 .SH OPTIONS
 .TP
 .BR \-\-config =\fIFILE\fR
@@ -36,7 +66,8 @@ MQTT broker URL
 .RI ( mqtt:// ", " mqtts:// ", " ws:// ", " wss:// ).
 .TP
 .BR \-\-client\-id =\fIID\fR
-MQTT client ID.
+MQTT client ID. Default:
+.IR zerodds-bridge-<host> .
 .TP
 .BR \-\-domain =\fIID\fR
 DDS domain ID. Default: 0.
@@ -64,7 +95,11 @@ Override log level. One of
 .IR trace ", " debug ", " info ", " warn ", " error .
 .TP
 .BR \-\-metrics =\fIADDR\fR
-Prometheus listen addr.
+Prometheus listen addr; the families
+.B zerodds_mqtt_bridge_*
+of
+.BR zerodds-mqtt-bridged.yaml (5)
+.BR metrics .
 .TP
 .BR \-V ", " \-\-version
 Version info.
@@ -85,15 +120,59 @@ file, syntax error or include cycle.
 .B SIGTERM
 graceful shutdown,
 .B SIGHUP
-reads the configuration again: the topic ACL applies from then on, a
-withdrawn read right stops the samples of that topic at once; sessions
-persist. Changed topics, broker address or client id, broker TLS, auth mode
-or domain need a restart and are logged. A configuration that does not load
-changes nothing.
+reads the configuration again: the topic ACL and the subject apply from
+then on, a withdrawn right stops the samples of that topic at once;
+sessions persist. The credentials of
+.B auth
+apply to the next broker connection when
+.B auth.mode
+and
+.B auth.enhanced.method
+stay; when they changed, a connection with enhanced authentication
+re-authenticates with them (MQTT 5.0 AUTH 0x19), a reload that keeps them
+sends no AUTH. The broker TLS material
+.RB ( mqtt.tls.ca_file ,
+.BR cert_file ,
+.BR key_file ,
+read again), the server name and the ALPN offer apply to the next broker
+connection; the connection that stands keeps its own. TLS material that
+does not load refuses the reload. Changed topics, broker address or client
+id,
+.BR mqtt.tls.enabled ,
+auth mode or method or domain need a restart and are logged; a changed
+.B log_level
+applies at once. A configuration that does not load changes nothing.
+.SH WINDOWS SERVICE
+Started by the service control manager, the daemon runs as the service
+.BR ZeroDDSMQTTBridge :
+start pending until it serves, then running; the stop and shutdown
+controls are SIGTERM,
+.B sc.exe control ZeroDDSMQTTBridge paramchange
+is SIGHUP; when it ends, the service is stopped with the exit status below.
+The service has no stdout: its log is appended to
+.I %PROGRAMDATA%\eZeroDDS\elogs\emqtt\-bridged.log
+(C:\eProgramData when the variable is not set); a file that cannot be
+opened ends the start with exit status 1.
+Started from a console, Ctrl+C, Ctrl+Break and the closing of the console
+are SIGTERM, and the log stays on stdout.
 .SH ENVIRONMENT
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optional OTLP endpoint, such as http://localhost:4318.
+Optional OTLP endpoint, such as http://localhost:4318. When it is set, the
+daemon sends OTLP/HTTP/JSON spans to its
+.I /v1/traces
+every 5 s and at the end of a shutdown: one trace per PUBLISH roundtrip,
+the root
+.B mqtt.publish
+(a PUBLISH of the daemon until the broker's PUBACK or PUBCOMP, from the
+sample or, for the replay buffer after a reconnect, from the replay; or a
+PUBLISH of the broker until its handling ended) with the child
+.B dds.write
+for each DDS write of a PUBLISH of the broker. A PUBLISH of the daemon has
+no
+.BR dds.write ;
+the catalog, the reports and what a resumed session sends again are no
+span.
 .TP
 .B MQTT_PASSWORD
 The broker password; the setting
@@ -103,24 +182,38 @@ above the files, below
 .SH EXIT STATUS
 .TP
 .B 0
-Normal shutdown (SIGTERM/SIGINT).
+Normal shutdown (SIGTERM/SIGINT, also while the start connects).
 .TP
 .B 1
-Configuration error.
+Configuration error, also auth settings that do not fit their mode (an
+anonymous
+.B none
+towards a broker not on the loopback interface, for example), a
+.B mqtt.session_dir
+the daemon cannot create or write, or a session state another process
+holds.
 .TP
 .B 2
-Broker connect error.
+Broker connect error: not reachable within
+.B mqtt.connect_timeout_secs
+(also a broker that does not answer the TLS handshake in time or closes
+the connection during it), or a CONNACK refusal other than those of 5.
 .TP
 .B 3
 DDS discovery error.
 .TP
 .B 4
-TLS error.
+TLS error: TLS material that does not load
+.RB ( mqtt.tls.ca_file ", " cert_file ", " key_file ),
+or a refused handshake: the broker's certificate is not trusted or not for
+its name, or no common protocol.
 .TP
 .B 5
-Authentication error.
+Authentication error: CONNACK 0x86, 0x87, 0x8A or 0x8C; MQTT 3.1.1 return
+code 4 or 5; an enhanced authentication whose client side fails (a SCRAM
+server signature that does not verify).
 .SH FILES
-.I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log .
+.I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log ", " /var/lib/zerodds/mqtt-bridge/ .
 .SH SEE ALSO
 .BR zerodds-mqtt-bridged.yaml (5),
 .BR mosquitto (8).

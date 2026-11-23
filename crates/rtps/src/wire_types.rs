@@ -941,13 +941,21 @@ pub enum LocatorKind {
     Reserved = 0,
     UdpV4 = 1,
     UdpV6 = 2,
-    /// TCPv4. DDSI-RTPS 2.5 §9.3.2.4 reserves 3 to `0x01ffffff` for
-    /// vendor-specific kinds, so the wire value is ZeroDDS's own,
-    /// `0x01F0_0004`; with [`set_tcp_kinds_fast_dds`] it is 4, the value of
-    /// Fast DDS (also that of the DDS-TCP-PSM). Reading accepts both.
+    /// TCPv4 of the ZeroDDS dialect (`zerodds-tcp-transport-1.0` §2, §3).
+    /// DDSI-RTPS 2.5 names no TCP kind (§9.3.2.1 has UDPv4 and UDPv6 only)
+    /// and reserves 3 to `0x01ffffff` for vendor-specific kinds
+    /// (§9.3.2.4), so the wire value is ZeroDDS's own, `0x01F0_0004`.
     Tcpv4 = 0x01F0_0004,
-    /// TCPv6. Wire value `0x01F0_0005`, or 8 with [`set_tcp_kinds_fast_dds`].
+    /// TCPv6 of the ZeroDDS dialect. Wire value `0x01F0_0005`.
     Tcpv6 = 0x01F0_0005,
+    /// TCPv4 with the kind value 4, the one Cyclone DDS and Fast DDS write
+    /// (inside the vendor range of §9.3.2.4 as well). A locator keeps the
+    /// kind it was written with: one read with 4 goes out with 4. Which
+    /// set a locator of this process carries is chosen where the locator is
+    /// made ([`TcpKindSet`]), not process-wide.
+    Tcpv4Kind4 = 4,
+    /// TCPv6 with the kind value 8, the one Cyclone DDS and Fast DDS write.
+    Tcpv6Kind8 = 8,
     /// Shared memory. DDSI-RTPS 2.5 §9.3.2.4 reserves `0x00000003` to
     /// `0x01ffffff` for vendor-specific kinds; ZeroDDS takes
     /// `0x01F0_0001` (its VendorId `0x01F0` in the upper half). Other
@@ -968,38 +976,36 @@ pub enum LocatorKind {
     Tsn = 0x01F0_0003,
 }
 
-/// The TCPv4 `LocatorKind` value of Fast DDS and of the DDS-TCP-PSM.
+/// The TCPv4 `LocatorKind` value of Cyclone DDS and Fast DDS
+/// ([`LocatorKind::Tcpv4Kind4`]).
 pub const TCP_V4_FAST_DDS: i32 = 4;
-/// The TCPv6 `LocatorKind` value of Fast DDS and of the DDS-TCP-PSM.
+/// The TCPv6 `LocatorKind` value of Cyclone DDS and Fast DDS
+/// ([`LocatorKind::Tcpv6Kind8`]).
 pub const TCP_V6_FAST_DDS: i32 = 8;
 
-static TCP_KINDS_FAST_DDS: core::sync::atomic::AtomicBool =
-    core::sync::atomic::AtomicBool::new(false);
-
-/// Makes the TCP locators go out with the kind values of Fast DDS (4 and 8)
-/// instead of ZeroDDS's own in the vendor range of DDSI-RTPS 2.5 §9.3.2.4
-/// (`0x01F0_0004`, `0x01F0_0005`). A process-wide setting, set from
-/// `transport.tcp_locator_kinds: fast-dds` at the start of a runtime; reading
-/// accepts both. Needed for TCP interoperation with Fast DDS.
-pub fn set_tcp_kinds_fast_dds(on: bool) {
-    TCP_KINDS_FAST_DDS.store(on, core::sync::atomic::Ordering::Relaxed);
+/// The two sets of `LocatorKind` values a TCP locator is written with.
+/// DDSI-RTPS 2.5 defines no TCP kind; every value in use is a vendor's
+/// (§9.3.2.4). The set is a property of the locator, so two participants
+/// of one process can announce different ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TcpKindSet {
+    /// `0x01F0_0004` and `0x01F0_0005`: the ZeroDDS dialect
+    /// (`zerodds-tcp-transport-1.0` §2, §3).
+    #[default]
+    ZeroDds,
+    /// 4 and 8: the values of Cyclone DDS and Fast DDS.
+    Kinds4And8,
 }
 
 impl LocatorKind {
     /// Returns the i32 wire value.
     #[must_use]
-    pub fn as_i32(self) -> i32 {
-        if TCP_KINDS_FAST_DDS.load(core::sync::atomic::Ordering::Relaxed) {
-            match self {
-                Self::Tcpv4 => return TCP_V4_FAST_DDS,
-                Self::Tcpv6 => return TCP_V6_FAST_DDS,
-                _ => {}
-            }
-        }
+    pub const fn as_i32(self) -> i32 {
         self as i32
     }
 
-    /// Converts i32 into a LocatorKind.
+    /// Converts i32 into a LocatorKind. A TCP kind is kept as it was
+    /// written: 4 is [`Self::Tcpv4Kind4`], `0x01F0_0004` is [`Self::Tcpv4`].
     ///
     /// # Errors
     /// `WireError::InvalidLocatorKind` for an unknown value.
@@ -1009,12 +1015,67 @@ impl LocatorKind {
             0 => Ok(Self::Reserved),
             1 => Ok(Self::UdpV4),
             2 => Ok(Self::UdpV6),
-            TCP_V4_FAST_DDS | 0x01F0_0004 => Ok(Self::Tcpv4),
-            TCP_V6_FAST_DDS | 0x01F0_0005 => Ok(Self::Tcpv6),
+            TCP_V4_FAST_DDS => Ok(Self::Tcpv4Kind4),
+            TCP_V6_FAST_DDS => Ok(Self::Tcpv6Kind8),
+            0x01F0_0004 => Ok(Self::Tcpv4),
+            0x01F0_0005 => Ok(Self::Tcpv6),
             0x01F0_0001 => Ok(Self::Shm),
             0x01F0_0002 => Ok(Self::Uds),
             0x01F0_0003 => Ok(Self::Tsn),
             other => Err(WireError::InvalidLocatorKind { kind: other }),
+        }
+    }
+
+    /// The TCPv4 kind of `set`.
+    #[must_use]
+    pub const fn tcp_v4(set: TcpKindSet) -> Self {
+        match set {
+            TcpKindSet::ZeroDds => Self::Tcpv4,
+            TcpKindSet::Kinds4And8 => Self::Tcpv4Kind4,
+        }
+    }
+
+    /// The TCPv6 kind of `set`.
+    #[must_use]
+    pub const fn tcp_v6(set: TcpKindSet) -> Self {
+        match set {
+            TcpKindSet::ZeroDds => Self::Tcpv6,
+            TcpKindSet::Kinds4And8 => Self::Tcpv6Kind8,
+        }
+    }
+
+    /// `true` for a TCP over IPv4 kind of either set.
+    #[must_use]
+    pub const fn is_tcp_v4(self) -> bool {
+        matches!(self, Self::Tcpv4 | Self::Tcpv4Kind4)
+    }
+
+    /// `true` for a TCP over IPv6 kind of either set.
+    #[must_use]
+    pub const fn is_tcp_v6(self) -> bool {
+        matches!(self, Self::Tcpv6 | Self::Tcpv6Kind8)
+    }
+
+    /// The set a TCP kind belongs to; `None` for every other kind.
+    #[must_use]
+    pub const fn tcp_kind_set(self) -> Option<TcpKindSet> {
+        match self {
+            Self::Tcpv4 | Self::Tcpv6 => Some(TcpKindSet::ZeroDds),
+            Self::Tcpv4Kind4 | Self::Tcpv6Kind8 => Some(TcpKindSet::Kinds4And8),
+            _ => None,
+        }
+    }
+
+    /// The kind by which the transport of a locator is looked up: the two
+    /// kinds of TCP over one address family name the same transport, so
+    /// [`Self::Tcpv4Kind4`] gives [`Self::Tcpv4`] and [`Self::Tcpv6Kind8`]
+    /// gives [`Self::Tcpv6`]. Every other kind is its own.
+    #[must_use]
+    pub const fn transport_kind(self) -> Self {
+        match self {
+            Self::Tcpv4Kind4 => Self::Tcpv4,
+            Self::Tcpv6Kind8 => Self::Tcpv6,
+            other => other,
         }
     }
 }
@@ -1233,14 +1294,15 @@ impl Locator {
         Self::with_address(LocatorKind::UdpV4, addr, port)
     }
 
-    /// Constructor for TCPv4 (DDS-TCP-PSM §4).
+    /// Constructor for TCPv4 with the kind of the ZeroDDS dialect
+    /// ([`LocatorKind::Tcpv4`]).
     #[must_use]
     pub fn tcp_v4(addr: [u8; 4], port: u32) -> Self {
         Self::with_address(LocatorKind::Tcpv4, addr, port)
     }
 
-    /// Constructor for TCPv6 (DDSI-RTPS 2.5 §9.4, LocatorKind=8).
-    /// 16-byte network-byte-order address.
+    /// Constructor for TCPv6 with the kind of the ZeroDDS dialect
+    /// ([`LocatorKind::Tcpv6`]). 16-byte network-byte-order address.
     #[must_use]
     pub fn tcp_v6(addr: [u8; 16], port: u32) -> Self {
         Self {
@@ -1248,6 +1310,20 @@ impl Locator {
             port,
             address: addr,
         }
+    }
+
+    /// The same locator with its TCP kind taken from `set`; the address
+    /// family stays. A locator that is not TCP is returned unchanged.
+    #[must_use]
+    pub fn with_tcp_kind_set(self, set: TcpKindSet) -> Self {
+        let kind = if self.kind.is_tcp_v4() {
+            LocatorKind::tcp_v4(set)
+        } else if self.kind.is_tcp_v6() {
+            LocatorKind::tcp_v6(set)
+        } else {
+            self.kind
+        };
+        Self { kind, ..self }
     }
 
     /// Legacy alias for [`Self::tcp_v4`]. **Deprecated**: rename
@@ -1836,8 +1912,11 @@ mod tests {
             LocatorKind::UdpV6,
             LocatorKind::Tcpv4,
             LocatorKind::Tcpv6,
+            LocatorKind::Tcpv4Kind4,
+            LocatorKind::Tcpv6Kind8,
             LocatorKind::Shm,
             LocatorKind::Uds,
+            LocatorKind::Tsn,
         ] {
             assert_eq!(LocatorKind::from_i32(kind.as_i32()).unwrap(), kind);
         }
@@ -1877,31 +1956,98 @@ mod tests {
     }
 
     /// §9.3.2.4: the TCP kinds are ZeroDDS's own in the vendor range by
-    /// default; with the setting they are 4 and 8 (Fast DDS). Reading takes
-    /// both under either setting. Serial with other users of the switch.
+    /// default; a locator made for the other set carries 4 and 8 (Cyclone
+    /// DDS, Fast DDS). Reading keeps what was written, and both sets name
+    /// the same transport.
     #[test]
     fn the_tcp_kinds_are_vendor_range_by_default_and_fast_dds_by_setting() {
-        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        set_tcp_kinds_fast_dds(false);
         assert_eq!(LocatorKind::Tcpv4.as_i32(), 0x01F0_0004);
         assert_eq!(LocatorKind::Tcpv6.as_i32(), 0x01F0_0005);
         let l = Locator::tcp_v4([10, 0, 0, 1], 7400);
         assert_eq!(&l.to_bytes_le()[..4], &0x01F0_0004i32.to_le_bytes());
-        set_tcp_kinds_fast_dds(true);
-        assert_eq!(LocatorKind::Tcpv4.as_i32(), 4);
-        assert_eq!(LocatorKind::Tcpv6.as_i32(), 8);
-        assert_eq!(&l.to_bytes_be()[..4], &4i32.to_be_bytes());
-        for v in [4, 8, 0x01F0_0004, 0x01F0_0005] {
-            let want = if v == 4 || v == 0x01F0_0004 {
-                LocatorKind::Tcpv4
-            } else {
-                LocatorKind::Tcpv6
-            };
-            assert_eq!(LocatorKind::from_i32(v).unwrap(), want);
+        let other = l.with_tcp_kind_set(TcpKindSet::Kinds4And8);
+        assert_eq!(other.kind, LocatorKind::Tcpv4Kind4);
+        assert_eq!(&other.to_bytes_be()[..4], &4i32.to_be_bytes());
+        assert_eq!(&other.to_bytes_le()[..4], &4i32.to_le_bytes());
+        assert_eq!((other.port, other.address), (l.port, l.address));
+        for (v, want) in [
+            (4, LocatorKind::Tcpv4Kind4),
+            (8, LocatorKind::Tcpv6Kind8),
+            (0x01F0_0004, LocatorKind::Tcpv4),
+            (0x01F0_0005, LocatorKind::Tcpv6),
+        ] {
+            let kind = LocatorKind::from_i32(v).unwrap();
+            assert_eq!(kind, want);
+            assert_eq!(kind.as_i32(), v);
+            assert!((0x0000_0003..=0x01ff_ffff).contains(&v));
         }
-        set_tcp_kinds_fast_dds(false);
         assert_eq!(Locator::from_bytes_le(l.to_bytes_le()).unwrap(), l);
+        assert_eq!(Locator::from_bytes_be(other.to_bytes_be()).unwrap(), other);
+    }
+
+    /// `zerodds-tcp-transport-1.0` §1.1: the wire kind follows the set the
+    /// locator was made for, for both address families, and the set reads
+    /// back from the kind.
+    #[test]
+    fn tcp_1_1_the_wire_kind_follows_the_kind_set() {
+        assert_eq!(TcpKindSet::default(), TcpKindSet::ZeroDds);
+        for (set, v4, v6) in [
+            (TcpKindSet::ZeroDds, 0x01F0_0004, 0x01F0_0005),
+            (TcpKindSet::Kinds4And8, 4, 8),
+        ] {
+            let four = Locator::tcp_v4([192, 0, 2, 1], 7411).with_tcp_kind_set(set);
+            let six = Locator::tcp_v6([0x20; 16], 7412).with_tcp_kind_set(set);
+            assert_eq!(four.kind, LocatorKind::tcp_v4(set));
+            assert_eq!(six.kind, LocatorKind::tcp_v6(set));
+            assert_eq!(&four.to_bytes_le()[..4], &i32::to_le_bytes(v4));
+            assert_eq!(&six.to_bytes_be()[..4], &i32::to_be_bytes(v6));
+            assert_eq!(four.kind.tcp_kind_set(), Some(set));
+            assert_eq!(six.kind.tcp_kind_set(), Some(set));
+            assert!(four.kind.is_tcp_v4() && !four.kind.is_tcp_v6());
+            assert!(six.kind.is_tcp_v6() && !six.kind.is_tcp_v4());
+            // The family, port and address stay.
+            assert_eq!(four.ipv4(), [192, 0, 2, 1]);
+            assert_eq!((four.port, six.port, six.address), (7411, 7412, [0x20; 16]));
+            assert_eq!(four.kind.transport_kind(), LocatorKind::Tcpv4);
+            assert_eq!(six.kind.transport_kind(), LocatorKind::Tcpv6);
+        }
+        // A kind that is not TCP has no set and is its own transport kind.
+        let udp = Locator::udp_v4([10, 0, 0, 1], 7400);
+        assert_eq!(udp.with_tcp_kind_set(TcpKindSet::Kinds4And8), udp);
+        for kind in [
+            LocatorKind::UdpV4,
+            LocatorKind::UdpV6,
+            LocatorKind::Shm,
+            LocatorKind::Uds,
+            LocatorKind::Tsn,
+        ] {
+            assert_eq!(kind.tcp_kind_set(), None);
+            assert_eq!(kind.transport_kind(), kind);
+            assert!(!kind.is_tcp_v4() && !kind.is_tcp_v6());
+        }
+    }
+
+    /// §1.1: the set is the locator's. Locators of both sets are encoded
+    /// from two threads at the same time, each many times; every encoding
+    /// carries the kind of its own locator. With a process-wide switch one
+    /// thread's setting showed in the other's octets.
+    #[cfg(feature = "std")]
+    #[test]
+    fn tcp_1_1_two_kind_sets_in_one_process_do_not_interfere() {
+        let encode = |set: TcpKindSet, want: i32| {
+            std::thread::spawn(move || {
+                for port in 1..=20_000u32 {
+                    let l = Locator::tcp_v4([127, 0, 0, 1], port).with_tcp_kind_set(set);
+                    assert_eq!(&l.to_bytes_le()[..4], &want.to_le_bytes(), "port {port}");
+                    let back = Locator::from_bytes_le(l.to_bytes_le()).unwrap();
+                    assert_eq!(back, l);
+                }
+            })
+        };
+        let own = encode(TcpKindSet::ZeroDds, 0x01F0_0004);
+        let other = encode(TcpKindSet::Kinds4And8, 4);
+        own.join().unwrap();
+        other.join().unwrap();
     }
 
     #[test]

@@ -388,6 +388,47 @@ fn apply_events<P: DdsPort>(
                     reader.raw()
                 );
             }
+            SessionEvent::UpstreamConnected { client } => {
+                eprintln!(
+                    "[zerodds-xrce-agentd] client {client:02x?}: session at the upstream agent \
+                     open"
+                );
+            }
+            SessionEvent::UpstreamLost { client, reason } => {
+                eprintln!(
+                    "[zerodds-xrce-agentd] client {client:02x?}: upstream link lost ({reason}) \
+                     -- opening it again, requests wait"
+                );
+            }
+            SessionEvent::UpstreamRefused { client, code } => {
+                eprintln!(
+                    "[zerodds-xrce-agentd] client {client:02x?}: the upstream agent refused the \
+                     session ({code:?}) -- requests answered with that status"
+                );
+            }
+            SessionEvent::UpstreamQueueFull { client } => {
+                eprintln!(
+                    "[zerodds-xrce-agentd] client {client:02x?}: upstream queue full -- a request \
+                     answered STATUS_ERR_RESOURCES"
+                );
+            }
+            SessionEvent::UpstreamFragmentDiscarded { client, stream_id } => {
+                eprintln!(
+                    "[zerodds-xrce-agentd] client {client:02x?}: a FRAGMENT run of the upstream \
+                     agent on stream {stream_id:#04x} could not be reassembled -- lost"
+                );
+            }
+            SessionEvent::UpstreamUnsendable {
+                client,
+                stream_id,
+                reason,
+            } => {
+                eprintln!(
+                    "[zerodds-xrce-agentd] client {client:02x?}: a request on stream \
+                     {stream_id:#04x} cannot go upstream ({reason}) -- answered \
+                     STATUS_ERR_RESOURCES"
+                );
+            }
         }
     }
     close

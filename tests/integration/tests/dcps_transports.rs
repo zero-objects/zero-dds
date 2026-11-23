@@ -5,7 +5,17 @@
 //! the public API (`DomainParticipantFactory`), exchange a keyed topic over
 //! the configured user transport. Shared memory comes twice: the same-host
 //! channel under the UDPv4 user transport (`transport.same_host_shm`), and
-//! the SHM user transport (`transport.user_transport = SHM`).
+//! the SHM user transport (`transport.user_transport = SHM`). TCPv4 comes
+//! twice as well: in the default dialect (handshake and length-prefixed
+//! frames, `zerodds-tcp-transport-1.0` §3 and §2.1) and in the dialect
+//! `rtps` (`transport.tcp_dialect = rtps`, §2.5), where a connection
+//! carries RTPS messages back to back and each states its length in its
+//! HeaderExtension (DDSI-RTPS 2.5 §8.3.3). The second run shows that the
+//! reliable protocol, in both directions, works on messages that begin
+//! with a HeaderExtension; that the octets on the connection are those of
+//! §2.5 is tested where a plain socket reads them
+//! (`crates/dcps/src/runtime.rs`,
+//! `tcp_2_5_the_tcp_leg_of_the_rtps_dialect_states_the_length_of_each_message`).
 //!
 //! The oracle has two halves, neither of them ZeroDDS code:
 //!
@@ -36,14 +46,35 @@
 //! 2. **The kernel's view of the transport** (proc(5)), read while both
 //!    processes still hold their sockets: for TCPv4 an ESTABLISHED
 //!    connection between the two processes; for UDS a bound Unix socket in
-//!    each under the transport's directory; for the same-host channel a
+//!    each under the transport's directory, and for UDS in a configured
+//!    directory (`transport.uds.base_dir`, `transport.uds.socket_mode`,
+//!    `transport.uds.base_dir_mode`, `zerodds-uds-transport-1.0` §5.1) the
+//!    sockets under that directory with its modes; for the same-host channel a
 //!    file under `/dev/shm` both have mapped. For every transport but UDPv4,
 //!    no UDP socket on the user-traffic ports of the domain (DDSI-RTPS 2.5
 //!    §9.6.2.2 Table 9.16, defaults §9.6.2.3), so the samples cannot have
 //!    gone over UDP; for UDPv4, the reader holds its user unicast port.
 //!
-//! Discovery stays SPDP/SEDP over UDPv4 for every transport (DDSI-RTPS 2.5
-//! §8.5); only the user traffic moves.
+//! A UDS user transport whose bind fails stops the participant's start,
+//! and the transport's own error reaches the observability sink
+//! (`dcps_over_uds_a_refused_bind_is_reported_with_its_cause`); the
+//! refusal comes from the transport's check of a `max_datagram` against
+//! the socket buffer the kernel grants (`zerodds-uds-transport-1.0` §3.4).
+//!
+//! Discovery is SPDP/SEDP over UDPv4 for every transport (DDSI-RTPS 2.5
+//! §8.5) and only the user traffic moves, except in the run `TCPv4Only`
+//! (`zerodds-tcp-transport-1.0` §4.3). There the two participants have no
+//! UDP path to each other: neither sends SPDP multicast
+//! (`discovery.no_multicast`), each has an SPDP group of its own, neither
+//! announces a UDP metatraffic locator (`discovery.unicast_transports =
+//! tcp`), and the user transport is TCPv4. The reader's TCP listener has a
+//! port the scenario chose (`transport.tcp_port`), and the writer knows it
+//! as its one initial peer (`discovery.peers = tcp://127.0.0.1:port`). A
+//! participant sends unicast only to a locator it was told, and the only
+//! locators these two are told are TCP ones: SPDP, SEDP, the reliable
+//! protocol and the samples go over TCP or not at all. That the writer
+//! matches the reader and every sample arrives is the proof. `TCPv6Only`
+//! is the same over TCPv6, with the peer entry `tcp://[::1]:port`.
 
 #![cfg(target_os = "linux")]
 #![allow(
@@ -59,10 +90,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use zerodds_dcps::qos::{HistoryKind, HistoryQosPolicy, ReliabilityKind, ReliabilityQosPolicy};
-use zerodds_dcps::runtime::{RuntimeConfig, UserTransportKind};
+use zerodds_dcps::runtime::{RuntimeConfig, TcpDialect, UdsMode, UdsUserConfig, UserTransportKind};
 use zerodds_dcps::{
-    DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, HANDLE_NIL,
-    InstanceStateKind, PublisherQos, SubscriberQos, TopicQos,
+    DataReaderQos, DataWriterQos, DdsError, DomainParticipantFactory, DomainParticipantQos,
+    HANDLE_NIL, InstanceStateKind, PublisherQos, SubscriberQos, TopicQos,
 };
 use zerodds_integration::dds::Reading;
 use zerodds_integration::{Peer, event, fields, kernel, lease_domain, role, role_command};
@@ -81,7 +112,26 @@ const STEP: Duration = Duration::from_secs(10);
 enum Transport {
     UdpV4,
     TcpV4,
+    /// TCPv4 in the dialect `rtps` (`transport.tcp_dialect = rtps`,
+    /// `zerodds-tcp-transport-1.0` §2.5).
+    TcpV4Rtps,
+    /// TCPv4 for discovery and user traffic, with no UDP path between the
+    /// participants (`zerodds-tcp-transport-1.0` §4.3); see the module
+    /// comment.
+    TcpV4Only,
+    /// The same over TCPv6: the reader's listener is on `::`, the writer
+    /// names it as `tcp://[::1]:port`.
+    TcpV6Only,
     Uds,
+    /// UDS in the directory the scenario names (`transport.uds.base_dir`),
+    /// with the modes of a directory shared by the UIDs of one group:
+    /// socket files `0660`, the directory `3770` when the first
+    /// participant creates it (`zerodds-uds-transport-1.0` §5.1).
+    UdsShared,
+    /// UDS in stream mode (`transport.uds.mode = stream`,
+    /// `zerodds-uds-transport-1.0` §3.5) in the directory the scenario
+    /// names: one connection per peer, each message a length-prefixed frame.
+    UdsStream,
     /// The same-host shared-memory channel (`transport.same_host_shm`,
     /// `zerodds-zero-copy-1.0` §6) under the default UDPv4 user transport.
     SameHostShm,
@@ -95,7 +145,12 @@ impl Transport {
         match self {
             Self::UdpV4 => "UDPv4",
             Self::TcpV4 => "TCPv4",
+            Self::TcpV4Rtps => "TCPv4Rtps",
+            Self::TcpV4Only => "TCPv4Only",
+            Self::TcpV6Only => "TCPv6Only",
             Self::Uds => "UDS",
+            Self::UdsShared => "UDSShared",
+            Self::UdsStream => "UDSStream",
             Self::SameHostShm => "SHM",
             Self::ShmUser => "ShmUser",
         }
@@ -105,7 +160,12 @@ impl Transport {
         match name {
             "UDPv4" => Self::UdpV4,
             "TCPv4" => Self::TcpV4,
+            "TCPv4Rtps" => Self::TcpV4Rtps,
+            "TCPv4Only" => Self::TcpV4Only,
+            "TCPv6Only" => Self::TcpV6Only,
             "UDS" => Self::Uds,
+            "UDSShared" => Self::UdsShared,
+            "UDSStream" => Self::UdsStream,
             "SHM" => Self::SameHostShm,
             "ShmUser" => Self::ShmUser,
             other => panic!("unknown transport {other}"),
@@ -125,7 +185,52 @@ impl Transport {
         match self {
             Self::UdpV4 => cfg.user_transport = Some(UserTransportKind::UdpV4),
             Self::TcpV4 => cfg.user_transport = Some(UserTransportKind::TcpV4),
+            Self::TcpV4Rtps => {
+                cfg.user_transport = Some(UserTransportKind::TcpV4);
+                cfg.tcp_dialect = TcpDialect::Rtps;
+            }
+            Self::TcpV4Only | Self::TcpV6Only => {
+                let v6 = self == Self::TcpV6Only;
+                cfg.user_transport = Some(if v6 {
+                    UserTransportKind::TcpV6
+                } else {
+                    UserTransportKind::TcpV4
+                });
+                cfg.spdp_multicast_send = false;
+                cfg.metatraffic_over_udp = false;
+                let port: u16 = env("IT_TCP_PORT").parse().unwrap();
+                // The reader listens on the port, the writer names it as
+                // its initial peer; each has an SPDP group of its own.
+                if role().as_deref() == Some("reader") {
+                    cfg.tcp_port = port;
+                    cfg.spdp_multicast_group = std::net::Ipv4Addr::new(239, 255, 9, 21);
+                } else {
+                    cfg.initial_peer_specs = vec![if v6 {
+                        format!("tcp://[::1]:{port}")
+                    } else {
+                        format!("tcp://127.0.0.1:{port}")
+                    }];
+                    cfg.spdp_multicast_group = std::net::Ipv4Addr::new(239, 255, 9, 22);
+                }
+            }
             Self::Uds => cfg.user_transport = Some(UserTransportKind::Uds),
+            Self::UdsShared => {
+                cfg.user_transport = Some(UserTransportKind::Uds);
+                cfg.uds = UdsUserConfig {
+                    base_dir: std::path::PathBuf::from(env("IT_UDS_DIR")),
+                    socket_mode: Some(0o660),
+                    base_dir_mode: 0o3770,
+                    ..UdsUserConfig::default()
+                };
+            }
+            Self::UdsStream => {
+                cfg.user_transport = Some(UserTransportKind::Uds);
+                cfg.uds = UdsUserConfig {
+                    base_dir: std::path::PathBuf::from(env("IT_UDS_DIR")),
+                    mode: UdsMode::Stream,
+                    ..UdsUserConfig::default()
+                };
+            }
             Self::SameHostShm => {
                 cfg.user_transport = Some(UserTransportKind::UdpV4);
                 cfg.same_host_shm = true;
@@ -306,12 +411,27 @@ fn run(test: &str, transport: Transport) {
     let lease = lease_domain();
     let domain = lease.id();
     let topic = format!("IntegrationReadings{}", transport.name());
+    // A port for the reader's TCP listener (`TCPv4Only`): one the system
+    // just gave out and that is free again.
+    let tcp_port = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("a free TCP port")
+        .port();
+    // The directory of `UDSShared`, which the first participant creates
+    // with `transport.uds.base_dir_mode`.
+    let uds_parent =
+        std::env::temp_dir().join(format!("zerodds-it-uds-{}-{domain}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&uds_parent);
+    std::fs::create_dir_all(&uds_parent).expect("the parent of the UDS directory");
+    let uds_dir = uds_parent.join("volume");
     let start = |name: &str| {
         let mut command = role_command(test, name);
         command
             .env("IT_TRANSPORT", transport.name())
             .env("IT_DOMAIN", domain.to_string())
-            .env("IT_TOPIC", &topic);
+            .env("IT_TOPIC", &topic)
+            .env("IT_TCP_PORT", tcp_port.to_string())
+            .env("IT_UDS_DIR", &uds_dir);
         Peer::spawn(name, command)
     };
     let mut reader = start("reader");
@@ -351,7 +471,7 @@ fn run(test: &str, transport: Transport) {
                 "UDPv4 with the same-host channel off: both map {shared_shm:?}"
             );
         }
-        Transport::TcpV4 => {
+        Transport::TcpV4 | Transport::TcpV4Rtps | Transport::TcpV4Only | Transport::TcpV6Only => {
             let connections = kernel::tcp_connections_between(w, r);
             assert!(
                 !connections.is_empty(),
@@ -373,6 +493,67 @@ fn run(test: &str, transport: Transport) {
                 );
             }
         }
+        Transport::UdsShared => {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |path: &std::path::Path| {
+                std::fs::metadata(path)
+                    .expect("the path exists")
+                    .permissions()
+                    .mode()
+                    & 0o7777
+            };
+            assert_eq!(
+                mode(&uds_dir),
+                0o3770,
+                "UDSShared: the first participant creates the directory with \
+                 transport.uds.base_dir_mode"
+            );
+            for (role, pid) in [("writer", w), ("reader", r)] {
+                let paths: Vec<String> = kernel::unix_socket_paths(pid)
+                    .into_iter()
+                    .filter(|p| std::path::Path::new(p).parent() == Some(uds_dir.as_path()))
+                    .collect();
+                assert_eq!(
+                    paths.len(),
+                    1,
+                    "UDSShared: the {role} holds no Unix socket in {uds_dir:?}: {:?}",
+                    kernel::unix_socket_paths(pid)
+                );
+                assert_eq!(
+                    mode(std::path::Path::new(&paths[0])),
+                    0o660,
+                    "UDSShared: the {role}'s socket file carries transport.uds.socket_mode"
+                );
+            }
+        }
+        Transport::UdsStream => {
+            // Each participant listens at its socket path in the directory
+            // and holds a connection the other opened to it: the writer's
+            // samples and heartbeats go to the reader, the reader's
+            // acknowledgments to the writer.
+            for (role, pid) in [("writer", w), ("reader", r)] {
+                let streams: Vec<kernel::UnixStreamSocket> = kernel::unix_stream_sockets(pid)
+                    .into_iter()
+                    .filter(|s| std::path::Path::new(&s.path).parent() == Some(uds_dir.as_path()))
+                    .collect();
+                assert!(
+                    streams.iter().any(|s| s.listening),
+                    "UDSStream: the {role} holds no listening stream socket in {uds_dir:?}: \
+                     {streams:?}"
+                );
+                assert!(
+                    streams.iter().any(|s| s.connected && !s.listening),
+                    "UDSStream: the {role} holds no accepted connection in {uds_dir:?}: \
+                     {streams:?}"
+                );
+                assert!(
+                    !kernel::unix_socket_paths(pid)
+                        .iter()
+                        .any(|p| p.starts_with(zerodds_transport_uds::DEFAULT_BASE_DIR)),
+                    "UDSStream: the {role} holds a socket in the default directory"
+                );
+            }
+        }
         Transport::SameHostShm | Transport::ShmUser => {
             assert!(
                 !shared_shm.is_empty(),
@@ -384,9 +565,28 @@ fn run(test: &str, transport: Transport) {
             );
         }
     }
+    if matches!(transport, Transport::TcpV4Only | Transport::TcpV6Only) {
+        let listening: Vec<u16> = kernel::tcp_sockets(r)
+            .into_iter()
+            .map(|s| s.local_port)
+            .collect();
+        assert!(
+            listening.contains(&tcp_port),
+            "{}: the reader holds no TCP socket on the port {tcp_port} of \
+             transport.tcp_port; its TCP ports: {listening:?}",
+            transport.name()
+        );
+    }
     if matches!(
         transport,
-        Transport::TcpV4 | Transport::Uds | Transport::ShmUser
+        Transport::TcpV4
+            | Transport::TcpV4Rtps
+            | Transport::TcpV4Only
+            | Transport::TcpV6Only
+            | Transport::Uds
+            | Transport::UdsShared
+            | Transport::UdsStream
+            | Transport::ShmUser
     ) {
         for (role, pid) in [("writer", w), ("reader", r)] {
             let found = udp_user(pid);
@@ -403,6 +603,7 @@ fn run(test: &str, transport: Transport) {
     assert!(writer.release(STEP).success(), "writer role failed");
     assert!(reader.release(STEP).success(), "reader role failed");
     check_delivery(transport, &lines);
+    let _ = std::fs::remove_dir_all(&uds_parent);
     drop(lease);
 }
 
@@ -484,8 +685,116 @@ fn dcps_over_tcpv4() {
 }
 
 #[test]
+fn dcps_over_tcpv4_rtps_dialect() {
+    dispatch("dcps_over_tcpv4_rtps_dialect", Transport::TcpV4Rtps);
+}
+
+#[test]
+fn dcps_over_tcpv4_without_udp_discovery() {
+    dispatch(
+        "dcps_over_tcpv4_without_udp_discovery",
+        Transport::TcpV4Only,
+    );
+}
+
+#[test]
+fn dcps_over_tcpv6_without_udp_discovery() {
+    dispatch(
+        "dcps_over_tcpv6_without_udp_discovery",
+        Transport::TcpV6Only,
+    );
+}
+
+#[test]
 fn dcps_over_uds() {
     dispatch("dcps_over_uds", Transport::Uds);
+}
+
+/// `zerodds-uds-transport-1.0` §5.1: the UDS user transport in a
+/// directory the configuration names, with the modes of a directory shared
+/// by the UIDs of one group.
+#[test]
+fn dcps_over_uds_in_a_configured_base_dir() {
+    dispatch(
+        "dcps_over_uds_in_a_configured_base_dir",
+        Transport::UdsShared,
+    );
+}
+
+/// `zerodds-uds-transport-1.0` §3.5: the UDS user transport in stream mode
+/// (`transport.uds.mode = stream`, the mode Windows has, §6.2) carries the
+/// samples, the heartbeats and the acknowledgments between writer and
+/// reader processes over one connection each way.
+#[test]
+fn dcps_over_uds_in_stream_mode() {
+    dispatch("dcps_over_uds_in_stream_mode", Transport::UdsStream);
+}
+
+/// `zerodds-uds-transport-1.0` §5.1: a UDS user transport whose bind fails
+/// stops the participant's start with `TransportError`, and the bind's own
+/// error reaches the observability sink as `transport.uds.bind_failed`
+/// with the directory and the mode `datagram`. The bind is refused by the transport's check of
+/// §3.4: a `max_datagram` of 1 GiB is above what any kernel grants as a
+/// socket buffer (Linux caps it at `net.core.wmem_max`).
+#[test]
+fn dcps_over_uds_a_refused_bind_is_reported_with_its_cause() {
+    use zerodds_foundation::observability::{Level, VecSink};
+    let lease = lease_domain();
+    let dir = std::env::temp_dir().join(format!(
+        "zerodds-it-uds-refused-{}-{}",
+        std::process::id(),
+        lease.id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let sink = std::sync::Arc::new(VecSink::new());
+    let mut cfg = Transport::Uds.config();
+    cfg.uds = UdsUserConfig {
+        base_dir: dir.clone(),
+        max_datagram: 1 << 30,
+        mode: UdsMode::Datagram,
+        ..UdsUserConfig::default()
+    };
+    cfg.observability = sink.clone();
+    let started = DomainParticipantFactory::instance().create_participant_with_config(
+        lease.id(),
+        DomainParticipantQos::default(),
+        cfg,
+    );
+    let error = match started {
+        Ok(_) => panic!("a participant started with a UDS max_datagram of 1 GiB"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error,
+        DdsError::TransportError {
+            label: "user unicast bind (UDS)"
+        }
+    );
+    let reported: Vec<_> = sink
+        .snapshot()
+        .into_iter()
+        .filter(|e| e.name == "transport.uds.bind_failed")
+        .collect();
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    assert_eq!(reported[0].level, Level::Error);
+    let attr = |key: &str| {
+        reported[0]
+            .attrs
+            .iter()
+            .find(|a| a.key == key)
+            .map(|a| a.value.clone())
+            .unwrap_or_else(|| panic!("no attribute {key}: {reported:?}"))
+    };
+    assert_eq!(attr("base_dir"), dir.display().to_string());
+    assert_eq!(attr("mode"), "datagram");
+    let cause = attr("error");
+    assert!(
+        cause.starts_with("uds max_datagram 1073741824 exceeds what the kernel grants: SO_SNDBUF "),
+        "{cause}"
+    );
+    assert!(cause.contains("(capped by net.core.wmem_max)"), "{cause}");
+    let _ = std::fs::remove_dir_all(&dir);
+    drop(lease);
 }
 
 #[test]

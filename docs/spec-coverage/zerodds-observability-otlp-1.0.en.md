@@ -5,12 +5,12 @@ OTLP/HTTP/JSON exporter, modelled on OpenTelemetry proto v1.4).
 
 **Context:** `crates/observability-otlp` buffers traces/histograms/logs and
 pushes them as OTLP/HTTP/JSON to an OTel collector. Own `Span`/`Histogram`/
-`Event` types (no dependency cycle to `zerodds-monitor`); 8 tests green.
+`Event` types (no dependency cycle to `zerodds-monitor`); 9 tests green.
 
 Implementation:
 
 - `crates/observability-otlp/` — `OtlpExporter`, `OtlpConfig`, `ExportError`,
-  `add_span`/`add_histogram`/`add_event`/`flush`; 8 tests green.
+  `add_span`/`add_span_with_ints`/`add_histogram`/`add_event`/`flush`; 9 tests green.
 
 ---
 
@@ -32,11 +32,13 @@ panic.
 **Spec:** §2.1 — spans/events are sent as OTLP trace JSON to `/v1/traces`;
 spec-conformant string escaping.
 
-**Repo:** `crates/observability-otlp/src/lib.rs` (`add_span`, `add_event`, trace
+**Repo:** `crates/observability-otlp/src/lib.rs` (`add_span`,
+`add_span_with_ints` with `IntAttribute` as `intValue`, `add_event`, trace
 JSON builder).
 
 **Tests:** `crates/observability-otlp/src/lib.rs::tests::traces_json_roundtrip_shape`,
-`json_escape_handles_quotes_and_newlines`.
+`json_escape_handles_quotes_and_newlines`,
+`traces_json_writes_int_attributes_as_int_value`.
 
 **Status:** done
 
@@ -66,11 +68,18 @@ builder).
 **Spec:** §3, "Konfiguration" — `OtlpConfig` with a collector endpoint
 (default localhost) and exporter parameters.
 
-**Repo:** `crates/observability-otlp/src/lib.rs` (`OtlpConfig`).
+**Repo:** `crates/observability-otlp/src/lib.rs` (`OtlpConfig`;
+`OtlpExporter::connect` resolves `host` without the brackets of an IPv6
+address, `post` writes it in brackets in the `Host` field;
+`OtlpConfig::from_endpoint` and `OtlpConfig::from_env` read a daemon's
+endpoint, in place of a copy per bridge daemon).
 
-**Tests:** `crates/observability-otlp/src/lib.rs::tests::config_default_points_to_localhost`.
+**Tests:** `crates/observability-otlp/src/lib.rs::tests::config_default_points_to_localhost`,
+`flush_connects_within_the_timeout` (Linux),
+`flush_reaches_a_collector_at_an_ipv6_address`,
+`config_from_endpoint_reads_scheme_host_and_port`.
 
-**Status:** done
+**Status:** done — `timeout` also bounds the connect (per address of `host`): against a listener with a full accept queue, which drops the SYN, `flush` ends after 300 ms with `TimedOut` (on the Linux test host). `host` `[::1]` (as `http://[::1]:4318` gives it) and `::1` reach a listener on the IPv6 loopback, the `Host` field is `[::1]` (on the Linux test host; without the fix `[::1]` fails to resolve).
 
 ## §4 Lifecycle + HTTP error handling
 
@@ -79,10 +88,11 @@ reported as `ExportError::HttpStatus`, connect-refused as `ExportError::Io` — 
 panic.
 
 **Repo:** `crates/observability-otlp/src/lib.rs` (`flush`, `ExportError`, HTTP
-status parser).
+status parser; `spawn_flush_loop`, the flush thread of the bridge daemons).
 
 **Tests:** `crates/observability-otlp/src/lib.rs::tests::flush_drains_buffers_even_with_no_collector`,
-`parse_http_status_extracts_code`, `parse_http_status_handles_500`.
+`parse_http_status_extracts_code`, `parse_http_status_handles_500`,
+`flush_loop_flushes_each_interval_and_at_stop`.
 
 **Status:** done
 
@@ -165,7 +175,7 @@ handling (`ExportError::HttpStatus`), connect-refused without panic.
 
 Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-observability-otlp-1.0.md`):
 
-* `cargo nextest run --profile merge -p zerodds-observability-otlp --all-targets` (job `merge-rust-observability-otlp`) — 8 tests green.
+* `cargo nextest run --profile merge -p zerodds-observability-otlp --all-targets` (job `merge-rust-observability-otlp`) — 9 tests green.
 
 8 cited tests green, 0 not green.
 

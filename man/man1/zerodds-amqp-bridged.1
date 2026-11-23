@@ -10,9 +10,14 @@ zerodds-amqp-bridged \- DDS to AMQP 1.0 bridge daemon
 [\fB\-V\fR | \fB\-h\fR]
 .SH DESCRIPTION
 .B zerodds-amqp-bridged
-bridges DDS topics to AMQP 1.0 endpoints. Supports SASL ANONYMOUS, PLAIN,
-EXTERNAL, TLS, links with sender/receiver settle modes, and
-property-based routing. Implements
+is a client of an AMQP 1.0 broker on one side and a DDS participant on the
+other. Each topic of the configuration has a sender link (DDS samples to the
+broker), a receiver link (broker messages into DDS) or both, on a session of
+its own. SASL PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, EXTERNAL, ANONYMOUS and XOAUTH2; TLS with
+ALPN
+.IR amqp ;
+the sender and receiver settle modes of the topic; a topic catalog per
+connection; reconnect with back-off. Implements
 .IR docs/specs/zerodds-amqp-bridge-daemon-1.0.md .
 .SH OPTIONS
 .TP
@@ -25,14 +30,17 @@ AMQP broker URL
 .RI ( amqp:// ", " amqps:// ).
 .TP
 .BR \-\-container\-id =\fIID\fR
-AMQP container-id.
+AMQP container-id; it also seeds the GUID prefix of the DDS participant.
+Default
+.IR zerodds\-bridge\-<host> :
+the host name with its dots as hyphens, at most 32 characters.
 .TP
 .BR \-\-domain =\fIID\fR
 DDS Domain ID.
 .TP
 .BR \-\-sasl\-mechanism =\fINAME\fR
 One of
-.IR PLAIN ", " SCRAM\-SHA\-256 ", " EXTERNAL ", " ANONYMOUS ", " XOAUTH2 .
+.IR PLAIN ", " SCRAM\-SHA\-256 ", " SCRAM\-SHA\-512 ", " EXTERNAL ", " ANONYMOUS ", " XOAUTH2 .
 .TP
 .BR \-\-user =\fIUSER\fR
 SASL username.
@@ -50,11 +58,24 @@ TLS client cert.
 TLS client key.
 .TP
 .BR \-\-topic =\fIDDS=ADDR\fR
-Inline topic mapping override.
+One topic mapping, repeatable: an entry of
+.B topics
+with the DDS topic name and the AMQP address, both directions; the short
+form of
+.BR "\-\-set +topics=" \fIDDS=ADDR\fR.
 .TP
 .BR \-\-log\-level =\fILEVEL\fR
 One of
-.IR trace ", " debug ", " info ", " warn ", " error .
+.IR trace ", " debug ", " info ", " warn ", " error :
+the threshold of the log, one JSON object per line on stdout with
+.BR timestamp ", " level ", " event ", " container_id
+and the fields of the event;
+.I debug
+adds a line per transfer
+.RB ( transfer_in ", " transfer_out ", " disposition )
+with
+.BR delivery_id ", " bytes " and " latency_us .
+Only the error that ends the program goes to stderr.
 .TP
 .BR \-\-metrics =\fIADDR\fR
 Prometheus listen addr.
@@ -82,9 +103,23 @@ appends to a list.
 .B \-\-check\-config
 Validate and print the effective configuration with the origin of every
 value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
-file, syntax error or include cycle.
+file, syntax error or include cycle. The values of
+.B amqp.sasl.password
+and
+.B amqp.cbs.secret
+are shown as ***, also in the origin of a
+.BR \-\-set .
 .SH SIGNALS
-SIGTERM and SIGINT stop the daemon after the drain.
+SIGTERM and SIGINT stop the daemon: it takes no further DDS samples, waits
+up to 30 s for the broker to settle the deliveries in flight, then detaches
+every link, ends every session, closes the connection and exits with 0.
+The log line
+.B drain_started
+marks the start of this drain. What is left (unsettled deliveries,
+messages waiting for credit) is counted and logged. On Windows CTRL_C and CTRL_BREAK stop the daemon the
+same way. Closing the console, logoff and system shutdown end the process
+without this drain: Windows ends it as soon as the console control handler
+returns.
 SIGHUP reads the configuration again: a right withdrawn from the topic ACL
 applies at once, the TLS material to the next connect; a newly granted
 right, changed topics, broker address or domain need a restart and are
@@ -92,13 +127,30 @@ logged. A configuration that does not load changes nothing.
 .SH ENVIRONMENT
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optional OTLP endpoint, such as http://localhost:4318.
+Optional OTLP/HTTP collector, such as http://localhost:4318: every TRANSFER
+round trip is a trace
+.B amqp.transfer
+with the child
+.B dds.write
+(AMQP to DDS) or
+.B dds.read
+(DDS to AMQP), sent every 5 seconds and when the program ends.
 .TP
 .B AMQP_PASSWORD
 The SASL password; the setting
-.BR amqp.sasl.password ,
-above the files, below
-.BR \-\-set .
+.BR amqp.sasl.password .
+The environment is the lowest layer above the built-in defaults: a password
+in a configuration file,
+.B \-\-password
+and
+.B \-\-set
+win over it.
+.TP
+.B AMQP_CBS_SECRET
+The shared access key of claims-based security; the setting
+.BR amqp.cbs.secret ,
+beneath the files, as
+.BR AMQP_PASSWORD .
 .SH EXIT STATUS
 .TP
 .B 0
@@ -113,12 +165,27 @@ files.
 .B 2
 With
 .BR \-\-once ,
-the broker connection was lost; with
+the TCP connect failed or the broker connection was lost (without it a TCP
+failure is retried after the back-off); with
 .BR \-\-check\-config ,
 a configuration file could not be read or does not parse.
 .TP
 .B 3
 The DDS participant or one of its endpoints could not be created.
+.TP
+.B 4
+The TLS handshake failed (certificate, protocol, ALPN, the connection reset)
+before the first connection stood.
+.TP
+.B 5
+The SASL exchange failed (mechanism not offered, authentication refused)
+before the first connection stood.
+.TP
+.B 6
+The broker refused the open (it answered with a close or reset the
+connection) before the first connection stood, or its open does not fit the bridge (fewer channels than
+links). A time-out in these stages, and every failure after a connection
+stood, is retried after the back-off.
 .SH FILES
 .I /etc/zerodds/amqp-bridged.yaml .
 .SH SEE ALSO

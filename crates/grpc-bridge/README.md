@@ -33,8 +33,18 @@ caller-configured HTTP/2 listeners. Sits on
   metadata with `-bin` suffix → Base64.
 - **`request_headers` / `response_headers` / `content_types`** —
   standard header sets for request/response/gRPC-Web/JSON.
-- **`GrpcServer` / `GrpcRequest` / `GrpcResponse`** — server
-  skeleton to wire with caller-configured HTTP/2 listeners.
+- **`GrpcServer` / `GrpcCall` / `CallEvent` / `GrpcResponse`** — the
+  server side of one HTTP/2 connection: calls as events (request
+  headers, each message, the half-close, a reset), answers queued and
+  written within the client's flow-control windows.
+- **`messages`** — the protobuf messages of the generated topic services
+  (`Sample`, `PublishAck`, `SubscribeReq`, `CatalogResp`, `TopicEntry`).
+- **`compression`** (feature `std`) — gzip and deflate of a
+  Length-Prefixed-Message with the Compressed-Flag 1.
+- **`proto/zerodds/chat/v1/bridge.proto`** — the service definition the
+  daemon serves for the topic `Chat::Message` (spec §4.2), for client
+  stubs; grpc-go, grpc-java and tonic clients generated from it run
+  against the daemon in `tests/cross_vendor.rs`.
 
 ## Layer position
 

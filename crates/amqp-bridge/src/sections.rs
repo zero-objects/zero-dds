@@ -160,6 +160,49 @@ mod tests {
     // described type, 0x00, the descriptor code as a smallulong (0x53,
     // header 0x70 to footer 0x78), then its value (Part 1, §1.2).
 
+    /// Part 1 §1.5 with §1.3.3: a section sent with the symbolic
+    /// descriptor of its type is the section sent with the numeric one.
+    #[test]
+    fn amqp10_1_5_a_section_by_its_symbol_is_the_section_by_its_code() {
+        let by_symbol = |name: &str, value: &[u8]| {
+            let mut out = alloc::vec![0x00, 0xa3, name.len() as u8];
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(value);
+            out
+        };
+        let data = by_symbol("amqp:data:binary", &[0xa0, 0x02, b'h', b'i']);
+        assert_eq!(
+            MessageSection::decode(&data).expect("data"),
+            (MessageSection::Data(b"hi".to_vec()), data.len())
+        );
+        let value = by_symbol("amqp:amqp-value:*", &[0xa1, 0x01, b'x']);
+        assert_eq!(
+            MessageSection::decode(&value).expect("amqp-value"),
+            (
+                MessageSection::AmqpValue(AmqpExtValue::Str("x".to_string())),
+                value.len()
+            )
+        );
+        let empty_map = [0xc1, 0x01, 0x00];
+        let empty_list = [0x45];
+        for (name, body, order) in [
+            ("amqp:header:list", &empty_list[..], 0u8),
+            ("amqp:delivery-annotations:map", &empty_map[..], 1),
+            ("amqp:message-annotations:map", &empty_map[..], 2),
+            ("amqp:properties:list", &empty_list[..], 3),
+            ("amqp:application-properties:map", &empty_map[..], 4),
+            ("amqp:amqp-sequence:list", &empty_list[..], 5),
+            ("amqp:footer:map", &empty_map[..], 6),
+        ] {
+            let octets = by_symbol(name, body);
+            let (section, n) = MessageSection::decode(&octets).expect(name);
+            assert_eq!((section.order(), n), (order, octets.len()), "{name}");
+        }
+        // A symbol that names a type which is no section.
+        let open = by_symbol("amqp:open:list", &empty_list);
+        assert!(MessageSection::decode(&open).is_err());
+    }
+
     /// `section` encodes to `octets`, and `octets` decode to `section`.
     fn wire(section: MessageSection, octets: &[u8]) {
         assert_eq!(section.encode().expect("encode"), octets, "{section:?}");

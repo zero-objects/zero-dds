@@ -65,6 +65,21 @@ pub(super) const RUNTIME_HOLDS: &[&str] = &[
     "BAD_QOS",
 ];
 
+/// The repository id of `CORBA::TypeCode`, which `omg/corba.hpp` holds.
+const TYPECODE_REPOSITORY_ID: &str = "IDL:omg.org/CORBA/TypeCode:1.0";
+
+/// One element of the member list a `create_..._tc` call takes. A label
+/// and the visibility are written only where they differ from what
+/// `CORBA::TypeCode::Member`'s constructor defaults to (no label, public).
+fn member_text(name: &str, typecode: &str, label: Option<String>, visibility: &str) -> String {
+    match (label, visibility) {
+        (None, "::CORBA::PUBLIC_MEMBER") => format!("{{{name}, {typecode}}}"),
+        (Some(label), "::CORBA::PUBLIC_MEMBER") => format!("{{{name}, {typecode}, {label}}}"),
+        (Some(label), _) => format!("{{{name}, {typecode}, {label}, {visibility}}}"),
+        (None, _) => format!("{{{name}, {typecode}, nullptr, {visibility}}}"),
+    }
+}
+
 /// The `_tc_` constant and the `Any` operators of one declaration.
 pub(super) struct Extras {
     /// `_tc_<Name>`.
@@ -746,6 +761,13 @@ impl Gen<'_> {
                         .interface(target)
                         .map_err(|_| unresolved("an interface"))?;
                     let rid = self.repository_id(AnyId::Interface(target, n.node_id));
+                    // `CORBA::TypeCode` is the pseudo-object omg/corba.hpp
+                    // holds (A.1.3); its TypeCode is the constant of kind
+                    // `tk_TypeCode` (CORBA 3.3 Part 1 §8.11.1), not one of an
+                    // object reference.
+                    if rid == TYPECODE_REPOSITORY_ID {
+                        return Ok("::CORBA::_tc_TypeCode".to_string());
+                    }
                     let create = match n.kind {
                         InterfaceKind::Local => "create_local_interface_tc",
                         InterfaceKind::Abstract => "create_abstract_interface_tc",
@@ -821,14 +843,11 @@ impl Gen<'_> {
                       visibility: &str|
          -> Result<String, Idl4CppError> {
             let m = self.ast.member(m_id).map_err(|_| unresolved("a member"))?;
-            let label = label.map_or_else(
-                || "nullptr".to_string(),
-                |l| format!("std::make_shared<::CORBA::Any>({l})"),
-            );
-            Ok(format!(
-                "::CORBA::TypeCode::Member{{{}, {}, {label}, {visibility}}}",
-                text::string_literal(&m.name),
-                self.typecode_of(&m.type_, &at)?
+            Ok(member_text(
+                &text::string_literal(&m.name),
+                &self.typecode_of(&m.type_, &at)?,
+                label.map(|l| format!("std::make_shared<::CORBA::Any>({l})")),
+                visibility,
             ))
         };
         let (typecode, by_value) = match &node.kind {
@@ -1032,10 +1051,11 @@ impl Gen<'_> {
         let mut list = Vec::new();
         for m in &node.members {
             let n = self.ast.member(*m).map_err(|_| unresolved("a member"))?;
-            list.push(format!(
-                "::CORBA::TypeCode::Member{{{}, {}, nullptr, ::CORBA::PUBLIC_MEMBER}}",
-                text::string_literal(&n.name),
-                self.typecode_of(&n.type_, &at)?
+            list.push(member_text(
+                &text::string_literal(&n.name),
+                &self.typecode_of(&n.type_, &at)?,
+                None,
+                "::CORBA::PUBLIC_MEMBER",
             ));
         }
         let name = names::name(&node.name);

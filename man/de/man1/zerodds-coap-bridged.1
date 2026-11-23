@@ -52,6 +52,8 @@ Topic-Überschreibung (wiederholbar).
 .BR \-\-log\-level =\fISTUFE\fR
 Eine von
 .IR trace ", " debug ", " info ", " warn ", " error .
+Das Log ist ein JSON-Objekt je Zeile auf stdout; Fehler der Befehlszeile,
+bevor die Konfiguration gelesen ist, gehen als Text auf stderr.
 .TP
 .BR \-\-metrics =\fIADR\fR
 Listener für Prometheus.
@@ -80,7 +82,12 @@ werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
 .SH UMGEBUNGSVARIABLEN
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318: je Austausch ein
+Span
+.I coap.request
+mit dem Kind
+.I dds.write
+für sein Schreiben nach DDS, gesendet alle 5 s und beim Beenden.
 .SH EXIT-STATUS
 .TP
 .B 0

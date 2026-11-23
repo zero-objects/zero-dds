@@ -26,7 +26,8 @@ a rejected one gets
 .B NO_PERMISSION
 with a SAS
 .B ContextError
-attached, additively next to SSLIOP client certificates and the ACL.
+attached, and so does a request with neither GSSUP credentials nor a
+verified client certificate.
 With
 .BR corba.ior.publish_to_naming ,
 every mapping's IOR is
@@ -39,8 +40,15 @@ URL) at start and
 .B unbind
 at a clean stop.
 .B corba.naming.serve
-(hosting a NameService in-process, sharing this daemon's own transport) is
-not built.
+hosts a NameService on this daemon's own listener. With
+.B corba.ssliop.required
+the objects are reached over SSLIOP only; a client on plain IIOP is
+forwarded. Each entry of
+.B tenants
+is a DDS participant of its own, bound to the SSLIOP sessions whose client
+certificate it names. Every exchange is one JSON line on stderr and, with
+.BR OTEL_EXPORTER_OTLP_ENDPOINT ,
+a span with its children.
 Implements
 .IR docs/specs/zerodds-corba-bridge-1.0.md .
 .SH OPTIONS
@@ -87,6 +95,8 @@ One more mapping, repeatable.
 .BR \-\-dump\-iors
 Print one line per mapping,
 .IR "repo_id operation IOR:..." ,
+a tenant's as
+.IR "@tenant repo_id operation IOR:..." ,
 and exit.
 .TP
 .BR \-\-log\-level =\fILEVEL\fR
@@ -112,15 +122,21 @@ SIGTERM and SIGINT stop the daemon: requests arriving then get
 .BR TRANSIENT ,
 pending requests get their reply or their
 .B TIMEOUT
-for at most 30 s, then every connection gets CloseConnection.
+for at most 30 s, then every connection gets CloseConnection; with
+.B corba.ior.publish_to_naming
+the names are unbound first.
 SIGHUP reads the configuration again: the ACL and the SSLIOP certificate
-apply from then on (the certificate to new connections); changed mappings,
-binds or domain need a restart and are logged. A configuration that does
+apply from then on to every participant (the certificate to new
+connections); changed mappings, binds, domain or tenants need a restart and
+are logged. A configuration that does
 not load changes nothing.
 .SH ENVIRONMENT
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optional OTLP endpoint, such as http://localhost:4318.
+Optional OTLP endpoint, such as http://localhost:4318: the span
+.I giop.request
+of every exchange with its children
+.IR dds.publish ", " dds.subscribe " and " giop.reply .
 .TP
 .B ZERODDS_CORBA_ADVERTISE_HOST
 The host the IORs name when
@@ -132,7 +148,9 @@ above the files, below
 Default
 .IR 127.0.0.1 .
 .SH EXIT STATUS
-0 normal stop, 1 configuration, 2 bind, 3 DDS, 4 TLS.
+0 normal stop, 1 configuration, 2 bind, 3 DDS (a participant that does not
+start), 4 TLS, 5 NameService (it does not answer within
+.BR corba.ior.naming_retry_ms ).
 .SH FILES
 .IR /etc/zerodds/corba-bridged.yaml ,
 the file named by

@@ -416,8 +416,48 @@ pub fn lower_into_with(
     path: &str,
     options: Options,
 ) -> Vec<Diagnostic> {
+    lower_file(ast, root, path, options).0
+}
+
+/// What lowering a CIDL file produced. CORBA 3.3 Part 3 §8.
+pub struct LoweredCidl {
+    /// The IDL declarations, the PSDL declarations among them as local
+    /// interfaces (`zerodds_ast::cidl`).
+    pub ast: Ast,
+    /// The compositions and the PSDL declarations as CIDL sees them.
+    pub cidl: zerodds_ast::cidl::CidlModel,
+    /// Everything wrong, the composition rules of §8 included.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Lower a CIDL file: a tree parsed under `Dialect::cidl`.
+///
+/// The IDL declarations are lowered as [`lower_with`] lowers them. The
+/// PSDL declarations (Persistent State Service 2.0 §3.2) become local
+/// interfaces, and each composition is checked against the rules of
+/// CORBA 3.3 Part 3 §8: the life cycle categories of Tables 8.3 to 8.5,
+/// segments, feature delegation with Table 8.6, storage home and
+/// executor delegation, abstract operations and proxy homes.
+#[must_use]
+pub fn lower_cidl(root: &Arc<SyntaxNode>, path: &str, options: Options) -> LoweredCidl {
+    let mut ast = Ast::new();
+    let (diagnostics, cidl) = lower_file(&mut ast, root, path, options);
+    LoweredCidl {
+        ast,
+        cidl,
+        diagnostics,
+    }
+}
+
+fn lower_file(
+    ast: &mut Ast,
+    root: &Arc<SyntaxNode>,
+    path: &str,
+    options: Options,
+) -> (Vec<Diagnostic>, zerodds_ast::cidl::CidlModel) {
     let mut ctx = Lowering {
         ast,
+        cidl: crate::cidl::CidlState::default(),
         scopes: ScopeStack::new_placeholder(),
         diagnostics: Vec::new(),
         path: path.to_string(),
@@ -448,6 +488,9 @@ pub fn lower_into_with(
     // Validation last: a rule about member ids needs the derived ones,
     // and a rule about forward declarations needs the whole file.
     ctx.validate();
+    // The compositions of a CIDL file read homes, components and storage
+    // types, which the completion has resolved.
+    let cidl = ctx.finish_cidl();
     // A diagnostic points at text, not at the whitespace before it. The
     // ranges that came from a node still carry that node's leading
     // trivia, so each one — the primary and every label — is narrowed
@@ -462,7 +505,7 @@ pub fn lower_into_with(
     }
     // One fact, one diagnostic: a collision the model refused and the
     // validation pass found again is the same collision.
-    dedup(diagnostics)
+    (dedup(diagnostics), cidl)
 }
 
 /// The walk's state.
@@ -472,6 +515,8 @@ pub fn lower_into_with(
 /// separate passes over the tree.
 pub(crate) struct Lowering<'a> {
     pub(crate) ast: &'a mut Ast,
+    /// What a CIDL file declares beyond IDL, resolved after the walk.
+    pub(crate) cidl: crate::cidl::CidlState,
     pub(crate) scopes: ScopeStack,
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) path: String,
@@ -614,6 +659,13 @@ impl Lowering<'_> {
                     continue;
                 }
                 if let Some(keyword) = zerodds_idl_cst::keyword_collision(text) {
+                    found.push((span, text.to_string(), keyword));
+                } else if self.options.dialect.cidl
+                    && let Some(keyword) = zerodds_idl_cst::cidl_keyword_collision(text)
+                {
+                    // CORBA 3.3 Part 3 §8.1: CIDL "obeys the same lexical
+                    // rules as OMG Persistent State Definition Language
+                    // (PSDL) and OMG IDL", over the keywords of §8.2.1.
                     found.push((span, text.to_string(), keyword));
                 }
             }
@@ -1034,6 +1086,12 @@ impl Lowering<'_> {
             CstKind::RepositoryDirective => self.repository_directive(node),
             CstKind::ImportDecl => self.import(node),
             CstKind::KeylistDecl => self.keylist(node),
+            // CIDL: CORBA 3.3 Part 3 §8.3 (2), under `Dialect::cidl` only.
+            CstKind::AbstractStorageTypeDecl
+            | CstKind::AbstractStorageHomeDecl
+            | CstKind::StorageTypeDecl
+            | CstKind::StorageHomeDecl => self.psdl_declaration(node),
+            CstKind::CompositionDecl => self.composition(node),
             CstKind::Error => {}
             _ => {
                 for child in node.children() {
@@ -1271,6 +1329,10 @@ impl Lowering<'_> {
         if let Ok(node_id) = self.ast.module(module).map(|m| m.node_id) {
             self.record_origin(AnyId::Module(module, node_id), at.span());
         }
+        // The body names what the scope of the template's declaration
+        // declares, wherever the instantiation is written.
+        let declared_in = self.modules_around_template(template);
+        self.scopes.push_template_scope(&declared_in);
         self.scopes.push(instance, Some(module));
         for (formal, actual) in formals.iter().zip(actuals) {
             self.bind_actual(formal, actual, module, at);
@@ -1279,6 +1341,191 @@ impl Lowering<'_> {
             self.definition(&child);
         }
         self.scopes.pop();
+        self.scopes.pop();
+    }
+
+    /// The modules a template module is declared in, from the outermost
+    /// in; none for a template at file scope.
+    fn modules_around_template(
+        &self,
+        template: &Arc<SyntaxNode>,
+    ) -> Vec<Id<zerodds_ast::ModuleNode>> {
+        let Some((name, _)) = self
+            .templates
+            .iter()
+            .find(|(_, body)| Arc::ptr_eq(body, template))
+        else {
+            return Vec::new();
+        };
+        let segments = name.segments();
+        let enclosing = &segments[..segments.len().saturating_sub(1)];
+        (1..=enclosing.len())
+            .filter_map(|depth| {
+                self.ast
+                    .module_by_path(&ScopedName::absolute(enclosing[..depth].to_vec()))
+            })
+            .collect()
+    }
+
+    /// Whether `actual` is the sequence a `<sequence_type>` formal
+    /// parameter asks for: rule (188), "a sequence type declaration, to
+    /// indicate that a compliant sequence type must be passed as
+    /// parameter", and §7.4.12.4.2, "if the template parameter is of type
+    /// 'sequence type declaration,' then an instantiated compliant sequence
+    /// must be passed". The formal's element is read in the scope of the
+    /// instance, where the formals before it are bound to their actuals.
+    fn is_the_sequence_of(&mut self, sequence: &Arc<SyntaxNode>, actual: Id<TypeNode>) -> bool {
+        let element = self.type_argument(sequence, 0);
+        let bound = self.bound_argument(sequence, 1);
+        let Some(passed) = self.unaliased(actual) else {
+            return false;
+        };
+        let Ok(TypeKind::Sequence {
+            element: passed_element,
+            bound: passed_bound,
+        }) = self.ast.type_(passed).map(|node| node.kind.clone())
+        else {
+            return false;
+        };
+        self.same_type_ref(&element, &passed_element, 0) && self.same_bound(bound, passed_bound)
+    }
+
+    /// Whether two references denote the same type; see [`Self::same_type`].
+    fn same_type_ref(&self, asked: &Ref<TypeNode>, given: &Ref<TypeNode>, depth: usize) -> bool {
+        match (asked.resolved(), given.resolved()) {
+            (Some(asked), Some(given)) => self.same_type(asked, given, depth),
+            _ => false,
+        }
+    }
+
+    /// Whether `asked` and `given` are the same type, through `typedef`s.
+    ///
+    /// A declared type is one node, so two names of it are the same node.
+    /// An anonymous type is a node per occurrence: `string`, `wstring`,
+    /// `sequence`, `map`, `fixed` and the array behind a `typedef` written
+    /// twice are two nodes of one type. They are compared by what they
+    /// are: the element, key and value types by the same rule, the bounds
+    /// and dimensions by their values (§7.4.12.4.2: "an instantiated
+    /// compliant sequence must be passed").
+    pub(crate) fn same_type(&self, asked: Id<TypeNode>, given: Id<TypeNode>, depth: usize) -> bool {
+        // Deeper than any type a file writes; a cycle ends here as a
+        // mismatch instead of a stack overflow.
+        if depth > 64 {
+            return false;
+        }
+        let (Some(asked), Some(given)) = (self.unaliased(asked), self.unaliased(given)) else {
+            return false;
+        };
+        if asked == given {
+            return true;
+        }
+        let (Ok(asked), Ok(given)) = (self.ast.type_(asked), self.ast.type_(given)) else {
+            return false;
+        };
+        let depth = depth + 1;
+        match (&asked.kind, &given.kind) {
+            (TypeKind::Primitive(asked), TypeKind::Primitive(given)) => asked == given,
+            (
+                TypeKind::Fixed {
+                    digits: asked_digits,
+                    scale: asked_scale,
+                },
+                TypeKind::Fixed {
+                    digits: given_digits,
+                    scale: given_scale,
+                },
+            ) => asked_digits == given_digits && asked_scale == given_scale,
+            (
+                TypeKind::String {
+                    width: asked_width,
+                    bound: asked_bound,
+                },
+                TypeKind::String {
+                    width: given_width,
+                    bound: given_bound,
+                },
+            ) => asked_width == given_width && self.same_bound(*asked_bound, *given_bound),
+            (
+                TypeKind::Sequence {
+                    element: asked_element,
+                    bound: asked_bound,
+                },
+                TypeKind::Sequence {
+                    element: given_element,
+                    bound: given_bound,
+                },
+            ) => {
+                self.same_type_ref(asked_element, given_element, depth)
+                    && self.same_bound(*asked_bound, *given_bound)
+            }
+            (
+                TypeKind::Map {
+                    key: asked_key,
+                    value: asked_value,
+                    bound: asked_bound,
+                },
+                TypeKind::Map {
+                    key: given_key,
+                    value: given_value,
+                    bound: given_bound,
+                },
+            ) => {
+                self.same_type_ref(asked_key, given_key, depth)
+                    && self.same_type_ref(asked_value, given_value, depth)
+                    && self.same_bound(*asked_bound, *given_bound)
+            }
+            (
+                TypeKind::Array {
+                    element: asked_element,
+                    dims: asked_dims,
+                },
+                TypeKind::Array {
+                    element: given_element,
+                    dims: given_dims,
+                },
+            ) => {
+                asked_dims.len() == given_dims.len()
+                    && asked_dims
+                        .iter()
+                        .zip(given_dims)
+                        .all(|(asked, given)| self.same_value(*asked, *given))
+                    && self.same_type_ref(asked_element, given_element, depth)
+            }
+            // Every other kind is declared with a name: one node per type,
+            // and two nodes are two types.
+            _ => false,
+        }
+    }
+
+    /// Whether two bounds are both absent or have the same value.
+    fn same_bound(&self, asked: Bound, given: Bound) -> bool {
+        match (asked, given) {
+            (Bound::Unbounded, Bound::Unbounded) => true,
+            (Bound::Const(asked), Bound::Const(given)) => self.same_value(asked, given),
+            _ => false,
+        }
+    }
+
+    /// Whether two constant expressions evaluate to the same value; one
+    /// that does not evaluate matches nothing.
+    fn same_value(&self, asked: Id<ConstExprNode>, given: Id<ConstExprNode>) -> bool {
+        matches!(
+            (self.ast.eval_const(asked), self.ast.eval_const(given)),
+            (Ok(asked), Ok(given)) if asked == given
+        )
+    }
+
+    /// The type a chain of `typedef`s ends in; `None` for a chain that
+    /// does not end in a type.
+    pub(crate) fn unaliased(&self, start: Id<TypeNode>) -> Option<Id<TypeNode>> {
+        let mut id = start;
+        for _ in 0..64 {
+            match &self.ast.type_(id).ok()?.kind {
+                TypeKind::Alias { aliased } => id = aliased.resolved()?,
+                _ => return Some(id),
+            }
+        }
+        None
     }
 
     /// An actual argument of the instantiation `module` is, rule (192).
@@ -1290,8 +1537,18 @@ impl Lowering<'_> {
         let Ok(node_id) = self.ast.module(module).map(|m| m.node_id) else {
             return;
         };
+        // An interface's object reference is derived by the resolve
+        // pass from the name (§7.4.6), which only finds a reference
+        // that is in the waiter index.
+        let pending = matches!(
+            &arg,
+            zerodds_ast::TemplateArg::Type(reference) if reference.is_pending()
+        );
         if let Some(facets) = self.ast.facets_mut(AnyId::Module(module, node_id)) {
             facets.corba_mut().template_args.push(arg);
+        }
+        if pending {
+            self.ast.reindex_pending(AnyId::Module(module, node_id));
         }
     }
 
@@ -1343,7 +1600,14 @@ impl Lowering<'_> {
     /// A `const` formal becomes a constant of the instance module, so a
     /// bound written as `sequence<T, Capacity>` in the template body
     /// resolves the way any other named constant does. Every other kind
-    /// binds the actual type under the formal's name.
+    /// binds the actual type, interface or exception under the formal's
+    /// name.
+    ///
+    /// CORBA 3.3 Part 3 §7.3.2.1: "Only the concrete values that comply
+    /// with their formal parameter type constraints will be accepted."
+    /// Each actual is checked against the constraint of its formal, rule
+    /// (188), before it is bound; one that does not comply is reported and
+    /// the formal stays unbound.
     fn bind_actual(
         &mut self,
         formal: &Formal,
@@ -1351,19 +1615,22 @@ impl Lowering<'_> {
         module: Id<zerodds_ast::ModuleNode>,
         at: &Arc<SyntaxNode>,
     ) {
-        let (name, is_const) = (formal.name.clone(), formal.is_const);
+        let name = formal.name.clone();
         // (193) hands on what the enclosing instantiation already bound,
         // so there is nothing to evaluate: the actual is a node of the
-        // model and the formal takes the same one under its own name.
+        // model and the formal takes the same one under its own name, if
+        // it complies with this formal's constraint as well.
         let actual = match actual {
             Actual::Bound(any) => {
-                self.scopes.bind(&name, *any);
+                if self.complies(formal, *any, at) {
+                    self.scopes.bind(&name, *any);
+                }
                 return;
             }
             Actual::Written(node) => node.clone(),
         };
         let actual = &actual;
-        if is_const {
+        if formal.kind == zerodds_ast::TemplateParamKind::Const {
             let Some(expr) = self.expr(actual) else {
                 self.diagnose_at(
                     DiagnosticCode::UnexpectedToken,
@@ -1378,9 +1645,14 @@ impl Lowering<'_> {
             // the instance: "Once instantiated, the resulting module is
             // exactly as a classical module" (§7.4.12.4.2). The instance
             // records it among its actual arguments, by its expression.
+            // Part 3 §7.3.2.1 admits "any constant of the required
+            // primitive type": the value is checked against that type
+            // as a constant declaration's is, and its range by the
+            // validation of the finished model.
             let type_ = self
                 .type_ref(&formal.node)
                 .unwrap_or_else(|| Ref::Broken(broken_cause()));
+            self.check_const_value_form(&type_, expr, at);
             if let Ok(id) = self.ast.add_const(module, &name, type_, expr)
                 && let Ok(node_id) = self.ast.constant(id).map(|c| c.node_id)
             {
@@ -1391,19 +1663,264 @@ impl Lowering<'_> {
             }
             return;
         }
-        let type_ref = self.type_ref_of(actual);
-        match type_ref.resolved() {
-            Some(id) => {
-                self.bind(&name, id);
-                self.record_template_arg(module, zerodds_ast::TemplateArg::Type(Ref::Resolved(id)));
+        if crate::expr::is_expr(actual.kind()) {
+            let message = alloc::format!(
+                "the actual parameter of `{name}` is a constant expression, and its formal \
+                 parameter admits only {}",
+                constraint_admits(formal.kind)
+            );
+            self.diagnose_at(
+                DiagnosticCode::TypeMismatch,
+                at.span(),
+                &message,
+                "CORBA 3.3 Part 3 §7.3.2.1; OMG IDL 4.2 §7.4.12.4.1",
+            );
+            return;
+        }
+        let denoted = if actual.kind() == CstKind::NamedType {
+            match self.named_actual(actual) {
+                NamedActual::Found(any) => Some(any),
+                NamedActual::Ambiguous => return,
+                NamedActual::Unknown => None,
             }
-            None => self.diagnose_at(
+        } else {
+            self.type_ref_of(actual)
+                .resolved()
+                .map(|id| AnyId::Type(id, self.node_id_of(id)))
+        };
+        let Some(denoted) = denoted else {
+            self.diagnose_at(
                 DiagnosticCode::UnresolvedName,
                 at.span(),
                 "an actual parameter names a type that is not declared in this file",
                 "OMG IDL 4.2 §7.4.12.3 rule (192)",
-            ),
+            );
+            return;
+        };
+        if !self.complies(formal, denoted, at) {
+            return;
         }
+        let arg = match denoted {
+            AnyId::Type(id, _) => zerodds_ast::TemplateArg::Type(Ref::Resolved(id)),
+            // An interface named where a type is expected is an object
+            // reference (§7.4.6); the resolve pass derives that type from
+            // the interface's name, as it does for a member typed by one.
+            AnyId::Interface(..) => {
+                zerodds_ast::TemplateArg::Type(self.ast.scoped_name_of(denoted).map_or_else(
+                    || Ref::Broken(broken_cause()),
+                    |scoped| Ref::Pending(PendingRef::ScopedName(scoped)),
+                ))
+            }
+            AnyId::Exception(id, _) => zerodds_ast::TemplateArg::Exception(Ref::Resolved(id)),
+            // `complies` admits nothing else for a formal that is not
+            // `const`.
+            _ => return,
+        };
+        self.scopes.bind(&name, denoted);
+        self.record_template_arg(module, arg);
+    }
+
+    /// The declaration a named actual parameter denotes, looked up the way
+    /// every other written name is ([`Self::use_scoped`]).
+    fn named_actual(&mut self, actual: &Arc<SyntaxNode>) -> NamedActual {
+        let Some(scoped) = actual
+            .descendants()
+            .into_iter()
+            .find(|child| child.kind() == CstKind::ScopedName)
+        else {
+            return NamedActual::Unknown;
+        };
+        let segments: Vec<String> = scoped
+            .syntax_tokens()
+            .iter()
+            .filter(|(_, token)| token.kind() == TokenKind::Ident)
+            .map(|(_, token)| zerodds_idl_cst::identifier_name(token.text()).to_string())
+            .collect();
+        match self.use_scoped(&segments, is_root_anchored(&scoped), scoped.span()) {
+            Used::Resolved(found) => NamedActual::Found(found),
+            Used::Path(path) => self
+                .ast
+                .find_by_scoped_name(&path)
+                .map_or(NamedActual::Unknown, NamedActual::Found),
+            Used::Ambiguous => NamedActual::Ambiguous,
+            Used::Unknown => match segments.as_slice() {
+                [one] => self
+                    .scopes
+                    .lookup(one)
+                    .map_or(NamedActual::Unknown, NamedActual::Found),
+                _ => NamedActual::Unknown,
+            },
+        }
+    }
+
+    /// Whether `actual` complies with the type constraint of `formal`,
+    /// reporting it when it does not.
+    ///
+    /// CORBA 3.3 Part 3 §7.3.2.1 and OMG IDL 4.2 §7.4.12.4.1: `typename`
+    /// admits any type, `interface` all interfaces, `valuetype` all
+    /// valuetypes, `eventtype` all eventtypes, `struct`, `union`, `enum`
+    /// and `sequence` all types of that kind, `exception` all exceptions,
+    /// `const` a constant of its type, and a `<sequence_type>` the
+    /// sequence it declares. A `typedef` is the type it names.
+    fn complies(&mut self, formal: &Formal, actual: AnyId, at: &Arc<SyntaxNode>) -> bool {
+        let Some(what) = self.constraint_violation(formal, actual) else {
+            return true;
+        };
+        let message = alloc::format!("the actual parameter of `{}` {what}", formal.name);
+        self.diagnose_at(
+            DiagnosticCode::TypeMismatch,
+            at.span(),
+            &message,
+            "CORBA 3.3 Part 3 §7.3.2.1; OMG IDL 4.2 §7.4.12.4.1",
+        );
+        false
+    }
+
+    /// How `actual` fails the constraint of `formal`, as the rest of the
+    /// sentence "the actual parameter of `T` …"; `None` when it complies.
+    fn constraint_violation(&mut self, formal: &Formal, actual: AnyId) -> Option<String> {
+        use zerodds_ast::TemplateParamKind as K;
+        let kind = formal.kind;
+        let admits = constraint_admits(kind);
+        let is =
+            |what: &str| alloc::format!("is {what}, and its formal parameter admits only {admits}");
+        // Through `typedef`s to the declaration a type name stands for;
+        // an alias of an interface ends at the interface.
+        let behind = match actual {
+            AnyId::Type(id, _) => self.behind_aliases(id),
+            other => Some(other),
+        };
+        let Some(behind) = behind else {
+            return (kind != K::TypeName).then(|| {
+                is("a `typedef` whose type does not resolve where the instantiation is written")
+            });
+        };
+        let complies = match behind {
+            AnyId::Const(..) | AnyId::Enumerator(..) => kind == K::Const,
+            AnyId::Interface(id, _) => {
+                let interface = self.ast.interface(id).map(|node| node.kind).ok();
+                match (kind, interface) {
+                    (
+                        K::TypeName | K::Interface,
+                        Some(
+                            InterfaceKind::Interface
+                            | InterfaceKind::Local
+                            | InterfaceKind::Abstract,
+                        ),
+                    )
+                    | (K::TypeName, Some(InterfaceKind::Component | InterfaceKind::Home)) => true,
+                    (_, Some(other)) => {
+                        return Some(is(&alloc::format!("a `{}`", other.as_str())));
+                    }
+                    (_, None) => false,
+                }
+            }
+            AnyId::Exception(..) => kind == K::Exception,
+            AnyId::Type(id, node_id) => {
+                let Ok(type_kind) = self.ast.type_(id).map(|node| node.kind.clone()) else {
+                    return Some(is("a type that is not in the model"));
+                };
+                let complies = match kind {
+                    K::TypeName => true,
+                    K::Const | K::Exception => false,
+                    K::Interface => matches!(type_kind, TypeKind::ObjectRef { .. }),
+                    K::ValueType => matches!(
+                        type_kind,
+                        TypeKind::Valuetype { .. }
+                            | TypeKind::ValueBox { .. }
+                            | TypeKind::ValueBase
+                    ),
+                    K::EventType => {
+                        matches!(type_kind, TypeKind::Valuetype { .. })
+                            && self
+                                .ast
+                                .facets(AnyId::Type(id, node_id))
+                                .and_then(|facets| facets.corba.as_ref())
+                                .is_some_and(|corba| corba.is_event_type)
+                    }
+                    K::Struct => matches!(type_kind, TypeKind::Structure { .. }),
+                    K::Union => matches!(type_kind, TypeKind::Union { .. }),
+                    K::Enum => matches!(type_kind, TypeKind::Enumeration { .. }),
+                    K::Sequence => {
+                        // (188)'s `<sequence_type>` alternative: "a
+                        // compliant sequence type must be passed"
+                        // (§7.4.12.4.2); the bare classifier admits every
+                        // sequence.
+                        let declared = formal
+                            .node
+                            .children()
+                            .into_iter()
+                            .find(|child| child.kind() == CstKind::SequenceType);
+                        match declared {
+                            Some(sequence) => {
+                                if !self.is_the_sequence_of(&sequence, id) {
+                                    return Some(
+                                        "is not the sequence type its formal parameter declares"
+                                            .into(),
+                                    );
+                                }
+                                true
+                            }
+                            None => matches!(type_kind, TypeKind::Sequence { .. }),
+                        }
+                    }
+                };
+                if !complies {
+                    let is_event_type = matches!(type_kind, TypeKind::Valuetype { .. })
+                        && self
+                            .ast
+                            .facets(AnyId::Type(id, node_id))
+                            .and_then(|facets| facets.corba.as_ref())
+                            .is_some_and(|corba| corba.is_event_type);
+                    let what = if is_event_type {
+                        "an eventtype"
+                    } else {
+                        kind_described(&type_kind)
+                    };
+                    return Some(is(what));
+                }
+                true
+            }
+            _ => false,
+        };
+        if complies {
+            return None;
+        }
+        Some(is(match behind {
+            AnyId::Const(..) => "a constant",
+            AnyId::Enumerator(..) => "an enumerator",
+            AnyId::Interface(..) => "an interface",
+            AnyId::Exception(..) => "an exception",
+            AnyId::Module(..) => "a module",
+            _ => "a declaration that is no type",
+        }))
+    }
+
+    /// The declaration a type stands for through its `typedef`s: the type
+    /// itself when it is no alias, the interface an alias of an interface
+    /// names. `None` for a chain that does not end here.
+    fn behind_aliases(&self, start: Id<TypeNode>) -> Option<AnyId> {
+        let mut id = start;
+        for _ in 0..64 {
+            let node = self.ast.type_(id).ok()?;
+            let TypeKind::Alias { aliased } = &node.kind else {
+                return Some(AnyId::Type(id, node.node_id));
+            };
+            match aliased {
+                Ref::Resolved(next) => id = *next,
+                // An alias of an interface waits for the resolve pass to
+                // derive the object reference; the name already says
+                // which declaration it is.
+                Ref::Pending(PendingRef::ScopedName(path)) => {
+                    match self.ast.find_by_scoped_name(path).ok()? {
+                        AnyId::Type(next, _) => id = next,
+                        other => return Some(other),
+                    }
+                }
+                _ => return None,
+            }
+        }
+        None
     }
 
     fn structure(&mut self, node: &Arc<SyntaxNode>) {
@@ -2133,7 +2650,7 @@ impl Lowering<'_> {
     /// with no diagnostic — CCM 4.0 §6.3.2 needs both lists and cannot
     /// tell them apart once they are merged. The valuetype path already
     /// walked every clause; this one stopped at the first.
-    fn interface_bases(
+    pub(crate) fn interface_bases(
         &mut self,
         node: &Arc<SyntaxNode>,
     ) -> (
@@ -2414,10 +2931,22 @@ impl Lowering<'_> {
             // <const_type>` names the type an actual constant must have,
             // and `<sequence_type>` names the sequence the actual must
             // be. Both are the parameter's constraint.
+            // A `<sequence_type>` over a formal parameter declared before
+            // it (`typename T, sequence<T> TSeq`, §7.4.12.4.1: "the formal
+            // parameters of that sequence must appear previously in the
+            // module list of formal parameters") is no type until an
+            // instantiation gives the formal its actual; the instantiation
+            // checks the actual sequence against it.
+            let over_a_formal = sequence_element_name(&parameter).is_some_and(|element| {
+                params
+                    .iter()
+                    .any(|known: &zerodds_ast::TemplateParam| known.name == element)
+            });
             let constraint = if matches!(
                 kind,
                 zerodds_ast::TemplateParamKind::Const | zerodds_ast::TemplateParamKind::Sequence
-            ) {
+            ) && !over_a_formal
+            {
                 self.type_ref(&parameter)
             } else {
                 None
@@ -2464,7 +2993,7 @@ impl Lowering<'_> {
     /// one. Only the first identifier is looked up in the scopes; the
     /// last one alone named whatever declaration of that name was
     /// closest, so `raises (A::E)` took an `E` of the current scope.
-    fn written_name(&mut self, node: &Arc<SyntaxNode>, name: &ScopedName) -> Used {
+    pub(crate) fn written_name(&mut self, node: &Arc<SyntaxNode>, name: &ScopedName) -> Used {
         let anchored = is_root_anchored(node);
         self.use_scoped(name.segments(), anchored, node.span())
     }
@@ -2484,7 +3013,11 @@ impl Lowering<'_> {
     }
 
     /// A reference to a named type, resolved if already bound.
-    fn named_type_ref(&mut self, node: &Arc<SyntaxNode>, name: &ScopedName) -> Ref<TypeNode> {
+    pub(crate) fn named_type_ref(
+        &mut self,
+        node: &Arc<SyntaxNode>,
+        name: &ScopedName,
+    ) -> Ref<TypeNode> {
         match self.written_name(node, name) {
             Used::Resolved(found) => found.as_type().map_or_else(
                 || {
@@ -2502,7 +3035,7 @@ impl Lowering<'_> {
     }
 
     /// A reference to an interface by name, resolved if already bound.
-    fn interface_ref(
+    pub(crate) fn interface_ref(
         &mut self,
         node: &Arc<SyntaxNode>,
         name: &ScopedName,
@@ -2515,7 +3048,11 @@ impl Lowering<'_> {
         }
     }
 
-    fn operation(&mut self, node: &Arc<SyntaxNode>, interface: Id<zerodds_ast::InterfaceNode>) {
+    pub(crate) fn operation(
+        &mut self,
+        node: &Arc<SyntaxNode>,
+        interface: Id<zerodds_ast::InterfaceNode>,
+    ) {
         let Some(name) = first_ident(node) else {
             return;
         };
@@ -2964,7 +3501,7 @@ impl Lowering<'_> {
     // -- helpers ---------------------------------------------------------
 
     /// The first type specification among a node's children.
-    fn type_ref(&mut self, node: &Arc<SyntaxNode>) -> Option<Ref<TypeNode>> {
+    pub(crate) fn type_ref(&mut self, node: &Arc<SyntaxNode>) -> Option<Ref<TypeNode>> {
         let type_node = node.children().into_iter().find(|child| {
             matches!(
                 child.kind(),
@@ -3502,7 +4039,11 @@ impl Lowering<'_> {
     /// The absolute paths the names of an inheritance clause denote,
     /// for [`ScopeStack::set_bases`]; a name that denotes nothing yet is
     /// left out.
-    fn base_paths(&mut self, node: &Arc<SyntaxNode>, supports: bool) -> Vec<Vec<String>> {
+    pub(crate) fn base_paths(
+        &mut self,
+        node: &Arc<SyntaxNode>,
+        supports: bool,
+    ) -> Vec<Vec<String>> {
         let mut paths = Vec::new();
         for clause in node
             .children()
@@ -3858,7 +4399,7 @@ impl Lowering<'_> {
         }
     }
 
-    fn record_origin(&mut self, any: AnyId, span: Span) {
+    pub(crate) fn record_origin(&mut self, any: AnyId, span: Span) {
         let source = self.source_at(span);
         if let Some(facets) = self.ast.facets_mut(any) {
             facets.source = source;
@@ -3937,7 +4478,7 @@ impl Lowering<'_> {
     /// same reason: the forward rule has to hold for every declaration
     /// form rather than for whichever ones remembered it. `struct S;`
     /// and `union U;` had it and `interface I;` did not.
-    fn declare_interface(
+    pub(crate) fn declare_interface(
         &mut self,
         name: &str,
         kind: InterfaceKind,
@@ -4021,7 +4562,7 @@ impl Lowering<'_> {
     /// discriminator, an interface over its attributes and operation
     /// names, and an operation over its parameters — which is the
     /// example's own scope.
-    fn one_namespace_per_scope(&mut self, node: &Arc<SyntaxNode>) {
+    pub(crate) fn one_namespace_per_scope(&mut self, node: &Arc<SyntaxNode>) {
         // Every simple name the scope uses as a type, and every name it
         // declares, in one list — the clause has one namespace and so
         // has this. A name is kept with the span to report it at, which
@@ -4335,7 +4876,7 @@ impl Lowering<'_> {
     ///
     /// IDL is case-insensitive for collisions and case-preserving
     /// otherwise, so `Pose` and `pose` are the same name. Spec §6.
-    fn check_collision(&mut self, name: &str, at: &Arc<SyntaxNode>) {
+    pub(crate) fn check_collision(&mut self, name: &str, at: &Arc<SyntaxNode>) {
         if self.scopes.is_bound_here(name) {
             self.duplicate(name, at);
             return;
@@ -4522,7 +5063,7 @@ pub(crate) fn joined_string_literals(
     joined
 }
 
-fn first_ident(node: &Arc<SyntaxNode>) -> Option<String> {
+pub(crate) fn first_ident(node: &Arc<SyntaxNode>) -> Option<String> {
     node.syntax_tokens()
         .iter()
         .find(|(_, token)| token.kind() == TokenKind::Ident)
@@ -4947,10 +5488,21 @@ enum Actual {
     Bound(AnyId),
 }
 
+/// What a named actual parameter denotes.
+enum NamedActual {
+    /// The declaration.
+    Found(AnyId),
+    /// More than one, already reported.
+    Ambiguous,
+    /// Nothing declared by that name.
+    Unknown,
+}
+
 /// The formal parameters of a stored template body, in order.
 ///
-/// Each is its name and whether it is the `const` alternative, which is
-/// the only one whose actual is a value rather than a type.
+/// Each is its name and its type constraint, rule (188): the `const`
+/// alternative is the only one whose actual is a value rather than a
+/// type, and every other one admits only the kind of type it names.
 fn template_formals(body: &Arc<SyntaxNode>) -> Vec<Formal> {
     body.children()
         .into_iter()
@@ -4961,11 +5513,10 @@ fn template_formals(body: &Arc<SyntaxNode>) -> Vec<Formal> {
                 .filter(|child| child.kind() == CstKind::TemplateParameter)
                 .filter_map(|parameter| {
                     let name = first_ident(&parameter)?;
-                    let is_const =
-                        template_param_kind(&parameter) == zerodds_ast::TemplateParamKind::Const;
+                    let kind = template_param_kind(&parameter);
                     Some(Formal {
                         name,
-                        is_const,
+                        kind,
                         node: parameter,
                     })
                 })
@@ -4977,11 +5528,74 @@ fn template_formals(body: &Arc<SyntaxNode>) -> Vec<Formal> {
 struct Formal {
     /// Its name.
     name: String,
-    /// Whether it is `const <const_type>`.
-    is_const: bool,
+    /// Its type constraint, rule (188).
+    kind: zerodds_ast::TemplateParamKind,
     /// The parameter as written, whose `<const_type>` a constant actual
-    /// takes.
+    /// takes and whose `<sequence_type>` a sequence actual has to be.
     node: Arc<SyntaxNode>,
+}
+
+/// What a type constraint of rule (188) admits, in the words of a
+/// diagnostic. CORBA 3.3 Part 3 §7.3.2.1 and OMG IDL 4.2 §7.4.12.4.1.
+const fn constraint_admits(kind: zerodds_ast::TemplateParamKind) -> &'static str {
+    use zerodds_ast::TemplateParamKind as K;
+    match kind {
+        K::TypeName => "a type",
+        K::Const => "a constant expression",
+        K::Sequence => "a sequence type",
+        K::Interface => "an interface",
+        K::ValueType => "a valuetype",
+        K::EventType => "an eventtype",
+        K::Struct => "a struct type",
+        K::Union => "a union type",
+        K::Exception => "an exception",
+        K::Enum => "an enum type",
+    }
+}
+
+/// What a type is, in the words of a diagnostic.
+const fn kind_described(kind: &TypeKind) -> &'static str {
+    match kind {
+        TypeKind::Primitive(_) => "a basic type",
+        TypeKind::Fixed { .. } => "a fixed-point type",
+        TypeKind::String { .. } => "a string type",
+        TypeKind::Sequence { .. } => "a sequence type",
+        TypeKind::Array { .. } => "an array type",
+        TypeKind::Map { .. } => "a map type",
+        TypeKind::Structure { .. } => "a struct type",
+        TypeKind::Union { .. } => "a union type",
+        TypeKind::Enumeration { .. } => "an enum type",
+        TypeKind::Bitmask { .. } => "a bitmask type",
+        TypeKind::Bitset { .. } => "a bitset type",
+        TypeKind::Alias { .. } => "a typedef",
+        TypeKind::Valuetype { .. } => "a valuetype",
+        TypeKind::ValueBox { .. } => "a boxed valuetype",
+        TypeKind::Native => "a native type",
+        TypeKind::ValueBase => "`ValueBase`",
+        TypeKind::Any => "`any`",
+        TypeKind::ObjectRef { .. } => "an object reference type",
+        TypeKind::AnnotationType { .. } => "an annotation type",
+    }
+}
+
+/// The name a `<sequence_type>` formal parameter writes as its element,
+/// where that is one identifier: `T` of `sequence<T> TSeq`.
+fn sequence_element_name(parameter: &Arc<SyntaxNode>) -> Option<String> {
+    let sequence = parameter
+        .children()
+        .into_iter()
+        .find(|child| child.kind() == CstKind::SequenceType)?;
+    let scoped = sequence
+        .descendants()
+        .into_iter()
+        .find(|child| child.kind() == CstKind::ScopedName)?;
+    let mut idents = scoped
+        .syntax_tokens()
+        .into_iter()
+        .filter(|(_, token)| token.kind() == TokenKind::Ident)
+        .map(|(_, token)| zerodds_idl_cst::identifier_name(token.text()).to_string());
+    let first = idents.next()?;
+    idents.next().is_none().then_some(first)
 }
 
 fn template_param_kind(node: &Arc<SyntaxNode>) -> zerodds_ast::TemplateParamKind {

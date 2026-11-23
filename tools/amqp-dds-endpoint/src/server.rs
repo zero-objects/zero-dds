@@ -29,13 +29,27 @@ pub struct ServerConfig {
     pub container_id: String,
     /// Max frame size (DoS cap).
     pub max_frame_size: u32,
-    /// Read timeout per connection (None = unlimited; in the daemon
-    /// typically 60s = idle timeout).
+    /// Read timeout per connection, which is the idle time-out of the
+    /// AMQP connection (Part 2 §2.4.5; `<limits idle-timeout-ms>`). None =
+    /// unlimited.
     pub read_timeout: Option<Duration>,
+    /// Connections served at a time (`<limits max-connections>`); one more
+    /// is closed when it is accepted.
+    pub max_connections: u32,
+    /// `open.channel-max` (Part 2 §2.7.1): one less than
+    /// `<limits max-sessions-per-connection>`.
+    pub channel_max: u16,
+    /// `begin.handle-max` (Part 2 §2.7.2): one less than
+    /// `<limits max-links-per-session>`.
+    pub handle_max: u32,
     /// Per-connection write timeout.
     pub write_timeout: Option<Duration>,
     /// The SASL mechanisms and the credential store (DDS-AMQP 1.0 §10.2).
     pub sasl: crate::auth::SaslPolicy,
+    /// The nodes links attach to, shared by all connections.
+    pub nodes: Arc<crate::nodes::Nodes>,
+    /// The bounds of the transactions of a connection (`<transactions>`).
+    pub transactions: zerodds_amqp_endpoint::TxnLimits,
     /// TLS termination (§10.1); `None` = plaintext. `tls_active` is set from
     /// it: a connection is TLS exactly when this wraps it.
     #[cfg(feature = "tls")]
@@ -46,16 +60,75 @@ impl ServerConfig {
     /// Default configuration for `0.0.0.0:5672`.
     #[must_use]
     pub fn default_listen() -> Self {
+        let limits = zerodds_amqp_endpoint::annex_a::ResourceLimits::default();
         Self {
             listen_addr: "0.0.0.0:5672".to_string(),
             container_id: "zerodds-amqp-endpoint".to_string(),
             max_frame_size: 1_048_576,
-            read_timeout: Some(Duration::from_secs(60)),
+            read_timeout: Some(Duration::from_millis(limits.idle_timeout_ms)),
+            max_connections: limits.max_connections,
+            channel_max: u16::try_from(limits.max_sessions_per_connection.saturating_sub(1))
+                .unwrap_or(u16::MAX),
+            handle_max: limits.max_links_per_session.saturating_sub(1),
             write_timeout: Some(Duration::from_secs(60)),
             sasl: crate::auth::SaslPolicy::default(),
+            nodes: Arc::new(crate::nodes::Nodes::new(true)),
+            transactions: zerodds_amqp_endpoint::TxnLimits::default(),
             #[cfg(feature = "tls")]
             tls: None,
         }
+    }
+}
+
+impl ServerConfig {
+    /// Takes what `<limits>` of the configuration sets (DDS-AMQP 1.0
+    /// Annex A `ResourceLimits`): `max-frame-size` is `open.max-frame-size`
+    /// (0 keeps the default), `idle-timeout-ms` the idle time-out of a
+    /// connection (0: none), `max-sessions-per-connection` minus one is
+    /// `open.channel-max`, `max-links-per-session` minus one is
+    /// `begin.handle-max`, `max-connections` the connections served at a
+    /// time.
+    ///
+    /// # Errors
+    /// A limit that admits nothing (no connection, session or link), a
+    /// frame size below the 512 octets of Part 2 §2.8.19, and more
+    /// sessions than the 65 536 channels of a connection.
+    pub fn apply_limits(
+        &mut self,
+        limits: &zerodds_amqp_endpoint::annex_a::ResourceLimits,
+    ) -> Result<(), String> {
+        if limits.max_connections == 0 {
+            return Err("limits max-connections is 0: no connection could be served".into());
+        }
+        let Some(channel_max) = limits
+            .max_sessions_per_connection
+            .checked_sub(1)
+            .and_then(|c| u16::try_from(c).ok())
+        else {
+            return Err(format!(
+                "limits max-sessions-per-connection is {}: a connection has 1 to 65536 channels",
+                limits.max_sessions_per_connection
+            ));
+        };
+        let Some(handle_max) = limits.max_links_per_session.checked_sub(1) else {
+            return Err("limits max-links-per-session is 0: no link could attach".into());
+        };
+        if limits.max_frame_size != 0 {
+            if limits.max_frame_size < zerodds_amqp_endpoint::peer::MIN_MAX_FRAME_SIZE {
+                return Err(format!(
+                    "limits max-frame-size is {}: the smallest is {}",
+                    limits.max_frame_size,
+                    zerodds_amqp_endpoint::peer::MIN_MAX_FRAME_SIZE
+                ));
+            }
+            self.max_frame_size = limits.max_frame_size;
+        }
+        self.read_timeout =
+            (limits.idle_timeout_ms != 0).then(|| Duration::from_millis(limits.idle_timeout_ms));
+        self.max_connections = limits.max_connections;
+        self.channel_max = channel_max;
+        self.handle_max = handle_max;
+        Ok(())
     }
 }
 
@@ -109,14 +182,30 @@ pub fn run_server(
         cfg.listen_addr, cfg.container_id, cfg.max_frame_size
     );
 
+    // The connections being served: each connection thread holds one
+    // reference more than the accept loop's own.
+    let serving = Arc::new(());
     while !shutdown_signal.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok((stream, peer)) => {
+                if Arc::strong_count(&serving) > cfg.max_connections as usize {
+                    // `<limits max-connections>`: the socket is closed
+                    // before a protocol header is read.
+                    eprintln!(
+                        "connection from {peer} refused: {} connections are served \
+                         (limits max-connections)",
+                        cfg.max_connections
+                    );
+                    drop(stream);
+                    continue;
+                }
                 let cfg = cfg.clone();
                 let metrics = metrics.clone();
+                let slot = Arc::clone(&serving);
                 let _ = thread::Builder::new()
                     .name(format!("amqp-conn-{peer}"))
                     .spawn(move || {
+                        let _slot = slot;
                         if let Err(e) = serve_one(stream, &cfg, &metrics) {
                             eprintln!("connection from {peer} ended: {e}");
                         }
@@ -158,6 +247,14 @@ fn serve_one(
     handler_cfg.container_id = cfg.container_id.clone();
     handler_cfg.max_frame_size = cfg.max_frame_size;
     handler_cfg.sasl = cfg.sasl.clone();
+    handler_cfg.nodes = Arc::clone(&cfg.nodes);
+    handler_cfg.transactions = cfg.transactions;
+    // The read time-out of the configuration is the idle time-out of the
+    // AMQP connection (Part 2 §2.4.5); the handler polls the socket in
+    // shorter steps of its own.
+    handler_cfg.idle_time_out = cfg.read_timeout;
+    handler_cfg.channel_max = cfg.channel_max;
+    handler_cfg.handle_max = cfg.handle_max;
     #[cfg(feature = "tls")]
     if let Some(tls) = &cfg.tls {
         let mut tls_stream =
@@ -193,6 +290,71 @@ mod tests {
         assert!(c.read_timeout.is_some());
     }
 
+    /// `<limits>`: a limit that admits nothing stops the start with the
+    /// name of the key; the others become the limits of a connection.
+    #[test]
+    fn ddsamqp_a_limits_that_admit_nothing_are_refused() {
+        use zerodds_amqp_endpoint::annex_a::ResourceLimits;
+        let mut c = ServerConfig::default_listen();
+        let defaults = ResourceLimits::default();
+        assert_eq!(c.channel_max, 7, "8 sessions");
+        assert_eq!(c.handle_max, 15, "16 links");
+        assert_eq!(c.max_connections, 1024);
+        for (limits, key) in [
+            (
+                ResourceLimits {
+                    max_connections: 0,
+                    ..defaults.clone()
+                },
+                "max-connections",
+            ),
+            (
+                ResourceLimits {
+                    max_sessions_per_connection: 0,
+                    ..defaults.clone()
+                },
+                "max-sessions-per-connection",
+            ),
+            (
+                ResourceLimits {
+                    max_sessions_per_connection: 65_537,
+                    ..defaults.clone()
+                },
+                "max-sessions-per-connection",
+            ),
+            (
+                ResourceLimits {
+                    max_links_per_session: 0,
+                    ..defaults.clone()
+                },
+                "max-links-per-session",
+            ),
+            (
+                ResourceLimits {
+                    max_frame_size: 511,
+                    ..defaults.clone()
+                },
+                "max-frame-size",
+            ),
+        ] {
+            let error = c.apply_limits(&limits).expect_err(key);
+            assert!(error.contains(key), "{error}");
+        }
+        c.apply_limits(&ResourceLimits {
+            max_connections: 3,
+            max_sessions_per_connection: 65_536,
+            max_links_per_session: 1,
+            max_frame_size: 0,
+            idle_timeout_ms: 0,
+        })
+        .expect("limits");
+        assert_eq!(c.max_connections, 3);
+        assert_eq!(c.channel_max, u16::MAX);
+        assert_eq!(c.handle_max, 0);
+        assert_eq!(c.max_frame_size, 1_048_576, "0 keeps the default");
+        assert_eq!(c.read_timeout, None, "0: no idle time-out");
+    }
+
     /// E2E: server binds on 127.0.0.1:0 (random port),
     /// client connects, sends AMQP header + Close.
     #[test]
@@ -209,9 +371,7 @@ mod tests {
             max_frame_size: 65_536,
             read_timeout: Some(Duration::from_secs(2)),
             write_timeout: Some(Duration::from_secs(2)),
-            sasl: crate::auth::SaslPolicy::default(),
-            #[cfg(feature = "tls")]
-            tls: None,
+            ..ServerConfig::default_listen()
         };
 
         // Release the listener again — the test server binds

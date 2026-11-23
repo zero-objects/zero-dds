@@ -1,7 +1,8 @@
 # `zerodds-idlc`
 
 Read, check and format OMG IDL 4.2, generate language source and codecs,
-or DDS 1.2 §8 DLRL object/home classes from the DLRL pragmas.
+or DDS 1.2 §8 DLRL object/home classes from the DLRL pragmas and the
+implied IDL of the valuetypes deriving from `DDS::ObjectRoot`.
 
 ```
 zerodds-idlc check      FILE...   parse and lower; report every diagnostic
@@ -146,12 +147,22 @@ TypeScript file imports from `./<stem>.js`. A member whose type has no
 mapping (a union, a nested collection, a structure containing a
 collection, a multi-dimensional array, a map with another key type, a
 wide string) fails the run with its name and the reason.
-`--lang` takes `cpp`, `csharp`, `java` or `typescript` (`cxx`/`cs`/`ts`
-aliases accepted, like `generate`'s), or `all` for every one in a run.
+`--lang` takes `cpp`, `csharp`, `java`, `typescript` or `idl`
+(`cxx`/`cs`/`ts` aliases accepted, like `generate`'s), or `all` for the
+four languages and the implied IDL in a run, each written where the file
+has input for it: the three pragmas for the four languages, a valuetype
+deriving from `DDS::ObjectRoot` for `idl`.
 C++, C# and TypeScript bundle every type into one `<stem>_dlrl.<ext>`
 file; Java writes one `<Type>.java` and one `<Type>Home.java` per type,
 since JLS §7.6 allows one `public` top-level type per compilation unit
 and both the object class and its home are `public`.
+`idl` writes `<out>/<stem>_dlrl.idl`: it includes the input file and
+declares the implied IDL of DDS 1.2 §8.2.1.2.2 (`FooHome`, `FooListener`,
+`FooSelection`, the typed collections and the rest) for each valuetype
+that derives, directly or through other valuetypes, from
+`DDS::ObjectRoot`. The input includes `dds_dlrl.idl`, the IDL of the
+generic DLRL entities, found with `-I crates/dlrl/idl`. A file without
+such a valuetype gets no IDL file and a warning.
 
 ### The pragma-name collision with OpenDDS
 
@@ -202,7 +213,7 @@ all.
 | `--default-extensibility final\|appendable\|mutable` | default for unannotated aggregates; default `appendable`, explicit annotations win. Cyclone's `idlc` assumes `final`, RTI, Fast DDS and OpenDDS `appendable` (`docs/wire-axis-flags.md`); IDL written for Cyclone needs `final` |
 | `--check` | `format` only: name each non-canonical file, exit 1 |
 | `--write` | `format` only: rewrite non-canonical files in place |
-| `--lang NAME` | `generate`/`dlrl` only, required: target language — `generate` takes 21 wire languages, `dlrl` takes `cpp`/`csharp`/`java`/`typescript` |
+| `--lang NAME` | `generate`/`dlrl` only, required: target language — `generate` takes 21 wire languages, `dlrl` takes `cpp`/`csharp`/`java`/`typescript`/`idl` (`all`: the four languages and the implied IDL, where the file has input for each) |
 | `--out DIR` | `generate`/`dlrl` only: output directory, default current directory |
 | `--encoding ENC` | `generate` only: `xcdr1`, `xcdr2` (default), `pl-cdr1`, `pl-cdr2`, `delimited-cdr` |
 | `--endian le\|be` | `generate` only: planned byte order, default `le`; runtimes carry byte order in their reader/writer |

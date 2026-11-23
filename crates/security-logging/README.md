@@ -14,6 +14,7 @@ for stderr, JSON lines, syslog and FanOut. Safety classification:
 |------|-----------|
 | OMG DDS-Security 1.2 | §9.6 (Logging Plugin), §10.6 (builtin logging) |
 | RFC 5424 | Syslog (UDP) |
+| OMG Time Service 1.1 | App. B.1 (mandatory audit of the time administration; feature `time-service`) |
 
 ## What's inside
 
@@ -23,6 +24,8 @@ for stderr, JSON lines, syslog and FanOut. Safety classification:
 - **`FanOutLoggingPlugin`** — fan-out to multiple backends in parallel.
 
 All backends filter events by `LogLevel`; default level `Warning`.
+
+With the feature `time-service`, `JsonLinesLoggingPlugin` is the `AuditSink` of an administered `zerodds_time_service::TimeService` (module `time_audit`): each administrative operation of the Time Service (set or reset the time, designate the source, change the inaccuracy; granted, denied or failed) becomes one line with the category `time.admin.<operation>`, written past the level filter and synchronized to the disk (`append_synced`) before the operation takes effect; a write error refuses the operation.
 
 ## Layer position
 

@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 use rustls::ClientConfig;
 use rustls::pki_types::CertificateDer;
 use rustls_pemfile::Item;
-use zerodds_mqtt_bridge::daemon::client::{InboundEvent, MqttClient};
+use zerodds_mqtt_bridge::daemon::client::{InboundEvent, MqttClient, SubscribeEntry};
 use zerodds_mqtt_bridge::daemon::config::{DaemonConfig, parse_broker_url};
 
 fn require_mosquitto() {
@@ -171,10 +171,13 @@ fn next_publish(client: &mut MqttClient, topic: &str, within: Duration) -> Vec<u
 fn round_trip(client: &mut MqttClient, plain_port: u16, dir: &Path, payload: &[u8]) {
     let port = plain_port.to_string();
     client
-        .subscribe(&[("zerodds/ws/in".to_string(), 0)])
+        .subscribe(&[SubscribeEntry {
+            filter: "zerodds/ws/in".to_string(),
+            qos: 0,
+            id: 1,
+        }])
         .expect("subscribe");
-    // SUBACK is consumed by next_event; give the broker the subscription.
-    thread::sleep(Duration::from_millis(300));
+    // `subscribe` returns after the SUBACK: the subscription stands.
     let file = dir.join("payload.bin");
     std::fs::write(&file, payload).unwrap();
     let status = Command::new("mosquitto_pub")
@@ -205,7 +208,13 @@ fn round_trip(client: &mut MqttClient, plain_port: u16, dir: &Path, payload: &[u
         .expect("mosquitto_sub");
     thread::sleep(Duration::from_millis(500));
     client
-        .publish("zerodds/ws/out", b"from-the-websocket-client", 0, false)
+        .publish(
+            "zerodds/ws/out",
+            b"from-the-websocket-client",
+            0,
+            false,
+            &Default::default(),
+        )
         .expect("publish");
     let out = sub.wait_with_output().expect("mosquitto_sub output");
     assert_eq!(

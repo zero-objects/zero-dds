@@ -58,6 +58,7 @@ daemon = [
     "dep:zerodds-xml",
     "dep:zerodds-sql-filter",
     "dep:signal-hook",
+    "dep:zerodds-xrce-client",
     "zerodds-xrce/xml-config",
 ]
 # Real serial-port I/O for the daemon's serial transport listener (spec
@@ -96,6 +97,10 @@ zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-
 # topic's SerializedTypeSupport-decoded fields.
 zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../sql-filter", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
+# The client side of the XRCE protocol for the federation of agents (DDS-XRCE
+# 1.0 §10.4, `upstream:`): the agent opens sessions at an upstream agent for
+# the clients it routes there.
+zerodds-xrce-client = { version = "1.0.0-rc.7", path = "../xrce-client", optional = true }
 # Real serial-port I/O (feature `serial`) — the wire crate's own serial
 # codec (`zerodds_xrce::transport_serial`) is I/O-free by design (see its
 # module doc); this is where a real device gets attached to it.
@@ -125,6 +130,14 @@ required-features = ["daemon"]
 [[test]]
 name = "contract_rtps"
 path = "tests/contract_rtps.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-xrce-client (internal/release/rc8-test-suite.md,
+# "Crate tier"): the federation of the daemon (DDS-XRCE 1.0 §10.4) reaches it
+# only with `daemon`.
+[[test]]
+name = "contract_xrce_client"
+path = "tests/contract_xrce_client.rs"
 required-features = ["daemon"]
 
 # The contract with zerodds-wire (internal/release/rc8-test-suite.md, "Crate

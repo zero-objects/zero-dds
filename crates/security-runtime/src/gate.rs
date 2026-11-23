@@ -11,8 +11,8 @@ use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin};
 use zerodds_security::error::SecurityError;
 use zerodds_security_permissions::{Governance, ProtectionKind};
 use zerodds_security_rtps::{
-    RTPS_HEADER_LEN, SEC_PREFIX, SRTPS_PREFIX, SecurityRtpsError, decode_secured_rtps_message,
-    decode_secured_submessage, encode_secured_rtps_message, encode_secured_submessage,
+    SEC_PREFIX, SecurityRtpsError, decode_secured_rtps_message, decode_secured_submessage,
+    encode_secured_rtps_message, encode_secured_submessage, is_secured_rtps_message,
 };
 
 /// Error class for the gate.
@@ -248,7 +248,7 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
         remote_slot: CryptoHandle,
         wire: &[u8],
     ) -> Result<Vec<u8>, SecurityGateError> {
-        let looks_secured = wire.len() > RTPS_HEADER_LEN && wire[RTPS_HEADER_LEN] == SRTPS_PREFIX;
+        let looks_secured = is_secured_rtps_message(wire);
         let kind = self.message_protection();
         match (kind, looks_secured) {
             (ProtectionKind::None, false) => Ok(wire.to_vec()),
@@ -426,7 +426,7 @@ mod tests {
         let msg = fake_rtps_message(b"[DATA][HEARTBEAT]");
         let wire = gate.encode_outbound_message(&msg).unwrap();
         assert_eq!(&wire[..4], b"RTPS");
-        assert_eq!(wire[20], SRTPS_PREFIX);
+        assert_eq!(wire[20], zerodds_security_rtps::SRTPS_PREFIX);
     }
 
     #[test]

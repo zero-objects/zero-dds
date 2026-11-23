@@ -29,12 +29,32 @@ Das Modell als Baum.
 .B print-deps
 Die Typen, die jede Deklaration nennt.
 .TP
+.B dump-cidl
+Die Compositions und PSDL-Deklarationen einer OMG-CIDL-Datei (CORBA 3.3
+Part 3 \(sc8): Kategorien, Home Executors, Bindungen, Segmente mit ihren
+Segment-IDs, Delegationen und Proxy Homes. Eine Datei, deren Name auf
+.I .cdl
+endet, liest jedes Unterkommando als CIDL; deren Schlüsselwörter
+(Tabelle 8.2 und Tabelle 3\-2 von PSDL) sind in einer
+.IR .idl -Datei
+Bezeichner.
+.BR generate ,
+.BR dlrl ,
+.B lint
+und
+.B format
+weisen eine
+.IR .cdl -Datei
+ab.
+.TP
 .B generate
 Der Quelltext einer Sprache für das Modell.
 .TP
 .B dlrl
 Objekt- und Home-Klassen nach OMG DDS 1.2 \(sc8 DLRL, aus den drei
-DLRL-Pragmas.
+DLRL-Pragmas, und das implizite IDL (\(sc8.2.1.2.2) der Valuetypes, die von
+.I DDS::ObjectRoot
+ableiten.
 .SS "dlrl und die Kollision von DCPS_DATA_TYPE/DCPS_DATA_KEY"
 Der Generierungsprozess aus DDS 1.2 \(sc8.2.2 liest drei Pragmas aus dem
 IDL-Text:
@@ -246,7 +266,7 @@ gültigen für den Unterbefehl, dem er gegeben wurde.
 .B generate
 nimmt eine von \fIrust\fR, \fIc++\fR, \fIc\fR, \fIjava\fR, \fIc#\fR, \fIpython\fR, \fItypescript\fR, \fIgo\fR, \fIocaml\fR, \fIada\fR, \fId\fR, \fIelixir\fR, \fIjulia\fR, \fIlua\fR, \fInim\fR, \fIswift\fR, \fIzig\fR, \fInode\fR, \fIada83\fR, \fIf#\fR, \fIkotlin\fR, oder \fIall\fR für alle in einem Lauf.
 .B dlrl
-nimmt eine von \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, oder \fIall\fR für diese vier.
+nimmt eine von \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, \fIidl\fR, oder \fIall\fR für die vier Sprachen und das implizite IDL, jeweils dort geschrieben, wo die Datei Eingabe dafür hat: die drei Pragmas für die vier Sprachen, ein Valuetype, der von \fIDDS::ObjectRoot\fR ableitet, für \fIidl\fR.
 \fIcpp\fR/\fIcxx\fR, \fIcsharp\fR/\fIcs\fR, \fIfsharp\fR/\fIfs\fR und \fIts\fR werden zusätzlich angenommen, unter beiden Unterbefehlen.
 .TP
 .BR \-\-java\-mapping " " \fIpsm\fR | \fIomg\fR | \fIidl4\fR
@@ -732,6 +752,21 @@ schreibt für C++/C#/TypeScript eine gebündelte Datei je Eingabe, benannt
 .IR <out>/<stem>_dlrl.<ext> ,
 und für Java eine Objektdatei und eine Home-Datei je DLRL-Typ, benannt
 .IR <out>/<Type>.java " und " <out>/<Type>Home.java .
+Mit
+.I idl
+schreibt es
+.IR <out>/<stem>_dlrl.idl :
+die Datei bindet die Eingabe ein und deklariert das implizite IDL jedes
+Valuetypes, der direkt oder über andere Valuetypes von
+.I DDS::ObjectRoot
+ableitet. Die Eingabe bindet
+.I dds_dlrl.idl
+ein, das IDL der generischen DLRL-Entities;
+.B \-I
+erhält das Verzeichnis, in dem es liegt
+.RI ( crates/dlrl/idl
+im Quellbaum). Eine Datei ohne solchen Valuetype erhält keine IDL-Datei,
+sondern eine Warnung.
 Dieselbe Ablehnung einer zweiten Eingabe mit gleichem Namen gilt.
 .SH SIEHE AUCH
 .BR zerodds-xmlc (1).

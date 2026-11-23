@@ -37,6 +37,13 @@ use crate::error::{GiopError, GiopResult};
 use crate::service_context::ServiceContextList;
 use crate::version::Version;
 
+/// The ZeroDDS vendor service context that moves a GIOP 1.0/1.1 reply
+/// body onto an eight-aligned offset ([`Reply::place_body_at_eight`]):
+/// four zero octets, ASCII `ZDPA` as its id — the vendor id space of
+/// Part 2 §7.7.1 (an id whose high 20 bits are not zero), next to the
+/// `ZDUD` component of the UIOP transport.
+pub const PADDING_CONTEXT_ID: u32 = 0x5A44_5041;
+
 /// Reply status — all 6 spec values (Spec §15.4.3.1 + §15.4.3.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -138,7 +145,126 @@ impl Reply {
         Ok(())
     }
 
+    /// The offset of the body in the GIOP message of `version` and
+    /// `endianness` that carries this reply, counted from the first
+    /// octet of the message header (CORBA 3.3 Part 2 §9.4); as
+    /// [`crate::Request::body_offset`].
+    ///
+    /// # Errors
+    /// As [`crate::encode_message`] for the reply without its body.
+    pub fn body_offset(
+        &self,
+        version: Version,
+        endianness: zerodds_wire::Endianness,
+    ) -> GiopResult<usize> {
+        let head = Self {
+            request_id: self.request_id,
+            reply_status: self.reply_status,
+            service_context: self.service_context.clone(),
+            body: Vec::new(),
+        };
+        let len = crate::codec::encode_message(
+            version,
+            endianness,
+            false,
+            &crate::codec::Message::Reply(head),
+        )?
+        .len();
+        Ok(if version.uses_v1_2_request_layout() {
+            len.next_multiple_of(8)
+        } else {
+            len
+        })
+    }
+
+    /// Places a body written from an eight-aligned origin (offset 0, the
+    /// way a reply body is written before its header is known) on an
+    /// eight-aligned offset of the message (CORBA 3.3 Part 2 §9.4.3,
+    /// §9.3.1). In GIOP 1.2 and later the body is aligned to eight
+    /// already. In GIOP 1.0 and 1.1 it follows the header without padding,
+    /// at a multiple of four that the service contexts decide; when it
+    /// falls on four modulo eight, a [`PADDING_CONTEXT_ID`] context with
+    /// four octets moves it by twelve. A receiver ignores the context
+    /// (§7.7.2), and a reader of the body at its offset, or from its first
+    /// octet, finds every 8-octet value where it was written.
+    ///
+    /// Call it after the last service context is added.
+    ///
+    /// # Errors
+    /// As [`Self::body_offset`].
+    pub fn place_body_at_eight(
+        &mut self,
+        version: Version,
+        endianness: zerodds_wire::Endianness,
+    ) -> GiopResult<()> {
+        self.place_body_at(version, endianness, 0)
+    }
+
+    /// Places a body written for `origin`, its offset in the message it
+    /// was written for, on an offset of this message with the same
+    /// remainder modulo eight, where its 8-octet values stay aligned (CORBA
+    /// 3.3 Part 2 §9.4.3, §9.3.1): a user exception body relayed from a
+    /// GIOP 1.0/1.1 reply of another ORB keeps the offset it had there.
+    /// [`Self::place_body_at_eight`] is `origin` 0. In GIOP 1.0 and 1.1
+    /// the reply header ends on a multiple of four, and a
+    /// [`PADDING_CONTEXT_ID`] context of four octets moves the body by
+    /// twelve; in GIOP 1.2 and later the body is on eight.
+    ///
+    /// Call it after the last service context is added.
+    ///
+    /// # Errors
+    /// As [`Self::body_offset`]; [`GiopError::Malformed`] for a body that
+    /// no offset of this reply header can carry: one written for an
+    /// offset that is not a multiple of eight in GIOP 1.2 and later, or
+    /// not a multiple of four in GIOP 1.0 and 1.1.
+    pub fn place_body_at(
+        &mut self,
+        version: Version,
+        endianness: zerodds_wire::Endianness,
+        origin: usize,
+    ) -> GiopResult<()> {
+        let want = origin % 8;
+        if self.body.is_empty() {
+            return Ok(());
+        }
+        if version.uses_v1_2_request_layout() {
+            return if want == 0 {
+                Ok(())
+            } else {
+                Err(GiopError::Malformed(alloc::format!(
+                    "a reply body written for {want} modulo eight in a GIOP {}.{} reply, \
+                     whose body is on eight",
+                    version.major,
+                    version.minor
+                )))
+            };
+        }
+        let at = self.body_offset(version, endianness)? % 8;
+        if at == want {
+            return Ok(());
+        }
+        if (at + 4) % 8 != want {
+            return Err(GiopError::Malformed(alloc::format!(
+                "a reply body written for {want} modulo eight after a GIOP {}.{} reply \
+                 header, which ends on a multiple of four",
+                version.major,
+                version.minor
+            )));
+        }
+        self.service_context
+            .0
+            .push(crate::service_context::ServiceContext::new(
+                PADDING_CONTEXT_ID,
+                alloc::vec![0; 4],
+            ));
+        debug_assert_eq!(self.body_offset(version, endianness)? % 8, want);
+        Ok(())
+    }
+
     /// CDR decode.
+    ///
+    /// The body comes without the octets before it; under GIOP 1.0 and
+    /// 1.1 [`Self::body_offset`] says where it stood in the message.
     ///
     /// # Errors
     /// Buffer read error or unknown status.
@@ -180,6 +306,118 @@ impl Reply {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// Part 2 §9.4.3, OPEN-ITEMS 133 (reply direction): a GIOP 1.0/1.1
+    /// reply whose service contexts leave the body on four modulo eight
+    /// gets a padding context; the body then starts on a multiple of
+    /// eight. A 1.2 reply and a reply already on eight are left alone.
+    #[test]
+    fn corba_p2_9_4_3_a_giop_1_0_reply_body_is_placed_on_eight() {
+        use crate::service_context::ServiceContext;
+        use zerodds_wire::Endianness;
+        for version in [Version::V1_0, Version::V1_1] {
+            for ctx_len in 0..8usize {
+                let mut r = Reply {
+                    request_id: 9,
+                    reply_status: ReplyStatusType::NoException,
+                    service_context: ServiceContextList(alloc::vec![ServiceContext::new(
+                        0x5A44_0002,
+                        alloc::vec![1; ctx_len],
+                    )]),
+                    body: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
+                };
+                let before = r.body_offset(version, Endianness::Big).unwrap();
+                r.place_body_at_eight(version, Endianness::Big).unwrap();
+                let after = r.body_offset(version, Endianness::Big).unwrap();
+                assert_eq!(after % 8, 0, "{version:?} ctx {ctx_len}");
+                let padded = r.service_context.0.len() == 2;
+                assert_eq!(padded, !before.is_multiple_of(8));
+                if padded {
+                    assert_eq!(r.service_context.0[1].context_id, PADDING_CONTEXT_ID);
+                }
+                let bytes = crate::codec::encode_message(
+                    version,
+                    Endianness::Big,
+                    false,
+                    &crate::codec::Message::Reply(r.clone()),
+                )
+                .unwrap();
+                assert_eq!(&bytes[after..], &[1, 2, 3, 4, 5, 6, 7, 8]);
+            }
+        }
+        let mut r = Reply {
+            request_id: 1,
+            reply_status: ReplyStatusType::NoException,
+            service_context: ServiceContextList(alloc::vec![ServiceContext::new(
+                1,
+                alloc::vec![1]
+            )]),
+            body: alloc::vec![1],
+        };
+        r.place_body_at_eight(Version::V1_2, Endianness::Big)
+            .unwrap();
+        assert_eq!(r.service_context.0.len(), 1);
+    }
+
+    /// Part 2 §9.4.3: a body written for four modulo eight (a user
+    /// exception relayed from another ORB's GIOP 1.0/1.1 reply) goes on
+    /// four modulo eight of a 1.0/1.1 reply, whatever the reply's own
+    /// service contexts leave; a 1.2 reply cannot carry it, nor can any
+    /// version a body written for an odd offset.
+    #[test]
+    fn corba_p2_9_4_3_a_body_written_for_four_modulo_eight_is_placed_there() {
+        use crate::service_context::ServiceContext;
+        use zerodds_wire::Endianness;
+        for version in [Version::V1_0, Version::V1_1] {
+            for ctx_len in 0..8usize {
+                for origin in [4usize, 12, 0, 8] {
+                    let mut r = Reply {
+                        request_id: 9,
+                        reply_status: ReplyStatusType::UserException,
+                        service_context: ServiceContextList(alloc::vec![ServiceContext::new(
+                            0x5A44_0002,
+                            alloc::vec![1; ctx_len],
+                        )]),
+                        body: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
+                    };
+                    r.place_body_at(version, Endianness::Big, origin).unwrap();
+                    let at = r.body_offset(version, Endianness::Big).unwrap();
+                    assert_eq!(
+                        at % 8,
+                        origin % 8,
+                        "{version:?} ctx {ctx_len} origin {origin}"
+                    );
+                    let bytes = crate::codec::encode_message(
+                        version,
+                        Endianness::Big,
+                        false,
+                        &crate::codec::Message::Reply(r.clone()),
+                    )
+                    .unwrap();
+                    assert_eq!(&bytes[at..], &[1, 2, 3, 4, 5, 6, 7, 8]);
+                }
+                let mut odd = Reply {
+                    request_id: 9,
+                    reply_status: ReplyStatusType::UserException,
+                    service_context: ServiceContextList::default(),
+                    body: alloc::vec![1],
+                };
+                assert!(odd.place_body_at(version, Endianness::Big, 6).is_err());
+            }
+        }
+        let mut r = Reply {
+            request_id: 1,
+            reply_status: ReplyStatusType::UserException,
+            service_context: ServiceContextList::default(),
+            body: alloc::vec![1],
+        };
+        assert!(matches!(
+            r.place_body_at(Version::V1_2, Endianness::Big, 4),
+            Err(GiopError::Malformed(_))
+        ));
+        r.place_body_at(Version::V1_2, Endianness::Big, 16).unwrap();
+        assert!(r.service_context.0.is_empty());
+    }
     use zerodds_wire::Endianness;
 
     #[test]

@@ -24,6 +24,10 @@
 //! is self-contained — the build needs no external
 //! schema files.
 //!
+//! Beside them, the schema of the QoS profiles of DDS for Lightweight CCM 1.1
+//! (Annex C, [`DDS4CCM_QOS_PROFILE_XSD`]) and the default profile of its
+//! Annex D ([`DDS4CCM_DEFAULT_QOS_PROFILE_XML`]).
+//!
 //! # Building-block list (Spec §7.3.1 + §8.1)
 //!
 //! | Block              | Top-Level Element             |
@@ -113,6 +117,31 @@ pub const DDS_SYSTEM_NONAMESPACE_XSD: &str =
 /// DDS System Block Set — Namespaced (Top-Level `<dds>`).
 pub const DDS_SYSTEM_NAMESPACED_XSD: &str =
     include_str!("../schemas/dds-xml_dds_system_definitions.xsd");
+
+/// The namespace of the QoS profile documents of DDS for Lightweight CCM 1.1:
+/// the `targetNamespace` of [`DDS4CCM_QOS_PROFILE_XSD`]. It ends in a slash;
+/// [`XTYPES_TYPES_NAMESPACE`] does not.
+pub const DDS4CCM_QOS_PROFILE_NAMESPACE: &str = "http://www.omg.org/dds/";
+
+/// DDS for Lightweight CCM 1.1 (formal/2012-02-01), Annex C: the XML schema
+/// of the QoS profiles of §7.4.2, which Annex D names `DDS_QoSProfile.xsd`.
+/// The type definitions are the text of the annex. The root element `dds` is
+/// added: the annex declares types only, and the head of the file says what
+/// the element contains and why.
+///
+/// A document of this schema writes a profile directly under `<dds>` and
+/// the participant container as `<domainparticipant_qos>`. DDS-XML 1.0 has
+/// neither form: the readers take them under
+/// [`VendorForms::Accept`](crate::VendorForms::Accept).
+pub const DDS4CCM_QOS_PROFILE_XSD: &str = include_str!("../schemas/dds4ccm_qos_profile.xsd");
+
+/// DDS for Lightweight CCM 1.1, Annex D (non-normative): the QoS profile
+/// "with all default values as specified in DDS", as the annex prints it. It
+/// is valid against [`DDS4CCM_QOS_PROFILE_XSD`] and sets every policy of
+/// the six QoS containers. The name of its profile is
+/// `" DDS DefaultQosProfile"`, with the leading space of the annex.
+pub const DDS4CCM_DEFAULT_QOS_PROFILE_XML: &str =
+    include_str!("../schemas/dds4ccm_default_qos_profile.xml");
 
 /// Per building block: `(name, nonamespace_xsd, namespaced_xsd,
 /// top_level_element)`.

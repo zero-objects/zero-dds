@@ -737,3 +737,467 @@ fn corbabridge_9_2_a_sighup_serves_new_connections_with_the_new_certificate() {
     handshake().expect("after SIGHUP the second CA's certificate");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A CA, a server certificate for 127.0.0.1 and a client certificate with
+/// the common name `client`.
+struct Pki {
+    ca: rustls::pki_types::CertificateDer<'static>,
+    ca_pem: String,
+    server_cert: String,
+    server_key: String,
+    client: (
+        rustls::pki_types::CertificateDer<'static>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    ),
+}
+
+fn pki(client: &str) -> Pki {
+    use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, KeyPair, SanType};
+    let mut ca_p = CertificateParams::new(vec!["test CA".to_string()]).unwrap();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "test CA");
+    ca_p.distinguished_name = dn;
+    ca_p.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let ca_key = KeyPair::generate().unwrap();
+    let ca = ca_p.self_signed(&ca_key).unwrap();
+    let leaf = |cn: &str, ip: bool| {
+        let mut p = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, cn);
+        p.distinguished_name = dn;
+        if ip {
+            p.subject_alt_names
+                .push(SanType::IpAddress(std::net::IpAddr::from([127, 0, 0, 1])));
+        }
+        let k = KeyPair::generate().unwrap();
+        let c = p.signed_by(&k, &ca, &ca_key).unwrap();
+        (c, k)
+    };
+    let (server, server_key) = leaf("localhost", true);
+    let (client_cert, client_key) = leaf(client, false);
+    Pki {
+        ca: ca.der().clone(),
+        ca_pem: ca.pem(),
+        server_cert: server.pem(),
+        server_key: server_key.serialize_pem(),
+        client: (
+            client_cert.der().clone(),
+            rustls::pki_types::PrivateKeyDer::Pkcs8(client_key.serialize_der().into()),
+        ),
+    }
+}
+
+/// One GIOP request over `stream`, its reply decoded.
+fn call<S: Read + Write>(stream: &mut S, key: Vec<u8>, operation: &str) -> Message {
+    let req = Request {
+        request_id: 7,
+        response_flags: ResponseFlags::SYNC_WITH_TARGET,
+        target: TargetAddress::Key(key),
+        operation: operation.into(),
+        requesting_principal: None,
+        service_context: ServiceContextList::default(),
+        body: vec![1, 0, 0, 0],
+    };
+    let bytes = encode_message(
+        Version::V1_2,
+        Endianness::Little,
+        false,
+        &Message::Request(req),
+    )
+    .unwrap();
+    stream.write_all(&bytes).unwrap();
+    stream.flush().unwrap();
+    read_message(stream)
+}
+
+fn read_message<S: Read>(stream: &mut S) -> Message {
+    let mut hdr = [0u8; 12];
+    stream.read_exact(&mut hdr).expect("a message");
+    let le = hdr[6] & 1 != 0;
+    let b = [hdr[8], hdr[9], hdr[10], hdr[11]];
+    let size = if le {
+        u32::from_le_bytes(b)
+    } else {
+        u32::from_be_bytes(b)
+    } as usize;
+    let mut body = vec![0u8; size];
+    stream.read_exact(&mut body).unwrap();
+    let mut full = hdr.to_vec();
+    full.extend_from_slice(&body);
+    decode_message(&full).unwrap().0
+}
+
+fn exception_of(m: &Message) -> String {
+    let Message::Reply(r) = m else {
+        panic!("not a reply: {:?}", m.message_type());
+    };
+    let mut rd = zerodds_wire::Reader::new(&r.body, Endianness::Little);
+    rd.read_string().unwrap()
+}
+
+/// The object key of the IOR of `line` (`… IOR:…`).
+fn key_of(line: &str) -> Vec<u8> {
+    let ior = line.split(' ').find(|w| w.starts_with("IOR:")).unwrap();
+    zerodds_corba_dds_bridge::bridge_daemon::resolve_target(ior)
+        .unwrap()
+        .object_key
+}
+
+fn dump_iors(file: &Path) -> Vec<String> {
+    let out = Command::new(daemon_binary())
+        .args(["--config", file.to_str().unwrap(), "--dump-iors"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// A TLS session to `port`, with the client certificate when given.
+fn tls_session(
+    port: u16,
+    ca: &rustls::pki_types::CertificateDer<'static>,
+    client: Option<&(
+        rustls::pki_types::CertificateDer<'static>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    )>,
+) -> rustls::StreamOwned<rustls::ClientConnection, TcpStream> {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(ca.clone()).unwrap();
+    let builder = rustls::ClientConfig::builder_with_provider(SyncArc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_root_certificates(roots);
+    let config = match client {
+        Some((cert, key)) => builder
+            .with_client_auth_cert(vec![cert.clone()], key.clone_key())
+            .unwrap(),
+        None => builder.with_no_client_auth(),
+    };
+    let name = rustls::pki_types::ServerName::try_from("127.0.0.1").unwrap();
+    let conn = rustls::ClientConnection::new(SyncArc::new(config), name).unwrap();
+    rustls::StreamOwned::new(conn, connect(port))
+}
+
+/// §2: a DDS participant that cannot start (domain 233 lies beyond the
+/// UDP ports of DDSI-RTPS §9.6.1.1) is exit code 3.
+#[test]
+fn corbabridge_2_a_participant_that_does_not_start_is_exit_3() {
+    let port = pick_port();
+    let out = Command::new(daemon_binary())
+        .args([
+            "--iiop-bind",
+            &format!("127.0.0.1:{port}"),
+            "--domain",
+            "233",
+        ])
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// §1 L6: a tenant is a participant of its own; an SSLIOP session whose
+/// client certificate it names reaches its objects, plain IIOP and a
+/// session without that certificate do not. `ca_file` without
+/// `require_client_cert` takes a session without a certificate too (§7.1).
+#[test]
+fn corbabridge_1_l6_a_tenant_is_bound_to_its_client_certificate() {
+    let tenant_domain = zerodds_test_domains::lease_domain();
+    let pki = pki("plant-a");
+    let (port, ssl_port) = (pick_port(), pick_port());
+    let dir = std::env::temp_dir().join(format!("corba-tenant-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (cert_file, key_file, ca_file) = (dir.join("c.pem"), dir.join("k.pem"), dir.join("ca.pem"));
+    std::fs::write(&cert_file, &pki.server_cert).unwrap();
+    std::fs::write(&key_file, &pki.server_key).unwrap();
+    std::fs::write(&ca_file, &pki.ca_pem).unwrap();
+    let file = dir.join("bridge.yaml");
+    std::fs::write(
+        &file,
+        format!(
+            "corba:\n  iiop:\n    bind: \"127.0.0.1:{port}\"\n  ssliop:\n    enabled: true\n    bind: \"127.0.0.1:{ssl_port}\"\n    cert_file: \"{}\"\n    key_file: \"{}\"\n    ca_file: \"{}\"\n\
+             tenants:\n  - name: plant-a\n    domain: {}\n    subjects: [\"CN=plant-a\"]\n    mappings:\n      - repo_id: \"IDL:zerodds/Plant/Status:1.0\"\n        operation: status\n        timeout_ms: 300\n",
+            cert_file.display(),
+            key_file.display(),
+            ca_file.display(),
+            tenant_domain.id()
+        ),
+    )
+    .unwrap();
+    let lines = dump_iors(&file);
+    let line = lines
+        .iter()
+        .find(|l| l.starts_with("@plant-a IDL:zerodds/Plant/Status:1.0 status IOR:"))
+        .unwrap_or_else(|| panic!("no IOR line of the tenant in {lines:?}"));
+    let key = key_of(line);
+    let daemon = Daemon::spawn(&[
+        "--config",
+        file.to_str().unwrap(),
+        "--idle-timeout-ms",
+        "15000",
+    ]);
+    daemon.event("running");
+    let mut plain = connect(port);
+    assert!(exception_of(&call(&mut plain, key.clone(), "status")).contains("OBJECT_NOT_EXIST"));
+    let mut anonymous = tls_session(ssl_port, &pki.ca, None);
+    assert!(
+        exception_of(&call(&mut anonymous, key.clone(), "status")).contains("OBJECT_NOT_EXIST"),
+        "a session without the tenant's certificate is the participant of `domain`"
+    );
+    let mut bound = tls_session(ssl_port, &pki.ca, Some(&pki.client));
+    assert!(
+        exception_of(&call(&mut bound, key, "status")).contains("TIMEOUT"),
+        "the tenant's object, without a backend"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// §4.7 with `corba.ssliop.required`: the plain IIOP listener forwards — a
+/// LocateRequest gets `OBJECT_FORWARD`, a Request `LOCATION_FORWARD`, both
+/// with the IOR whose IIOP port is 0 and whose `TAG_SSL_SEC_TRANS` names the
+/// SSLIOP port; over SSLIOP the object answers.
+#[test]
+fn corbabridge_4_7_ssliop_only_forwards_a_plain_iiop_client() {
+    let pki = pki("unused");
+    let (port, ssl_port) = (pick_port(), pick_port());
+    let dir = std::env::temp_dir().join(format!("corba-ssl-only-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (cert_file, key_file) = (dir.join("c.pem"), dir.join("k.pem"));
+    std::fs::write(&cert_file, &pki.server_cert).unwrap();
+    std::fs::write(&key_file, &pki.server_key).unwrap();
+    let file = dir.join("bridge.yaml");
+    std::fs::write(
+        &file,
+        format!(
+            "corba:\n  iiop:\n    bind: \"127.0.0.1:{port}\"\n  ssliop:\n    enabled: true\n    required: true\n    bind: \"127.0.0.1:{ssl_port}\"\n    cert_file: \"{}\"\n    key_file: \"{}\"\n\
+             mappings:\n  - repo_id: \"IDL:x/Calc:1.0\"\n    operation: add\n    timeout_ms: 300\n",
+            cert_file.display(),
+            key_file.display()
+        ),
+    )
+    .unwrap();
+    let lines = dump_iors(&file);
+    let key = key_of(&lines[0]);
+    let ior = zerodds_corba_ior::from_stringified(lines[0].split(' ').nth(2).unwrap()).unwrap();
+    assert_eq!(ior.profiles[0].as_iiop().unwrap().unwrap().port, 0);
+    let daemon = Daemon::spawn(&[
+        "--config",
+        file.to_str().unwrap(),
+        "--idle-timeout-ms",
+        "15000",
+    ]);
+    daemon.event("running");
+    let mut plain = connect(port);
+    let locate = encode_message(
+        Version::V1_2,
+        Endianness::Little,
+        false,
+        &Message::LocateRequest(zerodds_corba_giop::LocateRequest {
+            request_id: 3,
+            target: TargetAddress::Key(key.clone()),
+        }),
+    )
+    .unwrap();
+    plain.write_all(&locate).unwrap();
+    let forwarded = |body: &[u8]| {
+        let mut r = zerodds_wire::Reader::new(body, Endianness::Little);
+        let ior = zerodds_corba_ior::Ior::decode(&mut r).unwrap();
+        let p = ior.profiles[0].as_iiop().unwrap().unwrap();
+        assert_eq!(p.port, 0);
+        assert_eq!(p.object_key, key);
+        assert!(
+            p.components.iter().any(|c| c.tag == 20),
+            "TAG_SSL_SEC_TRANS"
+        );
+    };
+    match read_message(&mut plain) {
+        Message::LocateReply(r) => {
+            assert_eq!(
+                r.locate_status,
+                zerodds_corba_giop::LocateStatusType::ObjectForward
+            );
+            forwarded(&r.body);
+        }
+        other => panic!("{:?}", other.message_type()),
+    }
+    match call(&mut plain, key.clone(), "add") {
+        Message::Reply(r) => {
+            assert_eq!(
+                r.reply_status,
+                zerodds_corba_giop::ReplyStatusType::LocationForward
+            );
+            forwarded(&r.body);
+        }
+        other => panic!("{:?}", other.message_type()),
+    }
+    let mut ssl = tls_session(ssl_port, &pki.ca, None);
+    assert!(exception_of(&call(&mut ssl, key, "add")).contains("TIMEOUT"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// §8.1: an exchange is one JSON line with `timestamp` and the fields of
+/// the spec; §8.3: with `OTEL_EXPORTER_OTLP_ENDPOINT` its spans
+/// `giop.request` and `giop.reply` reach the collector, at the latest at the
+/// stop.
+#[test]
+fn corbabridge_8_1_8_3_the_log_line_and_the_spans_of_an_exchange() {
+    let collector = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let cport = collector.local_addr().unwrap().port();
+    let received = SyncArc::new(std::sync::Mutex::new(String::new()));
+    {
+        let received = SyncArc::clone(&received);
+        std::thread::spawn(move || {
+            for mut stream in collector.incoming().flatten() {
+                stream
+                    .set_read_timeout(Some(Duration::from_millis(500)))
+                    .unwrap();
+                let mut text = Vec::new();
+                let _ = stream.read_to_end(&mut text);
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                received
+                    .lock()
+                    .unwrap()
+                    .push_str(&String::from_utf8_lossy(&text));
+            }
+        });
+    }
+    let port = pick_port();
+    let lease = zerodds_test_domains::lease_domain();
+    let mut child = Command::new(daemon_binary())
+        .args([
+            "--iiop-bind",
+            &format!("127.0.0.1:{port}"),
+            "--domain",
+            &lease.id().to_string(),
+            "--topic",
+            "IDL:x/Calc:1.0=Calc::Add",
+        ])
+        .env(
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            format!("http://127.0.0.1:{cport}"),
+        )
+        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let _ = tx.send(line);
+        }
+    });
+    let mut s = connect(port);
+    let reply = call(&mut s, vec![0; 16], "add");
+    assert!(exception_of(&reply).contains("OBJECT_NOT_EXIST"));
+    let line = loop {
+        let l = rx.recv_timeout(Duration::from_secs(5)).expect("a log line");
+        assert!(l.starts_with("{\"timestamp\":\""), "{l}");
+        if l.contains("\"event\":\"exchange\"") {
+            break l;
+        }
+    };
+    for field in [
+        "\"peer\":\"127.0.0.1:",
+        "\"giop_version\":\"1.2\"",
+        "\"request_id\":7",
+        "\"operation\":\"add\"",
+        "\"bytes\":4",
+        "\"reply_status\":\"SYSTEM_EXCEPTION\"",
+        "\"exception\":\"OBJECT_NOT_EXIST\"",
+        "\"latency_us\":",
+    ] {
+        assert!(line.contains(field), "{field} in {line}");
+    }
+    terminate_child_gracefully(&mut child);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let text = received.lock().unwrap().clone();
+        if text.contains("giop.request") && text.contains("giop.reply") {
+            assert!(text.contains("/v1/traces"), "{text}");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no span reached the collector:\n{text}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// §5.2: the daemon writes the IDL it generated from the `idl_file` of a
+/// mapping into `corba.idl_dir`, under the name of that file; an operation
+/// the IDL does not have is a configuration error (exit code 1).
+#[test]
+fn corbabridge_5_2_the_daemon_writes_the_generated_idl_into_idl_dir() {
+    let port = pick_port();
+    let dir = std::env::temp_dir().join(format!("corba-idl-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let idl = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/omniorb/Div.idl");
+    let config = |operation: &str| {
+        let file = dir.join(format!("{operation}.yaml"));
+        std::fs::write(
+            &file,
+            format!(
+                "corba:\n  idl_dir: \"{}\"\n  iiop:\n    bind: \"127.0.0.1:{port}\"\n\
+                 mappings:\n  - repo_id: \"IDL:zerodds_test/Divider:1.0\"\n    operation: {operation}\n    idl_file: \"{idl}\"\n",
+                dir.join("generated").display()
+            ),
+        )
+        .unwrap();
+        file
+    };
+    let daemon = Daemon::spawn(&[
+        "--config",
+        config("divide").to_str().unwrap(),
+        "--idle-timeout-ms",
+        "3000",
+    ]);
+    let line = daemon.event("idl_written");
+    assert!(line.contains("Div.idl"), "{line}");
+    let _ = daemon.event("running");
+    let text = std::fs::read_to_string(dir.join("generated/Div.idl")).unwrap();
+    for part in [
+        "struct Fraction",
+        "struct DivideByZero",
+        "module divide {",
+        "::zerodds_test::Fraction f;",
+        "enum exception_kind { zerodds_test_Divider_DivideByZero, zerodds_test_Divider_Unsupported };",
+        "long long remainder;",
+    ] {
+        assert!(text.contains(part), "{part}: {text}");
+    }
+    drop(daemon);
+
+    let out = Command::new(daemon_binary())
+        .args([
+            "--config",
+            config("multiply").to_str().unwrap(),
+            "--check-config",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(said.contains("no operation multiply"), "{said}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

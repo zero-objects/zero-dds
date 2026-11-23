@@ -9,15 +9,61 @@
 #include <fastdds/dds/subscriber/DataReader.hpp>
 #include <fastdds/dds/subscriber/SampleInfo.hpp>
 #include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
+#include <fastdds/utils/IPLocator.hpp>
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <thread>
 
 using namespace eprosima::fastdds::dds;
+using eprosima::fastdds::rtps::IPLocator;
+using eprosima::fastdds::rtps::Locator_t;
+using eprosima::fastdds::rtps::TCPv4TransportDescriptor;
+
+// `tcp <listening port> [<address>:<physical port>[:<logical port>]]...`:
+// the participant has Fast DDS's TCPv4 transport alone (no UDP, no shared
+// memory), listens at the port (0: none) and has the peers as its initial
+// peers. A peer without a logical port is asked at the metatraffic unicast
+// ports of the first participant ids, as Fast DDS does.
+static bool tcp_only(DomainParticipantQos& qos, int argc, char** argv) {
+    auto tcp = std::make_shared<TCPv4TransportDescriptor>();
+    try {
+        size_t end = 0;
+        const int listening = std::stoi(argv[7], &end);
+        if (argv[7][end] || listening < 0 || listening > 65535) return false;
+        if (listening != 0) tcp->add_listener_port(static_cast<uint16_t>(listening));
+        for (int i = 8; i < argc; ++i) {
+            const std::string peer = argv[i];
+            const auto first = peer.find(':');
+            if (first == std::string::npos) return false;
+            const auto second = peer.find(':', first + 1);
+            Locator_t locator;
+            locator.kind = LOCATOR_KIND_TCPv4;
+            if (!IPLocator::setIPv4(locator, peer.substr(0, first))) return false;
+            const int physical = std::stoi(peer.substr(first + 1, second - first - 1));
+            if (physical <= 0 || physical > 65535) return false;
+            IPLocator::setPhysicalPort(locator, static_cast<uint16_t>(physical));
+            if (second != std::string::npos) {
+                const int logical = std::stoi(peer.substr(second + 1));
+                if (logical <= 0 || logical > 65535) return false;
+                IPLocator::setLogicalPort(locator, static_cast<uint16_t>(logical));
+            }
+            qos.wire_protocol().builtin.initialPeersList.push_back(locator);
+        }
+    } catch (const std::exception&) { return false; }
+    qos.transport().use_builtin_transports = false;
+    qos.transport().user_transports.push_back(tcp);
+    return true;
+}
 
 int main(int argc, char** argv) {
-    if (argc != 6) { std::cerr << "usage: fastdds_shapes pub|sub topic domain reliability durability\n"; return 2; }
+    const bool tcp = argc >= 8 && std::string(argv[6]) == "tcp";
+    if (argc != 6 && !tcp) {
+        std::cerr << "usage: fastdds_shapes pub|sub topic domain reliability durability"
+                     " [tcp <listening port> <address>:<physical>[:<logical>]...]\n";
+        return 2;
+    }
     const std::string mode = argv[1], reliability = argv[4], durability = argv[5];
     if ((mode != "pub" && mode != "sub") ||
         (reliability != "besteffort" && reliability != "reliable") ||
@@ -26,7 +72,9 @@ int main(int argc, char** argv) {
     try { size_t end = 0; domain = std::stoi(argv[3], &end); if (argv[3][end] || domain < 0 || domain > 232) return 2; }
     catch (const std::exception&) { return 2; }
     auto* factory = DomainParticipantFactory::get_instance();
-    auto* participant = factory->create_participant(domain, PARTICIPANT_QOS_DEFAULT);
+    DomainParticipantQos participant_qos = PARTICIPANT_QOS_DEFAULT;
+    if (tcp && !tcp_only(participant_qos, argc, argv)) return 2;
+    auto* participant = factory->create_participant(domain, participant_qos);
     if (!participant) return 2;
     TypeSupport support(new ShapeTypePubSubType());
     if (support.register_type(participant) != RETCODE_OK) return 2;
@@ -56,7 +104,7 @@ int main(int argc, char** argv) {
         if (!reader) return 2;
     }
     std::cout << "READY mode=" << mode << " domain=" << domain << " reliability=" << reliability
-              << " durability=" << durability << std::endl;
+              << " durability=" << durability << " transport=" << (tcp ? "tcp" : "default") << std::endl;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     unsigned sent = 0;
     while (std::chrono::steady_clock::now() < deadline) {

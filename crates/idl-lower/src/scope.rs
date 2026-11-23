@@ -151,6 +151,50 @@ impl ScopeStack {
         });
     }
 
+    /// Enter the scope a template module's body was written in.
+    ///
+    /// The body of a template module is lowered where the template is
+    /// instantiated, into the module of the instance (OMG IDL 4.2
+    /// §7.4.12.4.2). The names it uses were written in the scope of the
+    /// template's declaration: `module CCM_DDS { struct ReadInfo { … };
+    /// module Typed<typename T> { interface Reader { void read(out
+    /// ReadInfo info); }; }; };` instantiated as `module CCM_DDS::Typed<Foo>
+    /// FooPorts;` at file scope names `CCM_DDS::ReadInfo`, which file scope
+    /// does not see. This scope makes the declarations of `modules`, the
+    /// modules that enclose the template's declaration from the outermost
+    /// in, visible under the instance: a name is looked up in the instance,
+    /// then here, then where the instantiation is written.
+    ///
+    /// It names nothing and declares nothing of its own, as
+    /// [`Self::push_body`]. A module that is open on the stack is left out:
+    /// its declarations are visible already, and newer than its closed
+    /// ones.
+    pub fn push_template_scope(&mut self, modules: &[Id<ModuleNode>]) {
+        let mut bindings: Bindings = Vec::new();
+        // Innermost first: `find` takes the first binding of a name, and a
+        // declaration of the inner module hides the outer one.
+        for module in modules.iter().rev() {
+            if self
+                .scopes
+                .iter()
+                .any(|scope| scope.module == Some(*module))
+            {
+                continue;
+            }
+            if let Some((_, closed)) = self.closed.iter().find(|(id, _)| id == module) {
+                bindings.extend(closed.iter().cloned());
+            }
+        }
+        self.scopes.push(Scope {
+            module: None,
+            name: String::new(),
+            container: false,
+            bindings,
+            bases: Vec::new(),
+            introduced: Vec::new(),
+        });
+    }
+
     /// Enter the body of a structure, union or exception.
     ///
     /// Nothing is declared in it that a lookup could find — a member name

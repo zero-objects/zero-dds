@@ -16,13 +16,16 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
 
-use std::collections::BTreeMap;
+#[path = "support/capture.rs"]
+mod capture;
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use capture::payload_counts;
+
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
-use zerodds_recorder::reader::RecordReader;
 use zerodds_rtps::wire_types::GuidPrefix;
 
 const TOPIC: &str = "KeptHistory";
@@ -106,15 +109,7 @@ fn dcps_2_2_3_4_the_recorder_records_the_history_of_a_transient_local_writer() {
     assert!(status.success(), "record: {status:?}");
     runtime.shutdown();
 
-    let bytes = std::fs::read(&capture).expect("the capture");
-    let mut reader = RecordReader::new(&bytes);
-    reader.parse_header().expect("the header");
-    let mut seen: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
-    while let Some(frame) = reader.next_frame().expect("a frame") {
-        if !frame.payload.is_empty() {
-            *seen.entry(frame.payload).or_default() += 1;
-        }
-    }
+    let seen = payload_counts(&capture);
     for i in 0..SAMPLES {
         assert_eq!(
             seen.get(&vec![b'H', i]),

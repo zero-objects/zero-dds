@@ -43,6 +43,7 @@ pub mod component_tags;
 pub mod components;
 pub mod error;
 pub mod ior;
+pub mod miop;
 pub mod profile_tags;
 pub mod stringified;
 pub mod tagged_profile;
@@ -51,11 +52,14 @@ pub mod url;
 pub use component_tags::ComponentId;
 pub use components::{
     AlternateIiopAddress, CodeSetComponent, CodeSetComponentInfo, OrbType, Ssl,
-    StreamFormatVersion, StructuredComponent, TaggedComponent, TlsSecTrans,
+    StreamFormatVersion, StructuredComponent, TaggedComponent, TlsSecTrans, TransmissionCodeSets,
 };
 pub use error::{IorError, IorResult};
 pub use ior::Ior;
 pub use profile_tags::ProfileId;
 pub use stringified::{STRINGIFIED_IOR_PREFIX, from_stringified, to_stringified};
 pub use tagged_profile::TaggedProfile;
-pub use url::{CorbalocAddress, CorbanameAddress, parse_corbaloc, parse_corbaname};
+pub use url::{
+    CorbalocAddress, CorbalocEndpoint, CorbanameAddress, IiopAddress, escape_key_string,
+    parse_corbaloc, parse_corbaname, parse_iiop_address,
+};

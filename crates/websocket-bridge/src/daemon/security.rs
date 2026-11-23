@@ -11,10 +11,12 @@
 //! request).
 
 pub use zerodds_bridge_security::{
-    Acl, AclEntry, AclOp, AuthError, AuthMode, AuthSubject, RotatingTlsConfig, SecurityConfig,
-    SecurityCtx, SecurityError, authenticate as bs_authenticate, authorize, build_ctx,
+    Acl, AclEntry, AclOp, AuthError, AuthMode, AuthSubject, MissingClaim, Refusal,
+    RotatingTlsConfig, SecurityConfig, SecurityCtx, SecurityError, authorize, build_ctx,
     extract_mtls_subject, serve_tls_handshake,
 };
+
+pub use super::config::listen_is_loopback;
 
 /// Translates the daemon CLI/YAML `DaemonConfig` into a
 /// [`SecurityCtx`] + optional [`RotatingTlsConfig`] for hot reload.
@@ -22,7 +24,8 @@ pub use zerodds_bridge_security::{
 /// Used identically on daemon start and on SIGHUP reload.
 ///
 /// # Errors
-/// [`SecurityError`] on a TLS-load or auth-mode config error.
+/// [`SecurityError`] on a TLS-load or auth-mode config error, and for
+/// `auth.mode: none` on a listen address that is not loopback.
 pub fn ctx_from_daemon_config(
     cfg: &super::config::DaemonConfig,
 ) -> Result<(SecurityCtx, Option<RotatingTlsConfig>), SecurityError> {
@@ -42,6 +45,10 @@ pub fn ctx_from_daemon_config(
         }
     }
     sc.auth_mode = cfg.auth_mode.clone();
+    // Spec §7.2: `none` is the development mode, served on a loopback
+    // address only; `bearer` needs its token. At start and on a SIGHUP
+    // reload.
+    cfg.check_auth().map_err(SecurityError::Config)?;
     match cfg.auth_mode.as_str() {
         "jwt" => sc.apply_jwt(&cfg.auth_jwt)?,
         "mtls" if !cfg.tls_enabled || cfg.tls_client_ca_file.is_empty() => {
@@ -86,17 +93,65 @@ pub fn ctx_from_daemon_config(
 /// match on `Authorization`).
 ///
 /// # Errors
-/// [`AuthError`] on missing/malformed/rejected.
+/// [`Refusal::Unauthenticated`] for credentials that are missing,
+/// malformed or rejected (Spec §4.1: 401); [`Refusal::MissingClaim`] for a
+/// token that verifies and lacks `auth.jwt.required_claim` (403).
 pub fn authenticate_ws(
     auth: &AuthMode,
     headers: &[(String, String)],
     mtls_subject: Option<AuthSubject>,
-) -> Result<AuthSubject, AuthError> {
-    let auth_header = headers
+) -> Result<AuthSubject, Refusal> {
+    let authorization_header = headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
         .map(|(_, v)| v.as_str());
-    bs_authenticate(auth, auth_header, None, mtls_subject)
+    auth.validate_scoped(&zerodds_bridge_security::auth::AuthInput {
+        authorization_header,
+        sasl_plain_blob: None,
+        mtls_subject,
+    })
+}
+
+/// The HTTP response of the opening handshake to credentials the daemon
+/// refuses (Spec §4.1, RFC 6750 §3): 401 with a `Bearer` challenge when
+/// they authenticate no one, 403 with `insufficient_scope` when the token
+/// verifies and lacks the required claim. The body names the status only.
+#[must_use]
+pub fn render_refusal(refusal: &Refusal) -> String {
+    let (status, body, challenge) = match refusal {
+        Refusal::Unauthenticated(AuthError::MissingCredentials) => (
+            "401 Unauthorized",
+            "unauthorized",
+            "Bearer realm=\"zerodds-ws\"".to_string(),
+        ),
+        Refusal::Unauthenticated(_) => (
+            "401 Unauthorized",
+            "unauthorized",
+            "Bearer realm=\"zerodds-ws\", error=\"invalid_token\"".to_string(),
+        ),
+        Refusal::MissingClaim(m) => (
+            "403 Forbidden",
+            "forbidden",
+            format!(
+                "Bearer realm=\"zerodds-ws\", error=\"insufficient_scope\", scope=\"{}\"",
+                challenge_value(&m.value)
+            ),
+        ),
+    };
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nWWW-Authenticate: {challenge}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+/// `value` as the content of a quoted-string of a challenge (RFC 9110
+/// §5.6.4): the characters a scope token may carry (RFC 6749 §3.3), others
+/// left out, so that a configured claim value cannot end the header field.
+fn challenge_value(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| matches!(c, '\x21' | '\x23'..='\x5b' | '\x5d'..='\x7e' | ' '))
+        .collect()
 }
 
 /// Mini HTTP header extractor for the raw handshake request string.
@@ -142,13 +197,43 @@ mod tests {
             tokens: HashMap::new(),
         };
         let err = authenticate_ws(&auth, &[], None).unwrap_err();
-        assert!(matches!(err, AuthError::MissingCredentials));
+        assert_eq!(err, Refusal::Unauthenticated(AuthError::MissingCredentials));
     }
 
     #[test]
     fn wsbridge_7_2_ws_none_auth_yields_anonymous_without_header() {
         let s = authenticate_ws(&AuthMode::None, &[], None).unwrap();
         assert_eq!(s.name, "anonymous");
+    }
+
+    /// Spec §4.1 with RFC 6750 §3, §3.1: 401 with a `Bearer` challenge for
+    /// credentials that authenticate no one (no `error` when none came),
+    /// 403 with `insufficient_scope` and the scope for a verified token
+    /// without the required claim.
+    #[test]
+    fn wsbridge_4_1_the_refusal_is_401_or_403_with_its_challenge() {
+        let missing = render_refusal(&Refusal::Unauthenticated(AuthError::MissingCredentials));
+        assert!(missing.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
+        assert!(missing.contains("WWW-Authenticate: Bearer realm=\"zerodds-ws\"\r\n"));
+        let rejected = render_refusal(&Refusal::Unauthenticated(AuthError::Rejected(
+            "jwt: expired".into(),
+        )));
+        assert!(rejected.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
+        assert!(rejected.contains("error=\"invalid_token\""));
+        assert!(!rejected.contains("expired"), "the reason stays in the log");
+        let scope = render_refusal(&Refusal::MissingClaim(Box::new(MissingClaim {
+            subject: AuthSubject::new("alice"),
+            claim: "scope".into(),
+            value: "dds.read\"\r\nX-Injected: 1".into(),
+        })));
+        assert!(scope.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+        assert!(scope.contains(
+            "WWW-Authenticate: Bearer realm=\"zerodds-ws\", error=\"insufficient_scope\", scope=\"dds.readX-Injected: 1\"\r\n"
+        ));
+        assert!(scope.ends_with("\r\n\r\nforbidden"));
+        for response in [&missing, &rejected, &scope] {
+            assert!(response.contains("Connection: close\r\n"));
+        }
     }
 
     #[test]
@@ -189,6 +274,57 @@ mod tests {
         cfg.tls_enabled = true;
         let err = ctx_from_daemon_config(&cfg).unwrap_err();
         assert!(matches!(err, SecurityError::Tls(_)));
+    }
+
+    /// Spec §7.2: `none` (and the empty mode, its default) only on a
+    /// loopback listen address; the other modes on any address.
+    #[test]
+    fn wsbridge_7_2_none_needs_a_loopback_listen_address() {
+        use super::super::config::DaemonConfig;
+        for (listen, loopback) in [
+            ("127.0.0.1:8080", true),
+            ("127.0.0.53:8080", true),
+            ("[::1]:8080", true),
+            ("localhost:8080", true),
+            ("0.0.0.0:8080", false),
+            ("[::]:8080", false),
+            ("192.0.2.1:8080", false),
+            ("no port", false),
+        ] {
+            assert_eq!(listen_is_loopback(listen), loopback, "{listen}");
+        }
+        let mut cfg = DaemonConfig::default_for_dev();
+        for mode in ["none", ""] {
+            cfg.auth_mode = mode.into();
+            cfg.listen = "127.0.0.1:0".into();
+            assert!(ctx_from_daemon_config(&cfg).is_ok(), "{mode} on loopback");
+            cfg.listen = "0.0.0.0:8080".into();
+            match ctx_from_daemon_config(&cfg) {
+                Err(SecurityError::Config(m)) => assert!(m.contains("0.0.0.0:8080"), "{m}"),
+                Err(e) => panic!("{mode}: {e}"),
+                Ok(_) => panic!("{mode}: accepted on 0.0.0.0"),
+            }
+        }
+        cfg.auth_mode = "bearer".into();
+        cfg.auth_bearer_token = Some("t".into());
+        assert!(ctx_from_daemon_config(&cfg).is_ok());
+    }
+
+    /// Spec §7.2 `bearer` checks against `auth.bearer_token`: without one,
+    /// or with an empty one (an unset `${VAR}`), the mode cannot be served.
+    #[test]
+    fn wsbridge_7_2_bearer_needs_a_token() {
+        use super::super::config::DaemonConfig;
+        let mut cfg = DaemonConfig::default_for_dev();
+        cfg.auth_mode = "bearer".into();
+        for token in [None, Some(String::new())] {
+            cfg.auth_bearer_token = token.clone();
+            match ctx_from_daemon_config(&cfg) {
+                Err(SecurityError::Config(m)) => assert!(m.contains("bearer_token"), "{m}"),
+                Err(e) => panic!("{token:?}: {e}"),
+                Ok(_) => panic!("{token:?}: bearer without a token"),
+            }
+        }
     }
 
     #[test]

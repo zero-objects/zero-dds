@@ -118,11 +118,11 @@ Workspace version of all crates: `1.0.0-rc.7`, edition 2024, `rust-version = "1.
 - Features: `std`, `alloc`, `recvmmsg-batch` (default; module only on Linux), `inspect`, `safety`.
 
 ### `zerodds-transport-tcp` — `crates/transport-tcp`
-- Purpose: RTPS over TCP with length-prefix framing and an optional 16-byte handshake (vendor-specific).
-- Entry points: `TcpTransport`, `TcpTransportError` (`tcp_transport.rs:272`), `accept_one`, framing (`framing.rs`), `BindConnectionRequest/Response` (`handshake.rs`).
+- Purpose: RTPS over TCP in two dialects, one per transport. Dialect `zerodds` (default): length-prefix framing and a 16-byte handshake, mandatory on both sides. Dialect `rtps`: no handshake and no length prefix, each message is delimited by the `messageLength` of its HeaderExtension (DDSI-RTPS 2.5 §8.3.3). Framing, handshake and connection pool are ZeroDDS-specific.
+- Entry points: `TcpTransport`, `TcpDialect`, `TcpTransportError` (`tcp_transport.rs`), `with_dialect`, `accept_one`, `serve`, framing (`framing.rs`), stream of RTPS messages (`rtps_stream.rs`), `BindConnectionRequest/Response` (`handshake.rs`).
 - Depends on: `rtps`, `transport`. Used by: `dcps` (`UserTransportKind::TcpV4/TcpV6`), `tools/bench-suite`.
 - Features: `std` (default), `alloc`.
-- Spec: DDSI-RTPS 2.5 §9.4 (locator kinds `TCPv4 = 4`, `TCPv6 = 8`), `docs/spec-coverage/zerodds-tcp-transport-1.0.md`.
+- Spec: ZeroDDS TCP Transport 1.0, `docs/spec-coverage/zerodds-tcp-transport-1.0.md`. DDSI-RTPS 2.5 defines no mapping to TCP and no locator kind for TCP; the kinds lie in the vendor range of §9.3.2.4 (`0x01F0_0004`, `0x01F0_0005`; 4 and 8 with `transport.tcp_locator_kinds: fast-dds`).
 
 ### `zerodds-transport-shm` — `crates/transport-shm`
 - Purpose: Cross-process shared memory via `shm_open`/`mmap` with a lock-free single-producer single-consumer ring; 1:1 and role-asymmetric (owner/consumer).
@@ -208,10 +208,10 @@ Workspace version of all crates: `1.0.0-rc.7`, edition 2024, `rust-version = "1.
 - Features: `std` (default), `alloc`.
 
 ### `zerodds-time-service` — `crates/time-service`
-- Purpose: OMG Time Service 1.1 (`formal/2002-05-07`): data types, UTO, TIO, `TimeService`. `TimerEventService` is excluded (it requires a CORBA event channel, per doc comment).
-- Entry points: `TimeT`, `UtcT`, `IntervalT`, `TdfT` (`time_base.rs`), `Uto` (`uto.rs`), `Tio` (`tio.rs`), `TimeService`, `TimeUnavailable` (`service.rs`).
-- Depends on: nothing. Used by: no package in the workspace.
-- Features: `std` (default), `alloc`.
+- Purpose: OMG Time Service 1.1 (`formal/2002-05-07`): data types, UTO, TIO, `TimeService`, the Timer Event Service (CosTimerEvent) and the administration and secure time of App. A and App. B.
+- Entry points: `TimeT`, `UtcT`, `IntervalT`, `TdfT`, `local_tdf` (`time_base.rs`), `Uto` (`uto.rs`), `Tio` (`tio.rs`), `TimeService`, `TimeUnavailable` (`service.rs`), `BadParam`, `DataConversion` (`exception.rs`), `TimerEventService`, `TimerEventHandler`, `TimerEventT` (`timer_event.rs`), `TimeServant`, `RemoteTimePolicy` (`servant.rs`), `TimeServer` (`server.rs`), `TimeAdmin`, `AdminAuthorizer`, `AuditSink`, `AuditRecord` (`admin.rs`), `SecureTimeSource`, `SourceReading`, `SyncProtection`, `SourceDesignation` (`secure.rs`), `TimeServiceProxy` (`proxy.rs`).
+- Depends on: `jiff` (feature `std`), `zerodds-corba-cos-event` (feature `timer-event`), `zerodds-wire`, `zerodds-corba-giop`, `zerodds-corba-iiop`, `zerodds-corba-ior` (feature `serve`). Used by: `zerodds-dcps` (`time_source.rs`, `KernelClock`), `zerodds-security-logging` (feature `time-service`, `time_audit.rs`).
+- Features: `std` (default; with it `admin.rs`), `alloc`, `timer-event` (default), `serve` (CosTime as CORBA objects over IIOP, `proxy.rs`).
 
 ## Observability
 
@@ -245,7 +245,7 @@ Workspace version of all crates: `1.0.0-rc.7`, edition 2024, `rust-version = "1.
 
 ### `zerodds-dlrl` — `crates/dlrl`
 - Purpose: DLRL (DDS 1.4 §2.1.3, Annex B): object-oriented cache over DCPS with identity, relationships, transactions.
-- Entry points: `ObjectCache`, `ObjectRef`, `WeakObjectRef` (`object_cache.rs`), `parse_pragma`, `DlrlPragma` (`pragma.rs`), `Query` (`query.rs`), relationships (`relationship.rs`), subscriptions (`subscription.rs`), transactions (`transaction.rs`), metamodel (`metamodel.rs`).
+- Entry points: `ObjectCache`, `ObjectRef`, `WeakObjectRef` (`object_cache.rs`), `parse_pragma`, `DlrlPragma` (`pragma.rs`), `QueryExpression` (`criterion.rs`, DDS 1.2 Annex B), `DlrlException` (`error.rs`), object model with classes, attributes and relations `Model`, `ClassModel`, `Relation` (`model.rs`), structural mapping onto DCPS topics `Mapping`, `ClassMappingSpec` (`mapping.rs`), rows of an object `Row`, `ObjectData` (`rows.rs`), `DlrlOid` (`types.rs`), subscriptions (`subscription.rs`), transactions (`transaction.rs`), metamodel (`metamodel.rs`).
 - Depends on: no ZeroDDS crate. Used by: `dlrl-codegen`.
 - Features: `std` (default), `alloc`.
 

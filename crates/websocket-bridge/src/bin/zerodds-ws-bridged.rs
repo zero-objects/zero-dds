@@ -24,20 +24,31 @@
     missing_docs
 )]
 
-// Daemon logging: eprintln is the structured JSON log sink per
-// Spec §8.1; a full-fledged tracing stack is not part of the workspace.
+// Spec §8.1: the daemon's log is JSON on stdout (`daemon::log`); an error
+// that ends the start is written to stderr as well, for a reader of the
+// terminal. `--help`, `--version` and `--check-config` print text.
 use std::process::ExitCode;
 
 use zerodds_config::CommandLine;
 use zerodds_dcps::cli::Configured;
 use zerodds_websocket_bridge::daemon::cli::{self, CliArgs, HELP_TEXT, VERSION_TEXT};
 use zerodds_websocket_bridge::daemon::config::{self, DaemonConfig};
+use zerodds_websocket_bridge::daemon::log::{self, Level};
 use zerodds_websocket_bridge::daemon::server::{self, ServerError};
 
+/// The name of the Windows service (Spec §11, zerodds-deployment-1.0 §4.3).
+const WINDOWS_SERVICE: &str = "ZeroDDSWSBridge";
+
+/// On Windows, started by the service control manager, the daemon runs as
+/// the service `ZeroDDSWSBridge`; elsewhere and from a console, as it is.
 fn main() -> ExitCode {
+    zerodds_dcps::cli::run_as_service(WINDOWS_SERVICE, daemon_main)
+}
+
+fn daemon_main() -> ExitCode {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     if raw_args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("zerodds-ws-bridged {}", env!("CARGO_PKG_VERSION"));
+        println!("{VERSION_TEXT}");
         return ExitCode::SUCCESS;
     }
     let (mut command_line, rest) = match CommandLine::extract(raw_args) {
@@ -82,8 +93,11 @@ fn main() -> ExitCode {
     ) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[zerodds-ws-bridged] config error: {e}");
-            return ExitCode::from(if checking { 2 } else { 1 });
+            if checking {
+                eprintln!("[zerodds-ws-bridged] config error: {e}");
+                return ExitCode::from(2);
+            }
+            return start_failed("config", &e.to_string(), 1);
         }
     };
     let cfg = match DaemonConfig::from_config(configured.source.tree()) {
@@ -91,12 +105,20 @@ fn main() -> ExitCode {
         Err(e) => {
             if configured.checking() {
                 println!("error: {e}\nconfiguration invalid");
-            } else {
-                eprintln!("[zerodds-ws-bridged] config error: {e}");
+                return ExitCode::from(1);
             }
-            return ExitCode::from(1);
+            return start_failed("config", &e.to_string(), 1);
         }
     };
+    // Spec §7.2 with §2: `none` off loopback and `bearer` without a token
+    // do not start, so `--check-config` reports them invalid (the start
+    // reports them through the security setup, exit 1).
+    if configured.checking() {
+        if let Err(e) = cfg.check_auth() {
+            println!("error: {e}\nconfiguration invalid");
+            return ExitCode::from(1);
+        }
+    }
     if let Some(code) = configured.check_config() {
         return code;
     }
@@ -111,29 +133,28 @@ fn main() -> ExitCode {
         .map_err(|e| e.to_string())?;
         DaemonConfig::from_config(configured.source.tree()).map_err(|e| e.to_string())
     });
+    // Spec §8.1: the threshold from the first line on.
+    log::set_level(&cfg.log_level);
     match run(cfg, configured.runtime, load) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(ServerError::Config(m)) => {
-            eprintln!("[zerodds-ws-bridged] config error: {m}");
-            ExitCode::from(1)
-        }
-        Err(ServerError::Tls(m)) => {
-            eprintln!("[zerodds-ws-bridged] tls error: {m}");
-            ExitCode::from(4)
-        }
-        Err(ServerError::Bind(m)) => {
-            eprintln!("[zerodds-ws-bridged] bind error: {m}");
-            ExitCode::from(2)
-        }
-        Err(ServerError::Dds(m)) => {
-            eprintln!("[zerodds-ws-bridged] dds error: {m}");
-            ExitCode::from(3)
-        }
-        Err(ServerError::Io(m)) => {
-            eprintln!("[zerodds-ws-bridged] io error: {m}");
-            ExitCode::from(1)
-        }
+        // Spec §2: the exit code names the kind of error.
+        Err(ServerError::Config(m)) => start_failed("config", &m, 1),
+        Err(ServerError::Tls(m)) => start_failed("tls", &m, 4),
+        Err(ServerError::Bind(m)) => start_failed("bind", &m, 2),
+        Err(ServerError::Dds(m)) => start_failed("dds", &m, 3),
+        Err(ServerError::Io(m)) => start_failed("io", &m, 1),
     }
+}
+
+/// An error that ends the start (Spec §2, §8.1): the log line
+/// `start_failed` on stdout, the same as text on stderr, and the exit code.
+fn start_failed(kind: &str, reason: &str, code: u8) -> ExitCode {
+    log::event(Level::Error, "start_failed")
+        .field("kind", kind)
+        .field("reason", reason)
+        .emit();
+    eprintln!("[zerodds-ws-bridged] {kind} error: {reason}");
+    ExitCode::from(code)
 }
 
 /// Spec §2: the convenience flags override file values. They are `--set`
@@ -154,7 +175,9 @@ fn run(
     load: server::ConfigLoader,
 ) -> Result<(), ServerError> {
     let mut handle = server::start_with_reload(cfg, runtime, Some(load))?;
-    eprintln!("[zerodds-ws-bridged] running on {}", handle.local_addr);
+    log::event(Level::Info, "running")
+        .field("peer", &handle.local_addr)
+        .emit();
     // SIGTERM/SIGINT set the stop flag. The loop used to park forever on
     // the assumption that the runtime ends the process; it does not, and
     // the daemon was still running 3 s after SIGTERM (measured).
@@ -164,6 +187,7 @@ fn run(
     }
     zerodds_dcps::cli::notify_service_manager("STOPPING=1");
     handle.shutdown();
+    log::event(Level::Info, "stopped").emit();
     Ok(())
 }
 
@@ -228,6 +252,49 @@ mod tests {
         let c = with_flags(&["--metrics", "0.0.0.0:9091"]);
         assert!(c.metrics_enabled);
         assert_eq!(c.metrics_addr, "0.0.0.0:9091");
+    }
+
+    #[test]
+    fn ws_10_the_limits_and_the_origins_are_set_with_set() {
+        // `--set` takes the keys of `limits` and `origin` (RFC 6455 §10.4,
+        // §10.2); `+origin.allowed` appends one origin per flag.
+        use zerodds_websocket_bridge::daemon::config::is_key;
+        for key in [
+            "limits.max_frame_size",
+            "limits.max_message_size",
+            "origin.allowed",
+            "origin.required",
+        ] {
+            assert!(is_key(key), "{key}");
+        }
+        let mut command_line = CommandLine::default();
+        for set in [
+            "limits.max_frame_size=65536",
+            "limits.max_message_size=131072",
+            "+origin.allowed=https://app.example.org",
+            "+origin.allowed=http://localhost:3000",
+            "origin.required=true",
+        ] {
+            command_line.push_set(set).expect("a valid --set");
+        }
+        let mut tree = zerodds_config::Config::default();
+        command_line.apply(&mut tree).expect("merges");
+        let c = DaemonConfig::from_config(Some(&tree)).expect("valid");
+        assert_eq!(c.max_frame_size, 65536);
+        assert_eq!(c.max_message_size, 131_072);
+        assert_eq!(
+            c.origin_allowed,
+            ["https://app.example.org", "http://localhost:3000"]
+        );
+        assert!(c.origin_required);
+        // A value the daemon cannot serve is refused from this layer too.
+        let mut command_line = CommandLine::default();
+        command_line
+            .push_set("limits.max_frame_size=0")
+            .expect("a valid --set");
+        let mut tree = zerodds_config::Config::default();
+        command_line.apply(&mut tree).expect("merges");
+        assert!(DaemonConfig::from_config(Some(&tree)).is_err());
     }
 
     #[test]

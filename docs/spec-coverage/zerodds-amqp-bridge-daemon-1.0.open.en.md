@@ -5,50 +5,22 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
-## §4.5 Disposition mapping accepted/rejected/released/modified
-
-**Status:** `partial` — `released`/`modified`/`rejected` from a broker are not measured.
-
 ## §6 DDS QoS → AMQP behaviour map
 
-**Status:** `partial` — the deadline annotation and the partition filter are missing; KEEP_ALL drops the oldest beyond 65 536 waiting samples.
-
-## §7.2 SASL PLAIN/SCRAM/EXTERNAL/ANONYMOUS/XOAUTH2
-
-**Status:** `partial` — XOAUTH2 not measured against a broker; SCRAM-SHA-512 not built.
-
-## §7.3 ACL daemon side
-
-**Status:** `partial` — no test checks that a denied direction moves no data.
-
-## §8.1 Structured JSON logging
-
-**Status:** `partial` — lines on stderr, without `timestamp`, `container_id`, `delivery_id`, `latency_us`.
-
-## §8.3 OTLP spans
-
-**Status:** `partial` — the configuration is covered, the span emit is not; the missing half is carried as §8.3a `open`.
-
-## §8.3a TRANSFER roundtrip span
-
-**Status:** `open` — the emit half of §8.3. Only reading the endpoint configuration is covered.
-
-## §9.1 Startup sequence
-
-**Status:** `partial` — every case of `bridge_rabbitmq_e2e.rs` starts the bridge via `run` and carries data; no test checks the order of the steps.
-
-## §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
-
-**Status:** `partial` — no test for the drain.
+**Status:** `partial` — reliability, durability (header and terminus), KEEP_LAST, lifespan, the deadline annotation `x-opt-zerodds-deadline-missed`, liveliness (lease and heartbeat) and partition (endpoints, `dds:partition`, refusal) built and green on the Linux test host. The lease is checked at the DDS endpoints: a writer offering 200 ms matches the reader of a 500 ms topic, one offering 2000 ms does not; a reader requesting 1000 ms matches the writer, one requesting 300 ms does not. The terminus default `durable` 1 applies only to the target of the sender link. The heartbeat used to go out only at the next 250 ms tick (measured: 3 instead of 5 in 1.6 s at an idle time-out of 600 ms); the pump now wakes up when the heartbeat is due. Open: backpressure for KEEP_ALL.
 
 ## §10 RTPS peer + RabbitMQ/Artemis/Qpid/Solace/ServiceBus
 
-**Status:** `partial` — RabbitMQ 4.0.5 measured, the four other brokers not (§10a).
+**Status:** `partial` — RabbitMQ 4.0.5, Artemis 2.44.0, Qpid Dispatch 1.19.0 and Solace PubSub+ Standard 10.26.0.9219 measured on the Linux test host; a Cyclone writer in front of the bridge measured (§12.3); the Solace job has not run in CI (runner configuration); Azure Service Bus not measured (license acceptance for the emulator).
 
 ## §10a Broker matrix Artemis/Qpid Dispatch/Solace/Azure ServiceBus
 
-**Status:** `open` — the part of §10 and §12.3 beyond RabbitMQ. ---
+**Status:** `partial` — Artemis, Qpid Dispatch and Solace PubSub+ Standard 10.26.0.9219 measured with the five cases of the matrix (Solace: `<queue>` and `queue://<name>` in the matrix, the queues created by the test through SEMP v2; the refused link is the receiver of a queue with `no-access`, since Solace attaches every sender; `topic://<name>` with two receivers, each of which gets every sample; the bridge over TLS with SASL PLAIN; Artemis: `<address>` and `queue://<name>` in the matrix, `topic://<name>` with two receivers, each of which gets every sample; a restart of the broker; Dispatch: the receiver first, the bridge's outcome back through the router; Dispatch 1.19.0 built against CPython 3.11, since it ends with SIGSEGV on Python 3.13). CBS built, not measured against Azure; a `put-token` round not answered within the connect time-out (the first round and a renewal) ends the connection, and the back-off follows. ---
+
+## §11 Linux/macOS/Windows/Docker layout
+
+**Status:** `partial` — Linux, macOS and Docker as above; the Windows service does not answer the service control manager (no Windows host, not built).
 
 ## §12.3 Multi-vendor
 
-**Status:** `open` — a Cyclone subscriber behind the bridge and brokers beyond RabbitMQ are not measured.
+**Status:** `partial` — measured on the Linux test host: a Cyclone reader behind the bridge (pika and qpid-proton → RabbitMQ → bridge → Cyclone, instances 7 and 8 and the dispose of 7) and a Cyclone writer in front of the bridge (Cyclone → bridge → RabbitMQ → qpid-proton: two samples in the order written with the content type of their encapsulation header, Cyclone's payload, `durable` under TRANSIENT_LOCAL, `dds:instance-handle` as the KeyHash, `group-id` from that KeyHash; the dispose of 7 with `dds:operation` `dispose`, the KeyHash of 7 and its `group-id`). The run showed: Cyclone 11.0.1 sends no `PID_KEY_HASH`, and the bridge gave `dds:instance-handle` as zeros. Now the reader computes the KeyHash from `type_file`. Without `type_file`, or when the body or the key does not decode as the type, such a sample and a dispose or unregister of such a writer go out with the nil handle (zeros, no `group-id`); `key_hash_unavailable` is logged and counted in `errors_total` once per writer. For the marker dcps reports this through `UserSample::Lifecycle::key_hash_unavailable`; before, such a dispose went out with the first 16 octets of the `serializedKey` as `dds:instance-handle`, without a log line. Measured against Cyclone without `type_file`: the two samples and the dispose of 7 with 16 zeros as `dds:instance-handle` and no `group-id`, `errors_total` 1; with `type_file` 0. The unit test of dds_pump checks the log line itself. The broker matrix is measured without Azure Service Bus (§10a).

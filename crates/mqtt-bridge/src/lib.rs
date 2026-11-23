@@ -88,6 +88,7 @@ pub mod control_packets;
 pub mod data_types;
 pub mod packet;
 pub mod properties;
+pub mod property_set;
 pub mod vbi;
 pub mod version;
 
@@ -125,6 +126,8 @@ pub mod topic_filter;
 pub mod net;
 #[cfg(feature = "std")]
 pub mod server;
+#[cfg(feature = "websocket")]
+mod ws;
 
 #[cfg(feature = "std")]
 pub use net::MqttClient;

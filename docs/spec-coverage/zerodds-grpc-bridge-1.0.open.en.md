@@ -5,26 +5,6 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
-## §8.1 Structured JSON logging
+## §11 Linux/macOS/Windows/Docker layout
 
-**Status:** `open` — nothing tests the JSON log form or the `--log-level` switch.
-
-## §8.3 OTLP spans + W3C traceparent
-
-**Status:** `partial` — the OTLP configuration is covered, the W3C traceparent parsing is not; the missing half is carried as §8.3a `open`.
-
-## §8.3a W3C traceparent parsing
-
-**Status:** `open` — the traceparent half of §8.3. No test and no occurrence in the tree names `traceparent`.
-
-## §10 RTPS peer + grpc-go/java/grpcurl/ghz/Bloom-RPC/tonic
-
-**Status:** `partial` — grpcurl is measured, the five other clients are not; the missing part is carried as §10a `open`.
-
-## §10a Client matrix grpc-go/grpc-java/ghz/BloomRPC/tonic
-
-**Status:** `open` — the part of §10 and §12.3 beyond grpcurl. `crates/grpc-bridge/tests/cross_vendor.rs` knows only grpcurl.
-
-## §12.3 Multi-vendor cross_vendor.rs
-
-**Status:** `partial` — grpcurl and the DDS side are covered, a tonic client is not.
+**Status:** `partial` — the tests ran green on the Linux test host; the Windows code was compiled there with `cargo clippy --target x86_64-pc-windows-gnu --all-targets`, not run. The weekly job `platform-windows-grpc-bridge-build` (`ci/platform_jobs.py` `WINDOWS_BUILD`, `ci/platforms.yml`) builds every target of `zerodds-grpc-bridge` on the Windows runner, the service watcher and the `run_as_service` call among them; it has not run yet. Missing: the run of the service `ZeroDDSGrpcBridge` under `sc.exe` (start, `READY=1` as `SERVICE_RUNNING`, stop with the drain, `paramchange` as reload); it needs a Windows host with the registered service.

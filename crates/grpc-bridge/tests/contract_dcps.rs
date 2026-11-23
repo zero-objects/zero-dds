@@ -4,7 +4,7 @@
 //! (internal/release/rc8-test-suite.md, "Crate tier").
 //!
 //! What this crate uses of `zerodds-dcps`, all in
-//! `src/bin/zerodds-grpc-bridged.rs` and behind its `std` feature:
+//! `src/bridge_daemon/` and behind its `std` feature:
 //! - `cli::Configured::from_command_line` twice (start and SIGHUP reload)
 //!   with the flags `zerodds_config::CommandLine::extract` took out and the
 //!   daemon's convenience flags pushed as `--set` entries, the base name
@@ -13,14 +13,17 @@
 //!   `configured.source.tree()` for `DaemonConfig::from_config`,
 //!   `checking`, `check_config` and `configured.runtime`;
 //!   `cli::notify_service_manager("READY=1")` and `("STOPPING=1")`.
-//! - `mod bridge_dds`: `runtime::{DcpsRuntime, RuntimeConfig,
-//!   UserReaderConfig, UserSample, UserWriterConfig}`; the GUID prefix
-//!   `GuidPrefix::zerodds(participant::host_id_bytes(),
+//! - `src/bridge_daemon/dds_pump.rs`: `runtime::{DcpsRuntime,
+//!   RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig}`; the
+//!   GUID prefix `GuidPrefix::zerodds(participant::host_id_bytes(),
 //!   participant::next_process_unique())` per `DcpsRuntime::start`;
-//!   `register_user_writer` and `register_user_reader` with a
-//!   `UserWriterConfig` / `UserReaderConfig` that sets topic, the type name
-//!   `ZeroDdsBridgeBytes`, LIVELINESS AUTOMATIC and `type_identifier` over
-//!   `Default` (RELIABILITY and DURABILITY stay at `Default`);
+//!   `register_user_writer_kind` and `register_user_reader_kind` with
+//!   `is_keyed` from the topic's `keyed` (spec §3; `false` for a type
+//!   without a key, so the endpoints are NO_KEY, DDSI-RTPS 2.5 §9.3.1.2
+//!   Table 9.1) and a `UserWriterConfig` / `UserReaderConfig` that sets
+//!   topic, type name (`dds_type`), `reliable`, `durability`, LIVELINESS
+//!   AUTOMATIC, `type_identifier`, and with `qos.deadline_ms` DEADLINE,
+//!   on the writer with `qos.lifespan_ms` LIFESPAN, over `Default`;
 //!   `write_user_sample_borrowed` of a `Publish` payload; `try_recv` on the
 //!   reader channel, `UserSample::Alive` → payload, `Lifecycle` and
 //!   `CoherentSetEnd` skipped.
@@ -34,7 +37,9 @@
 //! `Default`, and those of the reader, RELIABILITY included: the bridge
 //! sets `reliable` from its topic mapping (default RELIABLE), and
 //! `UserReaderConfig::default()` has BEST_EFFORT, the DataReader default of
-//! DDS 1.4 §2.2.3.14.
+//! DDS 1.4 §2.2.3.14. With a runtime on a leased domain: the entity kinds
+//! of `register_user_writer_kind` and `register_user_reader_kind`, NO_KEY
+//! for `is_keyed` `false` and WITH_KEY for `true`.
 //!
 //! Oracles: `docs/specs/zerodds-deployment-1.0.md` §2.1 ("Runtime
 //! configuration from RC7 on": the four layers, `--config PATH` must exist,
@@ -44,7 +49,9 @@
 //! `zerodds_config::Origin`, DDS-XTypes 1.3 §7.6.3.1.1
 //! (`XCDR_DATA_REPRESENTATION = 0`, `XCDR2_DATA_REPRESENTATION = 2`, the
 //! default `[XCDR]`), DDSI-RTPS 2.5 §8.2.4.2 (every participant of a domain
-//! has a unique GUID) and §9.3.1.5 (the first two octets of a GUID prefix are
+//! has a unique GUID), §9.3.1.2 Table 9.1 (`entityKind` 0x02 writer with
+//! key, 0x03 writer without key, 0x04 reader without key, 0x07 reader with
+//! key) and §9.3.1.5 (the first two octets of a GUID prefix are
 //! the vendor id), the rustdoc of `next_process_unique` (the process id, little
 //! endian and marked with its PID namespace) and of `UserWriterConfig` /
 //! `UserReaderConfig` (every member is the DDS default of its policy), DDS 1.4
@@ -62,11 +69,11 @@ use zerodds_dcps::cli::{Configured, HELP};
 use zerodds_dcps::participant::{
     host_id_bytes, namespaced_pid, next_process_unique, pid_namespace_inode,
 };
-use zerodds_dcps::runtime::{UserReaderConfig, UserWriterConfig};
+use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserWriterConfig};
 use zerodds_qos::{DestinationOrderKind, LivelinessKind, OwnershipKind, PresentationAccessScope};
-use zerodds_rtps::wire_types::{GuidPrefix, VendorId};
+use zerodds_rtps::wire_types::{EntityKind, GuidPrefix, VendorId};
 
-/// The base name of the daemon's file (`src/bin/zerodds-grpc-bridged.rs`).
+/// The base name of the daemon's file (`src/bridge_daemon/`).
 const CONFIG_STEM: &str = "grpc-bridged";
 /// DDS-XTypes 1.3 §7.6.3.1.1: `XCDR_DATA_REPRESENTATION`.
 const XCDR: i16 = 0;
@@ -313,4 +320,48 @@ fn dcps_2_2_3_the_reader_policies_the_bridge_leaves_out_are_the_dds_defaults() {
     // Not a relay reader (DDS-Security 1.2 §7.1.1.4): its payloads arrive
     // opened.
     assert!(!r.relay);
+}
+
+#[test]
+fn rtps_9_3_1_2_the_kind_calls_give_no_key_and_with_key_endpoints() {
+    let lease = zerodds_test_domains::lease_domain();
+    let rt = DcpsRuntime::start(
+        lease.id(),
+        GuidPrefix::zerodds(host_id_bytes(), next_process_unique()),
+        RuntimeConfig::default(),
+    )
+    .unwrap();
+    let writer = |topic: &str| UserWriterConfig {
+        topic_name: topic.into(),
+        type_name: "Contract::T".into(),
+        ..UserWriterConfig::default()
+    };
+    let reader = |topic: &str| UserReaderConfig {
+        topic_name: topic.into(),
+        type_name: "Contract::T".into(),
+        ..UserReaderConfig::default()
+    };
+    // `keyed: false` (spec §3): a type without a key.
+    let w = rt
+        .register_user_writer_kind(writer("Contract::NoKey"), false)
+        .unwrap();
+    assert_eq!(w.entity_kind, EntityKind::UserWriterNoKey);
+    assert_eq!(w.entity_kind.to_byte(), 0x03);
+    let (r, _rx) = rt
+        .register_user_reader_kind(reader("Contract::NoKey"), false)
+        .unwrap();
+    assert_eq!(r.entity_kind, EntityKind::UserReaderNoKey);
+    assert_eq!(r.entity_kind.to_byte(), 0x04);
+    // `keyed: true`, the default of a topic.
+    let w = rt
+        .register_user_writer_kind(writer("Contract::Keyed"), true)
+        .unwrap();
+    assert_eq!(w.entity_kind, EntityKind::UserWriterWithKey);
+    assert_eq!(w.entity_kind.to_byte(), 0x02);
+    let (r, _rx) = rt
+        .register_user_reader_kind(reader("Contract::Keyed"), true)
+        .unwrap();
+    assert_eq!(r.entity_kind, EntityKind::UserReaderWithKey);
+    assert_eq!(r.entity_kind.to_byte(), 0x07);
+    rt.shutdown();
 }

@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//
+// The service definition zerodds-grpc-bridged serves for the DDS topic
+// `Chat::Message` with the defaults of zerodds-grpc-bridge-1.0 §5.1
+// (package `zerodds.chat.v1`, service `ChatMessageStream`): the text of §4.2,
+// as `service_gen::render_proto` writes it. A client of another topic
+// changes the package and the service name; the messages stay.
+
+syntax = "proto3";
+package zerodds.chat.v1;
+
+service ChatMessageStream {
+  rpc Publish(stream Sample) returns (PublishAck);
+  rpc Subscribe(SubscribeReq) returns (stream Sample);
+  rpc PublishOne(Sample) returns (PublishAck);
+  rpc Catalog(CatalogReq) returns (CatalogResp);
+}
+
+message Sample {
+  bytes  cdr_payload   = 1;       // CDR-Bytes including Encap-Header
+  uint32 flags         = 2;       // dispose-bit etc.
+  bytes  key_hash      = 3;
+  uint64 source_ts_ns  = 4;
+  string type_name     = 5;
+  string topic_name    = 6;
+}
+
+message PublishAck {
+  uint64 sequence_number = 1;
+  uint64 acked_at_ns     = 2;
+}
+
+message SubscribeReq {
+  string  partition_filter = 1;     // optional partition expression
+  bool    include_dispose  = 2;
+  uint32  initial_burst    = 3;     // 0 = no burst
+}
+
+message CatalogReq {}
+message CatalogResp {
+  repeated TopicEntry topics = 1;
+}
+message TopicEntry {
+  string dds_name      = 1;
+  string dds_type      = 2;
+  string grpc_service  = 3;
+  string idl_url       = 4;
+}

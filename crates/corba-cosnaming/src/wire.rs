@@ -75,7 +75,12 @@ pub const REPO_ID_INVALID_ADDRESS: &str =
 // Name / NameComponent — Spec §2.4.2.
 // ---------------------------------------------------------------------
 
-fn write_name(w: &mut Writer, name: &Name) -> Result<(), zerodds_wire::WireError> {
+/// Writes a `CosNaming::Name` (a sequence of `NameComponent { string id;
+/// string kind; }`), e.g. as a member of another type.
+///
+/// # Errors
+/// A name of more than `u32::MAX` components.
+pub fn write_name(w: &mut Writer, name: &Name) -> Result<(), zerodds_wire::WireError> {
     let n = u32::try_from(name.len()).map_err(|_| zerodds_wire::WireError::OutOfRange {
         at: w.position(),
         expected: alloc::format!("a Name of at most u32::MAX components, not {}", name.len()),
@@ -88,7 +93,11 @@ fn write_name(w: &mut Writer, name: &Name) -> Result<(), zerodds_wire::WireError
     Ok(())
 }
 
-fn read_name(r: &mut Reader<'_>) -> Result<Name, zerodds_wire::WireError> {
+/// Reads a `CosNaming::Name` written by [`write_name`].
+///
+/// # Errors
+/// A truncated name or a count larger than the octets left.
+pub fn read_name(r: &mut Reader<'_>) -> Result<Name, zerodds_wire::WireError> {
     let n = r.read_u32()? as usize;
     // Each NameComponent needs >= 8 bytes (two empty-string length
     // prefixes). Reject an impossible count before allocating for it.
@@ -350,15 +359,19 @@ pub fn encode_naming_error(
 
 /// `bind`/`rebind` request: `(Name n, Object obj)`.
 ///
+/// `r` stands at the first octet of the request body, its alignment
+/// counted from the start of the GIOP message: a GIOP 1.0/1.1 request
+/// body follows the header without padding (CORBA 3.3 Part 2
+/// §9.4.2.1), and a reader from the body's first octet would misplace
+/// every aligned value after it. `zerodds_corba_giop::AlignedBody::reader`
+/// gives one; a body written from offset 0 is read with
+/// `Reader::new(body, endianness)`.
+///
 /// # Errors
 /// [`NamingWireError`] on a truncated/malformed body.
-pub fn decode_bind_request(
-    body: &[u8],
-    endianness: Endianness,
-) -> Result<(Name, Ior), NamingWireError> {
-    let mut r = Reader::new(body, endianness);
-    let name = read_name(&mut r)?;
-    let obj = read_object(&mut r)?;
+pub fn decode_bind_request(r: &mut Reader<'_>) -> Result<(Name, Ior), NamingWireError> {
+    let name = read_name(r)?;
+    let obj = read_object(r)?;
     Ok((name, obj))
 }
 
@@ -381,23 +394,23 @@ pub fn encode_bind_request(
 /// — same shape as [`decode_bind_request`], named separately because the
 /// IDL declares a distinct (narrower) parameter type.
 ///
+/// `r` as for [`decode_bind_request`].
+///
 /// # Errors
 /// As [`decode_bind_request`].
-pub fn decode_bind_context_request(
-    body: &[u8],
-    endianness: Endianness,
-) -> Result<(Name, Ior), NamingWireError> {
-    decode_bind_request(body, endianness)
+pub fn decode_bind_context_request(r: &mut Reader<'_>) -> Result<(Name, Ior), NamingWireError> {
+    decode_bind_request(r)
 }
 
 /// `unbind`/`destroy` (`NamingContext::destroy`) request: `(Name n)` for
 /// `unbind`; `destroy` and `new_context` take nothing.
 ///
+/// `r` as for [`decode_bind_request`].
+///
 /// # Errors
 /// [`NamingWireError`] on a truncated/malformed body.
-pub fn decode_name_request(body: &[u8], endianness: Endianness) -> Result<Name, NamingWireError> {
-    let mut r = Reader::new(body, endianness);
-    Ok(read_name(&mut r)?)
+pub fn decode_name_request(r: &mut Reader<'_>) -> Result<Name, NamingWireError> {
+    Ok(read_name(r)?)
 }
 
 /// `unbind`/`resolve` request encoder (client side).
@@ -435,10 +448,11 @@ pub fn decode_object_reply(body: &[u8], endianness: Endianness) -> Result<Ior, N
 
 /// `list` request: `(unsigned long how_many)`.
 ///
+/// `r` as for [`decode_bind_request`].
+///
 /// # Errors
 /// [`NamingWireError`] on a truncated body.
-pub fn decode_list_request(body: &[u8], endianness: Endianness) -> Result<u32, NamingWireError> {
-    let mut r = Reader::new(body, endianness);
+pub fn decode_list_request(r: &mut Reader<'_>) -> Result<u32, NamingWireError> {
     Ok(r.read_u32()?)
 }
 
@@ -548,10 +562,12 @@ pub fn decode_next_one_reply(
 /// `BindingIterator::next_n` request: `(unsigned long how_many)` — same
 /// shape as `list`'s.
 ///
+/// `r` as for [`decode_bind_request`].
+///
 /// # Errors
 /// As [`decode_list_request`].
-pub fn decode_next_n_request(body: &[u8], endianness: Endianness) -> Result<u32, NamingWireError> {
-    decode_list_request(body, endianness)
+pub fn decode_next_n_request(r: &mut Reader<'_>) -> Result<u32, NamingWireError> {
+    decode_list_request(r)
 }
 
 /// `BindingIterator::next_n` reply: `(boolean, BindingList)`.
@@ -587,13 +603,11 @@ pub fn decode_next_n_reply(
 /// pairs below; this one is the common `(string) -> string` shape of
 /// `to_name`.
 ///
+/// `r` as for [`decode_bind_request`].
+///
 /// # Errors
 /// [`NamingWireError`] on a truncated body.
-pub fn decode_string_request(
-    body: &[u8],
-    endianness: Endianness,
-) -> Result<String, NamingWireError> {
-    let mut r = Reader::new(body, endianness);
+pub fn decode_string_request(r: &mut Reader<'_>) -> Result<String, NamingWireError> {
     Ok(r.read_string()?)
 }
 
@@ -645,13 +659,11 @@ pub fn decode_name_reply(body: &[u8], endianness: Endianness) -> Result<Name, Na
 
 /// `to_url` request: `(Address addr, StringName sn)`.
 ///
+/// `r` as for [`decode_bind_request`].
+///
 /// # Errors
 /// [`NamingWireError`] on a truncated body.
-pub fn decode_to_url_request(
-    body: &[u8],
-    endianness: Endianness,
-) -> Result<(String, String), NamingWireError> {
-    let mut r = Reader::new(body, endianness);
+pub fn decode_to_url_request(r: &mut Reader<'_>) -> Result<(String, String), NamingWireError> {
     let address = r.read_string()?;
     let name_part = r.read_string()?;
     Ok((address, name_part))
@@ -706,7 +718,7 @@ mod tests {
         let n = name(&["x"]);
         let target = ior(b"NameService");
         let bytes = encode_bind_request(&n, &target, Endianness::Big).unwrap();
-        let (dn, dt) = decode_bind_request(&bytes, Endianness::Big).unwrap();
+        let (dn, dt) = decode_bind_request(&mut Reader::new(&bytes, Endianness::Big)).unwrap();
         assert_eq!(dn, n);
         assert_eq!(dt, target);
     }
@@ -848,11 +860,12 @@ mod tests {
     fn string_and_to_url_bodies_round_trip() {
         let bytes = encode_string_request("App/Service", Endianness::Big);
         assert_eq!(
-            decode_string_request(&bytes, Endianness::Big).unwrap(),
+            decode_string_request(&mut Reader::new(&bytes, Endianness::Big)).unwrap(),
             "App/Service"
         );
         let bytes = encode_to_url_request(":host:2809/NS", "App/Service", Endianness::Little);
-        let (addr, np) = decode_to_url_request(&bytes, Endianness::Little).unwrap();
+        let (addr, np) =
+            decode_to_url_request(&mut Reader::new(&bytes, Endianness::Little)).unwrap();
         assert_eq!(addr, ":host:2809/NS");
         assert_eq!(np, "App/Service");
     }

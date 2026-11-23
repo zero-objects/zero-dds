@@ -35,6 +35,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod building_block;
+mod cidl;
 mod decl;
 pub mod diagnostic;
 pub mod dialect;

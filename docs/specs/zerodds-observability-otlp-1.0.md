@@ -98,6 +98,16 @@ Body: OTLP `ExportTraceServiceRequest` as JSON.
 
 `SpanKind` mapping: `Internal=1`, `Server=2`, `Client=3`. `SpanStatus::Ok=1`, `Error=2`, `Unset=0`.
 
+The attributes of `Span::attributes` are `AnyValue`s with `stringValue`.
+A span added with `add_span_with_ints` carries in addition its
+`IntAttribute`s, after the string attributes, as `AnyValue`s with
+`intValue`, the int64 as a decimal string (the proto3 JSON mapping), for
+an attribute the OpenTelemetry semantic conventions define as `int`:
+
+```json
+{"key":"rpc.grpc.status_code","value":{"intValue":"0"}}
+```
+
 ### §2.2 `/v1/metrics`
 
 Body: OTLP `ExportMetricsServiceRequest` with histogram data from
@@ -130,6 +140,31 @@ pub struct OtlpConfig {
 }
 ```
 
+`host` is a name, an IPv4 address or an IPv6 address, with or without
+the brackets of a URL (`[::1]` as `http://[::1]:4318` writes it, or
+`::1`); the `Host` field of the request writes an IPv6 address in
+brackets (RFC 9110 §7.2).
+
+`timeout` bounds the connect to the collector (each address `host`
+resolves to, in turn), each write and each read: a collector that drops
+the SYN fails the export within it, not after the kernel's SYN retries.
+
+A daemon takes its collector from an endpoint text:
+
+```rust
+impl OtlpConfig {
+    pub fn from_endpoint(service_name: &str, service_version: &str, raw: &str) -> OtlpConfig;
+    pub fn from_env(service_name: &str, service_version: &str) -> Option<OtlpConfig>;
+}
+pub const OTEL_EXPORTER_OTLP_ENDPOINT: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
+```
+
+`from_endpoint` reads `http://host:port`, `https://host:port`, `host:port`
+or `host`, a trailing `/` allowed: the text after the last `:` is the port;
+without one, or when it is not a number, the port is 4318. The timeout is
+5 s. `from_env` reads the value of `OTEL_EXPORTER_OTLP_ENDPOINT`, `None`
+while it is not set.
+
 ## §4 Lifecycle
 
 ```rust
@@ -146,6 +181,19 @@ exporter.flush()?;
 1. Drain of the buffer mutex.
 2. POST to every non-empty endpoint.
 3. On an IO/HTTP error: the buffers stay drained (no resend) — the error is passed on to the caller.
+
+A daemon flushes from a thread of its own:
+
+```rust
+pub fn spawn_flush_loop(exporter: Arc<OtlpExporter>, stop: Arc<AtomicBool>,
+    interval: Duration, stop_poll: Duration, thread_name: &str)
+    -> io::Result<JoinHandle<()>>;
+```
+
+The thread flushes every `interval` and once more after `stop` is set; it
+looks at `stop` every `stop_poll` (at most every `interval`) and ends after
+that last flush. An export error is dropped: a collector that is away does
+not stop the daemon.
 
 ## §5 Bridge to `zerodds-monitor::Registry`
 

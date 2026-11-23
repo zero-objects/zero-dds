@@ -386,6 +386,37 @@ mod std_carriers {
             })
         }
 
+        /// Binds a receive socket that other sockets of this host may bind
+        /// to the same address as well (`SO_REUSEADDR`, on Unix also
+        /// `SO_REUSEPORT`), and targets `destination` for sends. Several
+        /// subscribers of one multicast group on one host each bind the
+        /// group's port (Part 14 §7.3.5: the NetworkMessages of a group go
+        /// to every receiver that joined it); without the option the second
+        /// bind fails with "address in use".
+        ///
+        /// # Errors
+        /// [`TransportError::Io`] if the socket cannot be bound.
+        pub fn bind_shared(
+            local: SocketAddr,
+            destination: SocketAddr,
+        ) -> Result<Self, TransportError> {
+            use socket2::{Domain, Protocol, Socket, Type};
+            let domain = if local.is_ipv4() {
+                Domain::IPV4
+            } else {
+                Domain::IPV6
+            };
+            let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP)).map_err(io)?;
+            socket.set_reuse_address(true).map_err(io)?;
+            #[cfg(unix)]
+            socket.set_reuse_port(true).map_err(io)?;
+            socket.bind(&local.into()).map_err(io)?;
+            Ok(Self {
+                socket: socket.into(),
+                destination,
+            })
+        }
+
         /// Joins an IPv4 multicast group on the given local interface so that
         /// [`receive`](PubSubTransport::receive) yields multicast datagrams.
         ///

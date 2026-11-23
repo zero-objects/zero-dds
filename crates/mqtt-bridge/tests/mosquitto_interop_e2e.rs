@@ -56,8 +56,11 @@ impl Broker {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        }
         let conf = dir.join("mosquitto.conf");
         std::fs::write(
             &conf,
@@ -222,6 +225,166 @@ fn mqtt5_4_mosquitto_v5_clients_through_zerodds_broker() {
 #[ignore = "needs mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
 fn mqtt5_4_mosquitto_v311_clients_through_zerodds_broker() {
     mosquitto_against_zerodds_broker("mqttv311", "MQTT 3.1.1");
+}
+
+// ---- MQTT 5.0 server behaviour seen by Mosquitto clients --------------
+
+/// A `mosquitto_sub -V 5` against `port` with `args`, started now; its
+/// standard output when it ends.
+fn mosquitto_sub_v5(port: u16, args: &[&str]) -> std::process::Child {
+    Command::new("mosquitto_sub")
+        .args(["-h", "127.0.0.1", "-p", &port.to_string(), "-V", "5"])
+        .args(args)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("mosquitto_sub is not installed; this test measures against it")
+}
+
+fn mosquitto_pub_v5(port: u16, args: &[&str]) {
+    let status = Command::new("mosquitto_pub")
+        .args(["-h", "127.0.0.1", "-p", &port.to_string(), "-V", "5"])
+        .args(args)
+        .status()
+        .expect("mosquitto_pub is not installed; this test measures against it");
+    assert!(status.success(), "mosquitto_pub {args:?} failed");
+}
+
+fn output_of(child: std::process::Child) -> String {
+    let out = child.wait_with_output().expect("mosquitto_sub output");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+#[ignore = "needs mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_3_3_2_3_mosquitto_v5_properties_cross_the_zerodds_broker_unaltered() {
+    let server = MqttBrokerServer::bind("127.0.0.1:0")
+        .unwrap()
+        .spawn()
+        .unwrap();
+    let port = server.local_addr().port();
+    let sub = mosquitto_sub_v5(
+        port,
+        &[
+            "-t",
+            "p/t",
+            "-C",
+            "1",
+            "-W",
+            "5",
+            "-D",
+            "subscribe",
+            "subscription-identifier",
+            "7",
+            "-F",
+            "C=%C|R=%R|D=%D|F=%F|P=%P|S=%S|E=%E|p=%p",
+        ],
+    );
+    thread::sleep(Duration::from_millis(500));
+    mosquitto_pub_v5(
+        port,
+        &[
+            "-t",
+            "p/t",
+            "-m",
+            "hello",
+            "-q",
+            "1",
+            "-D",
+            "publish",
+            "payload-format-indicator",
+            "1",
+            "-D",
+            "publish",
+            "message-expiry-interval",
+            "60",
+            "-D",
+            "publish",
+            "content-type",
+            "text/plain",
+            "-D",
+            "publish",
+            "response-topic",
+            "reply/here",
+            "-D",
+            "publish",
+            "correlation-data",
+            "abc",
+            "-D",
+            "publish",
+            "user-property",
+            "z",
+            "1",
+            "-D",
+            "publish",
+            "user-property",
+            "a",
+            "2",
+            "-D",
+            "publish",
+            "user-property",
+            "z",
+            "3",
+        ],
+    );
+    let got = output_of(sub);
+    server.shutdown();
+    let (head, expiry) = got
+        .rsplit_once("|E=")
+        .expect("mosquitto_sub printed the message");
+    assert_eq!(
+        head, "C=text/plain|R=reply/here|D=abc|F=1|P=z:1 a:2 z:3|S=7",
+        "[MQTT-3.3.2-4], [MQTT-3.3.2-15] to [MQTT-3.3.2-20], [MQTT-3.3.4-3]"
+    );
+    let (secs, payload) = expiry.split_once("|p=").unwrap();
+    let secs: u32 = secs.parse().unwrap();
+    assert!((58..=60).contains(&secs), "[MQTT-3.3.2-6]: {secs}");
+    assert_eq!(payload, "hello");
+}
+
+#[test]
+#[ignore = "needs mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_3_1_2_5_a_mosquitto_v5_session_gets_its_queued_message_at_reconnect() {
+    let server = MqttBrokerServer::bind("127.0.0.1:0")
+        .unwrap()
+        .spawn()
+        .unwrap();
+    let port = server.local_addr().port();
+    let session = ["-c", "-i", "zd-persist", "-x", "60", "-q", "1", "-t", "s/q"];
+    // Subscribe, then leave: the session stays (Session Expiry 60 s).
+    let first = mosquitto_sub_v5(port, &[&session[..], &["-E"]].concat());
+    assert_eq!(output_of(first), "");
+    mosquitto_pub_v5(port, &["-t", "s/q", "-m", "while-away", "-q", "1"]);
+    let back = mosquitto_sub_v5(port, &[&session[..], &["-C", "1", "-W", "5"]].concat());
+    let got = output_of(back);
+    server.shutdown();
+    assert_eq!(got, "while-away", "[MQTT-3.1.2-5], [MQTT-4.5.0-1]");
+}
+
+#[test]
+#[ignore = "needs mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_4_8_2_two_mosquitto_v5_clients_share_a_subscription() {
+    let server = MqttBrokerServer::bind("127.0.0.1:0")
+        .unwrap()
+        .spawn()
+        .unwrap();
+    let port = server.local_addr().port();
+    let a = mosquitto_sub_v5(port, &["-t", "$share/g/sh/t", "-C", "2", "-W", "5"]);
+    let b = mosquitto_sub_v5(port, &["-t", "$share/g/sh/t", "-C", "2", "-W", "5"]);
+    thread::sleep(Duration::from_millis(500));
+    for m in ["m0", "m1", "m2", "m3"] {
+        mosquitto_pub_v5(port, &["-t", "sh/t", "-m", m]);
+    }
+    let (a, b) = (output_of(a), output_of(b));
+    server.shutdown();
+    let mut all: Vec<&str> = a.lines().chain(b.lines()).collect();
+    assert_eq!(a.lines().count(), 2, "{a:?}");
+    assert_eq!(b.lines().count(), 2, "{b:?}");
+    all.sort_unstable();
+    assert_eq!(
+        all,
+        ["m0", "m1", "m2", "m3"],
+        "each message to one session of the group"
+    );
 }
 
 // ---- Cross-stack: ZeroDDS client ↔ ZeroDDS broker over real TCP --------

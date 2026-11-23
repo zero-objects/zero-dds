@@ -11,7 +11,7 @@ the parser that reads it is
 .IR crates/coap-bridge/src/daemon/config.rs::load_from_str .
 .PP
 Top-level keys:
-.BR domain ", " log_level ", " coap ", " oscore ", " auth ", " acl ", " metrics ", " topics .
+.BR domain ", " log_level ", " coap ", " proxy ", " oscore ", " auth ", " acl ", " metrics ", " content_format ", " topics ", " tenants .
 .PP
 An unknown top-level key is
 .I not
@@ -29,6 +29,17 @@ Integer DDS domain ID. Default
 .TP
 .B log_level
 .IR trace " | " debug " | " info " | " warn " | " error .
+The threshold of the daemon's log: one JSON object per line on stdout with
+.IR timestamp ", " level ", " event
+and the fields of the event (spec \(sc8.1). Each exchange is an event
+.IR request ,
+at
+.I debug
+for a 2.xx response,
+.I info
+for 4.xx,
+.I warn
+for 5.xx.
 .SS coap
 .TP
 .B bind
@@ -47,18 +58,67 @@ with the port raised by one.
 .B max_message_size
 DoS cap per datagram in bytes. Default
 .I 1152
-per RFC 7252; raise it only behind a jumbo MTU.
+per RFC 7252; raise it only behind a jumbo MTU. A larger datagram is
+.I 4.13
+with Size1.
+.TP
+.B max_body_size
+The largest body a Block1 transfer assembles, in bytes. Default
+.IR 65536 ;
+beyond it
+.I 4.13
+with Size1 (RFC 7959 \(sc2.9.3).
+.TP
+.B block_size
+16, 32, 64, 128, 256, 512 or 1024. A representation larger than it goes
+out in Block2 blocks of this size (RFC 7959). Default
+.IR 1024 .
 .TP
 .B ack_timeout_ms
-CON retransmission timeout in milliseconds.
+CON retransmission timeout in milliseconds, of the Confirmable
+notifications and pings too (RFC 7252 \(sc4.2).
 .TP
 .B max_retransmit
-Number of CON retransmissions before the exchange is given up.
+Number of CON retransmissions before the exchange is given up; an
+observer that does not acknowledge a Confirmable notification after them
+is removed (RFC 7641 \(sc4.5).
 .TP
 .B observe_max_age_secs
-Lifetime of an
-.I Observe
-registration.
+The longest an observer goes without acknowledging a notification: after
+it the next notification is Confirmable, also on a BEST_EFFORT topic (RFC
+7641 \(sc4.5 sets 24 hours as the bound;
+.I 0
+leaves that bound). Default
+.IR 60 .
+.TP
+.B keep_alive_secs
+The period of the daemon's CoAP ping (an empty Confirmable message) to
+each endpoint with an observation; an endpoint that answers neither with
+Reset nor with ACK after the retransmissions loses its observations
+(spec \(sc6, Liveliness).
+.I 0
+sends none, the default.
+.TP
+.B multicast
+Sub-map for requests to IP multicast groups (RFC 7252 \(sc8):
+.B enabled
+(boolean, default false),
+.B groups
+(the groups joined; default the all-CoAP-nodes group of the bind
+address's family, 224.0.1.187 or ff02::fd and ff05::fd),
+.B interface_v4
+and
+.B interface_v6
+(interface address and interface index a group is joined on),
+.B leisure_ms
+(the period a response is sent in, default 5000),
+.B resources
+(the resources that answer a multicast request, default
+.IR .well-known/core )
+and
+.B unauthenticated_resources
+(those that answer one without OSCORE, default
+.IR .well-known/core ).
 .TP
 .B dtls
 Sub-map with
@@ -73,7 +133,82 @@ Sub-map with
 dropped) and
 .B psk
 (list of pre-shared keys, each entry carrying
-.BR identity " and " secret_hex ).
+.BR identity " and " secret_hex ),
+.B rpk_key_file
+(the PEM private key whose public key the daemon shows as its raw public
+key, RFC 7250) and
+.B rpk_trusted
+(the RFC 6920 names of the client keys it accepts:
+.IR ni: ,
+.I nih:
+or the hex of the binary form, at least
+.IR sha-256-120 ).
+.SS proxy
+The daemon as a CoAP-to-CoAP proxy (RFC 7252 \(sc5.7; specification \(sc4.7).
+.TP
+.B forward
+Boolean, default false. Carry out requests with
+.B Proxy-Uri
+or
+.BR Proxy-Scheme ;
+without it such a request is
+.I 5.05
+unless it names the daemon itself.
+.TP
+.B schemes
+List, default
+.IR "[coap, coaps]" .
+.TP
+.B names
+Host names that name this daemon (a request for one of them is local);
+the first is the identifier of a
+.I 5.08
+diagnostic.
+.TP
+.B timeout_ms
+Default 10000; then
+.BR "5.04 Gateway Timeout" .
+.TP
+.B reverse
+List of
+.BR path " and " origin :
+the resources under
+.B path
+are those under the
+.B origin
+URI. A path that covers a topic or
+.I .well-known/core
+stops the start.
+.TP
+.B cache_entries
+Default 256.
+.TP
+.B require_dtls_for_coaps
+Boolean, default true: a request for a
+.I coaps
+destination must come over DTLS.
+.TP
+.B max_hops
+Initial Hop-Limit (RFC 8768), default 16.
+.TP
+.B multicast_wait_ms
+How long a request to a multicast destination collects responses,
+default 5000.
+.TP
+.B dtls
+Sub-map for
+.I coaps
+destinations:
+.B ca_file
+(trust anchors the destination's certificate is checked against),
+.BR cert_file " and " key_file
+(the certificate the proxy presents),
+.BR psk_identity " and " psk_secret_hex ,
+or
+.B rpk_key_file
+and
+.B rpk_trusted
+(its raw public key and the RFC 6920 names of the destinations' keys).
 .SS oscore
 Object Security for Constrained RESTful Environments, RFC 8613 \(em end-to-end
 protection that survives a CoAP proxy (\(sc7.2).
@@ -131,7 +266,10 @@ Subject that single token authenticates as.
 Sub-map for
 .BR jwt :
 .B public_key
-(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+(PEM file: an RSA key, PKCS#1 or SubjectPublicKeyInfo, for RS256; a P-256
+SubjectPublicKeyInfo for ES256; the token's
+.I alg
+has to be the key's algorithm),
 .BR issuer ,
 .BR audience ,
 .B required_claim
@@ -194,6 +332,33 @@ The key is
 .BR listen ,
 not
 .IR address .
+.TP
+.B path
+The path of the Prometheus page. Default
+.IR /metrics .
+.SS content_format
+The Content-Format number of each form of a sample (spec \(sc4.5); no two
+forms may share one.
+.TP
+.B cdr2_le_id
+XCDR2 little endian, default
+.IR 65000 .
+.TP
+.B cdr2_be_id
+XCDR2 big endian, default
+.IR 65001 .
+.TP
+.B cdr1_le_id
+XCDR1 little endian, default
+.IR 65002 .
+.TP
+.B json_id
+JSON, default
+.IR 50 .
+.TP
+.B cbor_id
+CBOR, default
+.IR 60 .
 .SS topics (list)
 .TP
 .B dds_name
@@ -216,12 +381,91 @@ carries DDS samples to CoAP clients through GET and Observe (a DataReader),
 both. Default
 .IR bidir .
 .TP
+.B idl_file
+The IDL file that declares
+.B dds_type
+(its
+.I #include
+files are read from its directory). With it the topic takes and gives
+JSON, CBOR, XCDR1 and both XCDR2 byte orders, a body is checked against
+the type, DELETE takes a sample, and
+.I GET /schema/<slug>
+returns the IDL. A file that does not load stops the start.
+.TP
+.B extensibility
+.IR final " | " appendable " | " mutable :
+the XCDR2 header of a topic without
+.BR idl_file ,
+whose samples pass through. Default
+.I appendable
+(DDS-XTypes 1.3 \(sc7.3.1.2.1.8).
+.TP
+.B data_representation
+.IR xcdr2 " | " xcdr1 :
+what the topic's DDS writer offers and sends. Default
+.IR xcdr2 ;
+.I xcdr1
+needs
+.B idl_file
+and serves DDS readers that accept only XCDR1.
+.TP
 .B qos
-DDS QoS sub-map with
-.BR reliability ", " durability " and "
+DDS QoS sub-map:
+.B reliability
+.RI ( reliable :
+Confirmable notifications;
+.IR best_effort ),
+.B durability
+.RI ( volatile :
+a new observer gets no sample;
+.IR transient_local ", " transient ", " persistent :
+the last ones),
 .B history
-carrying
-.BR depth .
+with
+.B kind
+.RI ( keep_last " | " keep_all )
+and
+.B depth
+(how many of the last samples a new observer gets),
+.B lifespan_ms
+(the Max-Age of a sample),
+.B deadline_ms
+(after this without a sample a GET is
+.I 5.03
+with Max-Age 0 and every observation ends with one),
+.B liveliness_lease_ms
+and
+.B partition
+(a list; both go to the topic's DDS endpoints).
+.SS tenants (list)
+Participants beside the one of
+.B domain
+(spec \(sc1 L6). A DTLS session whose subject a tenant names is bound to
+it: its requests address the tenant's topics only. Plaintext requests and
+the sessions no tenant names address the top-level
+.BR topics .
+.TP
+.B name
+Unique; the
+.I topic
+label of the tenant's metrics is
+.IR <name>/<dds_name> .
+.TP
+.B domain
+The DDS domain of the tenant's participant. Default: the top-level
+.BR domain .
+.TP
+.B subjects
+The DTLS subjects bound to the tenant:
+.IR psk:<identity> ,
+the certificate's subject DN or
+.IR mtls:<sha256> ,
+.IR rpk:<ni URI> .
+A subject is bound to one tenant at most.
+.TP
+.B topics
+As the top-level
+.BR topics .
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/coap-bridged.yaml.example .

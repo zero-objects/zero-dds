@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "The ZeroDDS IDL tool: check, lint, format, inspect and generate source from OMG IDL 4.2, and DDS 1.2 §8 DLRL object/home classes from the DLRL pragmas."
+description = "The ZeroDDS IDL tool: check, lint, format, inspect and generate source from OMG IDL 4.2, check and dump the compositions of OMG CIDL (CORBA 3.3 Part 3 §8), and DDS 1.2 §8 DLRL object/home classes from the DLRL pragmas."
 homepage = "https://zerodds.org"
 documentation = "https://zerodds.org/docs/tools/idlc.html"
 readme = "README.md"
@@ -44,7 +44,8 @@ zerodds-types = { version = "1.0.0-rc.7", path = "../../crates/types" }
 # type and materialises the four language backends; `zerodds-dlrl` itself
 # is the direct dependency for `DlrlPragma`/`parse_pragma`, which the
 # codegen crate does not re-export.
-zerodds-dlrl = { version = "1.0.0-rc.7", path = "../../crates/dlrl" }
+# Without the feature `dcps`: the pragma parser needs no DCPS run time.
+zerodds-dlrl = { version = "1.0.0-rc.7", path = "../../crates/dlrl", default-features = false, features = ["std"] }
 zerodds-dlrl-codegen = { version = "1.0.0-rc.7", path = "../../crates/dlrl-codegen" }
 
 [dev-dependencies]

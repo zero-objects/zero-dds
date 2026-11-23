@@ -61,6 +61,7 @@ fn make_oscore_config(bind: &str) -> (DaemonConfig, zerodds_test_domains::Domain
         reliability: "best_effort".to_string(),
         durability: "volatile".to_string(),
         history_depth: 10,
+        ..Default::default()
     });
     (cfg, lease)
 }
@@ -126,8 +127,23 @@ fn coapbridge_7_2_protected_post_round_trips_and_replay_is_refused() {
     let m = handle.metrics.as_ref().expect("metrics");
     assert_eq!(m.dds_samples_in_total.get(), 1, "one DDS sample written");
 
-    // Replay: the identical protected message again → 4.01, no second write.
-    let replay = exchange(&client, &server_addr, &outer);
+    // The identical datagram again is a retransmission of the messaging
+    // layer, below OSCORE (RFC 8613 §4.1: "OSCORE protects the CoAP
+    // request/response layer only and not the CoAP messaging layer"): the
+    // same acknowledgement, no second write (RFC 7252 §4.5).
+    let again = exchange(&client, &server_addr, &outer);
+    assert_eq!(again, resp, "the same acknowledgement");
+    assert_eq!(
+        m.dds_samples_in_total.get(),
+        1,
+        "no write for a retransmission"
+    );
+
+    // Replay: the protected request under a new Message ID (the messaging
+    // layer is not protected) → 4.01, no second write.
+    let mut replayed = outer.clone();
+    replayed.message_id = outer.message_id.wrapping_add(1);
+    let replay = exchange(&client, &server_addr, &replayed);
     assert_eq!(replay.code, CoapCode::new(4, 1), "replay refused with 4.01");
     assert_eq!(replay.payload, b"oscore replay".to_vec());
     assert_eq!(m.dds_samples_in_total.get(), 1, "no second DDS write");

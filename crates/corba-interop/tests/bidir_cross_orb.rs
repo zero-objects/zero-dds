@@ -23,7 +23,7 @@ use zerodds_corba_iiop::{Connection, IiopProfileBody};
 use zerodds_corba_interop::runtime::{BiDirEndpoint, object_reference_from_ior};
 use zerodds_corba_ior::{Ior, TaggedProfile};
 use zerodds_corba_rust::SkeletonResult;
-use zerodds_wire::{Endianness, Reader, Writer};
+use zerodds_wire::{Endianness, Writer};
 
 const CLIENT_CB_TYPE: &str = "IDL:org/jacorb/demo/bidir/ClientCallback:1.0";
 
@@ -88,7 +88,7 @@ fn corbarust_7_a_jacorb_server_calls_back_over_the_connection_zerodds_opened() {
     let sink = Arc::clone(&got);
     ep.register(b"ZeroCB", move |op, body, e| {
         if op == "hello" {
-            let mut r = Reader::new(body, e);
+            let mut r = body.reader(e);
             *sink.lock().unwrap() = Some(r.read_string().unwrap());
             SkeletonResult::Reply(Vec::new()) // void
         } else {

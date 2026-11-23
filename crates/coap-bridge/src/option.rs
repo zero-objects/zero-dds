@@ -28,6 +28,8 @@ pub mod numbers {
     pub const URI_PORT: u16 = 7;
     /// `Location-Path` (§5.10.7).
     pub const LOCATION_PATH: u16 = 8;
+    /// `OSCORE` (RFC 8613 §2).
+    pub const OSCORE: u16 = 9;
     /// `Uri-Path` (§5.10.1).
     pub const URI_PATH: u16 = 11;
     /// `Content-Format` (§5.10.3).
@@ -52,6 +54,11 @@ pub mod numbers {
     pub const BLOCK1: u16 = 27;
     /// `Size2` (RFC 7959 §4).
     pub const SIZE2: u16 = 28;
+    /// `Hop-Limit` (RFC 8768 §3).
+    pub const HOP_LIMIT: u16 = 16;
+    /// `No-Response` (RFC 7967 §2): elective, Unsafe-to-Forward, a bit map
+    /// of the response classes the client is not interested in.
+    pub const NO_RESPONSE: u16 = 258;
 }
 
 /// Spec §3.2 — Option-Value-Format (`empty`, `opaque`, `uint`, `string`).

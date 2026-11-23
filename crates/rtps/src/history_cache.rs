@@ -148,6 +148,14 @@ pub struct CacheChange {
     /// reader gets a GAP for the number, the first send and every repair
     /// alike. `None`: for all readers.
     pub destination_readers: Option<alloc::sync::Arc<[crate::wire_types::Guid]>>,
+    /// What the writer's content filters made of the change, one entry per
+    /// filter signature applied (DDSI-RTPS 2.5 §8.7.3). A reader whose
+    /// filter the change passed gets it with `PID_CONTENT_FILTER_INFO`;
+    /// one whose filter it did not pass gets a DATA without payload and
+    /// with the FilteredFlag, or a GAP (see
+    /// [`crate::content_filter_info::FilterOutcome::announce`]). `None`:
+    /// no filter was applied, the readers filter.
+    pub filter_outcomes: Option<alloc::sync::Arc<[crate::content_filter_info::FilterOutcome]>>,
 }
 
 impl CacheChange {
@@ -194,6 +202,7 @@ impl CacheChange {
             non_standard_payload: false,
             destination: None,
             destination_readers: None,
+            filter_outcomes: None,
         }
     }
 
@@ -221,6 +230,17 @@ impl CacheChange {
         readers: Option<alloc::sync::Arc<[crate::wire_types::Guid]>>,
     ) -> Self {
         self.destination_readers = readers;
+        self
+    }
+
+    /// Attaches the outcomes of the writer's content filters (builder
+    /// style; see [`Self::filter_outcomes`]).
+    #[must_use]
+    pub fn with_filter_outcomes(
+        mut self,
+        outcomes: Option<alloc::sync::Arc<[crate::content_filter_info::FilterOutcome]>>,
+    ) -> Self {
+        self.filter_outcomes = outcomes;
         self
     }
 
@@ -285,6 +305,7 @@ impl CacheChange {
             non_standard_payload: false,
             destination: None,
             destination_readers: None,
+            filter_outcomes: None,
         }
     }
 
@@ -325,6 +346,7 @@ impl CacheChange {
             non_standard_payload: false,
             destination: None,
             destination_readers: None,
+            filter_outcomes: None,
         }
     }
 
@@ -355,6 +377,7 @@ impl CacheChange {
             non_standard_payload: false,
             destination: None,
             destination_readers: None,
+            filter_outcomes: None,
         }
     }
 }

@@ -2,7 +2,7 @@
 # Configuration of zerodds-amqp-bridged.
 # Spec: zerodds-amqp-bridge-daemon-1.0 §3 (schema), §11 (deployment).
 #
-# Read by crates/amqp-endpoint/src/bridge_daemon.rs (DaemonConfig::from_config)
+# Read by crates/amqp-endpoint/src/bridge_daemon/config.rs (DaemonConfig::from_config)
 # over the shared layers: this file, amqp-bridged.d/, include:, the
 # environment beneath, --set above. An unknown key in a known section or a
 # value of the wrong type stops the start with file and line; an unknown
@@ -19,7 +19,7 @@ amqp:
   idle_time_out_ms: 30000
   hostname: "localhost"                 # open.hostname (virtual host)
   sasl:
-    mechanism: "PLAIN"                  # PLAIN | SCRAM-SHA-256 | EXTERNAL | ANONYMOUS | XOAUTH2
+    mechanism: "PLAIN"                  # PLAIN | SCRAM-SHA-256 | SCRAM-SHA-512 | EXTERNAL | ANONYMOUS | XOAUTH2
     username: "zerodds"
     password: "${AMQP_PASSWORD}"        # XOAUTH2: the bearer token
   tls:
@@ -33,6 +33,11 @@ amqp:
     initial_delay_ms: 500
     max_delay_ms: 30000
     factor: 2.0
+  cbs:                                  # claims-based security (Azure Service Bus)
+    enabled: false                      # true: a SAS token per address on $cbs before the links
+    key_name: "RootManageSharedAccessKey"
+    secret: "${AMQP_CBS_SECRET}"           # the shared access key; masked in --check-config
+    ttl_s: 3600                         # lifetime of a token, 10..86400; renewed at 4/5
 
 acl:
   default_deny: false                   # true: a topic no rule names is closed
@@ -46,11 +51,16 @@ metrics:
   listen: "127.0.0.1:9094"              # /metrics + /catalog + /healthz
   path: "/metrics"
 
+catalog:
+  enabled: true                         # the topic catalog (§5.2), once per connection
+  address: "/queues/zerodds.catalog"    # default zerodds.bridge.<container_id>.catalog
+
 topics:
   # DDS topic <-> AMQP address. Cross-Ref: zerodds-amqp-bridge-daemon-1.0 §5.
   - dds_name:     "OrderEvent"
     dds_type:     "OrderEvent"          # default: dds_name
     keyed:        true                  # the type has @key fields
+    # type_file:  "/etc/zerodds/order-event.typeobject"   # COMPLETE TypeObject of dds_type; keyed topics only
     amqp_address: "/queues/orders.events"
     direction:    "out"                 # in | out | bidir
     sender:
@@ -64,3 +74,28 @@ topics:
       reliability: "reliable"           # reliable | best_effort (best_effort: settled)
       durability: "volatile"            # volatile | transient_local | transient | persistent
       history: { kind: "keep_last", depth: 10 }   # the sender queue while no credit
+      # deadline_ms: 2000               # requested by the reader, offered by the writer; misses annotate the next message
+      # liveliness_lease_ms: 10000      # lease of the DDS endpoints (automatic)
+      # partition: ["site-a"]           # partitions of the DDS endpoints; dds:partition on the message
+
+# Multi-tenant (zerodds-amqp-bridge-daemon-1.0 §1.1): a participant and a broker
+# connection of its own per tenant; what an entry leaves out is the daemon's.
+# tenants:
+#   - name: "plant-b"
+#     domain: 7
+#     amqp:
+#       container_id: "zerodds-bridge-plant-b"   # mandatory, unique in the daemon
+#       hostname: "vhost:plant-b"
+#       sasl:
+#         mechanism: "PLAIN"
+#         username: "plant-b"
+#         password: "${PLANT_B_PASSWORD}"
+#       tls:
+#         cert_file: "/etc/zerodds/plant-b.pem"
+#         key_file: "/etc/zerodds/plant-b.key"
+#     catalog:
+#       address: "/queues/plant-b.catalog"
+#     topics:
+#       - dds_name: "OrderEvent"
+#         amqp_address: "/queues/plant-b.orders"
+#         direction: "out"

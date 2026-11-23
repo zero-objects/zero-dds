@@ -27,6 +27,7 @@ extern crate alloc;
 extern crate std;
 
 mod annotation;
+mod cidl;
 pub mod complete;
 mod expr;
 mod lower;
@@ -36,8 +37,9 @@ pub mod validate;
 pub use annotation::verbatim_placement;
 pub use complete::hashed_member_id;
 pub use lower::{
-    HashedIdCounter, HashedNameSpelling, KeyOnUnionDiscriminator, Lowered, NameOfTheEnclosingScope,
-    NativeInRemoteInterface, Options, lower, lower_into, lower_into_with, lower_with,
+    HashedIdCounter, HashedNameSpelling, KeyOnUnionDiscriminator, Lowered, LoweredCidl,
+    NameOfTheEnclosingScope, NativeInRemoteInterface, Options, lower, lower_cidl, lower_into,
+    lower_into_with, lower_with,
 };
 pub use scope::ScopeStack;
 pub use validate::rule_name;

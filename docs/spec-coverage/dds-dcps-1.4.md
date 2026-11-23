@@ -478,13 +478,15 @@ all other cases, none of the policies is modified."
 
 **Repo:** `crates/dcps/src/publisher.rs` (`DataWriter::set_qos`),
 `crates/dcps/src/subscriber.rs` (`DataReader::set_qos`),
-`crates/dcps/src/topic.rs` (`Topic::set_qos`)
+`crates/dcps/src/topic.rs` (`Topic::set_qos`),
+`crates/dcps/src/participant.rs` (`DomainParticipant::set_qos`)
 
 **Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_1_datawriter_immutable_reliability_post_enable`,
 `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_1_topic_immutable_durability_post_enable`,
-`crates/dcps/tests/set_qos_atomic.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber`
+`crates/dcps/tests/set_qos_atomic.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_the_participant`
 
-**Status:** done — DataWriter, DataReader und Topic weisen vor jeder Zuweisung ab; Publisher und Subscriber setzen ENTITY_FACTORY nach der Prüfung der neuen PARTITION gegen die Laufzeit (nächstes Item).
+**Status:** done — DataWriter, DataReader und Topic weisen vor jeder Zuweisung ab; Publisher und Subscriber setzen ENTITY_FACTORY nach der Prüfung der neuen PARTITION gegen die Laufzeit (nächstes Item). DomainParticipant setzt ENTITY_FACTORY erst nach `DcpsRuntime::update_participant_properties`, zusammen mit der gespeicherten QoS: ein `set_qos`, das ENTITY_FACTORY und eine propagierte PROPERTY über 64 KiB zugleich ändert, wird mit BAD_PARAMETER abgewiesen, und die `enable`-Kaskade wie auch eine danach erzeugte Entity folgen dem alten Wert. Der Test zum DomainParticipant läuft nur unter Linux (Teilnehmer mit Laufzeit).
 
 ### §2.2.2.1.1.1 set_qos — keine Änderung bei Fehlschlag: Publisher und Subscriber
 
@@ -785,7 +787,8 @@ will automatically enable all entities created from the factory."
 über `children`)
 
 **Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so`,
-`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_7_a_participant_created_disabled_is_discovered_after_its_enable`
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_7_a_participant_created_disabled_is_discovered_after_its_enable`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_3_20_the_enable_of_a_factory_follows_the_entity_factory_it_has_then`
 
 **Status:** done
 
@@ -7884,11 +7887,23 @@ factory will automatically enable each created Entity otherwise it will not."
 
 **Spec:** §2.2.3, S. 112 — ENTITY_FACTORY: RxO "No".
 
-**Repo:** —
+**Repo:** `crates/dcps/src/runtime.rs` (`RxoView` ohne ENTITY_FACTORY,
+`first_incompatible_policy` als Regel aller Zuordnungswege); die
+SEDP-Daten (`PublicationBuiltinTopicData`, `SubscriptionBuiltinTopicData`
+in `crates/rtps`) haben kein Feld für ENTITY_FACTORY.
 
-**Tests:** —
+**Tests:** `crates/dcps/tests/status_reads.rs::dcps_2_2_3_20_differing_entity_factory_values_match_without_an_incompatible_qos_status`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_3_20_entity_factory_of_participant_publisher_and_subscriber_is_not_compared_across_participants`
 
-**Status:** open — nach dem Code erfüllt: ENTITY_FACTORY steht nicht in `RxoView` (`crates/dcps/src/runtime.rs`) und wird nicht angekündigt; es fehlt ein Test, der zeigt, dass unterschiedliche ENTITY_FACTORY-Werte von Publisher und Subscriber die Zuordnung nicht beeinflussen.
+**Status:** done — unterschiedliche Werte in Publisher und Subscriber eines
+Teilnehmers (Publisher FALSE und Subscriber TRUE, dann umgekehrt) verhindern
+weder Zuordnung noch Zustellung. Zwei Teilnehmer, einer mit ENTITY_FACTORY
+FALSE auf DomainParticipant-, Publisher- und Subscriber-Ebene, ordnen ihre
+Endpunkte in beiden Richtungen einander zu; die SEDP-Daten gehen dabei über den
+prozessinternen Weg, der Abgleich läuft gegen den SEDP-Cache wie für einen
+entfernten Teilnehmer. OFFERED_ und REQUESTED_INCOMPATIBLE_QOS bleiben in
+allen Fällen bei `total_count` 0. Der Test mit zwei Teilnehmern läuft nur
+unter Linux.
 
 ### §2.2.3.20 ENTITY_FACTORY — Changeable Yes, wirkt auf später Erzeugte
 
@@ -7897,14 +7912,40 @@ factory will automatically enable each created Entity otherwise it will not."
 created after the change; not the previously created entities."
 
 **Repo:** `crates/dcps/src/participant.rs` (`DomainParticipant::set_qos`:
-`set_autoenable_children`), `crates/dcps/src/publisher.rs`,
-`crates/dcps/src/subscriber.rs`
+`set_autoenable_children`), `crates/dcps/src/publisher.rs`
+(`Publisher::set_qos`), `crates/dcps/src/subscriber.rs`
+(`Subscriber::set_qos`), `crates/dcps/src/factory.rs`
+(`DomainParticipantFactory::set_qos`, `creation_autoenable`, `autoenable`),
+`crates/dcps/src/entity.rs` (`EntityState::enable_entity`)
 
-**Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so`
+**Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_3_20_a_changed_entity_factory_affects_only_entities_created_afterwards`,
+`crates/dcps/tests/enable_semantics.rs::dcps_2_2_3_20_a_changed_factory_qos_affects_only_participants_created_afterwards`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_3_20_the_enable_of_a_factory_follows_the_entity_factory_it_has_then`,
+`crates/dcps/tests/enable_semantics.rs::dcps_2_2_3_20_the_enable_of_a_participant_follows_the_entity_factory_it_has_then`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_3_20_a_participant_created_while_the_factory_qos_changes_follows_one_value`,
+`crates/dcps/tests/set_qos_atomic.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_the_participant`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so`
 
-**Status:** done — der Wert wirkt beim Erzeugen und bei der Kaskade von
-`enable`; schon erzeugte Entities werden durch die Änderung nicht
-freigegeben.
+**Status:** done — `set_qos` an DomainParticipantFactory, DomainParticipant,
+Publisher und Subscriber ändert keine schon erzeugte Entity: nach dem
+Wechsel auf TRUE bleibt eine unter FALSE erzeugte Entity nicht freigegeben,
+nach dem Wechsel auf FALSE bleibt eine freigegebene freigegeben; erst die
+danach erzeugten folgen dem neuen Wert. Die Kaskade von `enable`
+(§2.2.2.1.1.7: "will automatically enable all entities created from the
+factory") folgt dem Wert, den die Factory bei ihrem `enable` hat, auch für
+Entities, die sie vor der Änderung erzeugt hat; geprüft an Publisher,
+Subscriber und an einem nicht freigegebenen DomainParticipant (Topic,
+Publisher und Subscriber). Die Spec regelt diesen Fall nicht ausdrücklich;
+der Wortlaut von §2.2.2.1.1.7 ist hier gewählt. Ein abgewiesenes `set_qos`
+des DomainParticipant lässt ENTITY_FACTORY für Kaskade und Erzeugung beim
+alten Wert. Die DomainParticipantFactory liest ihren Wert einmal je
+Erzeugung; dieser Wert setzt `RuntimeConfig::discoverable` und die Freigabe.
+Ein `set_qos` der Factory während der Erzeugung ergibt so einen Teilnehmer,
+der dem alten oder dem neuen Wert folgt: 12 Erzeugungen, während ein zweiter
+Thread den Wert ohne Pause wechselt, sind jeweils genau dann freigegeben,
+wenn ihre Laufzeit SPDP sendet. Die beiden Tests mit Laufzeit laufen nur
+unter Linux.
 
 ### §2.2.3.20 ENTITY_FACTORY — create_* ruft enable
 
@@ -11929,7 +11970,7 @@ height < 1000 AND x <23” Example of a query_expression or a filter_expression:
 
 ## Audit-Status
 
-796 done / 0 partial / 1 open / 0 blocked / 62 n/a (informative).
+797 done / 0 partial / 0 open / 0 blocked / 62 n/a (informative).
 
 Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dds-dcps-1.4.md`):
 
@@ -11946,4 +11987,3 @@ Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letz
 
 813 zitierte Tests grün, 0 nicht grün.
 
-Offene Punkte: `dds-dcps-1.4.open.md`.

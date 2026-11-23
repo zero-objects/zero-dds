@@ -2,7 +2,7 @@
 # Configuration of zerodds-grpc-bridged.
 # Spec: zerodds-grpc-bridge-1.0 §3 (config schema), §11 (deployment).
 #
-# Read by crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs (DaemonConfig::from_config)
+# Read by crates/grpc-bridge/src/bridge_daemon/config.rs (DaemonConfig::from_config)
 # over the shared layers: this file, grpc-bridged.d/, include:, the
 # environment beneath, --set above. An unknown key in a known section or a
 # value of the wrong type stops the start with file and line; an unknown
@@ -12,24 +12,44 @@
 # load it back.
 
 domain: 0
+# Threshold of the JSON log on stdout (§8.1): one `rpc` line per call,
+# info when it ended OK, warn otherwise. OTEL_EXPORTER_OTLP_ENDPOINT in the
+# environment sends a span per call (§8.3).
 log_level: info
 
 grpc:
-  bind: "0.0.0.0:50051"
+  # Cleartext h2c (tls.enabled: false) only on a loopback address (Spec
+  # §4.1); another address needs tls.enabled: true.
+  bind: "127.0.0.1:50051"
+  # The limits of every connection (Spec §3), here with their defaults.
+  # max_concurrent_streams: 1024       # SETTINGS; a stream above it: REFUSED_STREAM
+  # max_recv_message_size: 4194304     # a larger request: RESOURCE_EXHAUSTED
+  # max_send_message_size: 4194304     # a larger response: RESOURCE_EXHAUSTED
+  # initial_window_size: 1048576       # SETTINGS and the connection window
+  # max_frame_size: 16384              # SETTINGS; 16384..16777215
+  # keepalive:
+  #   time_secs: 60                    # PING after this long without a frame
+  #   timeout_secs: 10                 # GOAWAY when the PING is not acknowledged
+  #   permit_without_calls: false      # client PINGs without a call; idle keepalive
+  # drain_secs: 30                     # SIGTERM: open calls run this long, then UNAVAILABLE (§9.2)
   tls:
     enabled: false
     cert_file: "/etc/zerodds/certs/grpc-bridged.crt"
     key_file:  "/etc/zerodds/certs/grpc-bridged.key"
     # client_ca_file: "/etc/zerodds/certs/grpc-client-ca.pem"   # mTLS
     # require_client_cert: false
+    # alpn: ["h2", "http/1.1"]   # h2 for gRPC, http/1.1 for GET /idl/<dds_name> (Spec §3, §5.2)
+    # min_version: "1.2"   # 1.2 | 1.3; TLS 1.3 when the client offers it
+    # cipher_suites: ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]   # IANA names, first preferred (not empty)
   reflection:
-    enabled: true          # grpc.reflection.v1alpha; /catalog lists the topics
+    enabled: true          # grpc.reflection.v1 and v1alpha with the file descriptors
 
 auth:
-  mode: "none"             # none | bearer | jwt | mtls (Spec §7.2), checked per call
+  mode: "none"             # none | bearer | jwt | mtls (Spec §7.2), checked per call;
+                           # none only on a loopback grpc.bind
   # bearer_token: "..."    # mode bearer: Authorization: Bearer <token>
   # bearer_subject: "alice"
-  # jwt:                   # mode jwt: RS256
+  # jwt:                   # mode jwt: RS256 (RSA key) or ES256 (P-256 key)
   #   public_key: "/etc/zerodds/jwt-pub.pem"
   #   issuer: "https://idp.example.org"
   #   audience: "zerodds-grpc"
@@ -37,13 +57,35 @@ auth:
 
 metrics:
   enabled: false
-  listen: "127.0.0.1:9095"   # /metrics + /catalog + /healthz
+  listen: "127.0.0.1:9095"   # IP address and port (no host name): /metrics + /catalog + /healthz
+  # path: "/metrics"         # the path of the Prometheus page
 
 topics:
   # DDS topic <-> gRPC service. zerodds-grpc-bridge-1.0 §5.
+  # Without grpc_service / grpc_package: InventoryStream in zerodds.inventory.v1.
   - dds_name:     "Inventory"
     grpc_service: "InventoryStream"
     direction:    "out"    # in | out | bidir
+    # dds_type: "Inventory::Item"                  # the type name of the DDS endpoints, default ZeroDdsBridgeBytes
+    # keyed: true                                  # false: the type has no key (NO_KEY endpoints)
+    # grpc_package: "zerodds.inventory.v1"         # the default of the topic name; a qualified service name must name it
+    # idl_file: "/etc/zerodds/idl/inventory.idl"   # served at /idl/Inventory
+    # qos:
+    #   reliability: "reliable"          # reliable | best_effort (a full window queue drops)
+    #   durability: "transient_local"    # volatile | transient_local | transient | persistent;
+    #                                    # other than volatile: retained for SubscribeReq.initial_burst
+    #   history: { kind: "keep_last", depth: 10 }   # depth of the writer into DDS; keep_all without depth
+    #   deadline_ms: 1000                # trailer zerodds-deadline-missed
+    #   lifespan_ms: 60000               # metadata zerodds-lifespan-ms per call
     # acl:                 # Spec §7.3: Publish needs publish, Subscribe subscribe
     #   publish:   ["alice"]
     #   subscribe: ["*"]
+
+# tenants:                 # Spec §1 L6: participants beside the one of `domain`;
+#                           needs grpc.tls.enabled and grpc.tls.client_ca_file
+#   - name: "plant-a"
+#     domain: 7
+#     subjects: ["CN=plant-a,O=Example"]   # client certificates bound to it (TLS)
+#     topics:
+#       - dds_name: "Plant::Status"
+#         grpc_service: "PlantStatusStream"

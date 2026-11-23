@@ -33,6 +33,10 @@ pub const KEYS: &[&str] = &[
     "opcua.server.trusted_client_certificate_der",
     "opcua.server.trusted_client_public_key_pem",
     "opcua.server.historical.topics",
+    "opcua.server.security_groups",
+    "opcua.server.roles.security_key_server_admin",
+    "opcua.server.roles.security_key_server_access",
+    "opcua.server.roles.security_key_server_push",
     "opcua.client.enabled",
     "opcua.client.servers",
     "opcua.pubsub.enabled",
@@ -80,6 +84,50 @@ pub struct ServerConfig {
     pub trusted_client_public_key_pem: Option<PathBuf>,
     /// `opcua.server.historical.*` — Spec §9.3.4.4 Historical Access.
     pub historical: HistoricalConfig,
+    /// `opcua.server.security_groups` — the SecurityGroups whose keys this
+    /// daemon makes and hands out as a Security Key Service (Part 14 §8).
+    pub security_groups: Vec<SecurityGroupConfig>,
+    /// `opcua.server.roles` — the users of the well-known roles of a
+    /// Security Key Service (Part 14 §8.8 Table 231).
+    pub roles: SksRoles,
+}
+
+/// `opcua.server.roles` (Part 14 §8.8 Table 231): the users of each
+/// well-known role of a Security Key Service.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SksRoles {
+    /// `security_key_server_admin`: may add and remove SecurityGroups,
+    /// their folders and push targets, and invalidate or rotate the keys
+    /// of every SecurityGroup.
+    pub admin: Vec<String>,
+    /// `security_key_server_access`: may get the keys of every
+    /// SecurityGroup (`GetSecurityKeys`).
+    pub access: Vec<String>,
+    /// `security_key_server_push`: may push keys into this daemon
+    /// (`SetSecurityKeys`) for every connection with `key_source: push`.
+    pub push: Vec<String>,
+}
+
+/// One `opcua.server.security_groups[]` entry (Part 14 §8.4.1
+/// `SecurityGroupType`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecurityGroupConfig {
+    /// `security_group_id`: unique within this SKS.
+    pub security_group_id: String,
+    /// `policy`: the SecurityPolicy of the keys.
+    pub policy: PubSubSecurityPolicy,
+    /// `key_lifetime_ms`: the lifetime of a key; default one hour.
+    pub key_lifetime_ms: u64,
+    /// `max_future_key_count`: the future keys kept and returned at most;
+    /// default 3.
+    pub max_future_key_count: u32,
+    /// `max_past_key_count`: the past keys kept; default 1.
+    pub max_past_key_count: u32,
+    /// `key_subjects`: the users that may get the keys (`GetSecurityKeys`).
+    pub key_subjects: Vec<String>,
+    /// `admin_subjects`: the users that may invalidate or rotate the keys
+    /// (`InvalidateKeys`, `ForceKeyRotation`).
+    pub admin_subjects: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -93,6 +141,8 @@ impl Default for ServerConfig {
             trusted_client_certificate_der: None,
             trusted_client_public_key_pem: None,
             historical: HistoricalConfig::default(),
+            security_groups: Vec::new(),
+            roles: SksRoles::default(),
         }
     }
 }
@@ -243,6 +293,8 @@ pub struct PubSubSecurityConfig {
     pub policy: PubSubSecurityPolicy,
     /// `security_group_id`.
     pub security_group_id: String,
+    /// Where the keys come from (`key_source`).
+    pub key_source: KeySource,
     /// `token_id` — the `SecurityTokenId` this key set is identified by.
     pub token_id: u32,
     /// `signing_key`, hex-encoded (empty for `aes256-gcm`, whose
@@ -253,6 +305,56 @@ pub struct PubSubSecurityConfig {
     /// `key_nonce`, hex-encoded (4 bytes — the high bytes of the AES-CTR/
     /// GCM IV).
     pub key_nonce: Vec<u8>,
+}
+
+/// Where the keys of a secured PubSub connection come from
+/// (`opcua.pubsub.connections[].security.key_source`, Part 14 §5.4.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeySource {
+    /// `static`: the one key of `token_id`, `signing_key`,
+    /// `encrypting_key` and `key_nonce`; it does not rotate.
+    Static,
+    /// `local`: the daemon's own SecurityGroup of `security_group_id`
+    /// (`opcua.server.security_groups`).
+    Local,
+    /// `sks`: pulled from a Security Key Service with `GetSecurityKeys`
+    /// (Part 14 §8.3.2) over an encrypted session.
+    Pull(SksClientConfig),
+    /// `push`: pushed into this daemon with `SetSecurityKeys` (Part 14
+    /// §9.1.3.3) by the session of `push_subject`.
+    Push {
+        /// The user whose session may push the keys.
+        push_subject: String,
+    },
+}
+
+/// `opcua.pubsub.connections[].security.sks` — the Security Key Service
+/// the keys are pulled from, over a SecureChannel that encrypts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SksClientConfig {
+    /// `endpoint_url`: `opc.tcp://host:port`.
+    pub endpoint_url: String,
+    /// `channel_policy`: `basic256sha256`, `aes128_sha256_rsaoaep` or
+    /// `aes256_sha256_rsapss`.
+    pub channel_policy: String,
+    /// `certificate_der`: this daemon's DER client certificate.
+    pub certificate_der: PathBuf,
+    /// `private_key_pem`: its RSA private key.
+    pub private_key_pem: PathBuf,
+    /// `server_certificate_der`: the SKS's DER certificate.
+    pub server_certificate_der: PathBuf,
+    /// `server_public_key_pem`: the SKS's RSA public key.
+    pub server_public_key_pem: PathBuf,
+    /// `username` / `password`: the identity the keys are given to;
+    /// anonymous without.
+    pub username: Option<String>,
+    /// See `username`.
+    pub password: Option<String>,
+    /// `user_token_policy_id`: the PolicyId of the SKS's UserName token
+    /// policy (Part 4 §7.41); default `user`, the one of this daemon.
+    pub user_token_policy_id: String,
+    /// `requested_key_count`: how many keys are asked for; default 3.
+    pub requested_key_count: u32,
 }
 
 /// `opcua.pubsub.*` — Part 14 UADP.
@@ -393,7 +495,26 @@ impl DaemonConfig {
             "trusted_client_certificate_der",
             "trusted_client_public_key_pem",
             "historical",
+            "security_groups",
+            "roles",
         ])?;
+        let roles = server.section("roles")?;
+        roles.only(&[
+            "security_key_server_admin",
+            "security_key_server_access",
+            "security_key_server_push",
+        ])?;
+        out.server.roles = SksRoles {
+            admin: roles
+                .strings("security_key_server_admin")?
+                .unwrap_or_default(),
+            access: roles
+                .strings("security_key_server_access")?
+                .unwrap_or_default(),
+            push: roles
+                .strings("security_key_server_push")?
+                .unwrap_or_default(),
+        };
         if let Some(v) = server.boolean("enabled")? {
             out.server.enabled = v;
         }
@@ -457,6 +578,63 @@ impl DaemonConfig {
                 .historical
                 .topics
                 .push(HistoricalTopicConfig { dds_topic, depth });
+        }
+        for (path, item) in server.items("security_groups")? {
+            let entry = Section::of(Some(item), path.clone())?;
+            entry.only(&[
+                "security_group_id",
+                "policy",
+                "key_lifetime_ms",
+                "max_future_key_count",
+                "max_past_key_count",
+                "key_subjects",
+                "admin_subjects",
+            ])?;
+            let security_group_id = entry.string("security_group_id")?.ok_or_else(|| {
+                invalid(
+                    entry.path_of("security_group_id"),
+                    first_origin(item),
+                    "a security group needs a security_group_id".to_string(),
+                )
+            })?;
+            if out
+                .server
+                .security_groups
+                .iter()
+                .any(|g| g.security_group_id == security_group_id)
+            {
+                return Err(invalid(
+                    entry.path_of("security_group_id"),
+                    first_origin(item),
+                    std::format!(
+                        "security_group_id `{security_group_id}` is there twice; it is unique within the SKS (Part 14 §8.3.2)"
+                    ),
+                ));
+            }
+            let policy = read_policy(&entry, item)?;
+            let key_lifetime_ms = entry
+                .parse::<u64>("key_lifetime_ms", "a positive integer of milliseconds")?
+                .unwrap_or(3_600_000);
+            if key_lifetime_ms == 0 {
+                return Err(invalid(
+                    entry.path_of("key_lifetime_ms"),
+                    first_origin(item),
+                    "key_lifetime_ms must be at least 1".to_string(),
+                ));
+            }
+            out.server.security_groups.push(SecurityGroupConfig {
+                security_group_id,
+                policy,
+                key_lifetime_ms,
+                max_future_key_count: entry
+                    .parse::<u32>("max_future_key_count", "an integer 0..=4294967295")?
+                    .unwrap_or(3),
+                max_past_key_count: entry
+                    .parse::<u32>("max_past_key_count", "an integer 0..=4294967295")?
+                    .unwrap_or(1),
+                key_subjects: entry.strings("key_subjects")?.unwrap_or_default(),
+                admin_subjects: entry.strings("admin_subjects")?.unwrap_or_default(),
+            });
         }
 
         let secured_policy_requested = out.server.security_policies.iter().any(|p| p != "none");
@@ -722,6 +900,32 @@ fn read_pubsub_connection(
     })
 }
 
+/// The `policy` of a security entry.
+fn read_policy(
+    sec: &Section<'_>,
+    item: &zerodds_config::Node,
+) -> Result<PubSubSecurityPolicy, ConfigError> {
+    let policy_str = sec.string("policy")?.ok_or_else(|| {
+        invalid(
+            sec.path_of("policy"),
+            first_origin(item),
+            "a security entry needs a policy".to_string(),
+        )
+    })?;
+    match policy_str.as_str() {
+        "aes128-ctr" => Ok(PubSubSecurityPolicy::Aes128Ctr),
+        "aes256-ctr" => Ok(PubSubSecurityPolicy::Aes256Ctr),
+        "aes256-gcm" => Ok(PubSubSecurityPolicy::Aes256Gcm),
+        other => Err(invalid(
+            sec.path_of("policy"),
+            first_origin(item),
+            std::format!(
+                "unknown security policy `{other}` (expected aes128-ctr, aes256-ctr or aes256-gcm)"
+            ),
+        )),
+    }
+}
+
 fn read_pubsub_security(
     entry: &Section<'_>,
     item: &zerodds_config::Node,
@@ -730,32 +934,15 @@ fn read_pubsub_security(
     sec.only(&[
         "policy",
         "security_group_id",
+        "key_source",
         "token_id",
         "signing_key",
         "encrypting_key",
         "key_nonce",
+        "sks",
+        "push_subject",
     ])?;
-    let policy_str = sec.string("policy")?.ok_or_else(|| {
-        invalid(
-            sec.path_of("policy"),
-            first_origin(item),
-            "a pubsub security entry needs a policy".to_string(),
-        )
-    })?;
-    let policy = match policy_str.as_str() {
-        "aes128-ctr" => PubSubSecurityPolicy::Aes128Ctr,
-        "aes256-ctr" => PubSubSecurityPolicy::Aes256Ctr,
-        "aes256-gcm" => PubSubSecurityPolicy::Aes256Gcm,
-        other => {
-            return Err(invalid(
-                sec.path_of("policy"),
-                first_origin(item),
-                std::format!(
-                    "unknown security policy `{other}` (expected aes128-ctr, aes256-ctr or aes256-gcm)"
-                ),
-            ));
-        }
-    };
+    let policy = read_policy(&sec, item)?;
     let security_group_id = sec.string("security_group_id")?.ok_or_else(|| {
         invalid(
             sec.path_of("security_group_id"),
@@ -769,32 +956,109 @@ fn read_pubsub_security(
     let signing_key = hex_decode(&sec, "signing_key", item)?;
     let encrypting_key = hex_decode(&sec, "encrypting_key", item)?;
     let key_nonce = hex_decode(&sec, "key_nonce", item)?;
-
-    let (signing_len, encrypting_len, nonce_len) = match policy {
-        PubSubSecurityPolicy::Aes128Ctr => (32usize, 16usize, 4usize),
-        PubSubSecurityPolicy::Aes256Ctr => (32, 32, 4),
-        PubSubSecurityPolicy::Aes256Gcm => (0, 32, 4),
+    let source = sec
+        .choice("key_source", &["static", "local", "sks", "push"])?
+        .unwrap_or_else(|| "static".to_string());
+    let key_source = match source.as_str() {
+        "local" => KeySource::Local,
+        "push" => KeySource::Push {
+            push_subject: sec.string("push_subject")?.ok_or_else(|| {
+                invalid(
+                    sec.path_of("push_subject"),
+                    first_origin(item),
+                    "key_source push needs the push_subject whose session pushes the keys"
+                        .to_string(),
+                )
+            })?,
+        },
+        "sks" => KeySource::Pull(read_sks_client(&sec, item)?),
+        _ => {
+            let (signing_len, encrypting_len, nonce_len) = match policy {
+                PubSubSecurityPolicy::Aes128Ctr => (32usize, 16usize, 4usize),
+                PubSubSecurityPolicy::Aes256Ctr => (32, 32, 4),
+                PubSubSecurityPolicy::Aes256Gcm => (0, 32, 4),
+            };
+            if signing_key.len() != signing_len
+                || encrypting_key.len() != encrypting_len
+                || key_nonce.len() != nonce_len
+            {
+                return Err(invalid(
+                    sec.path_of("signing_key"),
+                    first_origin(item),
+                    std::format!(
+                        "this policy needs signing_key/encrypting_key/key_nonce of {signing_len}/{encrypting_len}/{nonce_len} bytes (hex-encoded)"
+                    ),
+                ));
+            }
+            KeySource::Static
+        }
     };
-    if signing_key.len() != signing_len
-        || encrypting_key.len() != encrypting_len
-        || key_nonce.len() != nonce_len
-    {
-        return Err(invalid(
-            sec.path_of("signing_key"),
-            first_origin(item),
-            std::format!(
-                "{policy_str} needs signing_key/encrypting_key/key_nonce of {signing_len}/{encrypting_len}/{nonce_len} bytes (hex-encoded)"
-            ),
-        ));
-    }
 
     Ok(PubSubSecurityConfig {
         policy,
         security_group_id,
+        key_source,
         token_id,
         signing_key,
         encrypting_key,
         key_nonce,
+    })
+}
+
+/// `security.sks` of a connection whose keys are pulled.
+fn read_sks_client(
+    sec: &Section<'_>,
+    item: &zerodds_config::Node,
+) -> Result<SksClientConfig, ConfigError> {
+    let sks = sec.section("sks")?;
+    sks.only(&[
+        "endpoint_url",
+        "channel_policy",
+        "certificate_der",
+        "private_key_pem",
+        "server_certificate_der",
+        "server_public_key_pem",
+        "username",
+        "password",
+        "user_token_policy_id",
+        "requested_key_count",
+    ])?;
+    let required = |key: &str| -> Result<String, ConfigError> {
+        sks.string(key)?.ok_or_else(|| {
+            invalid(
+                sks.path_of(key),
+                first_origin(item),
+                std::format!(
+                    "key_source sks needs sks.{key}: GetSecurityKeys is called over an encrypted SecureChannel (Part 14 §8.3.2)"
+                ),
+            )
+        })
+    };
+    let channel_policy = sks
+        .choice(
+            "channel_policy",
+            &[
+                "basic256sha256",
+                "aes128_sha256_rsaoaep",
+                "aes256_sha256_rsapss",
+            ],
+        )?
+        .unwrap_or_else(|| "basic256sha256".to_string());
+    Ok(SksClientConfig {
+        endpoint_url: required("endpoint_url")?,
+        channel_policy,
+        certificate_der: PathBuf::from(required("certificate_der")?),
+        private_key_pem: PathBuf::from(required("private_key_pem")?),
+        server_certificate_der: PathBuf::from(required("server_certificate_der")?),
+        server_public_key_pem: PathBuf::from(required("server_public_key_pem")?),
+        username: sks.string("username")?,
+        password: sks.string("password")?,
+        user_token_policy_id: sks
+            .string("user_token_policy_id")?
+            .unwrap_or_else(|| "user".to_string()),
+        requested_key_count: sks
+            .parse::<u32>("requested_key_count", "an integer 0..=4294967295")?
+            .unwrap_or(3),
     })
 }
 

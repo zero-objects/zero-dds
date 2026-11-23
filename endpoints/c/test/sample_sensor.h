@@ -28,4 +28,8 @@ typedef struct {
 int sensor_encode(zdw_writer *w, const sensor_reading *s);
 int sensor_decode(zdw_reader *r, sensor_reading *s);
 
+/* The fixed sample of the golden files endpoints/golden-gen writes
+ * (golden_le.bin, golden_be.bin); the tests encode it. */
+void sensor_fill_golden(sensor_reading *s);
+
 #endif /* SAMPLE_SENSOR_H */

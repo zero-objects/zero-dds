@@ -221,6 +221,16 @@ fn handle_client(mut stream: TcpStream, state: Arc<MockState>, stop: Arc<AtomicB
                 full.extend_from_slice(&vbi);
                 full.extend_from_slice(&body);
                 if let Ok((_, pkt)) = decode_publish(&full) {
+                    // A QoS 1 PUBLISH (the catalog of §5.2) gets its PUBACK,
+                    // or the daemon's shutdown waits for it.
+                    if let (1, Some(id)) = (pkt.qos, pkt.packet_id) {
+                        let mut ack = vec![0x40, 0x03];
+                        ack.extend_from_slice(&id.to_be_bytes());
+                        ack.push(0);
+                        if stream.write_all(&ack).is_err() {
+                            return;
+                        }
+                    }
                     state
                         .publishes
                         .lock()
@@ -247,11 +257,11 @@ fn make_test_config(broker_addr: &str) -> (DaemonConfig, zerodds_test_domains::D
         dds_type: "Trade".to_string(),
         mqtt_topic: "trade".to_string(),
         direction: "bidir".to_string(),
-        mqtt_qos: 0,
-        retain: false,
+        mqtt_qos: Some(0),
+        retain: Some(false),
         reliability: "best_effort".to_string(),
         durability: "volatile".to_string(),
-        history_depth: 10,
+        ..TopicConfig::default()
     });
     (cfg, lease)
 }
@@ -286,32 +296,45 @@ fn mqttbridge_2_daemon_connects_and_subscribes() {
     broker.shutdown();
 }
 
+/// Spec §12.2: a PUBLISH of the broker on a subscribed topic is written into
+/// DDS: a reader of the test on the daemon's participant receives the CDR
+/// bytes after the encapsulation header, octet for octet. The test used to
+/// send a payload without an encapsulation header, which the daemon
+/// refuses, and checked only that nothing panicked.
 #[test]
-fn mqttbridge_2_mqtt_publish_to_daemon_does_not_crash_and_subscribe_arrived() {
-    // Proof that the inbound path (MQTT PUBLISH → DDS writer) is wired
-    // and does not trigger a panic. The DDS subscriber-side sniffing
-    // needs multicast loopback (Linux-only) and is therefore only
-    // indirectly verified here.
-
+fn mqttbridge_12_2_an_mqtt_publish_is_written_to_dds() {
+    use zerodds_dcps::runtime::{UserReaderConfig, UserSample};
     let broker = MockBroker::start();
     let (cfg, _lease) = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
-
-    // Await the CONNECT + SUBSCRIBE handshake.
-    thread::sleep(Duration::from_millis(500));
-    assert!(broker.state.connect_seen.load(Ordering::SeqCst) > 0);
-
-    // Inject a PUBLISH from the broker to the daemon.
-    broker.inject_publish("trade", b"AAPL@200.5");
-
-    // Wait a bit — the daemon holds a lock on the TCP stream the
-    // broker watches. We check that no crash happens + no
-    // further DISCONNECT comes from the daemon.
-    thread::sleep(Duration::from_millis(500));
-
+    let (_reader, rx) = handle
+        .runtime
+        .register_user_reader(UserReaderConfig {
+            topic_name: "Trade".into(),
+            type_name: "Trade".into(),
+            reliable: false,
+            ..Default::default()
+        })
+        .expect("the test's reader");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while broker.state.subscribes.lock().unwrap().is_empty() {
+        assert!(Instant::now() < deadline, "no SUBSCRIBE");
+        thread::sleep(Duration::from_millis(20));
+    }
+    // The encapsulation header of CDR little endian, then the CDR bytes.
+    let body = b"AAPL@200.5";
+    let mut publish = vec![0x00, 0x01, 0x00, 0x00];
+    publish.extend_from_slice(body);
+    let got = loop {
+        broker.inject_publish("trade", &publish);
+        if let Ok(UserSample::Alive { payload, .. }) = rx.recv_timeout(Duration::from_millis(300)) {
+            break payload.to_vec();
+        }
+        assert!(Instant::now() < deadline, "nothing reached the DDS reader");
+    };
+    assert_eq!(got, body);
     handle.shutdown();
     broker.shutdown();
-    // If we get here without a panic, L1+L3 inbound is wired.
 }
 
 #[test]
@@ -355,8 +378,16 @@ fn mqttbridge_2_dds_publish_pumps_to_mqtt_broker() {
         Duration::from_secs(5)
     };
     let deadline = Instant::now() + pump_timeout;
+    // The catalog of §5.2 on `$zerodds/…` comes first.
     while Instant::now() < deadline {
-        if !broker.state.publishes.lock().unwrap().is_empty() {
+        if broker
+            .state
+            .publishes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(t, _)| t == "trade")
+        {
             break;
         }
         thread::sleep(Duration::from_millis(50));
@@ -433,8 +464,7 @@ fn mqttbridge_9_2_a_reload_that_withdraws_the_read_right_stops_the_samples() {
     thread::sleep(Duration::from_millis(400));
     assert_eq!(send_and_wait(b"two"), 1, "a failed reload keeps the ACL");
     let mut closed = cfg;
-    closed.acl_default_deny = true;
-    closed.acl_default_deny_set = true;
+    closed.acl_default_deny = Some(true);
     *next.lock().unwrap() = Ok(closed);
     handle.reload_flag.store(true, Ordering::SeqCst);
     thread::sleep(Duration::from_millis(400));
@@ -526,6 +556,153 @@ fn xtypes_7_6_3_1_2_a_publish_carries_the_header_the_sample_came_under() {
     };
     assert_eq!(published[..4], [0x00, 0x0a, 0x00, 0x00], "PL_CDR2_BE");
     assert_eq!(published[4..], octets[..]);
+    handle.shutdown();
+    broker.shutdown();
+}
+
+/// A participant of the test on `domain`, beside the daemon's, reached over
+/// RTPS.
+fn foreign_participant(domain: i32) -> Arc<zerodds_dcps::runtime::DcpsRuntime> {
+    let mut prefix = [0u8; 12];
+    prefix[..4].copy_from_slice(&std::process::id().to_be_bytes());
+    prefix[4..8].copy_from_slice(&domain.to_be_bytes());
+    prefix[11] = 0x5c;
+    zerodds_dcps::runtime::DcpsRuntime::start(
+        domain,
+        zerodds_rtps::wire_types::GuidPrefix::from_bytes(prefix),
+        zerodds_dcps::runtime::RuntimeConfig::default(),
+    )
+    .expect("the test's participant")
+}
+
+/// zerodds-mqtt-bridge-1.0 §3, §4.2 with DDS-XTypes 1.3 §7.6.3.1: under
+/// `data_representation: xcdr2` the daemon's DataWriter offers XCDR2 from
+/// its creation, so a reader of another participant that accepts only XCDR2
+/// matches it before the first PUBLISH; a PUBLISH under XCDR2 reaches that
+/// reader, one under XCDR1 is refused and not written. A topic without the
+/// key offers XCDR1 until a PUBLISH names another representation: such a
+/// reader, discovered before it, does not match (the XCDR2 readers of
+/// Cyclone DDS 0.10.5, Fast DDS 3.1 and RTI Connext DDS 7.7.0 matched no
+/// writer of the daemon, measured with `tests/cross_vendor.rs`).
+#[test]
+fn mqttbridge_3_data_representation_xcdr2_matches_an_xcdr2_reader_before_the_first_publish() {
+    use zerodds_dcps::runtime::{UserReaderConfig, UserSample};
+    use zerodds_rtps::publication_data::data_representation as dr;
+    let broker = MockBroker::start();
+    let (mut cfg, lease) = make_test_config(&broker.bind_addr);
+    cfg.topics[0].direction = "in".into();
+    cfg.topics[0].reliability = "reliable".into();
+    cfg.topics[0].data_representation = Some("xcdr2".into());
+    cfg.topics.push(TopicConfig {
+        dds_name: "Plain".to_string(),
+        dds_type: "Trade".to_string(),
+        mqtt_topic: "plain".to_string(),
+        direction: "in".to_string(),
+        reliability: "reliable".to_string(),
+        ..TopicConfig::default()
+    });
+    let mut handle = server::start(cfg).expect("daemon start");
+    let peer = foreign_participant(lease.id());
+    let xcdr2_reader = |topic: &str| {
+        peer.register_user_reader(UserReaderConfig {
+            topic_name: topic.into(),
+            type_name: "Trade".into(),
+            reliable: true,
+            data_representation_offer: Some(vec![dr::XCDR2]),
+            ..Default::default()
+        })
+        .expect("the test's reader")
+        .1
+    };
+    let rx = xcdr2_reader("Trade");
+    let _plain = xcdr2_reader("Plain");
+    let trade = handle.user_writers["Trade"];
+    let plain = handle.user_writers["Plain"];
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while handle
+        .runtime
+        .user_writer_matched_reader_guids(trade)
+        .is_empty()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the XCDR2 writer matched no XCDR2 reader"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        handle
+            .runtime
+            .user_writer_matched_reader_guids(plain)
+            .is_empty(),
+        "a writer without the key offers XCDR1"
+    );
+    broker.inject_publish("trade", &[0x00, 0x01, 0x00, 0x00, 0x11]);
+    broker.inject_publish("trade", &[0x00, 0x07, 0x00, 0x00, 0x22]);
+    let mut got = Vec::new();
+    let mut wait = Duration::from_secs(5);
+    while let Ok(sample) = rx.recv_timeout(wait) {
+        if let UserSample::Alive { payload, .. } = sample {
+            got.push(payload.to_vec());
+            wait = Duration::from_millis(800);
+        }
+    }
+    assert_eq!(got, [vec![0x22]], "the XCDR1 PUBLISH is refused");
+    handle.shutdown();
+    broker.shutdown();
+}
+
+/// zerodds-mqtt-bridge-1.0 §3 with DDS-XTypes 1.3 §7.6.3.1.2: under
+/// `data_representation: xcdr2` the DataReader of an `out` topic accepts
+/// XCDR2 alone, so a DDS writer that offers only XCDR1 matches no reader of
+/// the daemon, and one that offers XCDR2 does; the DataReader of a topic
+/// without the key accepts both, and the XCDR1 writer matches it.
+#[test]
+fn mqttbridge_3_data_representation_xcdr2_reader_matches_no_xcdr1_writer() {
+    use zerodds_dcps::runtime::UserWriterConfig;
+    use zerodds_rtps::publication_data::data_representation as dr;
+    let broker = MockBroker::start();
+    let (mut cfg, lease) = make_test_config(&broker.bind_addr);
+    cfg.topics[0].direction = "out".into();
+    cfg.topics[0].reliability = "reliable".into();
+    cfg.topics[0].data_representation = Some("xcdr2".into());
+    cfg.topics.push(TopicConfig {
+        dds_name: "Plain".to_string(),
+        dds_type: "Trade".to_string(),
+        mqtt_topic: "plain".to_string(),
+        direction: "out".to_string(),
+        reliability: "reliable".to_string(),
+        ..TopicConfig::default()
+    });
+    let mut handle = server::start(cfg).expect("daemon start");
+    let peer = foreign_participant(lease.id());
+    let writer = |topic: &str, offer: i16| {
+        peer.register_user_writer(UserWriterConfig {
+            topic_name: topic.into(),
+            type_name: "Trade".into(),
+            reliable: true,
+            data_representation_offer: Some(vec![offer]),
+            ..Default::default()
+        })
+        .expect("the test's writer")
+    };
+    let xcdr2 = writer("Trade", dr::XCDR2);
+    let xcdr1 = writer("Trade", dr::XCDR);
+    let plain = writer("Plain", dr::XCDR);
+    let matched = |w| !peer.user_writer_matched_reader_guids(w).is_empty();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !(matched(xcdr2) && matched(plain)) {
+        assert!(
+            Instant::now() < deadline,
+            "the daemon's readers matched no writer of the test"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    // One discovery of each reader matched all of the test's writers.
+    assert!(
+        !matched(xcdr1),
+        "a reader under xcdr2 matched a writer of XCDR1"
+    );
     handle.shutdown();
     broker.shutdown();
 }

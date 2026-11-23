@@ -42,6 +42,21 @@
 //! (or the peer's own, once known) is split into `FRAGMENT` submessages on
 //! send and reassembled on receive.
 //!
+//! A reliable stream takes a request whole or not at all. A `FRAGMENT` run
+//! larger than the sender window (16 messages) goes out as far as the window
+//! has room; the rest waits in the stream's backlog and follows as the
+//! agent's ACKNACKs free the window, and until it has gone the stream refuses
+//! further requests with [`ClientError::QueueFull`] without sending any of
+//! them. A message the stream took stays buffered until acknowledged: if the
+//! transport fails on its first send, the retransmission the agent's ACKNACK
+//! asks for repairs it, and the failure shows in the next
+//! [`XrceClient::poll`] or [`XrceClient::tick`].
+//!
+//! A caller that cannot take every answer at once polls with
+//! [`XrceClient::poll_held`]: the messages of a reliable stream it has no
+//! room for stay in the stream unacknowledged, so the agent's sender window
+//! fills and the agent stops sending on that stream until they are taken.
+//!
 //! Safety classification: **SAFE**.
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -129,6 +144,10 @@ pub enum ClientError {
     /// `Message`/submessage — never silently dropped, surfaced here so
     /// the caller can log or count it.
     Protocol,
+    /// A reliable submessage above [`XrceClient::requested_mtu`] cannot be
+    /// split: the MTU leaves no room for `FRAGMENT` data after the message
+    /// header and the submessage header (DDS-XRCE 1.0 §8.3.5.14).
+    MtuTooSmall,
 }
 
 /// One thing [`XrceClient::poll`] observed from the agent.
@@ -157,6 +176,26 @@ pub enum ClientEvent {
         object_id: ObjectId,
         /// The result.
         code: ResultStatusCode,
+    },
+    /// A `STATUS`, `INFO` or `DATA` of the agent, undecoded, with the stream it
+    /// came on, for a client that relays the agent's answers to another
+    /// client ([`XrceClient::set_forward_replies`]; DDS-XRCE 1.0 §10.4: an
+    /// agent that is a client of another agent).
+    Forwarded {
+        /// The stream the submessage came on.
+        stream_id: u8,
+        /// The submessage, a `FRAGMENT` run reassembled.
+        submessage: Submessage,
+    },
+    /// The agent acknowledged every message that carried a submessage
+    /// [`XrceClient::forward`] sent on the reliable stream `stream_id`, and
+    /// every message before them on that stream (DDS-XRCE 1.0 §8.4.14.1).
+    /// One event per forwarded submessage, in the order they were forwarded.
+    ForwardAcknowledged {
+        /// The reliable stream.
+        stream_id: u8,
+        /// The submessage as it was given to [`XrceClient::forward`].
+        submessage: Submessage,
     },
     /// `DATA` in FORMAT_DATA — a sample delivered for a `READ_DATA` this
     /// client issued (§7.7.1's opaque `serialized_data`; the caller decodes
@@ -268,6 +307,27 @@ struct FragmentRun {
     last_arrival: Duration,
 }
 
+/// A submessage [`XrceClient::forward`] sent on a reliable stream, held until
+/// the agent acknowledged every message that carries it.
+struct ForwardedRequest {
+    stream_id: u8,
+    submessage: Submessage,
+    /// The sequence numbers of the messages that carry it so far.
+    sequence_numbers: Vec<SerialNumber16>,
+    /// Its `FRAGMENT`s that still wait in the stream's backlog.
+    waiting: usize,
+}
+
+/// What a send did with a submessage on a reliable stream.
+#[derive(Default)]
+struct Taken {
+    /// The sequence numbers of the messages that carry it.
+    sequence_numbers: Vec<SerialNumber16>,
+    /// Its `FRAGMENT`s that wait in the stream's backlog for room in the
+    /// sender window.
+    waiting: usize,
+}
+
 /// Encodes a `[Submessage]` as `[header(4) + body]*`, no outer
 /// `MessageHeader`, no inter-submessage padding — the same
 /// `ReliableStreamState`-buffering / `FRAGMENT`-splitting bridge
@@ -323,6 +383,30 @@ pub struct XrceClient<T: ClientTransport> {
     /// The `sequenceNr` of the newest message taken on each best-effort
     /// stream (§8.3.2.3).
     best_effort_in: BTreeMap<u8, SerialNumber16>,
+    /// The `sequenceNr` of the next message this client sends on each
+    /// best-effort stream (§8.3.2.3: the receiver takes only a message newer
+    /// than the last).
+    best_effort_out: BTreeMap<u8, SerialNumber16>,
+    /// The `FRAGMENT`s of a run each reliable stream has taken but its sender
+    /// window had no room for yet, with the forwarded request they carry.
+    /// They go out as the agent's ACKNACKs free the window; until then the
+    /// stream takes no other message, so its order stays the order of the
+    /// calls.
+    backlog: BTreeMap<u8, alloc::collections::VecDeque<(Submessage, Option<u64>)>>,
+    /// The submessages [`Self::forward`] sent on reliable streams that the
+    /// agent has not acknowledged yet, by the order they were forwarded.
+    forwarded: BTreeMap<u64, ForwardedRequest>,
+    next_forward: u64,
+    /// The period of the HEARTBEATs of a reliable stream with unacknowledged
+    /// messages ([`Self::tick`]).
+    heartbeat_period: Duration,
+    /// The messages of the agent [`Self::poll`] has decoded.
+    received: u64,
+    /// Whether `STATUS`, `INFO` and `DATA` are handed over undecoded
+    /// ([`ClientEvent::Forwarded`]).
+    forward_replies: bool,
+    /// The `properties` of the `CREATE_CLIENT` (§7.8.2.1).
+    properties: Option<Vec<zerodds_xrce::handshake::Property>>,
     /// How a `READ_DATA` writes its `DataDeliveryControl`.
     delivery_control_form: DeliveryControlForm,
     /// Whether this client's `CLIENT_Representation` and the
@@ -354,11 +438,139 @@ impl<T: ClientTransport> XrceClient<T> {
             fragments: FragmentAssembler::new(),
             fragment_runs: BTreeMap::new(),
             best_effort_in: BTreeMap::new(),
+            best_effort_out: BTreeMap::new(),
+            backlog: BTreeMap::new(),
+            forwarded: BTreeMap::new(),
+            next_forward: 0,
+            heartbeat_period: zerodds_xrce::reliable::DEFAULT_HEARTBEAT_PERIOD,
+            received: 0,
+            forward_replies: false,
+            properties: None,
             delivery_control_form: DeliveryControlForm::Appendable,
             representation_timestamps: zerodds_xrce::encoding::representation_timestamps(),
             #[cfg(feature = "std")]
             session_started: None,
         }
+    }
+
+    /// Hands `STATUS`, `INFO` and `DATA` of the agent over undecoded, as
+    /// [`ClientEvent::Forwarded`] with their stream, instead of decoding
+    /// them: for an agent that relays the operations of its own clients to
+    /// this agent (DDS-XRCE 1.0 §10.4).
+    pub fn set_forward_replies(&mut self, on: bool) {
+        self.forward_replies = on;
+    }
+
+    /// Sets the `properties` the `CREATE_CLIENT` carries (DDS-XRCE 1.0
+    /// §7.8.2.1, the properties an AccessController of §7.4 may require).
+    pub fn set_properties(&mut self, properties: Option<Vec<zerodds_xrce::handshake::Property>>) {
+        self.properties = properties;
+    }
+
+    /// Sets the `session_id` of the next [`Self::connect`]. A `CREATE_CLIENT`
+    /// with another `session_id` than the agent's ProxyClient has replaces it,
+    /// its objects and its cached messages (DDS-XRCE 1.0 §7.8.2.1).
+    ///
+    /// # Errors
+    /// [`ClientError::InvalidState`] while a session is open or being opened.
+    pub fn set_session_id(&mut self, session_id: u8) -> Result<(), ClientError> {
+        if self.state != ClientState::Disconnected {
+            return Err(ClientError::InvalidState);
+        }
+        self.session_id = session_id;
+        Ok(())
+    }
+
+    /// Forgets the session without sending anything: the agent is gone or has
+    /// forgotten it. The streams start again at sequence number 0, and what
+    /// they held is dropped: the messages the agent has not acknowledged, the
+    /// `FRAGMENT`s waiting for the window and the record of forwarded
+    /// submessages. A caller that must not lose them keeps its own copy until
+    /// [`ClientEvent::ForwardAcknowledged`]. The next [`Self::connect`] opens a
+    /// new session.
+    pub fn reset_session(&mut self) {
+        self.state = ClientState::Disconnected;
+        self.clear_streams();
+    }
+
+    fn clear_streams(&mut self) {
+        self.streams.clear();
+        self.fragment_runs.clear();
+        self.best_effort_in.clear();
+        self.best_effort_out.clear();
+        self.backlog.clear();
+        self.forwarded.clear();
+    }
+
+    /// Sends `sm` unchanged on `stream_id`: reliable (sequenced, buffered for
+    /// retransmission and split into `FRAGMENT` above the MTU) for a stream of
+    /// 128 or more, best-effort for 1 to 127, unsequenced for
+    /// `STREAMID_NONE`. For an agent that relays a request of its own client
+    /// with the client's `request_id` and `ObjectId` (DDS-XRCE 1.0 §10.4).
+    ///
+    /// A reliable stream takes `sm` whole or not at all: a `FRAGMENT` run
+    /// goes out as far as the sender window has room, the rest follows as the
+    /// agent's ACKNACKs free it, and nothing of `sm` is sent when the call
+    /// fails. Once the stream took it, a failed send of a message is repaired
+    /// by the retransmission the agent's ACKNACK asks for; the transport
+    /// failure shows in the next [`Self::poll`] or [`Self::tick`]. When the
+    /// agent has acknowledged every message that carries it,
+    /// [`Self::poll`] reports [`ClientEvent::ForwardAcknowledged`].
+    ///
+    /// # Errors
+    /// [`ClientError::InvalidState`] without a session;
+    /// [`ClientError::QueueFull`] when the reliable sender window is full or a
+    /// `FRAGMENT` run still waits for it on this stream (nothing was sent);
+    /// [`ClientError::MtuTooSmall`] when `sm` needs `FRAGMENT`s the MTU has no
+    /// room for; transport errors of a best-effort or unsequenced send.
+    pub fn forward(&mut self, stream_id: u8, sm: Submessage) -> Result<(), ClientError> {
+        self.require_connected()?;
+        if stream_id == StreamId::NONE.0 {
+            return self.send_control(sm);
+        }
+        let reliable = StreamId(stream_id).is_reliable();
+        let id = self.next_forward;
+        let tag = reliable.then_some(id);
+        let taken = self.send_fragmented_on(sm.clone(), stream_id, reliable, tag)?;
+        if reliable {
+            self.next_forward = self.next_forward.wrapping_add(1);
+            self.forwarded.insert(
+                id,
+                ForwardedRequest {
+                    stream_id,
+                    submessage: sm,
+                    sequence_numbers: taken.sequence_numbers,
+                    waiting: taken.waiting,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// Sets the period of the HEARTBEATs [`Self::tick`] sends for a reliable
+    /// stream with unacknowledged messages (DDS-XRCE 1.0 §8.3.5.12 dictates
+    /// none; default [`zerodds_xrce::reliable::DEFAULT_HEARTBEAT_PERIOD`]),
+    /// for the streams this client opens from now on.
+    pub fn set_heartbeat_period(&mut self, period: Duration) {
+        self.heartbeat_period = period;
+    }
+
+    /// The number of messages of the agent [`Self::poll`] has decoded so far:
+    /// a caller that watches whether the agent still answers (a HEARTBEAT is
+    /// answered with an ACKNACK only within the session, §8.4.14.2) compares
+    /// it across calls.
+    #[must_use]
+    pub fn received_messages(&self) -> u64 {
+        self.received
+    }
+
+    /// The number of messages of the reliable stream `stream_id` the agent
+    /// has not acknowledged.
+    #[must_use]
+    pub fn unacknowledged(&self, stream_id: u8) -> usize {
+        self.streams
+            .get(&stream_id)
+            .map_or(0, ReliableStreamState::in_flight_count)
     }
 
     /// Sets the form of the representations of the handshake for this client:
@@ -448,7 +660,7 @@ impl<T: ClientTransport> XrceClient<T> {
             vendor_id: self.vendor_id,
             client_key: self.client_key,
             session_id: self.session_id,
-            properties: None,
+            properties: self.properties.clone(),
             requested_mtu: Some(self.requested_mtu),
         };
         let sm = CreateClientPayload {
@@ -819,9 +1031,7 @@ impl<T: ClientTransport> XrceClient<T> {
             }
         }
         self.state = ClientState::Disconnected;
-        self.streams.clear();
-        self.fragment_runs.clear();
-        self.best_effort_in.clear();
+        self.clear_streams();
     }
 
     /// Drains the transport and decodes whatever the agent sent —
@@ -839,14 +1049,140 @@ impl<T: ClientTransport> XrceClient<T> {
     /// datagram is skipped, not fatal; this only returns `Err` for a
     /// transport-level read failure.
     pub fn poll(&mut self, now: Duration) -> Result<Vec<ClientEvent>, ClientError> {
+        self.poll_held(now, &mut |_| usize::MAX)
+    }
+
+    /// [`Self::poll`] for a caller that cannot take every answer at once (an
+    /// agent that relays the answers to its own client, DDS-XRCE 1.0 §10.4,
+    /// and may send that client no more than its sender window holds).
+    /// `room(stream_id)` is asked once per poll for each reliable stream with
+    /// a message to hand over: how many more submessages of it the caller
+    /// takes now. The poll hands over no more than that (a `FRAGMENT` run
+    /// counts once, when it is complete; a message of several submessages
+    /// is handed over whole); the messages after them stay in the stream,
+    /// in order and unacknowledged. The ACKNACKs of this client name the
+    /// first of them as the first unacknowledged message (§8.3.5.11), so
+    /// the agent keeps them in its sender window, and a full window stops it
+    /// from sending more (§8.4.14.1). A later poll hands them over first;
+    /// when it takes messages an earlier poll held, it sends the agent an
+    /// ACKNACK that acknowledges them at once and asks for nothing again
+    /// (§8.4.14.2: the ACKNACK messages of a client "may be periodic or
+    /// optimized"), so the agent does not wait for its next HEARTBEAT to
+    /// fill its window again. Best-effort and `STREAMID_NONE` messages are
+    /// handed over as they come.
+    ///
+    /// # Errors
+    /// As [`Self::poll`].
+    pub fn poll_held<R: FnMut(u8) -> usize>(
+        &mut self,
+        now: Duration,
+        room: &mut R,
+    ) -> Result<Vec<ClientEvent>, ClientError> {
         let mut events = Vec::new();
+        let mut allowance: BTreeMap<u8, usize> = BTreeMap::new();
+        // What earlier polls held goes first: it came before anything the
+        // transport holds now.
+        let held: Vec<u8> = self
+            .streams
+            .iter()
+            .filter(|(_, rs)| rs.has_in_order())
+            .map(|(stream_id, _)| *stream_id)
+            .collect();
+        for stream_id in held {
+            if self.hand_over(stream_id, now, &mut events, &mut allowance, room) {
+                self.acknowledge(stream_id);
+            }
+        }
         while let Some(bytes) = self.transport.try_recv()? {
             let Ok(msg) = Message::decode(&bytes) else {
                 continue; // malformed datagram -- not this client's problem to crash over
             };
-            self.ingest_message(&msg.header, &msg.submessages, now, &mut events);
+            self.received = self.received.wrapping_add(1);
+            self.ingest_message(
+                &msg.header,
+                &msg.submessages,
+                now,
+                &mut events,
+                &mut allowance,
+                room,
+            );
         }
         Ok(events)
+    }
+
+    /// Whether a reliable stream holds messages of the agent that
+    /// [`Self::poll_held`] has not handed over yet.
+    #[must_use]
+    pub fn holds_input(&self) -> bool {
+        self.streams.values().any(ReliableStreamState::has_in_order)
+    }
+
+    /// Hands over the buffered messages of the reliable stream `stream_id`
+    /// in order, as far as the caller's `room` for the stream allows (asked
+    /// once per poll, kept in `allowance`). Whether it handed over any.
+    fn hand_over<R: FnMut(u8) -> usize>(
+        &mut self,
+        stream_id: u8,
+        now: Duration,
+        events: &mut Vec<ClientEvent>,
+        allowance: &mut BTreeMap<u8, usize>,
+        room: &mut R,
+    ) -> bool {
+        let mut any = false;
+        loop {
+            if !self
+                .streams
+                .get(&stream_id)
+                .is_some_and(ReliableStreamState::has_in_order)
+            {
+                return any;
+            }
+            let left = *allowance
+                .entry(stream_id)
+                .or_insert_with(|| room(stream_id));
+            if left == 0 {
+                return any;
+            }
+            let Some((seq, bytes)) = self
+                .streams
+                .get_mut(&stream_id)
+                .and_then(ReliableStreamState::next_in_order)
+            else {
+                return any;
+            };
+            any = true;
+            let header = MessageHeader {
+                session_id: SessionId(self.session_id),
+                stream_id: StreamId(stream_id),
+                sequence_nr: seq,
+                client_key: self.header_client_key(),
+            };
+            let before = events.len();
+            let decoded = decode_submessages(&bytes);
+            self.dispatch_submessages(&header, &decoded, now, events);
+            let handed = events.len() - before;
+            if let Some(left) = allowance.get_mut(&stream_id) {
+                *left = left.saturating_sub(handed);
+            }
+        }
+    }
+
+    /// Sends the ACKNACK that acknowledges every message of the reliable
+    /// stream `stream_id` this client has taken, asking for none again.
+    fn acknowledge(&mut self, stream_id: u8) {
+        let Some(ack) = self
+            .streams
+            .get(&stream_id)
+            .map(ReliableStreamState::acknowledgement)
+        else {
+            return;
+        };
+        let Ok(sm) = ack.into_submessage() else {
+            return;
+        };
+        // A failed send shows in the next poll or tick; the next HEARTBEAT
+        // of the agent is answered with the same acknowledgement.
+        let _ = self.send_control(sm);
     }
 
     /// Drives time-based work: `HEARTBEAT` emission for every reliable
@@ -936,6 +1272,27 @@ impl<T: ClientTransport> XrceClient<T> {
     /// FRAGMENT contract to use).
     fn send_maybe_fragmented(&mut self, sm: Submessage, reliable: bool) -> Result<(), ClientError> {
         let stream_id = if reliable { 0x80 } else { 0x01 };
+        self.send_fragmented_on(sm, stream_id, reliable, None)
+            .map(|_| ())
+    }
+
+    /// Sends `sm` on `stream_id`. A reliable stream takes it whole or not at
+    /// all: above [`Self::requested_mtu`] it is split into `FRAGMENT`s
+    /// (§8.3.5.14), the window gets as many as it has room for and the rest
+    /// waits in the stream's backlog (with `tag`, the forwarded request they
+    /// carry) until the agent's ACKNACKs free it. While a backlog waits the
+    /// stream takes nothing else (`QueueFull`, nothing sent), so the agent
+    /// never sees a run interrupted or begun twice.
+    fn send_fragmented_on(
+        &mut self,
+        sm: Submessage,
+        stream_id: u8,
+        reliable: bool,
+        tag: Option<u64>,
+    ) -> Result<Taken, ClientError> {
+        if reliable && self.backlog.get(&stream_id).is_some_and(|b| !b.is_empty()) {
+            return Err(ClientError::QueueFull);
+        }
         let header_size = if self.header_client_key().is_some() {
             MessageHeader::WIRE_SIZE_WITH_KEY
         } else {
@@ -943,51 +1300,171 @@ impl<T: ClientTransport> XrceClient<T> {
         };
         let budget = usize::from(self.requested_mtu);
         if !reliable || header_size + sm.wire_size_unpadded() <= budget {
-            return self.send_on_stream(sm, stream_id, reliable);
+            let seq = self.send_on_stream(sm, stream_id, reliable)?;
+            return Ok(Taken {
+                sequence_numbers: seq.into_iter().collect(),
+                waiting: 0,
+            });
         }
-        let Some(fragment_budget) = budget.checked_sub(header_size + SubmessageHeader::WIRE_SIZE)
-        else {
-            return Err(ClientError::QueueFull);
-        };
-        if fragment_budget == 0 {
-            return Err(ClientError::QueueFull);
-        }
+        let fragment_budget = budget
+            .checked_sub(header_size + SubmessageHeader::WIRE_SIZE)
+            .filter(|b| *b > 0)
+            .ok_or(ClientError::MtuTooSmall)?;
         let encoded = encode_submessages(core::slice::from_ref(&sm));
         let chunks: Vec<&[u8]> = encoded.chunks(fragment_budget).collect();
         let last = chunks.len().saturating_sub(1);
+        let mut fragments = Vec::with_capacity(chunks.len());
         for (i, chunk) in chunks.into_iter().enumerate() {
-            let frag_sm = FragmentPayload {
-                data: chunk.to_vec(),
-                last_fragment: i == last,
-            }
-            .into_submessage()
-            .map_err(|_| ClientError::QueueFull)?;
-            self.send_on_stream(frag_sm, stream_id, true)?;
+            fragments.push(
+                FragmentPayload {
+                    data: chunk.to_vec(),
+                    last_fragment: i == last,
+                }
+                .into_submessage()
+                .map_err(|_| ClientError::QueueFull)?,
+            );
         }
-        Ok(())
+        let mut taken = Taken::default();
+        let mut rest = fragments.into_iter();
+        while self.window_has_room(stream_id) {
+            let Some(fragment) = rest.next() else {
+                break;
+            };
+            taken
+                .sequence_numbers
+                .push(self.send_taken(fragment, stream_id)?);
+        }
+        let waiting: alloc::collections::VecDeque<(Submessage, Option<u64>)> =
+            rest.map(|f| (f, tag)).collect();
+        taken.waiting = waiting.len();
+        if !waiting.is_empty() {
+            self.backlog.insert(stream_id, waiting);
+        }
+        Ok(taken)
     }
 
+    /// The configuration of a reliable stream of this client.
+    fn reliable_config(&self) -> ReliableConfig {
+        ReliableConfig {
+            heartbeat_period: self.heartbeat_period,
+            ..ReliableConfig::default()
+        }
+    }
+
+    /// Whether the sender window of the reliable stream `stream_id` has room
+    /// for one more message.
+    fn window_has_room(&self, stream_id: u8) -> bool {
+        self.streams
+            .get(&stream_id)
+            .is_none_or(|rs| rs.in_flight_count() < ReliableConfig::default().sender_window)
+    }
+
+    /// Submits `sm` to the reliable stream `stream_id` and sends it. Once
+    /// submitted it is the stream's: a failed send is repaired by the
+    /// retransmission the agent's ACKNACK asks for, and the transport failure
+    /// shows in the next `poll` or `tick`.
+    fn send_taken(&mut self, sm: Submessage, stream_id: u8) -> Result<SerialNumber16, ClientError> {
+        let reliable_config = self.reliable_config();
+        let rs = self
+            .streams
+            .entry(stream_id)
+            .or_insert_with(|| ReliableStreamState::new(StreamId(stream_id), reliable_config));
+        let payload = encode_submessages(core::slice::from_ref(&sm));
+        let seq = rs.submit(payload).map_err(|_| ClientError::QueueFull)?;
+        let header = MessageHeader {
+            session_id: SessionId(self.session_id),
+            stream_id: StreamId(stream_id),
+            sequence_nr: seq,
+            client_key: self.header_client_key(),
+        };
+        let _ = self.send_message(header, alloc::vec![sm]);
+        Ok(seq)
+    }
+
+    /// Sends one message on `stream_id`; the sequence number of a reliable
+    /// one.
     fn send_on_stream(
         &mut self,
         sm: Submessage,
         stream_id: u8,
         reliable: bool,
-    ) -> Result<(), ClientError> {
-        let mut header = MessageHeader {
+    ) -> Result<Option<SerialNumber16>, ClientError> {
+        if reliable {
+            return self.send_taken(sm, stream_id).map(Some);
+        }
+        // §8.3.2.3: on a best-effort stream the receiver takes only a
+        // message newer than the last; each message gets the next number.
+        let client_key = self.header_client_key();
+        let next = self
+            .best_effort_out
+            .entry(stream_id)
+            .or_insert_with(|| SerialNumber16::new(0));
+        let header = MessageHeader {
             session_id: SessionId(self.session_id),
             stream_id: StreamId(stream_id),
-            sequence_nr: SerialNumber16::new(0),
-            client_key: self.header_client_key(),
+            sequence_nr: *next,
+            client_key,
         };
-        if reliable {
-            let rs = self.streams.entry(stream_id).or_insert_with(|| {
-                ReliableStreamState::new(StreamId(stream_id), ReliableConfig::default())
-            });
-            let payload = encode_submessages(core::slice::from_ref(&sm));
-            let seq = rs.submit(payload).map_err(|_| ClientError::QueueFull)?;
-            header.sequence_nr = seq;
+        *next = next.next();
+        self.send_message(header, alloc::vec![sm])?;
+        Ok(None)
+    }
+
+    /// Sends the `FRAGMENT`s of the backlog of `stream_id` the window has room
+    /// for now.
+    fn drain_backlog(&mut self, stream_id: u8) {
+        while self.window_has_room(stream_id) {
+            let Some((fragment, tag)) = self
+                .backlog
+                .get_mut(&stream_id)
+                .and_then(alloc::collections::VecDeque::pop_front)
+            else {
+                break;
+            };
+            let Ok(seq) = self.send_taken(fragment, stream_id) else {
+                break;
+            };
+            if let Some(entry) = tag.and_then(|t| self.forwarded.get_mut(&t)) {
+                entry.sequence_numbers.push(seq);
+                entry.waiting = entry.waiting.saturating_sub(1);
+            }
         }
-        self.send_message(header, alloc::vec![sm])
+        if self.backlog.get(&stream_id).is_some_and(|b| b.is_empty()) {
+            self.backlog.remove(&stream_id);
+        }
+    }
+
+    /// The forwarded submessages of `stream_id` the agent has acknowledged:
+    /// every message that carries them, and every one before them, is no
+    /// longer in flight.
+    fn acknowledged_forwards(&mut self, stream_id: u8, events: &mut Vec<ClientEvent>) {
+        let Some(rs) = self.streams.get(&stream_id) else {
+            return;
+        };
+        let mut done = Vec::new();
+        for (id, entry) in self
+            .forwarded
+            .iter()
+            .filter(|(_, e)| e.stream_id == stream_id)
+        {
+            let delivered = entry.waiting == 0
+                && entry
+                    .sequence_numbers
+                    .iter()
+                    .all(|seq| rs.get_in_flight(*seq).is_none());
+            if !delivered {
+                break; // a later one counts only after this one
+            }
+            done.push(*id);
+        }
+        for id in done {
+            if let Some(entry) = self.forwarded.remove(&id) {
+                events.push(ClientEvent::ForwardAcknowledged {
+                    stream_id,
+                    submessage: entry.submessage,
+                });
+            }
+        }
     }
 
     fn send_message(
@@ -1004,30 +1481,29 @@ impl<T: ClientTransport> XrceClient<T> {
     }
 
     /// Mirrors `zerodds-xrce-agent`'s `SessionEngine::handle_message`:
-    /// reliable-stream messages are gated through `recv_data`/
-    /// `drain_in_order` before dispatch; best-effort/`StreamId::NONE`
-    /// dispatch immediately.
-    fn ingest_message(
+    /// reliable-stream messages are gated through `recv_data` and handed over
+    /// in order as far as `room` allows ([`Self::hand_over`]);
+    /// best-effort/`StreamId::NONE` dispatch immediately.
+    fn ingest_message<R: FnMut(u8) -> usize>(
         &mut self,
         header: &MessageHeader,
         submessages: &[Submessage],
         now: Duration,
         events: &mut Vec<ClientEvent>,
+        allowance: &mut BTreeMap<u8, usize>,
+        room: &mut R,
     ) {
         if header.stream_id.is_reliable() {
-            let rs = self.streams.entry(header.stream_id.0).or_insert_with(|| {
-                ReliableStreamState::new(header.stream_id, ReliableConfig::default())
-            });
+            let reliable_config = self.reliable_config();
+            let rs = self
+                .streams
+                .entry(header.stream_id.0)
+                .or_insert_with(|| ReliableStreamState::new(header.stream_id, reliable_config));
             if rs
                 .recv_data(header.sequence_nr, encode_submessages(submessages))
                 .is_ok()
             {
-                for (seq, bytes) in rs.drain_in_order() {
-                    let decoded = decode_submessages(&bytes);
-                    let mut h = *header;
-                    h.sequence_nr = seq;
-                    self.dispatch_submessages(&h, &decoded, now, events);
-                }
+                self.hand_over(header.stream_id.0, now, events, allowance, room);
             }
         } else {
             // §8.3.2.3: a best-effort stream is ordered and duplicates are
@@ -1135,13 +1611,25 @@ impl<T: ClientTransport> XrceClient<T> {
         sm: &Submessage,
         events: &mut Vec<ClientEvent>,
     ) {
+        if self.forward_replies
+            && matches!(
+                sm.header.submessage_id,
+                SubmessageId::Status | SubmessageId::Info | SubmessageId::Data
+            )
+        {
+            events.push(ClientEvent::Forwarded {
+                stream_id: header.stream_id.0,
+                submessage: sm.clone(),
+            });
+            return;
+        }
         match sm.header.submessage_id {
             SubmessageId::StatusAgent => self.handle_status_agent(sm, events),
             SubmessageId::Status => Self::handle_status(sm, events),
             SubmessageId::Info => Self::handle_info(sm, events),
             SubmessageId::Data => Self::handle_data(sm, events),
             SubmessageId::Heartbeat => self.handle_heartbeat(header, sm),
-            SubmessageId::AckNack => self.handle_acknack(header, sm),
+            SubmessageId::AckNack => self.handle_acknack(header, sm, events),
             SubmessageId::Timestamp => {
                 if let Ok(ts) = TimestampPayload::try_from_submessage(sm) {
                     events.push(ClientEvent::TimestampReceived {
@@ -1289,9 +1777,11 @@ impl<T: ClientTransport> XrceClient<T> {
         let Ok(hb) = HeartbeatPayload::try_from_submessage(sm) else {
             return;
         };
-        let rs = self.streams.entry(hb.stream_id).or_insert_with(|| {
-            ReliableStreamState::new(StreamId(hb.stream_id), ReliableConfig::default())
-        });
+        let reliable_config = self.reliable_config();
+        let rs = self
+            .streams
+            .entry(hb.stream_id)
+            .or_insert_with(|| ReliableStreamState::new(StreamId(hb.stream_id), reliable_config));
         let last_seen = SerialNumber16::new(hb.last_unacked_seq_nr as u16);
         let ack = rs.pending_acknack(Some(last_seen));
         let Ok(ack_sm) = ack.into_submessage() else {
@@ -1307,7 +1797,12 @@ impl<T: ClientTransport> XrceClient<T> {
         let _ = self.send_message(out_header, alloc::vec![ack_sm]);
     }
 
-    fn handle_acknack(&mut self, header: &MessageHeader, sm: &Submessage) {
+    fn handle_acknack(
+        &mut self,
+        header: &MessageHeader,
+        sm: &Submessage,
+        events: &mut Vec<ClientEvent>,
+    ) {
         let Ok(ack) = AckNackPayload::try_from_submessage(sm) else {
             return;
         };
@@ -1345,6 +1840,9 @@ impl<T: ClientTransport> XrceClient<T> {
         for (h, sms) in retransmits {
             let _ = self.send_message(h, sms);
         }
+        // The window has room again: the rest of a FRAGMENT run goes out.
+        self.drain_backlog(stream_id);
+        self.acknowledged_forwards(stream_id, events);
     }
 }
 
@@ -1998,6 +2496,41 @@ mod tests {
         }
     }
 
+    /// §8.3.2.3: a receiver takes on a best-effort stream only a message newer
+    /// than the last, so the client numbers the messages it sends there, each
+    /// stream for itself (they all went out with sequence number 0, and an
+    /// agent discarded all but the first). Reliable messages keep their own
+    /// numbering.
+    #[test]
+    fn xrce_8_3_2_3_a_best_effort_stream_numbers_the_messages_it_sends() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        connect_and_ack(&mut c, &transport);
+        let writer = ObjectId::new(0x0030, ObjectKind::DataWriter).unwrap();
+        let before = transport.sent_messages().len();
+        for i in 0..3u8 {
+            c.request_write(writer, &[i], false).unwrap();
+        }
+        c.request_write(writer, &[9], true).unwrap();
+        c.forward(0x02, write_sm([0x07, 0], 4)).unwrap();
+        c.request_write(writer, &[3], false).unwrap();
+        let sent: Vec<(u8, u16)> = transport.sent_messages()[before..]
+            .iter()
+            .map(|m| (m.header.stream_id.0, m.header.sequence_nr.raw()))
+            .collect();
+        assert_eq!(
+            sent,
+            alloc::vec![
+                (0x01, 0),
+                (0x01, 1),
+                (0x01, 2),
+                (0x80, 0),
+                (0x02, 0),
+                (0x01, 3)
+            ]
+        );
+    }
+
     /// §8.3.2.3: on a best-effort stream a message that is a duplicate of the
     /// last one or older is discarded, and the client says so.
     #[test]
@@ -2217,6 +2750,109 @@ mod tests {
         );
     }
 
+    /// DDS-XRCE 1.0 §10.4: an agent that is a client of another agent sends
+    /// the request of its own client unchanged on the stream it came on and
+    /// hands the answers over undecoded, with their stream.
+    #[test]
+    fn xrce_10_4_forward_sends_a_submessage_unchanged_and_hands_the_answer_over() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        let sm = (WriteDataPayload {
+            base: BaseObjectRequest {
+                request_id: [0x12, 0x34],
+                object_id: ObjectId::new(0x0030, ObjectKind::DataWriter).unwrap(),
+            },
+            serialized_data: alloc::vec![9, 8, 7],
+        })
+        .into_submessage()
+        .unwrap();
+        assert_eq!(c.forward(0x80, sm.clone()), Err(ClientError::InvalidState));
+        connect_and_ack(&mut c, &transport);
+        c.set_forward_replies(true);
+        let before = transport.sent_messages().len();
+        c.forward(0x80, sm.clone()).unwrap();
+        c.forward(0x80, sm.clone()).unwrap();
+        c.forward(0x05, sm.clone()).unwrap();
+        c.forward(0x05, sm.clone()).unwrap();
+        let sent = transport.sent_messages();
+        let sent = &sent[before..];
+        assert_eq!(sent.len(), 4);
+        assert!(
+            sent.iter()
+                .all(|m| m.submessages == alloc::vec![sm.clone()])
+        );
+        let streams: Vec<(u8, u16)> = sent
+            .iter()
+            .map(|m| (m.header.stream_id.0, m.header.sequence_nr.raw()))
+            .collect();
+        assert_eq!(
+            streams,
+            alloc::vec![(0x80, 0), (0x80, 1), (0x05, 0), (0x05, 1)],
+            "reliable and best-effort messages get the next sequence number"
+        );
+        assert_eq!(c.unacknowledged(0x80), 2);
+        let status = (StatusPayload {
+            representation: BaseObjectReply {
+                related_request: BaseObjectRequest {
+                    request_id: [0x12, 0x34],
+                    object_id: ObjectId::new(0x0030, ObjectKind::DataWriter).unwrap(),
+                },
+                result: ResultStatus::ok(),
+            }
+            .encode(),
+        })
+        .into_submessage()
+        .unwrap();
+        let msg = Message {
+            header: MessageHeader {
+                session_id: SessionId(0x81),
+                stream_id: StreamId(0x80),
+                sequence_nr: SerialNumber16::new(0),
+                client_key: None,
+            },
+            submessages: alloc::vec![status.clone()],
+        };
+        transport.queue_inbound(msg.encode().unwrap());
+        assert_eq!(
+            c.poll(Duration::ZERO).unwrap(),
+            alloc::vec![ClientEvent::Forwarded {
+                stream_id: 0x80,
+                submessage: status,
+            }]
+        );
+    }
+
+    /// The properties of the CREATE_CLIENT are the client's to set (§7.8.2.1),
+    /// and a session the agent forgot is reset without a DELETE.
+    #[test]
+    fn xrce_10_4_the_create_client_carries_the_properties_and_reset_sends_nothing() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        let property = zerodds_xrce::handshake::Property {
+            name: "user".into(),
+            value: "relay".into(),
+        };
+        c.set_properties(Some(alloc::vec![property.clone()]));
+        connect_and_ack(&mut c, &transport);
+        let create_client = transport.sent_messages()[0].submessages[0].clone();
+        let rep = CreateClientPayload::try_from_submessage(&create_client)
+            .unwrap()
+            .representation;
+        assert_eq!(rep.properties, Some(alloc::vec![property]));
+        let before = transport.sent_messages().len();
+        c.reset_session();
+        assert_eq!(c.state(), ClientState::Disconnected);
+        assert_eq!(transport.sent_messages().len(), before);
+        c.set_session_id(0x82).unwrap();
+        c.connect([0x01, 0x00]).expect("a new session");
+        assert_eq!(c.set_session_id(0x83), Err(ClientError::InvalidState));
+        let again = transport.sent_messages().last().unwrap().submessages[0].clone();
+        let rep = CreateClientPayload::try_from_submessage(&again)
+            .unwrap()
+            .representation;
+        assert_eq!(rep.session_id, 0x82);
+    }
+
     /// §8.3.5.10.2: a DATA in the other formats reaches the application, not
     /// only FORMAT_DATA: a sample with its SampleInfo as `Sample`, the three
     /// sequence formats as `SampleSequence`.
@@ -2390,6 +3026,197 @@ mod tests {
         assert_eq!(write.serialized_data, big);
     }
 
+    /// An ACKNACK of the agent for `stream_id` that acknowledges everything
+    /// before `first_unacked`.
+    fn acknack(stream_id: u8, first_unacked: u16) -> Vec<u8> {
+        let ack = AckNackPayload {
+            first_unacked_seq_num: first_unacked as i16,
+            nack_bitmap: [0, 0],
+            stream_id,
+        }
+        .into_submessage()
+        .unwrap();
+        Message {
+            header: MessageHeader {
+                session_id: SessionId(0x81),
+                stream_id: StreamId::NONE,
+                sequence_nr: SerialNumber16::new(0),
+                client_key: None,
+            },
+            submessages: alloc::vec![ack],
+        }
+        .encode()
+        .unwrap()
+    }
+
+    fn write_sm(request_id: [u8; 2], len: usize) -> Submessage {
+        (WriteDataPayload {
+            base: BaseObjectRequest {
+                request_id,
+                object_id: ObjectId::new(0x0030, ObjectKind::DataWriter).unwrap(),
+            },
+            serialized_data: (0..len).map(|i| (i % 251) as u8).collect(),
+        })
+        .into_submessage()
+        .unwrap()
+    }
+
+    /// The sequence number after the newest message `transport` carried on
+    /// `stream_id`.
+    fn next_sent(transport: &MockTransport, stream_id: u8) -> u16 {
+        transport
+            .sent_messages()
+            .iter()
+            .filter(|m| m.header.stream_id == StreamId(stream_id))
+            .map(|m| m.header.sequence_nr.raw())
+            .max()
+            .map_or(0, |s| s + 1)
+    }
+
+    /// DDS-XRCE 1.0 §8.3.5.14 with §10.4: a forwarded submessage that needs
+    /// more FRAGMENTs (36 at an MTU of 64) than the sender window has room for
+    /// (6 of 16, ten messages are unacknowledged) goes out whole and once: what
+    /// the window takes now, the rest as the agent's ACKNACKs free it, with
+    /// consecutive sequence numbers. While the run is not out, the stream
+    /// sends nothing else and refuses with QueueFull. Each forwarded
+    /// submessage is reported acknowledged once, in order, after the ACKNACK
+    /// that covers all its messages.
+    #[test]
+    fn xrce_8_3_5_14_a_fragment_run_above_the_free_window_goes_out_whole_as_acknacks_free_it() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        c.set_requested_mtu(64);
+        connect_and_ack(&mut c, &transport);
+        c.set_forward_replies(true);
+        let small: Vec<Submessage> = (0..10u8).map(|i| write_sm([0x01, i], 4)).collect();
+        for sm in &small {
+            c.forward(0x80, sm.clone()).unwrap();
+        }
+        assert_eq!(c.unacknowledged(0x80), 10);
+        let big = write_sm([0x02, 0x00], 2000);
+        // MessageHeader without ClientKey (session 0x81) and the FRAGMENT
+        // submessage header leave 56 octets of the MTU.
+        let run = encode_submessages(core::slice::from_ref(&big))
+            .len()
+            .div_ceil(64 - 4 - 4);
+        assert!(run > 16, "more FRAGMENTs than the window: {run}");
+        let before = transport.sent_messages().len();
+        c.forward(0x80, big.clone()).unwrap();
+        assert_eq!(
+            transport.sent_messages().len() - before,
+            6,
+            "the window has room for 6"
+        );
+        let after = write_sm([0x03, 0x00], 4);
+        let count = transport.sent_messages().len();
+        assert_eq!(c.forward(0x80, after.clone()), Err(ClientError::QueueFull));
+        assert_eq!(
+            transport.sent_messages().len(),
+            count,
+            "nothing of a refused request is sent"
+        );
+        // The agent acknowledges what it has, round after round.
+        let mut events = Vec::new();
+        for _ in 0..run {
+            transport.queue_inbound(acknack(0x80, next_sent(&transport, 0x80)));
+            events.extend(c.poll(Duration::ZERO).unwrap());
+            if c.unacknowledged(0x80) == 0 {
+                break;
+            }
+        }
+        assert_eq!(c.unacknowledged(0x80), 0);
+        let fragments: Vec<Message> = transport.sent_messages()[before..]
+            .iter()
+            .filter(|m| m.submessages[0].header.submessage_id == SubmessageId::Fragment)
+            .cloned()
+            .collect();
+        assert_eq!(fragments.len(), run, "every FRAGMENT once");
+        let seqs: Vec<u16> = fragments
+            .iter()
+            .map(|m| m.header.sequence_nr.raw())
+            .collect();
+        let end = 10 + u16::try_from(run).unwrap();
+        assert_eq!(seqs, (10..end).collect::<Vec<u16>>(), "one run, no repeat");
+        let mut bytes = Vec::new();
+        for (i, m) in fragments.iter().enumerate() {
+            let f = FragmentPayload::try_from_submessage(&m.submessages[0]).unwrap();
+            assert_eq!(f.last_fragment, i == run - 1);
+            bytes.extend_from_slice(&f.data);
+        }
+        assert_eq!(decode_submessages(&bytes), alloc::vec![big.clone()]);
+        let acknowledged: Vec<Submessage> = events
+            .into_iter()
+            .filter_map(|e| match e {
+                ClientEvent::ForwardAcknowledged {
+                    stream_id: 0x80,
+                    submessage,
+                } => Some(submessage),
+                _ => None,
+            })
+            .collect();
+        let mut expected = small.clone();
+        expected.push(big);
+        assert_eq!(acknowledged, expected);
+        // The stream takes the next request again.
+        c.forward(0x80, after).unwrap();
+    }
+
+    /// A request of the client's own above its MTU that needs more FRAGMENTs
+    /// than the window holds is taken whole too (it was sent partly and
+    /// then refused with QueueFull).
+    #[test]
+    fn xrce_8_3_5_14_a_write_of_more_fragments_than_the_window_goes_out_whole() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        c.set_requested_mtu(64);
+        connect_and_ack(&mut c, &transport);
+        let writer = ObjectId::new(0x0030, ObjectKind::DataWriter).unwrap();
+        let payload: Vec<u8> = (0..1500u32).map(|i| (i % 253) as u8).collect();
+        c.request_write(writer, &payload, true).unwrap();
+        let before = 1; // the CREATE_CLIENT
+        assert_eq!(transport.sent_messages().len() - before, 16);
+        assert_eq!(
+            c.request_write(writer, &[1], true),
+            Err(ClientError::QueueFull),
+            "the run is not out yet"
+        );
+        for _ in 0..8 {
+            transport.queue_inbound(acknack(0x80, next_sent(&transport, 0x80)));
+            c.poll(Duration::ZERO).unwrap();
+        }
+        assert_eq!(c.unacknowledged(0x80), 0);
+        let sent = transport.sent_messages();
+        let mut bytes = Vec::new();
+        for m in &sent[before..] {
+            let f = FragmentPayload::try_from_submessage(&m.submessages[0]).unwrap();
+            bytes.extend_from_slice(&f.data);
+        }
+        let decoded = decode_submessages(&bytes);
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(
+            WriteDataPayload::try_from_submessage(&decoded[0])
+                .unwrap()
+                .serialized_data,
+            payload
+        );
+    }
+
+    /// An MTU with no room for FRAGMENT data after the headers refuses a
+    /// reliable request above it explicitly and sends nothing.
+    #[test]
+    fn xrce_8_3_5_14_an_mtu_without_room_for_fragment_data_is_refused() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        c.set_requested_mtu(8);
+        connect_and_ack(&mut c, &transport);
+        let count = transport.sent_messages().len();
+        assert_eq!(
+            c.forward(0x80, write_sm([0, 1], 64)),
+            Err(ClientError::MtuTooSmall)
+        );
+        assert_eq!(transport.sent_messages().len(), count);
+    }
+
     /// DDS-XRCE 1.0 §8.3.5.12: "The HEARTBEAT submessage does not belong to
     /// any stream, for this reason the MessageHeader shall have the stream_id
     /// set to STREAM_ID_NONE"; the stream it reports is in its payload.
@@ -2442,6 +3269,185 @@ mod tests {
         assert_eq!(
             last.submessages[0].header.submessage_id,
             SubmessageId::AckNack
+        );
+    }
+
+    /// A STATUS of the agent for `request` on the reliable stream 0x80 with
+    /// sequence number `seq`, as the bytes of one message.
+    fn reliable_status(request: u8, seq: u16) -> (Submessage, Vec<u8>) {
+        let status = (StatusPayload {
+            representation: BaseObjectReply {
+                related_request: BaseObjectRequest {
+                    request_id: [0, request],
+                    object_id: ObjectId::new(0x0030, ObjectKind::DataReader).unwrap(),
+                },
+                result: ResultStatus::ok(),
+            }
+            .encode(),
+        })
+        .into_submessage()
+        .unwrap();
+        let msg = Message {
+            header: MessageHeader {
+                session_id: SessionId(0x81),
+                stream_id: StreamId(0x80),
+                sequence_nr: SerialNumber16::new(seq),
+                client_key: None,
+            },
+            submessages: alloc::vec![status.clone()],
+        };
+        (status, msg.encode().unwrap())
+    }
+
+    /// The ACKNACKs this client sent for stream 0x80 after the first `from`
+    /// datagrams: `(first_unacked, nack_bitmap)`.
+    fn acknacks_since(transport: &MockTransport, from: usize) -> Vec<(i16, u16)> {
+        transport.sent_messages()[from..]
+            .iter()
+            .flat_map(|m| m.submessages.iter())
+            .filter(|sm| sm.header.submessage_id == SubmessageId::AckNack)
+            .map(|sm| AckNackPayload::try_from_submessage(sm).unwrap())
+            .filter(|a| a.stream_id == 0x80)
+            .map(|a| (a.first_unacked_seq_num, u16::from_le_bytes(a.nack_bitmap)))
+            .collect()
+    }
+
+    /// DDS-XRCE 1.0 §8.4.14.2, §8.3.5.11, §10.4: a relay with room for two
+    /// answers of five takes two; the three others stay in the stream, and
+    /// the ACKNACK to the agent's HEARTBEAT names the third as the first
+    /// unacknowledged message without asking for it again, so the agent's
+    /// window stays full. The next poll hands them over first, in order, and
+    /// acknowledges them at once.
+    #[test]
+    fn xrce_8_4_14_2_a_held_reliable_stream_hands_over_only_what_the_caller_takes() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        connect_and_ack(&mut c, &transport);
+        c.set_forward_replies(true);
+        let mut answers = Vec::new();
+        for seq in 0..5u16 {
+            let (status, bytes) = reliable_status(seq as u8, seq);
+            answers.push(status);
+            transport.queue_inbound(bytes);
+        }
+        let mut asked = Vec::new();
+        let events = c
+            .poll_held(Duration::ZERO, &mut |stream_id| {
+                asked.push(stream_id);
+                2
+            })
+            .unwrap();
+        assert_eq!(asked, alloc::vec![0x80], "asked once for the stream");
+        let forwarded = |events: &[ClientEvent]| -> Vec<Submessage> {
+            events
+                .iter()
+                .map(|e| match e {
+                    ClientEvent::Forwarded {
+                        stream_id: 0x80,
+                        submessage,
+                    } => submessage.clone(),
+                    other => panic!("unexpected event {other:?}"),
+                })
+                .collect()
+        };
+        assert_eq!(forwarded(&events), answers[..2].to_vec());
+
+        // The agent's HEARTBEAT announces 0..=4: the ACKNACK acknowledges 0
+        // and 1 and asks for none of the three it holds.
+        let sent_before = transport.sent_messages().len();
+        let hb = Message {
+            header: MessageHeader {
+                session_id: SessionId(0x81),
+                stream_id: StreamId::NONE,
+                sequence_nr: SerialNumber16::new(0),
+                client_key: None,
+            },
+            submessages: alloc::vec![
+                HeartbeatPayload {
+                    first_unacked_seq_nr: 0,
+                    last_unacked_seq_nr: 4,
+                    stream_id: 0x80,
+                }
+                .into_submessage()
+                .unwrap()
+            ],
+        };
+        transport.queue_inbound(hb.encode().unwrap());
+        let events = c.poll_held(Duration::ZERO, &mut |_| 0).unwrap();
+        assert!(events.is_empty(), "{events:?}");
+        assert_eq!(acknacks_since(&transport, sent_before), alloc::vec![(2, 0)]);
+
+        // Room again: the three held answers come in order, before a new one,
+        // and the agent is told at once.
+        let sent_before = transport.sent_messages().len();
+        let (sixth, bytes) = reliable_status(5, 5);
+        transport.queue_inbound(bytes);
+        let events = c.poll_held(Duration::ZERO, &mut |_| 16).unwrap();
+        let mut expected = answers[2..].to_vec();
+        expected.push(sixth);
+        assert_eq!(forwarded(&events), expected);
+        assert_eq!(
+            acknacks_since(&transport, sent_before),
+            alloc::vec![(5, 0)],
+            "the acknowledgement of what was held, before the sixth arrived"
+        );
+    }
+
+    /// A FRAGMENT run counts once, when it is complete: a relay with room for
+    /// one answer takes the whole run of a large one.
+    #[test]
+    fn xrce_8_3_5_14_a_held_stream_counts_a_fragment_run_once() {
+        let transport = MockTransport::new();
+        let mut c = XrceClient::new(key(), 0x81, transport.clone());
+        connect_and_ack(&mut c, &transport);
+        c.set_forward_replies(true);
+        let data = (zerodds_xrce::submessages::DataPayload {
+            base: BaseObjectRequest {
+                request_id: [0, 7],
+                object_id: ObjectId::new(0x0030, ObjectKind::DataReader).unwrap(),
+            },
+            serialized_data: alloc::vec![0x5A; 100],
+        })
+        .into_submessage()
+        .unwrap();
+        let encoded = encode_submessages(core::slice::from_ref(&data));
+        let chunks: Vec<&[u8]> = encoded.chunks(30).collect();
+        let last = chunks.len() - 1;
+        for (i, chunk) in chunks.iter().enumerate() {
+            let fragment = FragmentPayload {
+                data: chunk.to_vec(),
+                last_fragment: i == last,
+            }
+            .into_submessage()
+            .unwrap();
+            let msg = Message {
+                header: MessageHeader {
+                    session_id: SessionId(0x81),
+                    stream_id: StreamId(0x80),
+                    sequence_nr: SerialNumber16::new(i as u16),
+                    client_key: None,
+                },
+                submessages: alloc::vec![fragment],
+            };
+            transport.queue_inbound(msg.encode().unwrap());
+        }
+        let (status, bytes) = reliable_status(8, chunks.len() as u16);
+        transport.queue_inbound(bytes);
+        let events = c.poll_held(Duration::ZERO, &mut |_| 1).unwrap();
+        assert_eq!(
+            events,
+            alloc::vec![ClientEvent::Forwarded {
+                stream_id: 0x80,
+                submessage: data,
+            }]
+        );
+        let events = c.poll_held(Duration::ZERO, &mut |_| 1).unwrap();
+        assert_eq!(
+            events,
+            alloc::vec![ClientEvent::Forwarded {
+                stream_id: 0x80,
+                submessage: status,
+            }]
         );
     }
 }

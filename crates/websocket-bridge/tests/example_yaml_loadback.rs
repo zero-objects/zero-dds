@@ -40,10 +40,10 @@ fn wsbridge_3_example_yaml_key_fields_match_intent() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
         .expect("example yaml must parse — see wsbridge_3_example_yaml_parses_without_error");
 
-    // listen/domain/log_level — the top-level scalars from the file.
-    // `listen` deviates from `default_for_dev()` (127.0.0.1:8080), so the
-    // assertion proves the value came from the file, not from the default.
-    assert_eq!(cfg.listen, "0.0.0.0:8080");
+    // listen/domain/log_level — the top-level scalars from the file. The
+    // example keeps `auth.mode: none`, which Spec §7.2 allows on loopback
+    // only, so it listens on the loopback address (the default).
+    assert_eq!(cfg.listen, "127.0.0.1:8080");
     assert_eq!(cfg.domain, 0);
     assert_eq!(cfg.log_level, "info");
 
@@ -101,18 +101,14 @@ fn wsbridge_11_example_yaml_has_no_unknown_top_level_keys() {
     // Every top-level key of the shipped file must be one the parser
     // handles — otherwise the daemon would boot on defaults and only a
     // stderr WARN would say so.
-    const KNOWN: &[&str] = &[
-        "listen",
-        "domain",
-        "log_level",
-        "tls",
-        "auth",
-        "metrics",
-        "topics",
-    ];
+    // The first segment of each key the daemon reads.
+    let known: Vec<&str> = zerodds_websocket_bridge::daemon::config::KEYS
+        .iter()
+        .map(|k| k.split('.').next().unwrap_or(k))
+        .collect();
     for key in top_level_keys(EXAMPLE_YAML) {
         assert!(
-            KNOWN.contains(&key.as_str()),
+            known.contains(&key.as_str()),
             "ws-bridged.yaml.example declares top-level key {key:?}, \
              which DaemonConfig::load_from_str does not read"
         );
@@ -125,4 +121,50 @@ fn top_level_keys(yaml: &str) -> Vec<String> {
         .filter(|l| !l.starts_with([' ', '\t', '#', '-']) && !l.trim().is_empty())
         .filter_map(|l| l.split_once(':').map(|(k, _)| k.trim().to_string()))
         .collect()
+}
+
+/// The configuration of the Docker image (`packaging/docker/ws-bridged`).
+const DOCKER_YAML: &str = include_str!("../../../packaging/docker/ws-bridged/ws-bridged.yaml");
+const DOCKERFILE: &str = include_str!("../../../packaging/docker/ws-bridged/Dockerfile");
+
+/// §11 with §7.2: the image carries its own configuration. A published
+/// port is not the container's loopback, so it listens on `0.0.0.0:8080`
+/// and runs `bearer` with the token of `WS_BRIDGE_TOKEN`; with the variable
+/// it starts, without it (the token expands to nothing) it does not.
+#[test]
+fn wsbridge_11_the_docker_image_serves_its_published_port_with_a_token() {
+    assert!(
+        DOCKERFILE.contains(
+            "COPY packaging/docker/ws-bridged/ws-bridged.yaml /etc/zerodds/ws-bridged.yaml"
+        ),
+        "the image copies its own configuration"
+    );
+    assert!(DOCKERFILE.contains("EXPOSE 8080"), "{DOCKERFILE}");
+    assert!(
+        DOCKER_YAML.contains("bearer_token: \"${WS_BRIDGE_TOKEN}\""),
+        "{DOCKER_YAML}"
+    );
+    let with = DaemonConfig::load_from_str(&DOCKER_YAML.replace("${WS_BRIDGE_TOKEN}", "s3cret"))
+        .expect("the image's configuration parses");
+    assert_eq!(with.listen, "0.0.0.0:8080");
+    assert_eq!(with.auth_mode, "bearer");
+    assert_eq!(with.auth_bearer_token.as_deref(), Some("s3cret"));
+    assert_eq!(with.check_auth(), Ok(()));
+    assert_eq!(with.topics.len(), 1);
+    assert!(with.topic_acl.contains_key(&with.topics[0].name));
+    // A variable that is not set expands to nothing.
+    let without = DaemonConfig::load_from_str(
+        &DOCKER_YAML.replace("${WS_BRIDGE_TOKEN}", "${ZERODDS_WS_TEST_NEVER_SET}"),
+    )
+    .expect("parses");
+    let refused = without.check_auth().unwrap_err();
+    assert!(refused.contains("bearer_token"), "{refused}");
+    for key in top_level_keys(DOCKER_YAML) {
+        assert!(
+            zerodds_websocket_bridge::daemon::config::KEYS
+                .iter()
+                .any(|k| k.split('.').next() == Some(key.as_str())),
+            "ws-bridged.yaml of the image declares {key:?}"
+        );
+    }
 }

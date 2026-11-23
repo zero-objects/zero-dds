@@ -72,8 +72,14 @@ fn threads() -> Vec<(String, String)> {
 #[test]
 fn dcps_2_2_2_2_2_2_a_deleted_participant_has_ended_its_threads() {
     let lease = common::lease_domain();
+    // By kernel task id, as in `runtime_drop_threads.rs`: a thread names
+    // itself once it runs, so the heartbeat thread the lease above starts
+    // could still carry the process's name here and its own one later, and
+    // was counted as the participant's (`("1812987", "zerodds-domain-")`
+    // still running after the deletion, 4 of 30 runs on the Linux test
+    // host).
     #[cfg(target_os = "linux")]
-    let before = threads();
+    let before: Vec<String> = threads().into_iter().map(|(tid, _)| tid).collect();
     let cfg = RuntimeConfig {
         spdp_multicast_send: false,
         ..common::isolated_cfg()
@@ -102,10 +108,15 @@ fn dcps_2_2_2_2_2_2_a_deleted_participant_has_ended_its_threads() {
     entered_rx
         .recv_timeout(common::match_timeout())
         .expect("the writer's listener hears the match");
+    // New threads by their id: a thread spawned just before `before` was
+    // read (the lease heartbeat of `zerodds-test-domains`) may still carry
+    // the name of its parent there, since a Rust thread names itself once
+    // it runs; by name it would count as started here and outlive the
+    // participant.
     #[cfg(target_os = "linux")]
     let started: Vec<(String, String)> = threads()
         .into_iter()
-        .filter(|thread| !before.contains(thread))
+        .filter(|(tid, _)| !before.contains(tid))
         .collect();
 
     participant
@@ -141,7 +152,7 @@ fn dcps_2_2_2_2_2_2_a_deleted_participant_has_ended_its_threads() {
             let now = threads();
             let left: Vec<&(String, String)> = started
                 .iter()
-                .filter(|thread| now.contains(thread))
+                .filter(|(tid, _)| now.iter().any(|(running, _)| running == tid))
                 .collect();
             if left.is_empty() || std::time::Instant::now() > deadline {
                 break left.into_iter().cloned().collect::<Vec<_>>();

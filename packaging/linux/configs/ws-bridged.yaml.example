@@ -11,7 +11,7 @@
 # The file holds only keys the daemon reads; crates/websocket-bridge/tests/example_yaml_loadback.rs
 # loads it back.
 
-listen: "0.0.0.0:8080"
+listen: "127.0.0.1:8080"    # default; `auth.mode: none` only on loopback (Spec §7.2)
 domain: 0
 log_level: info
 
@@ -29,14 +29,51 @@ auth:
   # bearer_token: "${WS_BRIDGE_TOKEN}"   # ${VAR} is substituted before parsing
   # bearer_subject: "service-account"
   # jwt:                                  # mode "jwt": one identity per token
-  #   public_key: "/etc/zerodds/ws-bridged/jwt-rs256.pem"   # required; RS256
+  #   public_key: "/etc/zerodds/ws-bridged/jwt.pem"   # required; RSA key: RS256, P-256 key: ES256
   #   issuer: "https://idp.example.org"
   #   audience: "zerodds-ws"
   #   required_claim: "scope=dds.write"
 
 metrics:
   enabled: false
-  listen: "127.0.0.1:9091"    # /metrics + /catalog + /healthz
+  listen: "127.0.0.1:9091"    # path + /catalog + /healthz
+  path: "/metrics"            # default /metrics
+
+# The largest frame and the largest message (after reassembly and
+# decompression) the daemon takes from a client, in octets (RFC 6455 §10.4,
+# Spec §4.5). A client that exceeds one is closed with status 1009; a frame
+# is refused when its header has arrived. Defaults: 16 MiB each.
+limits:
+  max_frame_size: 16777216      # at least 125
+  max_message_size: 16777216    # at least 1
+
+# The origins the daemon expects in the Origin field of the opening
+# handshake (RFC 6455 §10.2, Spec §4.1). A browser names there the page
+# whose script opens the connection; any other origin gets HTTP 403.
+# Entries: scheme://host[:port] without a path, `null`, or `*` for any.
+# `*` is an entry of its own; a pattern such as https://*.example.org is
+# refused at start, each origin is named.
+# Without the section, or with an empty list, the origin is not checked.
+# origin:
+#   allowed: ["https://app.example.org", "http://localhost:3000"]
+#   required: false   # true: a handshake without Origin gets 403 as well
+
+# The send queue of one connection, in samples (Spec §6): on a full queue
+# a reliable topic waits for the client, a best_effort topic drops the
+# oldest queued sample. A topic with a durability other than volatile keeps
+# up to max_burst_samples samples and sends them to a client that
+# subscribes later. The daemon Pings every connection every
+# ping_interval_ms and closes one without a Pong by the next Ping (1011);
+# 0 turns the Ping off.
+max_send_queue_per_connection: 1024
+max_burst_samples: 1000
+ping_interval_ms: 30000
+# SIGTERM/SIGINT: the samples the daemon holds reach the clients, then
+# {"op":"shutdown"} and Close 1001, within shutdown_drain_ms (Spec §9.2).
+shutdown_drain_ms: 30000
+# With true every connection gets the catalog frame first (Spec §5.2), not
+# only one of /topics/__catalog__.
+catalog_on_connect: false
 
 topics:
   # DDS topic <-> WebSocket path. zerodds-ws-bridge-1.0 §5.
@@ -49,7 +86,11 @@ topics:
       reliability: "reliable"
       durability: "volatile"
       history:
+        kind: "keep_last"        # keep_last | keep_all
         depth: 10
+      # deadline_ms: 1000          # deadline_missed frame after 1 s without a sample
+      # liveliness_lease_ms: 10000 # AUTOMATIC liveliness of the DDS endpoints
+      # partition: ["chat"]        # partitions of the DDS endpoints
     # Topic ACL (Spec §3/§7.3). With auth.mode other than none every topic
     # needs one, else connections are refused with "acl reject".
     # `*` = everyone, `<name>` = this subject,
@@ -57,3 +98,16 @@ topics:
     acl:
       read:  ["*"]
       write: ["service-account", "alice"]
+
+# Participants beside the one of `domain` (Spec §1 L6). A connection whose
+# authenticated subject a tenant names is bound to that tenant's domain and
+# topics; the topic label of its metrics is <tenant>/<topic>.
+# tenants:
+#   - name: "plant-a"
+#     domain: 7                  # default: the top-level domain
+#     subjects: ["alice"]        # bearer subject, JWT sub, certificate DN or mtls:<sha-256>
+#     topics:                    # as the top-level topics
+#       - name: "Plant::Status"
+#         direction: "out"
+#         acl:
+#           read: ["alice"]

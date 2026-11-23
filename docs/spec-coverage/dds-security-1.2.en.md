@@ -11643,7 +11643,7 @@ found, the operation shall fail with an exception."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_an_rtps_message_goes_through_the_interface_without_aad`, `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_10_classify_inbound_srtps_from_known_peer_accepts`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_an_rtps_message_goes_through_the_interface_without_aad`, `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_10_classify_inbound_srtps_from_known_peer_accepts`, `crates/security-crypto/src/plugin.rs::tests::security_10_5_3_3_1_an_unauthenticated_header_extension_is_not_part_of_the_decoded_message`, `crates/security-runtime/src/shared.rs::tests::security_10_5_3_3_1_classify_inbound_finds_srtps_behind_a_header_extension`, `crates/security-rtps/src/srtps.rs::tests::security_10_5_3_3_1_the_srtps_prefix_is_found_behind_a_header_extension`
 
 **Status:** `done` — Expected kind, key only of the handles of sender and receiver. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 

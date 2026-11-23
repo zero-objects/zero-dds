@@ -180,8 +180,10 @@ impl NamingGraph {
     }
 
     /// Builds the [`Ior`] a client uses to reach `ctx` — its object key
-    /// (registering it first if new) in one IIOP 1.2 profile at
-    /// `host:port`.
+    /// (registering it first if new) in one IIOP profile at `host:port`
+    /// of a server that processes GIOP up to `highest`: IIOP 1.2, or 1.4
+    /// when `host` is an IPv6 address (`::1` or `[::1]`, written `::1`;
+    /// Part 2 §7.9 Table 7.2), never above `highest` (§9.7.2).
     ///
     /// # Errors
     /// A CDR encode error from the IIOP profile codec (overflow only —
@@ -191,9 +193,10 @@ impl NamingGraph {
         ctx: &Arc<NamingContext>,
         host: &str,
         port: u16,
+        highest: IiopVersion,
     ) -> Result<Ior, String> {
         let object_key = self.object_key_for(ctx);
-        ior_for_object_key(&object_key, NAMING_CONTEXT_TYPE_ID, host, port)
+        ior_for_object_key(&object_key, NAMING_CONTEXT_TYPE_ID, host, port, highest)
     }
 
     /// Builds the [`Ior`] for the root context — the one published at
@@ -201,16 +204,22 @@ impl NamingGraph {
     ///
     /// # Errors
     /// As [`Self::ior_for_context`].
-    pub fn root_ior(&self, host: &str, port: u16) -> Result<Ior, String> {
-        ior_for_object_key(ROOT_OBJECT_KEY, NAMING_CONTEXT_TYPE_ID, host, port)
+    pub fn root_ior(&self, host: &str, port: u16, highest: IiopVersion) -> Result<Ior, String> {
+        ior_for_object_key(ROOT_OBJECT_KEY, NAMING_CONTEXT_TYPE_ID, host, port, highest)
     }
 
     /// Builds the [`Ior`] for a live `BindingIterator`'s object key.
     ///
     /// # Errors
     /// As [`Self::ior_for_context`].
-    pub fn ior_for_iterator_key(&self, key: &[u8], host: &str, port: u16) -> Result<Ior, String> {
-        ior_for_object_key(key, BINDING_ITERATOR_TYPE_ID, host, port)
+    pub fn ior_for_iterator_key(
+        &self,
+        key: &[u8],
+        host: &str,
+        port: u16,
+        highest: IiopVersion,
+    ) -> Result<Ior, String> {
+        ior_for_object_key(key, BINDING_ITERATOR_TYPE_ID, host, port, highest)
     }
 }
 
@@ -233,13 +242,15 @@ fn ior_for_object_key(
     type_id: &str,
     host: &str,
     port: u16,
+    highest: IiopVersion,
 ) -> Result<Ior, String> {
-    let body = IiopProfileBody::new(
-        IiopVersion::V1_2,
-        host.to_string(),
-        port,
-        object_key.to_vec(),
-    );
+    // Part 2 §7.9 Table 7.2: an IPv6 host goes in an IIOP 1.4 profile,
+    // without the brackets of the URL form, when the hosting server
+    // processes GIOP 1.4; a profile names no version above the highest
+    // the server processes (§9.7.2).
+    let mut body =
+        IiopProfileBody::for_endpoint(IiopVersion::V1_2, host, port, object_key.to_vec());
+    body.iiop_version = body.iiop_version.min(highest);
     let profile =
         TaggedProfile::iiop(&body, Endianness::Little).map_err(|e| alloc::format!("{e:?}"))?;
     Ok(Ior {
@@ -331,7 +342,47 @@ mod tests {
     #[test]
     fn ior_for_context_round_trips_the_object_key() {
         let g = NamingGraph::new();
-        let ior = g.root_ior("localhost", 2809).unwrap();
+        let ior = g.root_ior("localhost", 2809, IiopVersion::MAX).unwrap();
         assert_eq!(object_key_of(&ior), Some(ROOT_OBJECT_KEY.to_vec()));
+    }
+
+    /// CORBA 3.3 Part 2 §7.9 Table 7.2 "IPV6 addresses in IOR": the naming
+    /// service's references for an IPv6 host are IIOP 1.4 profiles with
+    /// the address without brackets; other hosts keep IIOP 1.2; a server
+    /// that processes GIOP up to 1.2 publishes no 1.4 profile (§9.7.2).
+    #[test]
+    fn corba_p2_7_9_a_naming_reference_for_an_ipv6_host_is_iiop_1_4() {
+        let g = NamingGraph::new();
+        let ctx = g.root().new_context();
+        let profile = |ior: &Ior| {
+            ior.profiles
+                .iter()
+                .find_map(TaggedProfile::as_iiop)
+                .and_then(Result::ok)
+                .unwrap()
+        };
+        for host in ["::1", "[::1]"] {
+            for ior in [
+                g.root_ior(host, 2809, IiopVersion::MAX).unwrap(),
+                g.ior_for_context(&ctx, host, 2809, IiopVersion::MAX)
+                    .unwrap(),
+                g.ior_for_iterator_key(b"it-1", host, 2809, IiopVersion::MAX)
+                    .unwrap(),
+            ] {
+                let body = profile(&ior);
+                assert_eq!(body.iiop_version, IiopVersion::V1_4, "{host}");
+                assert_eq!(body.host, "::1", "{host}");
+            }
+        }
+        let body = profile(&g.root_ior("192.0.2.7", 2809, IiopVersion::MAX).unwrap());
+        assert_eq!(
+            (body.iiop_version, &body.host[..]),
+            (IiopVersion::V1_2, "192.0.2.7")
+        );
+        let body = profile(&g.root_ior("[::1]", 2809, IiopVersion::V1_2).unwrap());
+        assert_eq!(
+            (body.iiop_version, &body.host[..]),
+            (IiopVersion::V1_2, "::1")
+        );
     }
 }

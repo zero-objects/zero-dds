@@ -31,6 +31,29 @@
 //! `SecretReadings` does not (§10.4.1.2.6.7, §9.5.1.10.1
 //! `encode_serialized_payload`: the payload is AES-GCM
 //! ciphertext).
+//!
+//! A second scenario, `security_rtps_protection_over_the_tcp_rtps_dialect`,
+//! puts RTPS message protection on a stream: the governance asks for
+//! `rtps_protection_kind` ENCRYPT (§10.4.1.2.5.6), the user traffic of a
+//! writer and a reader goes over TCP in the dialect `rtps`
+//! (`zerodds-tcp-transport-1.0` §2.5), where each message states its
+//! length in a HeaderExtension (DDSI-RTPS 2.5 §8.3.3). A protected message
+//! on such a connection is `RTPS Header | HeaderExtension | SRTPS_PREFIX`
+//! (DDS-Security 1.2 §10.5.3.3.1 Table 80: "the original RTPS Header and,
+//! if present, the original HeaderExtension, followed by the
+//! SecureRTPSPrefixSubMsg"). The oracle: every sample arrives once and in
+//! order (DDS 1.4 §2.2.3.14, §2.2.3.18); the kernel shows an ESTABLISHED
+//! TCP connection between the two processes (proc(5)); every RTPS message
+//! `strace` recorded on a TCP socket of the writer carries the
+//! HeaderExtension with the messageLength equal to the octets handed to
+//! the kernel, and has that layout, octet for octet from the two
+//! specifications, unless it is the traffic the protection of the whole
+//! message does not apply to (the RTPS Bootstrapping Messages of
+//! DDS-Security 1.2 §7.5.7 and §9.4.2.4 Table 33, `is_rtps_axk_protected`:
+//! SPDP, the authentication handshake
+//! and the key exchange, which go over the TCP connection as well,
+//! `zerodds-tcp-transport-1.0` §4.3); and the sample text is in no send of
+//! the writer.
 
 #![cfg(target_os = "linux")]
 #![allow(
@@ -48,7 +71,7 @@ use std::time::Duration;
 
 use zerodds_dcps::qos::PropertyQosPolicy;
 use zerodds_dcps::qos::{HistoryKind, HistoryQosPolicy, ReliabilityKind, ReliabilityQosPolicy};
-use zerodds_dcps::runtime::RuntimeConfig;
+use zerodds_dcps::runtime::{RuntimeConfig, TcpDialect, UserTransportKind};
 use zerodds_dcps::{
     DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, PublisherQos,
     RawBytes, SubscriberQos, TopicQos,
@@ -175,6 +198,11 @@ fn sign(dir: &Path, ca: &str, name: &str, xml: &str) -> PathBuf {
 /// unauthenticated participants, `Secret*` encrypted and access-controlled,
 /// everything else open.
 fn governance(domain: i32) -> String {
+    governance_with(domain, "NONE")
+}
+
+/// [`governance`] with the `rtps_protection_kind` `rtps` (§10.4.1.2.5.6).
+fn governance_with(domain: i32, rtps: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -185,7 +213,7 @@ fn governance(domain: i32) -> String {
       <enable_join_access_control>true</enable_join_access_control>
       <discovery_protection_kind>NONE</discovery_protection_kind>
       <liveliness_protection_kind>NONE</liveliness_protection_kind>
-      <rtps_protection_kind>NONE</rtps_protection_kind>
+      <rtps_protection_kind>{rtps}</rtps_protection_kind>
       <topic_access_rules>
         <topic_rule>
           <topic_expression>Secret*</topic_expression>
@@ -338,13 +366,19 @@ fn reliable_keep_all() -> (DataWriterQos, DataReaderQos) {
 }
 
 fn participant(name: &str) -> zerodds_dcps::DomainParticipant {
+    participant_with(
+        name,
+        RuntimeConfig {
+            tick_period: Duration::from_millis(20),
+            spdp_period: Duration::from_millis(100),
+            ..RuntimeConfig::default()
+        },
+    )
+}
+
+fn participant_with(name: &str, cfg: RuntimeConfig) -> zerodds_dcps::DomainParticipant {
     let dir = PathBuf::from(std::env::var("IT_DIR").unwrap());
     let domain: i32 = std::env::var("IT_DOMAIN").unwrap().parse().unwrap();
-    let cfg = RuntimeConfig {
-        tick_period: Duration::from_millis(20),
-        spdp_period: Duration::from_millis(100),
-        ..RuntimeConfig::default()
-    };
     DomainParticipantFactory::instance()
         .create_participant_with_config(
             domain,
@@ -604,5 +638,456 @@ fn security_end_to_end() {
         Some("mallory") => mallory(),
         Some(other) => panic!("unknown role {other}"),
         None => scenario(),
+    }
+}
+
+// ---- RTPS message protection over the TCP dialect `rtps` ----
+
+const STREAM_MARKER: &str = "STREAM-MARKER-";
+
+/// User traffic over TCPv4 in the dialect `rtps` and over nothing else:
+/// no user multicast, no same-host channel. With `IT_TCP_ALONE` the
+/// metatraffic as well (`zerodds-tcp-transport-1.0` §4.3): no SPDP
+/// multicast, an SPDP group of its own per role, no UDP metatraffic
+/// locator; the reader listens on the port `IT_TCP_PORT`, which the writer
+/// names as its one initial peer.
+fn stream_config(role: &str) -> RuntimeConfig {
+    let mut cfg = RuntimeConfig {
+        tick_period: Duration::from_millis(20),
+        spdp_period: Duration::from_millis(100),
+        ..RuntimeConfig::default()
+    };
+    cfg.user_transport = Some(UserTransportKind::TcpV4);
+    cfg.tcp_dialect = TcpDialect::Rtps;
+    cfg.user_multicast = false;
+    cfg.same_host_shm = false;
+    if std::env::var("IT_TCP_ALONE").as_deref() == Ok("1") {
+        let port: u16 = std::env::var("IT_TCP_PORT").unwrap().parse().unwrap();
+        cfg.spdp_multicast_send = false;
+        cfg.metatraffic_over_udp = false;
+        if role == "reader" {
+            cfg.tcp_port = port;
+            cfg.spdp_multicast_group = std::net::Ipv4Addr::new(239, 255, 9, 31);
+        } else {
+            cfg.initial_peer_specs = vec![format!("tcp://127.0.0.1:{port}")];
+            cfg.spdp_multicast_group = std::net::Ipv4Addr::new(239, 255, 9, 32);
+        }
+    }
+    cfg
+}
+
+fn stream_writer() {
+    let p = participant_with("alice", stream_config("writer"));
+    event(format!("started pid={}", std::process::id()));
+    let (wq, _) = reliable_keep_all();
+    let topic = p
+        .create_topic::<RawBytes>(OPEN, TopicQos::default())
+        .unwrap();
+    let writer = p
+        .create_publisher(PublisherQos::default())
+        .create_datawriter::<RawBytes>(&topic, wq)
+        .unwrap_or_else(|e| panic!("writer: {e:?}"));
+    writer
+        .wait_for_matched_subscription(1, STEP)
+        .expect("matched");
+    event("matched");
+    for seq in 0..SAMPLES {
+        writer
+            .write(&RawBytes::new(
+                format!("{STREAM_MARKER}{seq:04}").into_bytes(),
+            ))
+            .unwrap();
+    }
+    writer.wait_for_acknowledgments(STEP).expect("acked");
+    event("acknowledged");
+    zerodds_integration::wait_for_release();
+}
+
+fn stream_reader() {
+    let p = participant_with("bob", stream_config("reader"));
+    event(format!("started pid={}", std::process::id()));
+    let (_, rq) = reliable_keep_all();
+    let topic = p
+        .create_topic::<RawBytes>(OPEN, TopicQos::default())
+        .unwrap();
+    let reader = p
+        .create_subscriber(SubscriberQos::default())
+        .create_datareader::<RawBytes>(&topic, rq)
+        .unwrap_or_else(|e| panic!("reader: {e:?}"));
+    reader
+        .wait_for_matched_publication(1, STEP)
+        .expect("matched");
+    event("matched");
+    let deadline = std::time::Instant::now() + STEP;
+    let mut got = 0;
+    while got < SAMPLES {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if reader.wait_for_data(left).is_err() {
+            event(format!("incomplete got={got}"));
+            break;
+        }
+        for s in reader.take_with_info().unwrap() {
+            if s.info.valid_data {
+                got += 1;
+                event(format!(
+                    "sample text={}",
+                    String::from_utf8_lossy(&s.data.data)
+                ));
+            }
+        }
+    }
+    event("done");
+    zerodds_integration::wait_for_release();
+}
+
+/// The octets of the first string argument of a line of an `strace -xx`
+/// record (every octet as `\xNN`); `None` for a line without one.
+fn traced_octets(line: &str) -> Option<Vec<u8>> {
+    let begin = line.find('"')? + 1;
+    let end = begin + line[begin..].find('"')?;
+    line[begin..end]
+        .split("\\x")
+        .skip(1)
+        .map(|pair| u8::from_str_radix(pair, 16).ok())
+        .collect()
+}
+
+/// Whether a line of the record is a call on a TCP socket. `strace -yy`
+/// writes the protocol and the two addresses of a socket behind its
+/// descriptor: `sendto(12<TCP:[127.0.0.1:40000->127.0.0.1:7412]>, ...`.
+fn on_a_tcp_socket(line: &str) -> bool {
+    line.split_whitespace()
+        .nth(1)
+        .is_some_and(|call| call.contains("<TCP:["))
+}
+
+/// Whether `message`, an RTPS message with a HeaderExtension behind its
+/// header, carries only what the protection of the whole message does not
+/// apply to (the RTPS Bootstrapping Messages of DDS-Security 1.2 §7.5.7
+/// and §9.4.2.4 Table 33, `is_rtps_axk_protected`): submessages of the
+/// SPDP endpoints and of the ParticipantStatelessMessage endpoints (the
+/// authentication handshake), which are plain, and submessages protected
+/// for themselves (`SEC_PREFIX`, `SEC_BODY`, `SEC_POSTFIX`: the key
+/// exchange over the ParticipantVolatileMessageSecure endpoints). A
+/// submessage of any other reader or writer in the clear is none of it.
+///
+/// The entity of a submessage protected for itself is not visible on the
+/// wire. That such a submessage is the key exchange rests on the
+/// governance of the scenario ([`protects_no_submessage_but_the_key_exchange`]):
+/// with discovery, liveliness, metadata and data protection NONE no other
+/// endpoint protects its submessages, and a SEDP, WLP or user submessage
+/// that went out without the protection of the whole message would be in
+/// the clear and fail this check.
+/// Whether under `governance` only the key exchange protects submessages
+/// for themselves for a participant that uses the topic `topic` alone:
+/// the domain rule has discovery and liveliness protection NONE, and the
+/// first topic rule whose expression matches `topic` (a name or a prefix
+/// and `*`) has neither discovery nor liveliness protection and metadata
+/// and data protection NONE (DDS-Security 1.2 §10.4.1.2.5, §10.4.1.2.6).
+fn protects_no_submessage_but_the_key_exchange(governance: &str, topic: &str) -> bool {
+    let has =
+        |text: &str, tag: &str, value: &str| text.contains(&format!("<{tag}>{value}</{tag}>"));
+    let domain = governance
+        .split("<topic_access_rules>")
+        .next()
+        .unwrap_or("");
+    let rule = governance.split("<topic_rule>").skip(1).find(|rule| {
+        rule.split("<topic_expression>")
+            .nth(1)
+            .and_then(|r| r.split("</topic_expression>").next())
+            .is_some_and(|expression| match expression.strip_suffix('*') {
+                Some(prefix) => topic.starts_with(prefix),
+                None => topic == expression,
+            })
+    });
+    has(domain, "discovery_protection_kind", "NONE")
+        && has(domain, "liveliness_protection_kind", "NONE")
+        && rule.is_some_and(|rule| {
+            has(rule, "enable_discovery_protection", "false")
+                && has(rule, "enable_liveliness_protection", "false")
+                && has(rule, "metadata_protection_kind", "NONE")
+                && has(rule, "data_protection_kind", "NONE")
+        })
+}
+
+fn is_bootstrap_message(message: &[u8]) -> bool {
+    const SPDP_WRITER: [u8; 4] = [0x00, 0x01, 0x00, 0xc2];
+    const SPDP_READER: [u8; 4] = [0x00, 0x01, 0x00, 0xc7];
+    const STATELESS_WRITER: [u8; 4] = [0x00, 0x02, 0x01, 0xc3];
+    const STATELESS_READER: [u8; 4] = [0x00, 0x02, 0x01, 0xc4];
+    let mut at = 20;
+    let mut bootstrap = 0usize;
+    while let Some(&[id, flags, l0, l1]) = message.get(at..at + 4).and_then(|h| h.first_chunk()) {
+        let length = usize::from(if flags & 0x01 != 0 {
+            u16::from_le_bytes([l0, l1])
+        } else {
+            u16::from_be_bytes([l0, l1])
+        });
+        let body = at + 4;
+        // Reader and writer EntityId: behind extraFlags and
+        // octetsToInlineQos in DATA and DATA_FRAG, first in the others.
+        let ids = match id {
+            0x15 | 0x16 => Some(body + 4),
+            0x06 | 0x07 | 0x08 | 0x12 | 0x13 => Some(body),
+            0x30..=0x32 => {
+                bootstrap += 1;
+                None
+            }
+            _ => None,
+        };
+        if let Some(ids) = ids {
+            let Some(ids) = message.get(ids..ids + 8) else {
+                return false;
+            };
+            let (reader, writer) = (&ids[..4], &ids[4..]);
+            if writer != SPDP_WRITER
+                && writer != STATELESS_WRITER
+                && reader != SPDP_READER
+                && reader != STATELESS_READER
+            {
+                return false;
+            }
+            bootstrap += 1;
+        }
+        if length == 0 && !matches!(id, 0x01 | 0x09) {
+            break;
+        }
+        at = body + length;
+    }
+    bootstrap > 0
+}
+
+/// `tcp_alone`: the metatraffic goes over the TCP connection as well, and
+/// over nothing else (`zerodds-tcp-transport-1.0` §4.3; see
+/// [`stream_config`]).
+fn stream_scenario(test: &str, tcp_alone: bool) {
+    let lease = lease_domain();
+    let domain = lease.id();
+    let scratch = Scratch::new("security-stream");
+    let dir = scratch.path().to_owned();
+    mint(&dir, "trusted", &["alice", "bob"]);
+    let governance = governance_with(domain, "ENCRYPT");
+    // What is_bootstrap_message takes for the key exchange rests on this.
+    assert!(
+        protects_no_submessage_but_the_key_exchange(&governance, OPEN),
+        "the governance of the scenario protects submessages of other endpoints: {governance}"
+    );
+    sign(&dir, "trusted", "governance", &governance);
+    sign(
+        &dir,
+        "trusted",
+        "permissions",
+        &permissions(&[
+            grant("alice", domain, "Open*", ""),
+            grant("bob", domain, "", "Open*"),
+        ]),
+    );
+    // A port for the reader's TCP listener: one the system just gave out
+    // and that is free again.
+    let tcp_port = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("a free TCP port")
+        .port();
+    let prepare = |mut command: Command| {
+        command
+            .env("IT_DIR", &dir)
+            .env("IT_DOMAIN", domain.to_string())
+            .env("IT_TCP_ALONE", if tcp_alone { "1" } else { "0" })
+            .env("IT_TCP_PORT", tcp_port.to_string());
+        command
+    };
+    let mut reader = Peer::spawn("reader", prepare(role_command(test, "reader")));
+    let trace = dir.join("writer.strace");
+    let inner = role_command(test, "writer");
+    let mut traced = Command::new(tools::require("strace", &[]));
+    traced
+        .args(["-f", "-qq", "-xx", "-yy", "-s", "65536", "-e"])
+        .arg("trace=sendto,sendmsg,sendmmsg,write,writev")
+        .arg("-o")
+        .arg(&trace)
+        .arg(inner.get_program())
+        .args(inner.get_args());
+    for (k, v) in inner.get_envs() {
+        if let Some(v) = v {
+            traced.env(k, v);
+        }
+    }
+    let mut writer = Peer::spawn("writer", prepare(traced));
+
+    let pid = |peer: &mut Peer| -> u32 {
+        fields(&peer.wait_for_event("started", STEP))["pid"]
+            .parse()
+            .unwrap()
+    };
+    let (w, r) = (pid(&mut writer), pid(&mut reader));
+    writer.wait_for_event("matched", STEP);
+    reader.wait_for_event("matched", STEP);
+    writer.wait_for_event("acknowledged", STEP);
+    reader.wait_for_event("done", STEP);
+
+    // The kernel's view, while both hold their sockets.
+    let connections = zerodds_integration::kernel::tcp_connections_between(w, r);
+    assert!(
+        !connections.is_empty(),
+        "no ESTABLISHED TCP connection between writer {w} and reader {r}; writer TCP {:?}, \
+         reader TCP {:?}",
+        zerodds_integration::kernel::tcp_sockets(w),
+        zerodds_integration::kernel::tcp_sockets(r)
+    );
+
+    let reader_lines: Vec<String> = reader.lines().iter().map(|l| l.text.clone()).collect();
+    assert!(writer.release(STEP).success(), "writer failed");
+    assert!(reader.release(STEP).success(), "reader failed");
+
+    let texts: Vec<String> = reader_lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("EVENT sample "))
+        .map(|l| fields(l)["text"].clone())
+        .collect();
+    let expected: Vec<String> = (0..SAMPLES)
+        .map(|s| format!("{STREAM_MARKER}{s:04}"))
+        .collect();
+    assert_eq!(
+        texts, expected,
+        "the reader receives every sample once, in order (DDS 1.4 §2.2.3.14, §2.2.3.18)"
+    );
+
+    let record = std::fs::read_to_string(&trace).expect("strace record of the writer");
+    assert!(
+        !record.contains(&bytes_escaped(STREAM_MARKER)),
+        "rtps_protection_kind is ENCRYPT; the plain text of a sample left the writer's process"
+    );
+    // What the writer handed to the kernel on its TCP sockets.
+    let on_tcp: Vec<&str> = record
+        .lines()
+        .filter(|line| on_a_tcp_socket(line))
+        .collect();
+    let streamed: Vec<Vec<u8>> = on_tcp
+        .iter()
+        .filter_map(|line| traced_octets(line))
+        .filter(|octets| octets.starts_with(b"RTPS"))
+        .collect();
+    assert!(
+        !streamed.is_empty(),
+        "the record shows no RTPS message on a TCP socket of the writer; its calls on TCP \
+         sockets: {on_tcp:?}"
+    );
+    let mut protected = 0usize;
+    for message in &streamed {
+        let shown = zerodds_integration::hex(&message[..message.len().min(40)]);
+        // DDSI-RTPS 2.5 §9.4.5.2: HeaderExtension, id 0x00, flags E | L,
+        // octetsToNextHeader 4, messageLength.
+        assert!(
+            message.len() > 32,
+            "a message of {} octets: {shown}",
+            message.len()
+        );
+        assert_eq!(
+            message[20..24],
+            [0x00, 0x03, 0x04, 0x00],
+            "no HeaderExtension with the length behind the RTPS header: {shown}"
+        );
+        assert_eq!(
+            u32::from_le_bytes([message[24], message[25], message[26], message[27]]) as usize,
+            message.len(),
+            "the messageLength is not the length of what was sent: {shown}"
+        );
+        // DDS-Security 1.2 §7.4.6.6: SRTPS_PREFIX, submessage id 0x33.
+        // The RTPS Bootstrapping Messages (DDS-Security 1.2 §7.5.7, §9.4.2.4
+        // Table 33, `is_rtps_axk_protected`) are not protected as a whole
+        // and goes over the TCP connection too
+        // (`zerodds-tcp-transport-1.0` §4.3).
+        if message[28] == 0x33 {
+            protected += 1;
+        } else {
+            assert!(
+                is_bootstrap_message(message),
+                "an RTPS message on the stream that is neither protected as a whole nor \
+                 bootstrap traffic: {}",
+                zerodds_integration::hex(message)
+            );
+        }
+    }
+    assert!(
+        protected > 0,
+        "no message on the stream is protected as a whole; {} messages",
+        streamed.len()
+    );
+    if tcp_alone {
+        // Over TCP alone the stream carries the bootstrap traffic, SPDP
+        // among it, and the writer sends no RTPS message on a UDP socket
+        // but the wake-ups to its own sockets: a bare header (at shutdown)
+        // or a header and a PAD of 8 octets (the removal mark).
+        assert!(
+            streamed.iter().any(|m| is_bootstrap_message(m)),
+            "no SPDP or authentication message on the stream of the writer"
+        );
+        let over_udp: Vec<String> = record
+            .lines()
+            .filter(|line| {
+                line.split_whitespace()
+                    .nth(1)
+                    .is_some_and(|call| call.contains("<UDP"))
+            })
+            .filter_map(traced_octets)
+            .filter(|octets| octets.starts_with(b"RTPS"))
+            .filter(|octets| octets.len() != 20 && (octets.len() != 32 || octets[20] != 0x01))
+            .map(|octets| zerodds_integration::hex(&octets[..octets.len().min(40)]))
+            .collect();
+        assert!(
+            over_udp.is_empty(),
+            "the writer sent RTPS messages on a UDP socket: {over_udp:?}"
+        );
+    }
+    drop(lease);
+}
+
+#[test]
+fn security_rtps_protection_over_the_tcp_rtps_dialect() {
+    match role().as_deref() {
+        Some("writer") => stream_writer(),
+        Some("reader") => stream_reader(),
+        Some(other) => panic!("unknown role {other}"),
+        None => stream_scenario("security_rtps_protection_over_the_tcp_rtps_dialect", false),
+    }
+}
+
+/// The check the stream scenario makes of its governance: the topic
+/// `OpenReadings` under [`governance_with`] passes; `SecretReadings`
+/// (data protection ENCRYPT) and a domain rule with discovery or
+/// liveliness protection do not.
+#[test]
+fn security_the_stream_governance_protects_no_submessage_but_the_key_exchange() {
+    let governance = governance_with(0, "ENCRYPT");
+    assert!(protects_no_submessage_but_the_key_exchange(
+        &governance,
+        OPEN
+    ));
+    assert!(!protects_no_submessage_but_the_key_exchange(
+        &governance,
+        SECRET
+    ));
+    for tag in ["discovery_protection_kind", "liveliness_protection_kind"] {
+        let protected = governance.replace(
+            &format!("<{tag}>NONE</{tag}>"),
+            &format!("<{tag}>ENCRYPT</{tag}>"),
+        );
+        assert!(
+            !protects_no_submessage_but_the_key_exchange(&protected, OPEN),
+            "{tag}"
+        );
+    }
+}
+
+/// zerodds-tcp-transport-1.0 §4.3 with DDS-Security: the authentication,
+/// the key exchange, the protected SEDP and the samples between two
+/// processes that have TCP alone towards each other.
+#[test]
+fn security_over_tcp_alone() {
+    match role().as_deref() {
+        Some("writer") => stream_writer(),
+        Some("reader") => stream_reader(),
+        Some(other) => panic!("unknown role {other}"),
+        None => stream_scenario("security_over_tcp_alone", true),
     }
 }

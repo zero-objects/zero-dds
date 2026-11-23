@@ -599,8 +599,10 @@ fn t14_boolean_case_sensitive_strict() {
         </entity_factory>
       </domain_participant_qos>
     </qos_profile></qos_library></dds>"#;
+    // `True` is a form of DDS4CCM 1.1 Table 7.1 that DDS-XML 1.0 does not
+    // have: the default reading refuses it as a vendor form.
     let err = parse_qos_libraries(xml).expect_err("strict");
-    assert!(matches!(err, XmlError::ValueOutOfRange(_)));
+    assert!(matches!(err, XmlError::VendorForm(_)), "{err:?}");
     // Lowercase is ok.
     let ok = xml.replace("True", "true");
     let lib = parse_qos_library(&ok).expect("parse");

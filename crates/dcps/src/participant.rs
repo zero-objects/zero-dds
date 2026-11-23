@@ -433,11 +433,7 @@ pub fn host_id_bytes() -> [u8; 4] {
         // PID+time → a different host_id per process on the same
         // machine, and same-host optimizations (LOOPBACK_MTU,
         // same-host SHM) did not apply.
-        let hostname = gethostname_via_libc()
-            .or_else(|| std::env::var("HOSTNAME").ok())
-            .or_else(|| std::env::var("COMPUTERNAME").ok())
-            .or_else(read_etc_hostname);
-        let h = match hostname {
+        let h = match host_name() {
             Some(s) if !s.is_empty() => fnv1a_32(s.as_bytes()),
             _ => {
                 // Last fallback: a process-local random value. Then this
@@ -453,6 +449,21 @@ pub fn host_id_bytes() -> [u8; 4] {
         };
         h.to_le_bytes()
     })
+}
+
+/// The name of this host, from the same sources as [`host_id_bytes`]:
+/// `gethostname(3)` on Unix, then `HOSTNAME`, `COMPUTERNAME` (set for every
+/// Windows process, services included) and `/etc/hostname`. `None` when no
+/// source names one. A bridge daemon builds its default AMQP container id or
+/// client id from it.
+#[cfg(feature = "std")]
+#[must_use]
+pub fn host_name() -> Option<String> {
+    gethostname_via_libc()
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .or_else(read_etc_hostname)
+        .filter(|s| !s.is_empty())
 }
 
 #[cfg(all(feature = "std", unix))]
@@ -2901,7 +2912,23 @@ impl DomainParticipant {
     /// and the participant does not list it. [`Self::try_create_publisher`]
     /// reports the same condition as the result.
     pub fn create_publisher(&self, qos: impl Into<QosArg<PublisherQos>>) -> Publisher {
-        let qos = qos.into().resolve(|| self.get_default_publisher_qos());
+        self.new_publisher(qos.into(), self.autoenables_children())
+    }
+
+    /// [`Self::create_publisher`], with the publisher created not enabled
+    /// whatever the participant's ENTITY_FACTORY says, without changing
+    /// the participant's QoS: for a layer that sets a policy that is
+    /// immutable once enabled, such as PRESENTATION, on a publisher it
+    /// creates, before it calls `enable` (DDS 1.2 §8.1.5.3, the Publisher
+    /// of a DLRL Cache). The participant stays its factory (DDS 1.4
+    /// §2.2.2.1.1.7): its own `enable` with
+    /// `autoenable_created_entities` enables this publisher as well.
+    pub fn create_disabled_publisher(&self, qos: impl Into<QosArg<PublisherQos>>) -> Publisher {
+        self.new_publisher(qos.into(), false)
+    }
+
+    fn new_publisher(&self, qos: QosArg<PublisherQos>, enable: bool) -> Publisher {
+        let qos = qos.resolve(|| self.get_default_publisher_qos());
         #[cfg(feature = "std")]
         let p = {
             let p = Publisher::new(qos, self.inner.runtime.clone());
@@ -2921,7 +2948,7 @@ impl DomainParticipant {
         // nothing created yet, so the flag is all its enable sets.
         #[cfg(feature = "std")]
         p.inner.entity_state.set_factory(&self.inner.entity_state);
-        if self.autoenables_children() {
+        if enable {
             p.inner.entity_state.enable();
         }
         if let Ok(mut list) = self.inner.publishers.lock() {
@@ -2972,7 +2999,17 @@ impl DomainParticipant {
     /// and the participant does not list it. [`Self::try_create_subscriber`]
     /// reports the same condition as the result.
     pub fn create_subscriber(&self, qos: impl Into<QosArg<SubscriberQos>>) -> Subscriber {
-        let qos = qos.into().resolve(|| self.get_default_subscriber_qos());
+        self.new_subscriber(qos.into(), self.autoenables_children())
+    }
+
+    /// [`Self::create_subscriber`], with the subscriber created not
+    /// enabled; see [`Self::create_disabled_publisher`].
+    pub fn create_disabled_subscriber(&self, qos: impl Into<QosArg<SubscriberQos>>) -> Subscriber {
+        self.new_subscriber(qos.into(), false)
+    }
+
+    fn new_subscriber(&self, qos: QosArg<SubscriberQos>, enable: bool) -> Subscriber {
+        let qos = qos.resolve(|| self.get_default_subscriber_qos());
         #[cfg(feature = "std")]
         let s = {
             let s = Subscriber::new(qos, self.inner.runtime.clone());
@@ -2990,7 +3027,7 @@ impl DomainParticipant {
         // §2.2.3.20 ENTITY_FACTORY; see `create_publisher`.
         #[cfg(feature = "std")]
         s.inner.entity_state.set_factory(&self.inner.entity_state);
-        if self.autoenables_children() {
+        if enable {
             s.inner.entity_state.enable();
         }
         if let Ok(mut list) = self.inner.subscribers.lock() {
@@ -4035,14 +4072,19 @@ impl crate::entity::Entity for DomainParticipant {
         // DomainParticipantQos: USER_DATA + ENTITY_FACTORY are all
         // Changeable=YES per Spec §2.2.3 — no immutable check needed. A
         // new USER_DATA goes out in the SPDP beacon at once.
-        self.inner
-            .entity_state
-            .set_autoenable_children(qos.entity_factory.autoenable_created_entities);
         if let Some(rt) = self.inner.runtime.as_ref() {
             rt.update_participant_properties(crate::qos::propagated_properties(&qos.property))?;
             rt.update_participant_user_data(qos.user_data.value.clone());
         }
+        // DDS 1.4 §2.2.2.1.1.1: "In all other cases, none of the policies is
+        // modified." ENTITY_FACTORY changes only after the last step that
+        // can refuse, and together with the stored QoS: the cascade of
+        // `enable` (EntityState) and the create path (`autoenables_children`)
+        // see one value.
         if let Ok(mut current) = self.inner.qos.lock() {
+            self.inner
+                .entity_state
+                .set_autoenable_children(qos.entity_factory.autoenable_created_entities);
             *current = qos;
         }
         Ok(())

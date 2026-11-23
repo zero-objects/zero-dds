@@ -2,14 +2,14 @@
 // Copyright 2026 ZeroDDS Contributors
 //! POSIX SHM transport.
 //!
-//! Cross-process shared-memory transport via `shm_open` + `mmap`.
-//! Linux primary, macOS supported. Windows compiles (via the
-//! `shared_memory` crate, which uses platform-specific
-//! `CreateFileMapping`; Unix maps through `crate::mapping`, which keeps
-//! no descriptor per mapping), but our `flock` race protection and
-//! `shm_unlink` cleanup are unix-only — a Windows run uses the OS's
-//! handle-counted cleanup semantics, which is functionally sufficient
-//! but not primarily tested.
+//! Cross-process shared-memory transport via `shm_open` + `mmap` on Unix
+//! (through `crate::mapping`, which keeps no descriptor per mapping) and
+//! `CreateFileMapping` without a name over a file per segment on Windows
+//! (`crate::mapping` as well). Linux is the primary platform; macOS, the other
+//! Unixes and Windows run the same protocol: the pair lock is `flock` on
+//! Unix and `LockFileEx` on Windows (`file_lock`), and where a segment
+//! is no file that takes a lock (all but Linux) its users hold its hold
+//! file in [`pair_dir`].
 //!
 //! # Model: SpSc per reader
 //!
@@ -41,9 +41,15 @@
 //!   offset 32:  shutdown: AtomicU32 (0=active, 1=owner-gone)
 //!   offset 36:  consumer_attached: AtomicU32 (consumers that have it open)
 //!   offset 40:  owner_epoch: AtomicU32 (bumped by every owner that opens it)
-//!   offset 44:  reserved (padding to the 64-byte cache line)
+//!   offset 44:  reserved
+//!   offset 48:  session_head: u64 (§6.4: where the owner of a caller's
+//!               region began its session; 0 in a named segment)
+//!   offset 56:  reserved (padding to the 64-byte cache line)
 //!   offset 64:  data region [capacity bytes]
 //! ```
+//!
+//! The header, the frames and the checks are [`crate::ring`]'s, which the
+//! `no_std` transport over a caller's region shares.
 //!
 //! The shutdown flag is a publication mechanism from owner to
 //! consumer: the owner sets it to 1 in `Drop` (release store); the
@@ -62,93 +68,121 @@
 //!
 //! # Unsafe scope
 //!
-//! Two `unsafe` blocks: the two `ptr::read`/`ptr::write` on the mapped
-//! memory. Everything else is swapped to `AtomicU64` that may live in
-//! shared memory (Rust guarantees that atomic operations are
-//! well-defined across process boundaries when both processes map the
-//! same address).
+//! The ring's accesses are [`crate::ring`]'s. Here: the lock and identity
+//! calls of the platform, the probe of a segment's header in a sweep, and
+//! the `Send`/`Sync` of the transport.
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::ptr;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use crate::mapping::{Mapping, ShmemError};
+#[cfg(windows)]
+use crate::mapping::backing_dir;
+use crate::mapping::{Mapping, ShmemError, remove_name};
 
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
-
-/// RAII wrapper for a POSIX advisory flock. The lock is released on
-/// drop of the `File` (kernel-side), so holding the file handle is
-/// enough.
-#[cfg(unix)]
-struct FlockGuard {
+/// Holds the exclusive lock on a pair's `.lock` file: the kernel releases
+/// it when the handle closes, on the drop of the `File` or the end of the
+/// process.
+pub(crate) struct FlockGuard {
     #[allow(dead_code)] // hold-only; drop releases the lock
     file: std::fs::File,
 }
 
-/// Best-effort exclusive flock. On non-Unix (Windows future) it falls
-/// back to a no-op — there the race is layered differently anyway via
-/// `CreateFileMapping` semantics.
-#[cfg(unix)]
-fn acquire_flock_excl(f: &std::fs::File) -> io::Result<()> {
-    let fd = f.as_raw_fd();
-    // Blocks until the lock is acquired; side-effect-free w.r.t. Rust memory.
-    // SAFETY: libc::flock with a valid fd + known constant (LOCK_EX).
-    let rc = unsafe { libc::flock(fd, libc::LOCK_EX) };
-    if rc < 0 {
-        return Err(io::Error::last_os_error());
+/// Whole-file advisory locks, released when the handle closes or the
+/// process ends, by `SIGKILL` or `TerminateProcess` too: `flock` on Unix,
+/// `LockFileEx` over the whole file on Windows. Both lock per open handle:
+/// two handles of one process exclude each other as two processes do.
+pub(crate) mod file_lock {
+    use std::io;
+
+    /// The exclusive lock, waiting until nobody else holds one.
+    pub(crate) fn exclusive(file: &std::fs::File) -> io::Result<()> {
+        lock(file, Kind::Exclusive, true).map(|_| ())
     }
-    Ok(())
-}
 
-#[cfg(not(unix))]
-struct FlockGuard {
-    // Held so the OS lock stays until the guard drops (the handle close
-    // releases the LockFileEx lock, like the unix flock on fd close).
-    #[allow(dead_code)]
-    file: std::fs::File,
-}
-
-/// Windows equivalent of the unix flock: a blocking exclusive lock on the
-/// whole `.lock` file via `LockFileEx`. Serializes the owner-create vs
-/// consumer-open race across threads AND processes, and is released
-/// automatically when the handle closes (FlockGuard drop) or the process
-/// dies — same crash-resilience as `flock(LOCK_EX)`.
-#[cfg(windows)]
-fn acquire_flock_excl(f: &std::fs::File) -> io::Result<()> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{LOCKFILE_EXCLUSIVE_LOCK, LockFileEx};
-    use windows_sys::Win32::System::IO::OVERLAPPED;
-    let handle = f.as_raw_handle();
-    // SAFETY: a zeroed OVERLAPPED requests the lock starting at offset 0.
-    let mut ov: OVERLAPPED = unsafe { core::mem::zeroed() };
-    // SAFETY: `handle` is valid for the lifetime of the borrowed File; the
-    // OVERLAPPED outlives the (blocking) call. Lock the maximal range so the
-    // whole file is covered. `LockFileEx` without LOCKFILE_FAIL_IMMEDIATELY
-    // blocks until the lock is granted, exactly like flock(LOCK_EX).
-    let rc = unsafe {
-        LockFileEx(
-            handle as _,
-            LOCKFILE_EXCLUSIVE_LOCK,
-            0,
-            u32::MAX,
-            u32::MAX,
-            &mut ov,
-        )
-    };
-    if rc == 0 {
-        return Err(io::Error::last_os_error());
+    /// The exclusive lock if nobody holds the file, without waiting.
+    pub(crate) fn try_exclusive(file: &std::fs::File) -> io::Result<bool> {
+        lock(file, Kind::Exclusive, false)
     }
-    Ok(())
-}
 
-/// Non-unix, non-Windows std targets have no advisory file lock; the SHM
-/// transport is not a real target there, so this is a documented no-op.
-#[cfg(not(any(unix, windows)))]
-fn acquire_flock_excl(_f: &std::fs::File) -> io::Result<()> {
-    Ok(())
+    /// A shared lock, waiting out an exclusive one.
+    pub(crate) fn shared(file: &std::fs::File) -> io::Result<()> {
+        lock(file, Kind::Shared, true).map(|_| ())
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Kind {
+        Shared,
+        Exclusive,
+    }
+
+    /// `Ok(false)`: `wait` was not set and someone holds a conflicting
+    /// lock.
+    #[cfg(unix)]
+    fn lock(file: &std::fs::File, kind: Kind, wait: bool) -> io::Result<bool> {
+        use std::os::fd::AsRawFd;
+        let mut op = match kind {
+            Kind::Shared => libc::LOCK_SH,
+            Kind::Exclusive => libc::LOCK_EX,
+        };
+        if !wait {
+            op |= libc::LOCK_NB;
+        }
+        loop {
+            // SAFETY: flock on the valid descriptor of the borrowed file.
+            if unsafe { libc::flock(file.as_raw_fd(), op) } == 0 {
+                return Ok(true);
+            }
+            let e = io::Error::last_os_error();
+            match e.raw_os_error() {
+                Some(libc::EINTR) => {}
+                Some(libc::EWOULDBLOCK) if !wait => return Ok(false),
+                _ => return Err(e),
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn lock(file: &std::fs::File, kind: Kind, wait: bool) -> io::Result<bool> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION;
+        use windows_sys::Win32::Storage::FileSystem::{
+            LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
+        };
+        use windows_sys::Win32::System::IO::OVERLAPPED;
+        let mut flags = 0;
+        if kind == Kind::Exclusive {
+            flags |= LOCKFILE_EXCLUSIVE_LOCK;
+        }
+        if !wait {
+            flags |= LOCKFILE_FAIL_IMMEDIATELY;
+        }
+        // SAFETY: a zeroed OVERLAPPED requests the range from offset 0.
+        let mut ov: OVERLAPPED = unsafe { core::mem::zeroed() };
+        // SAFETY: the handle is valid while `file` is borrowed; the
+        // OVERLAPPED outlives the call, which does not run asynchronously on
+        // a handle opened without FILE_FLAG_OVERLAPPED. The maximal range
+        // covers the whole file, as flock does.
+        let ok = unsafe {
+            LockFileEx(
+                file.as_raw_handle() as _,
+                flags,
+                0,
+                u32::MAX,
+                u32::MAX,
+                &mut ov,
+            )
+        };
+        if ok != 0 {
+            return Ok(true);
+        }
+        let e = io::Error::last_os_error();
+        if !wait && e.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) {
+            return Ok(false);
+        }
+        Err(e)
+    }
 }
 
 /// Takes the exclusive lock on a pair's `.lock` file. An owner's drop and
@@ -156,52 +190,339 @@ fn acquire_flock_excl(_f: &std::fs::File) -> io::Result<()> {
 /// and waited for the lock then holds the lock of a file that is gone,
 /// while the next opener makes a new one and locks that. So after the lock
 /// the path has to name the locked file still, or it is opened again.
+///
+/// Where Windows deletes the old way, a removed lock file keeps its name
+/// until its last handle closes, and an open of the name is refused
+/// (`ERROR_ACCESS_DENIED`) while other openers that waited on it still hold
+/// it; each of them lets go after its look at the name, so the open is
+/// tried again for up to 5 s.
 fn lock_pair(lock_path: &Path) -> io::Result<FlockGuard> {
+    #[cfg(windows)]
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(lock_path)?;
-        acquire_flock_excl(&file)?;
+        let file = match open_pair_file(lock_path) {
+            Ok(file) => file,
+            #[cfg(windows)]
+            Err(e)
+                if e.raw_os_error()
+                    == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32)
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(1));
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        file_lock::exclusive(&file)?;
         if still_named(&file, lock_path)? {
             return Ok(FlockGuard { file });
         }
     }
 }
 
-/// Whether `path` names the open `file` still.
+/// Whether `path` names the open `file` still: device and inode on Unix.
 #[cfg(unix)]
 fn still_named(file: &std::fs::File, path: &Path) -> io::Result<bool> {
     use std::os::unix::fs::MetadataExt;
     let held = file.metadata()?;
-    match std::fs::metadata(path) {
+    match std::fs::symlink_metadata(path) {
         Ok(named) => Ok(named.dev() == held.dev() && named.ino() == held.ino()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e),
     }
 }
 
-/// Not compared on Windows: `std` gives no file identity to compare the
-/// name with. An owner's drop removing the lock file while an opener
-/// waits on it is not covered there.
-#[cfg(not(unix))]
-fn still_named(_file: &std::fs::File, _path: &Path) -> io::Result<bool> {
-    Ok(true)
+/// Whether `path` names the open `file` still: the held file is not
+/// marked for deletion, and the volume serial number and the file index of
+/// both handles agree. A removed file keeps its name until its last handle
+/// closes where Windows deletes the old way (and under Wine), and a new
+/// open of that name is refused; where it deletes the POSIX way the name
+/// goes at once. Before, Windows answered yes without a look, and an opener
+/// that waited on a lock file an owner's drop or a sweep removed kept the
+/// lock of a file nobody else locks any more.
+#[cfg(windows)]
+fn still_named(file: &std::fs::File, path: &Path) -> io::Result<bool> {
+    use std::os::windows::fs::OpenOptionsExt;
+    if delete_pending(file)? {
+        return Ok(false);
+    }
+    // No access right is needed to read a file's identity; a reparse point
+    // under the name is opened as itself, not followed.
+    let named = match std::fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+    {
+        Ok(f) => f,
+        // Gone, or another file under the name that is marked for deletion
+        // (ours is not, see above).
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            return Ok(false);
+        }
+        Err(e) => return Err(e),
+    };
+    Ok(file_identity(file)? == file_identity(&named)?)
+}
+
+/// Whether the open `file` is marked for deletion: removed, and kept until
+/// its last handle closes.
+#[cfg(windows)]
+fn delete_pending(file: &std::fs::File) -> io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_STANDARD_INFO, FileStandardInfo, GetFileInformationByHandleEx,
+    };
+    // SAFETY: an all-zero FILE_STANDARD_INFO is a valid value of the plain
+    // struct; the call fills it.
+    let mut info: FILE_STANDARD_INFO = unsafe { core::mem::zeroed() };
+    // SAFETY: the handle is valid while `file` is borrowed; `info` is
+    // writable for the size passed.
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle() as _,
+            FileStandardInfo,
+            (&mut info as *mut FILE_STANDARD_INFO).cast(),
+            core::mem::size_of::<FILE_STANDARD_INFO>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.DeletePending != 0)
+}
+
+/// The volume serial number and the 64-bit file index of an open file:
+/// what tells two names of one file from two files on Windows.
+#[cfg(windows)]
+fn file_identity(file: &std::fs::File) -> io::Result<(u32, u32, u32)> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+    // SAFETY: an all-zero BY_HANDLE_FILE_INFORMATION is a valid value of
+    // the plain struct; the call fills it.
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { core::mem::zeroed() };
+    // SAFETY: the handle is valid while `file` is borrowed, `info` is
+    // writable for the call.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((
+        info.dwVolumeSerialNumber,
+        info.nFileIndexHigh,
+        info.nFileIndexLow,
+    ))
+}
+
+/// Opens or makes one of a pair's files in [`pair_dir`], never through a
+/// symlink: on Unix readable and writable by this user only (on Linux the
+/// directory is `/dev/shm`, which every user can write to); on Windows the
+/// file takes the access list of the pair directory, and a reparse point
+/// under the name (a symbolic link, a junction) is opened as itself and
+/// refused.
+fn open_pair_file(path: &Path) -> io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).read(true).write(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path)?;
+    #[cfg(windows)]
+    if is_reparse_point(&file.metadata()?) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} is a reparse point, not a file", path.display()),
+        ));
+    }
+    Ok(file)
+}
+
+/// Whether `meta` is that of a reparse point: a symbolic link, a junction
+/// or another object Windows resolves to something else.
+#[cfg(windows)]
+fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    meta.file_attributes() & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+        != 0
+}
+
+/// Where the lock that serializes the openers of a segment lies
+/// (`<name>.lock`, §5.4), and, where a segment is no file that takes a
+/// lock, the file its users hold while they use it (`<name>.hold`, §5.5).
+/// The place depends on the segment's name alone: two users of one
+/// segment that look it up in different flink directories (another
+/// `TMPDIR`, a service's private `/tmp`) take the same lock. Before, the
+/// lock was `<flink>.lock`, and openers in different directories were not
+/// serialized at all.
+///
+/// Linux: `/dev/shm`, beside the segments. A segment is mode 0600, so the
+/// two sides of a pair run under one user; elsewhere the directory is that
+/// user's: on macOS `zerodds-shm` in the user's temporary directory as the
+/// system names it (`confstr(_CS_DARWIN_USER_TEMP_DIR)`, not `TMPDIR`), on
+/// the other Unixes `/tmp/zerodds-shm-<euid>`, on Windows `zerodds-shm` in
+/// the temporary directory.
+///
+/// # Errors
+/// The directory cannot be made, or one that is there is not this user's
+/// alone (on Unix: another owner, a symlink, write access for group or
+/// others; on Windows: a reparse point).
+pub fn pair_dir() -> io::Result<PathBuf> {
+    pair_dir_of_this_target()
+}
+
+#[cfg(target_os = "linux")]
+fn pair_dir_of_this_target() -> io::Result<PathBuf> {
+    Ok(PathBuf::from(DEV_SHM))
+}
+
+#[cfg(target_os = "macos")]
+fn pair_dir_of_this_target() -> io::Result<PathBuf> {
+    private_dir(&darwin_user_temp_dir()?.join("zerodds-shm"))
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn pair_dir_of_this_target() -> io::Result<PathBuf> {
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::geteuid() };
+    private_dir(Path::new(&format!("/tmp/zerodds-shm-{uid}")))
+}
+
+/// Windows: `zerodds-shm` in the temporary directory, made if it is
+/// missing; one that is there must be a directory and no reparse point.
+/// Its owner and access list are not checked: it takes those of the
+/// temporary directory, by default the user's own in the profile, which
+/// admits the user, `SYSTEM` and the administrators.
+#[cfg(windows)]
+fn pair_dir_of_this_target() -> io::Result<PathBuf> {
+    plain_dir(&std::env::temp_dir().join("zerodds-shm"))
+}
+
+/// `dir`, made if it is missing; one that is there must be a directory
+/// and no reparse point.
+#[cfg(windows)]
+fn plain_dir(dir: &Path) -> io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let meta = std::fs::symlink_metadata(dir)?;
+    if !meta.is_dir() || is_reparse_point(&meta) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} is not a plain directory", dir.display()),
+        ));
+    }
+    Ok(dir.to_path_buf())
+}
+
+/// The user's temporary directory as macOS names it, whatever `TMPDIR`
+/// says.
+#[cfg(target_os = "macos")]
+fn darwin_user_temp_dir() -> io::Result<PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+    let mut buf = vec![0u8; 1024];
+    // SAFETY: `buf` is writable for its length; confstr writes at most
+    // that many bytes, the NUL included.
+    let n = unsafe {
+        libc::confstr(
+            libc::_CS_DARWIN_USER_TEMP_DIR,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+        )
+    };
+    if n == 0 || n > buf.len() {
+        return Err(io::Error::other(
+            "confstr(_CS_DARWIN_USER_TEMP_DIR) gave no directory",
+        ));
+    }
+    buf.truncate(n - 1);
+    Ok(PathBuf::from(std::ffi::OsString::from_vec(buf)))
+}
+
+/// `dir`, made with mode 0700 if it is missing. One that is there must be
+/// a directory (not a symlink) of this user that group and others cannot
+/// write to, or the pair's files there could be another user's; read and
+/// search access for group and others is taken away, so that the
+/// directory is private afterwards.
+///
+/// On macOS the pair directory is also the root of the flink directories
+/// `zerodds-dcps` makes in `TMPDIR` (`zerodds-shm/<host>/d<domain>`), and
+/// `create_dir_all` makes a missing root with the mode the umask leaves,
+/// 0755 with 022. When a flink directory came first, every later open
+/// failed for as long as the directory stayed, although no other user
+/// could write to it (on the macOS runner every open failed with this
+/// refusal, job 238161). The owner, the type and the mode are read from,
+/// and the mode set on, the inode opened without following a symlink.
+#[cfg(any(test, all(unix, not(target_os = "linux"))))]
+#[cfg(unix)]
+fn private_dir(dir: &Path) -> io::Result<PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::geteuid() };
+    let refused = || {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} is not a directory private to user {uid}", dir.display()),
+        )
+    };
+    // With `O_NOFOLLOW` and `O_DIRECTORY` a symlink and anything but a
+    // directory fail the open; the error number differs between the
+    // systems, so the path says what was there.
+    let handle = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC)
+        .open(dir)
+        .map_err(|e| match std::fs::symlink_metadata(dir) {
+            Ok(meta) if !meta.is_dir() => refused(),
+            _ => e,
+        })?;
+    let meta = handle.metadata()?;
+    if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o022 != 0 {
+        return Err(refused());
+    }
+    if meta.mode() & 0o077 != 0 {
+        handle.set_permissions(std::fs::Permissions::from_mode(meta.mode() & 0o7700))?;
+    }
+    Ok(dir.to_path_buf())
+}
+
+/// The file `<name>.<ext>` of segment `os_id` in [`pair_dir`].
+pub(crate) fn pair_file(os_id: &str, ext: &str) -> io::Result<PathBuf> {
+    Ok(pair_dir()?.join(format!("{}.{ext}", os_id.trim_start_matches('/'))))
 }
 
 /// Removes what pairs leave in `flink_dir` once their segments are gone:
-/// `.lock` files without a flink beside them, and on Linux flinks whose
-/// segment no longer exists in `/dev/shm` (its sweep unlinks segments, not
-/// flinks). An owner's drop removed both; a process that ended without one
+/// on Linux flinks whose segment no longer exists in `/dev/shm` (its sweep
+/// unlinks segments, not flinks), and `.lock` files without a flink beside
+/// them, which openers of the earlier protocol took there (the pair lock
+/// lies in [`pair_dir`] now). A process that ended without its drop
 /// (killed), a consumer, and a superseded owner left them, and they piled
-/// up (a test chain on a MacBook Air: 3 504 `.lock` files in one domain's directory). A
-/// file younger than `min_age` and one whose pair lock someone holds stay.
+/// up (a test chain on a MacBook Air: 3 504 `.lock` files in one domain's
+/// directory). A file younger than `min_age` and one whose pair lock
+/// someone holds stay. A flink whose content is not a segment name in the
+/// shape `segment_os_id` gives counts as foreign and stays: the path of
+/// the lock file is built from that name, and a name such as
+/// `/zd-x/../../../<dir>/<file>` led it out of `/dev/shm` (the flink
+/// directory lies in `TMPDIR`).
 ///
 /// # Errors
 /// Reading `flink_dir` failed; a file that cannot be opened is skipped.
-#[cfg(unix)]
 pub fn sweep_stale_pair_files(flink_dir: &Path, min_age: Duration) -> io::Result<SweepReport> {
     let mut report = SweepReport::default();
     let now = std::time::SystemTime::now();
@@ -231,22 +552,30 @@ pub fn sweep_stale_pair_files(flink_dir: &Path, min_age: Duration) -> io::Result
         let Ok(os_id) = std::fs::read_to_string(flink) else {
             continue;
         };
-        if !os_id.starts_with("/zd-")
-            || Path::new(DEV_SHM).join(&os_id[1..]).exists()
-            || !old(flink, &mut report)
-        {
+        // The name goes into the path of the pair's lock file: one of
+        // another shape stays, and so does whatever its path points to.
+        if !is_segment_os_id(&os_id) {
+            report.foreign += 1;
+            continue;
+        }
+        if Path::new(DEV_SHM).join(&os_id[1..]).exists() || !old(flink, &mut report) {
             continue;
         }
         // Under the pair's lock: an opener that makes the segment holds it
         // between writing the flink and taking its hold.
-        let Some(_pair) = try_lock_pair(&flink.with_extension("lock")) else {
+        let Some(lock) = pair_file(&os_id, "lock").ok() else {
+            continue;
+        };
+        let Some(pair) = try_lock_pair(&lock) else {
             report.held += 1;
             continue;
         };
         if !Path::new(DEV_SHM).join(&os_id[1..]).exists() {
-            let _ = std::fs::remove_file(flink);
+            let _ = remove_name(flink);
+            let _ = remove_name(&lock);
             report.removed += 1;
         }
+        drop(pair);
     }
     for lock in entries
         .iter()
@@ -261,29 +590,23 @@ pub fn sweep_stale_pair_files(flink_dir: &Path, min_age: Duration) -> io::Result
         };
         // Removed under its own lock: a waiting opener finds the path gone
         // and opens it anew (see `lock_pair`).
-        let _ = std::fs::remove_file(lock);
+        let _ = remove_name(lock);
         drop(pair);
         report.removed += 1;
     }
     Ok(report)
 }
 
-/// The pair lock at `lock_path` if nobody holds it, without waiting.
-#[cfg(unix)]
+/// The pair lock at `lock_path` if nobody holds it, without waiting; the
+/// file is made if it is missing.
 fn try_lock_pair(lock_path: &Path) -> Option<FlockGuard> {
-    use std::os::unix::fs::MetadataExt;
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(lock_path)
-        .ok()?;
-    // SAFETY: flock on the valid fd of `file`.
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+    let file = open_pair_file(lock_path).ok()?;
+    if !file_lock::try_exclusive(&file).ok()? {
         return None;
     }
-    let held = file.metadata().ok()?;
-    let named = std::fs::metadata(lock_path).ok()?;
-    (named.dev() == held.dev() && named.ino() == held.ino()).then_some(FlockGuard { file })
+    still_named(&file, lock_path)
+        .ok()?
+        .then_some(FlockGuard { file })
 }
 
 /// Crash-recovery cleanup for an SHM segment.
@@ -296,11 +619,10 @@ fn try_lock_pair(lock_path: &Path) -> Option<FlockGuard> {
 /// (a) a predictable os_id (instead of random) on every open, and
 /// (b) `shm_unlink(os_id)` before every owner `create()`.
 ///
-/// `shm_unlink` is idempotent: ENOENT is ignored. The call runs only on
-/// `cfg(unix)` and for `#[cfg(any(target_os="linux",
-/// target_os="macos"))]` — other Unixes we must add on demand, Windows
-/// has its own cleanup semantics.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// `shm_unlink` is idempotent: ENOENT is ignored. Every Unix has it (on
+/// the Unixes but Linux and macOS this was a no-op, and only the path of
+/// §5.5 removed a zombie there); Windows has its own cleanup semantics.
+#[cfg(unix)]
 fn shm_unlink_by_os_id(os_id: &str) {
     use std::ffi::CString;
     let Ok(c) = CString::new(os_id) else {
@@ -314,15 +636,18 @@ fn shm_unlink_by_os_id(os_id: &str) {
     }
 }
 
-/// On non-POSIX targets `shm_unlink` is unavailable. The allocator itself is
-/// cross-platform — `shared_memory` maps named segments via `CreateFileMapping`
-/// on Windows — so this branch is a real, supported path, not a
-/// misconfiguration. There is no `shm_unlink` equivalent: `shared_memory`
-/// keeps a Windows mapping on a backing file that outlives every handle, and
-/// removing it here could split a pair another process still uses. An
-/// orphaned one goes in [`discard_orphaned_segment`].
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn shm_unlink_by_os_id(_os_id: &str) {}
+/// Windows has no `shm_unlink`: a segment is a file in [`backing_dir`]
+/// (`crate::mapping`), which outlives every handle, and an opener finds the
+/// segment by that file. Removing the file's name is the unlink
+/// ([`remove_name`]): the name goes at once, the mappings stay until their
+/// handles close. Before, this was a no-op: the segment of an ended owner,
+/// of an owner that had attached instead of made it, and of a
+/// participant's doorbell a sender had made stayed on disk with the frames
+/// in it.
+#[cfg(windows)]
+fn shm_unlink_by_os_id(os_id: &str) {
+    let _ = remove_name(&backing_dir().join(os_id.trim_start_matches('/')));
+}
 
 /// Predictable OS id for an (owner, consumer) pair. Without an os_id
 /// shared_memory would generate a random name under which crashed
@@ -367,6 +692,28 @@ fn segment_os_id_in(owner_id: [u8; 16], consumer_id: [u8; 16], short: bool) -> S
     s
 }
 
+/// Whether `os_id` has the shape [`segment_os_id_in`] gives a name: `/zd-`
+/// and the two ids in lowercase hex (`<32>-<32>`), or the 26 hex digits of
+/// the short form. A flink holds the name of its segment, and the sweeps
+/// build the paths of the pair's files from it; a name of another shape
+/// (`/zd-x/../../../<dir>/<file>`) could lead such a path out of its
+/// directory.
+fn is_segment_os_id(os_id: &str) -> bool {
+    let Some(rest) = os_id
+        .strip_prefix('/')
+        .and_then(|s| s.strip_prefix(SEGMENT_PREFIX))
+    else {
+        return false;
+    };
+    let hex = |s: &str, digits: usize| {
+        s.len() == digits && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    };
+    match rest.split_once('-') {
+        Some((owner, consumer)) => hex(owner, 32) && hex(consumer, 32),
+        None => hex(rest, 26),
+    }
+}
+
 /// FNV-1a with the 128-bit parameters, big-endian result.
 fn fnv1a_128(data: &[u8]) -> [u8; 16] {
     const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013B;
@@ -389,11 +736,10 @@ const DEV_SHM: &str = "/dev/shm";
 pub const SEGMENT_NAME_PREFIX: &str = "zd-";
 
 /// What [`hold_segment`] found.
-#[cfg_attr(not(unix), allow(dead_code))]
 enum SegmentHold {
     /// In use from here on; the file carries this process's shared lock
-    /// on the segment (`None` where segments take no lock).
-    Held(Option<std::fs::File>),
+    /// on the segment.
+    Held(std::fs::File),
     /// Attached, but no process holds the segment: everyone who used it
     /// ended without unlinking it, and its ring holds their frames.
     Orphaned,
@@ -411,7 +757,7 @@ enum SegmentHold {
 ///
 /// `created`: this process has just made the segment, nothing to probe.
 #[cfg(target_os = "linux")]
-fn hold_segment(os_id: &str, _flink: &Path, created: bool) -> io::Result<SegmentHold> {
+fn hold_segment(os_id: &str, created: bool) -> io::Result<SegmentHold> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let path = Path::new(DEV_SHM).join(os_id.trim_start_matches('/'));
     let file = match std::fs::OpenOptions::new()
@@ -423,27 +769,16 @@ fn hold_segment(os_id: &str, _flink: &Path, created: bool) -> io::Result<Segment
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SegmentHold::Vanished),
         Err(e) => return Err(e),
     };
-    let fd = file.as_raw_fd();
-    if !created {
-        // SAFETY: flock on the valid fd of `file`.
-        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
-            return Ok(SegmentHold::Orphaned);
-        }
-        let e = io::Error::last_os_error();
-        if e.raw_os_error() != Some(libc::EWOULDBLOCK) {
-            return Err(e);
-        }
+    if !created && file_lock::try_exclusive(&file)? {
+        return Ok(SegmentHold::Orphaned);
     }
     // Held shared by a user, or exclusively by a sweeper for as long as
     // it takes to unlink it: wait that out.
-    // SAFETY: flock on the valid fd of `file`.
-    if unsafe { libc::flock(fd, libc::LOCK_SH) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    file_lock::shared(&file)?;
     let held = file.metadata()?;
     match std::fs::symlink_metadata(&path) {
         Ok(named) if named.dev() == held.dev() && named.ino() == held.ino() => {
-            Ok(SegmentHold::Held(Some(file)))
+            Ok(SegmentHold::Held(file))
         }
         Ok(_) => Ok(SegmentHold::Vanished),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(SegmentHold::Vanished),
@@ -462,141 +797,92 @@ fn segment_in_use(os_id: &str) -> bool {
     else {
         return false;
     };
-    // SAFETY: flock on the valid fd of `file`; closing it releases a lock
-    // this probe took.
-    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) != 0 }
+    // Closing the file releases a lock this probe took.
+    !file_lock::try_exclusive(&file).unwrap_or(true)
 }
 
+/// Whether a process holds the segment `os_id`: its hold file in
+/// [`pair_dir`] carries a lock (see [`hold_segment`]). A lock that cannot
+/// be probed counts as held.
 #[cfg(not(target_os = "linux"))]
-fn segment_in_use(_os_id: &str) -> bool {
-    false
+fn segment_in_use(os_id: &str) -> bool {
+    let Ok(path) = pair_file(os_id, "hold") else {
+        return false;
+    };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    // Closing the file releases a lock this probe took.
+    !file_lock::try_exclusive(&file).unwrap_or(false)
 }
 
-/// macOS (and the other non-Linux Unixes) keeps POSIX shared-memory
-/// objects out of the file system, so there is no segment file to lock.
-/// The lock goes on the pair's flink instead, the file every user opens
-/// the segment through: same protocol as the Linux one, and
-/// [`sweep_orphaned_flinks`] reads it.
-#[cfg(all(unix, not(target_os = "linux")))]
-fn hold_segment(_os_id: &str, flink: &Path, created: bool) -> io::Result<SegmentHold> {
-    use std::os::unix::fs::MetadataExt;
-    let file = match std::fs::File::open(flink) {
-        Ok(f) => f,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SegmentHold::Vanished),
-        Err(e) => return Err(e),
-    };
-    let fd = file.as_raw_fd();
-    if !created {
-        // SAFETY: flock on the valid fd of `file`.
-        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
-            return Ok(SegmentHold::Orphaned);
-        }
-        let e = io::Error::last_os_error();
-        if e.raw_os_error() != Some(libc::EWOULDBLOCK) {
-            return Err(e);
-        }
-    }
-    // SAFETY: flock on the valid fd of `file`.
-    if unsafe { libc::flock(fd, libc::LOCK_SH) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let held = file.metadata()?;
-    match std::fs::symlink_metadata(flink) {
-        Ok(named) if named.dev() == held.dev() && named.ino() == held.ino() => {
-            Ok(SegmentHold::Held(Some(file)))
-        }
-        Ok(_) => Ok(SegmentHold::Vanished),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(SegmentHold::Vanished),
-        Err(e) => Err(e),
-    }
-}
-
-/// Windows keeps a mapping on a backing file
-/// (`%TEMP%\shared_memory-rs\<name>`, `shared_memory`'s `new_map`) that
-/// outlives the process: an owner that ended without its drop left its
-/// ring and its frames for the next opener (nightly `windows-smoke`,
-/// `shm_5_5_an_orphaned_segment_is_made_anew_not_attached`: 29 bytes of the ended
-/// session). The lock is a `LockFileEx` on the pair's flink, released with
-/// the handle or the process: the macOS protocol.
-#[cfg(windows)]
-fn hold_segment(_os_id: &str, flink: &Path, created: bool) -> io::Result<SegmentHold> {
-    let file = match std::fs::File::open(flink) {
-        Ok(f) => f,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SegmentHold::Vanished),
-        Err(e) => return Err(e),
-    };
-    if !created && windows_lock::try_exclusive(&file)? {
+/// Where a segment is no file that takes a lock — macOS and the other
+/// Unixes keep POSIX shared-memory objects out of the file system, and on
+/// Windows a segment is a file in [`backing_dir`] that outlives the process
+/// and is open while it is mapped — the lock goes on the segment's hold file
+/// `<name>.hold` in [`pair_dir`], which every user finds by the segment's
+/// name whatever its flink directory is: same protocol as the Linux one,
+/// and [`sweep_pair_dir`] and [`sweep_orphaned_flinks`] read it. Before,
+/// it lay on the pair's flink, and a user that looked the segment up in
+/// another flink directory saw it as orphaned; on Windows an owner that
+/// ended without its drop left its ring and its frames for the next
+/// opener (nightly `windows-smoke`,
+/// `shm_5_5_an_orphaned_segment_is_made_anew_not_attached`: 29 bytes of
+/// the ended session).
+#[cfg(not(target_os = "linux"))]
+fn hold_segment(os_id: &str, created: bool) -> io::Result<SegmentHold> {
+    let path = pair_file(os_id, "hold")?;
+    let file = open_pair_file(&path)?;
+    if !created && file_lock::try_exclusive(&file)? {
         return Ok(SegmentHold::Orphaned);
     }
-    windows_lock::shared(&file)?;
-    Ok(SegmentHold::Held(Some(file)))
-}
-
-#[cfg(all(not(unix), not(windows)))]
-fn hold_segment(_os_id: &str, _flink: &Path, _created: bool) -> io::Result<SegmentHold> {
-    Ok(SegmentHold::Held(None))
-}
-
-/// `LockFileEx` over a whole file, as `flock` on Unix.
-#[cfg(windows)]
-mod windows_lock {
-    use std::io;
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION;
-    use windows_sys::Win32::Storage::FileSystem::{
-        LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
-    };
-    use windows_sys::Win32::System::IO::OVERLAPPED;
-
-    fn lock(file: &std::fs::File, flags: u32) -> io::Result<bool> {
-        // SAFETY: a zeroed OVERLAPPED requests the range from offset 0.
-        let mut ov: OVERLAPPED = unsafe { core::mem::zeroed() };
-        // SAFETY: the handle is valid while `file` is borrowed; the
-        // OVERLAPPED outlives the call, which does not run asynchronously
-        // on a handle opened without FILE_FLAG_OVERLAPPED.
-        let ok = unsafe {
-            LockFileEx(
-                file.as_raw_handle() as _,
-                flags,
-                0,
-                u32::MAX,
-                u32::MAX,
-                &mut ov,
-            )
-        };
-        if ok != 0 {
-            return Ok(true);
-        }
-        let e = io::Error::last_os_error();
-        if e.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) {
-            return Ok(false);
-        }
-        Err(e)
-    }
-
-    /// The exclusive lock if nobody holds the file, without waiting.
-    pub(super) fn try_exclusive(file: &std::fs::File) -> io::Result<bool> {
-        lock(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY)
-    }
-
-    /// A shared lock, waiting out an exclusive one.
-    pub(super) fn shared(file: &std::fs::File) -> io::Result<()> {
-        lock(file, 0).map(|_| ())
+    file_lock::shared(&file)?;
+    // An owner's drop removes the hold file; one held after that names
+    // nothing a later opener finds.
+    if still_named(&file, &path)? {
+        Ok(SegmentHold::Held(file))
+    } else {
+        Ok(SegmentHold::Vanished)
     }
 }
 
-/// Removes an orphaned segment: its name on Unix, and on Windows the
-/// backing file `shared_memory` keeps it on, which nothing else removes.
+#[cfg(test)]
+thread_local! {
+    /// Segments [`PosixShmTransport::open`] discarded as orphaned on this
+    /// thread (§5.5): what tells the unlink before a create (§5.2) from
+    /// that path, which reaches the same fresh ring.
+    static ORPHANS_DISCARDED: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
+}
+
+/// The producer lock of the owners of segment `os_id` in this process.
+/// A channel closed and opened again while a sender still held the old
+/// one has two owners of one segment here (§5.3), and the ring has one
+/// producer: the two share one lock, so the later one's epoch bump and
+/// the earlier one's pushes do not interleave. Owners in different
+/// processes would be two participants with one GUID prefix, which DDS
+/// rules out.
+fn owner_producer_lock(os_id: &str) -> std::sync::Arc<std::sync::Mutex<()>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
+    static LOCKS: OnceLock<Mutex<HashMap<String, Weak<Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(lock) = locks.get(os_id).and_then(Weak::upgrade) {
+        return lock;
+    }
+    // The entries of segments without an owner here go as well.
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(os_id.to_owned(), Arc::downgrade(&lock));
+    lock
+}
+
+/// Removes an orphaned segment: its name, on Windows its backing file.
 /// Only for a segment no process holds (see [`hold_segment`]).
 fn discard_orphaned_segment(os_id: &str) {
     shm_unlink_by_os_id(os_id);
-    #[cfg(windows)]
-    {
-        let mut backing = std::env::temp_dir();
-        backing.push("shared_memory-rs");
-        backing.push(os_id.trim_start_matches('/'));
-        let _ = std::fs::remove_file(backing);
-    }
 }
 
 /// What [`sweep_orphaned_segments`] found, segment by segment.
@@ -610,7 +896,8 @@ pub struct SweepReport {
     pub young: usize,
     /// Segments under the prefix whose header is not this layout
     /// version, left alone: an older ZeroDDS takes no lock, so its live
-    /// segments would look orphaned.
+    /// segments would look orphaned. Also the flinks whose content is no
+    /// segment name in the shape this version gives, left alone.
     pub foreign: usize,
 }
 
@@ -643,7 +930,265 @@ impl SweepReport {
 #[cfg(target_os = "linux")]
 pub fn sweep_orphaned_segments(min_age: Duration) -> io::Result<SweepReport> {
     let current = sweep_segments(SEGMENT_NAME_PREFIX, min_age, ring_header_is_current)?;
-    Ok(current.and(sweep_old_layout_segments(SEGMENT_NAME_PREFIX, min_age)?))
+    let old = sweep_old_layout_segments(SEGMENT_NAME_PREFIX, min_age)?;
+    Ok(current.and(old).and(sweep_pair_dir(min_age)?))
+}
+
+/// Removes what pairs left in [`pair_dir`] once their segments are gone or
+/// orphaned, each under the pair's lock, so no opener is between its create
+/// and its hold; a file younger than `min_age` stays. On Linux the `.lock`
+/// files and the wait FIFOs (`.wake`, §4.4) whose segment is no longer in
+/// `/dev/shm` (its sweep unlinks the segments). Elsewhere the `.hold` files
+/// nobody holds, with the segment they name when it carries this layout
+/// version (an orphan, §5.5; one of another version stays and counts as
+/// `foreign`), the `.lock` files without a `.hold` beside them, and the
+/// FIFOs whose segment is gone. The same for the doorbells' files. An
+/// owner's drop removes them; a process that ended without it left them.
+///
+/// On Windows the backing files of the rings as well
+/// (`sweep_backing_files`): a ring whose creator ended before it took
+/// its hold has no hold file to be found by.
+///
+/// # Errors
+/// [`pair_dir`] cannot be read; a file that cannot be opened is skipped.
+pub fn sweep_pair_dir(min_age: Duration) -> io::Result<SweepReport> {
+    let rings = sweep_pair_files(SEGMENT_PREFIX, min_age)?;
+    let all = rings.and(sweep_pair_files(crate::bell::BELL_NAME_PREFIX, min_age)?);
+    #[cfg(windows)]
+    let all = all.and(sweep_backing_files(min_age)?);
+    Ok(all)
+}
+
+/// The names of the ring segments start so (see `segment_os_id`).
+const SEGMENT_PREFIX: &str = "zd-";
+
+/// Windows: removes the rings in [`backing_dir`] no process holds, the
+/// counterpart of the sweep over `/dev/shm` on Linux. A ring's backing
+/// file outlives every handle (§6.3): one whose users all ended without
+/// their drop keeps its frames and its size on disk until it is removed.
+/// [`sweep_pair_dir`] finds such a ring through its hold file; this finds
+/// the ring whose creator ended between making it and taking its hold,
+/// which left no hold file. Each one is looked at under its pair's lock,
+/// which an opener holds from before its create until after its hold. A
+/// ring of another layout version stays (`foreign`), so does one younger
+/// than `min_age`, and so do the files whose name was removed while a
+/// handle held them: [`remove_name`] renames them to
+/// `<name>.<pid>-<n>.gone`, `shared_memory` renamed them to
+/// `<name>_deleted`; Windows deletes them with their last handle.
+///
+/// # Errors
+/// [`backing_dir`] cannot be read; a file that cannot be opened is
+/// skipped.
+#[cfg(windows)]
+pub fn sweep_backing_files(min_age: Duration) -> io::Result<SweepReport> {
+    sweep_backing_files_under(SEGMENT_PREFIX, min_age)
+}
+
+/// [`sweep_backing_files`] over the rings whose name starts with `prefix`.
+#[cfg(windows)]
+fn sweep_backing_files_under(prefix: &str, min_age: Duration) -> io::Result<SweepReport> {
+    let mut report = SweepReport::default();
+    let now = std::time::SystemTime::now();
+    let entries = match std::fs::read_dir(backing_dir()) {
+        Ok(e) => e
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .collect::<Vec<_>>(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(report),
+        Err(e) => return Err(e),
+    };
+    for path in entries {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(SEGMENT_PREFIX)
+            || !name.starts_with(prefix)
+            || name.ends_with("_deleted")
+            || name.contains(['.', '/', '\\'])
+        {
+            continue;
+        }
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.is_file() || is_reparse_point(&meta) {
+            continue;
+        }
+        let changed = meta.modified().unwrap_or(now);
+        if now.duration_since(changed).unwrap_or_default() < min_age {
+            report.young += 1;
+            continue;
+        }
+        let os_id = format!("/{name}");
+        if segment_in_use(&os_id) {
+            report.held += 1;
+            continue;
+        }
+        let Ok(lock) = pair_file(&os_id, "lock") else {
+            continue;
+        };
+        let Some(pair) = try_lock_pair(&lock) else {
+            report.held += 1;
+            continue;
+        };
+        if segment_in_use(&os_id) {
+            report.held += 1;
+            continue;
+        }
+        match segment_state(&os_id) {
+            SegmentState::Other => {
+                report.foreign += 1;
+                continue;
+            }
+            SegmentState::Current => discard_orphaned_segment(&os_id),
+            SegmentState::Missing => {}
+        }
+        if let Ok(hold) = pair_file(&os_id, "hold") {
+            let _ = remove_name(&hold);
+        }
+        let _ = remove_name(&lock);
+        drop(pair);
+        report.removed += 1;
+    }
+    Ok(report)
+}
+
+/// [`sweep_pair_dir`] over the files whose name starts with `prefix`.
+fn sweep_pair_files(prefix: &str, min_age: Duration) -> io::Result<SweepReport> {
+    let dir = pair_dir()?;
+    let mut report = SweepReport::default();
+    let now = std::time::SystemTime::now();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .collect::<Vec<_>>(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(report),
+        Err(e) => return Err(e),
+    };
+    for path in entries {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some((stem, ext)) = name.rsplit_once('.') else {
+            continue;
+        };
+        if !name.starts_with(prefix) || !matches!(ext, "lock" | "hold" | "wake") {
+            continue;
+        }
+        #[cfg(target_os = "linux")]
+        let live = ext == "hold" || Path::new(DEV_SHM).join(stem).exists();
+        #[cfg(not(target_os = "linux"))]
+        let live = match ext {
+            "lock" => dir.join(format!("{stem}.hold")).exists(),
+            "wake" => segment_exists(&format!("/{stem}")),
+            _ => false,
+        };
+        // Gone since the listing: removed with its pair's other file.
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if live || !is_pair_file_type(&meta, ext) {
+            continue;
+        }
+        let changed = meta.modified().unwrap_or(now);
+        if now.duration_since(changed).unwrap_or_default() < min_age {
+            report.young += 1;
+            continue;
+        }
+        let lock = dir.join(format!("{stem}.lock"));
+        let Some(pair) = try_lock_pair(&lock) else {
+            report.held += 1;
+            continue;
+        };
+        // Looked at again under the lock.
+        #[cfg(target_os = "linux")]
+        if Path::new(DEV_SHM).join(stem).exists() {
+            report.held += 1;
+            continue;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let os_id = format!("/{stem}");
+            match ext {
+                "hold" => {
+                    if segment_in_use(&os_id) {
+                        report.held += 1;
+                        continue;
+                    }
+                    match segment_state(&os_id) {
+                        SegmentState::Other => {
+                            report.foreign += 1;
+                            continue;
+                        }
+                        SegmentState::Current => discard_orphaned_segment(&os_id),
+                        SegmentState::Missing => {}
+                    }
+                }
+                "wake" if segment_exists(&os_id) => {
+                    report.held += 1;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        if ext != "lock" {
+            let _ = remove_name(&path);
+        }
+        // Removed under its own lock: a waiting opener finds the path gone
+        // and opens it anew (see `lock_pair`).
+        let _ = remove_name(&lock);
+        drop(pair);
+        report.removed += 1;
+    }
+    Ok(report)
+}
+
+/// Whether `meta` is of the type the pair file `<name>.<ext>` is made as:
+/// a FIFO for `.wake` (§4.4, made with `mkfifo` by the FIFO backend of
+/// `crate::wait`; Windows has none), a regular file for `.lock` and
+/// `.hold`. Before, the sweep took regular files only and passed over
+/// every wait FIFO, so the FIFO of a pair whose processes ended without
+/// their drop stayed in the pair directory. Anything else under such a
+/// name (a link, a directory) is not this crate's and stays.
+fn is_pair_file_type(meta: &std::fs::Metadata, ext: &str) -> bool {
+    match ext {
+        #[cfg(unix)]
+        "wake" => {
+            use std::os::unix::fs::FileTypeExt;
+            meta.file_type().is_fifo()
+        }
+        #[cfg(not(unix))]
+        "wake" => false,
+        _ => meta.is_file(),
+    }
+}
+
+/// What a segment name names, for a sweep: a ring of this layout version,
+/// something else, or nothing.
+#[cfg(not(target_os = "linux"))]
+enum SegmentState {
+    Current,
+    Other,
+    Missing,
+}
+
+/// Whether a segment or doorbell `os_id` exists.
+#[cfg(not(target_os = "linux"))]
+fn segment_exists(os_id: &str) -> bool {
+    !matches!(segment_state(os_id), SegmentState::Missing)
+}
+
+/// The state of segment `os_id`. One that exists but cannot be mapped
+/// (another user's) counts as `Other`.
+#[cfg(not(target_os = "linux"))]
+fn segment_state(os_id: &str) -> SegmentState {
+    match Mapping::open_os_id(os_id) {
+        Err(e) if crate::mapping::is_missing(&e) => SegmentState::Missing,
+        Err(_) => SegmentState::Other,
+        Ok(_) if segment_is_current_version(os_id) => SegmentState::Current,
+        Ok(_) => SegmentState::Other,
+    }
 }
 
 /// The rings of an earlier layout version under `prefix`: they take no
@@ -666,7 +1211,8 @@ fn sweep_old_layout_segments(prefix: &str, min_age: Duration) -> io::Result<Swee
         let Ok(entry) = entry else { continue };
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !name.starts_with(prefix) {
+        // A name with a dot is a pair's file beside the segments (§5.4).
+        if !name.starts_with(prefix) || name.contains('.') {
             continue;
         }
         let Ok(file) = std::fs::OpenOptions::new()
@@ -775,7 +1321,8 @@ pub(crate) fn sweep_segments(
         let Ok(entry) = entry else { continue };
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !name.starts_with(prefix) {
+        // A name with a dot is a pair's file beside the segments (§5.4).
+        if !name.starts_with(prefix) || name.contains('.') {
             continue;
         }
         let Ok(file) = std::fs::OpenOptions::new()
@@ -803,8 +1350,7 @@ pub(crate) fn sweep_segments(
             report.foreign += 1;
             continue;
         }
-        // SAFETY: flock on the valid fd of `file`.
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        if !file_lock::try_exclusive(&file).unwrap_or(false) {
             report.held += 1;
             continue;
         }
@@ -817,14 +1363,16 @@ pub(crate) fn sweep_segments(
 /// Unlinks the segments of `flink_dir` no process holds: the macOS
 /// counterpart of [`sweep_orphaned_segments`], which finds them through
 /// their flinks, since macOS lists no shared-memory objects. A segment is
-/// orphaned when nobody holds its flink's lock (see [`hold_segment`]);
-/// one whose flink changed more recently than `min_age` and one of
-/// another layout version are left alone. A segment whose flink went
-/// stays until the next reboot: nothing names it any more.
+/// orphaned when nobody holds its hold file in [`pair_dir`] (see
+/// [`hold_segment`]); it is unlinked and its flink, hold and lock files
+/// removed under the pair's lock. A flink whose segment is gone is
+/// removed as well. One whose flink changed more recently than `min_age`
+/// and one of another layout version are left alone. A segment whose
+/// flink went is found by [`sweep_pair_dir`] through its hold file.
 ///
 /// # Errors
 /// Reading `flink_dir` failed; a flink that cannot be opened is skipped.
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 pub fn sweep_orphaned_flinks(flink_dir: &Path, min_age: Duration) -> io::Result<SweepReport> {
     use std::io::Read;
     let mut report = SweepReport::default();
@@ -856,22 +1404,43 @@ pub fn sweep_orphaned_flinks(flink_dir: &Path, min_age: Duration) -> io::Result<
             report.young += 1;
             continue;
         }
-        // SAFETY: flock on the valid fd of `file`.
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let mut os_id = String::new();
+        // The name goes into the paths of its pair files.
+        if file.read_to_string(&mut os_id).is_err() || !is_segment_os_id(&os_id) {
+            report.foreign += 1;
+            continue;
+        }
+        if segment_in_use(&os_id) {
             report.held += 1;
             continue;
         }
-        let mut os_id = String::new();
-        if file.read_to_string(&mut os_id).is_err() || !os_id.starts_with("/zd-") {
-            report.foreign += 1;
+        // Under the pair's lock: no opener is between its create and its
+        // hold.
+        let Ok(lock) = pair_file(&os_id, "lock") else {
+            continue;
+        };
+        let Some(pair) = try_lock_pair(&lock) else {
+            report.held += 1;
+            continue;
+        };
+        if segment_in_use(&os_id) {
+            report.held += 1;
             continue;
         }
-        if !segment_is_current_version(&os_id) {
-            report.foreign += 1;
-            continue;
+        match segment_state(&os_id) {
+            SegmentState::Other => {
+                report.foreign += 1;
+                continue;
+            }
+            SegmentState::Current => discard_orphaned_segment(&os_id),
+            SegmentState::Missing => {}
         }
-        shm_unlink_by_os_id(&os_id);
-        let _ = std::fs::remove_file(&path);
+        let _ = remove_name(&path);
+        if let Ok(hold) = pair_file(&os_id, "hold") {
+            let _ = remove_name(&hold);
+        }
+        let _ = remove_name(&lock);
+        drop(pair);
         report.removed += 1;
     }
     Ok(report)
@@ -881,7 +1450,7 @@ pub fn sweep_orphaned_flinks(flink_dir: &Path, min_age: Duration) -> io::Result<
 /// is unlinked and the marker removed when no participant holds the
 /// marker's lock and it is older than `min_age`. A marker whose bell is
 /// gone is removed too; one that names another layout is left.
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 fn sweep_bell_marker(
     path: &Path,
     now: std::time::SystemTime,
@@ -904,8 +1473,7 @@ fn sweep_bell_marker(
         report.young += 1;
         return;
     }
-    // SAFETY: flock on the valid fd of `file`.
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+    if !file_lock::try_exclusive(&file).unwrap_or(false) {
         report.held += 1;
         return;
     }
@@ -915,16 +1483,16 @@ fn sweep_bell_marker(
             report.foreign += 1;
             return;
         }
-        BellSegment::Current => shm_unlink_by_os_id(&os_id),
+        BellSegment::Current => discard_orphaned_segment(&os_id),
         BellSegment::Missing => {}
     }
-    let _ = std::fs::remove_file(path);
+    let _ = remove_name(path);
     report.removed += 1;
 }
 
 /// Whether segment `os_id` carries this layout version. A segment that
 /// cannot be mapped counts as not.
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 fn segment_is_current_version(os_id: &str) -> bool {
     let Ok(shmem) = Mapping::open_os_id(os_id) else {
         return false;
@@ -937,8 +1505,8 @@ fn segment_is_current_version(os_id: &str) -> bool {
     let (magic, version) = unsafe {
         let base = shmem.as_ptr();
         (
-            u32::from_be(ptr::read_unaligned(base as *const u32)),
-            u32::from_le(ptr::read_unaligned(base.add(4) as *const u32)),
+            u32::from_be(core::ptr::read_unaligned(base as *const u32)),
+            u32::from_le(core::ptr::read_unaligned(base.add(4) as *const u32)),
         )
     };
     magic == SHM_MAGIC && version == SHM_VERSION
@@ -947,205 +1515,31 @@ fn segment_is_current_version(os_id: &str) -> bool {
 use zerodds_rtps::wire_types::{Locator, LocatorKind};
 use zerodds_transport::{ReceivedDatagram, RecvError, SendError, Transport};
 
-/// Magic prefix for ZeroDDS SHM segments. `ZSHM` in big-endian.
-pub const SHM_MAGIC: u32 = u32::from_be_bytes(*b"ZSHM");
-
-/// Segment version. Bump on layout change; openers reject unknown
-/// versions. 2: every user holds a shared `flock` on the segment (see
-/// `hold_segment`); a version-1 user takes none, so its live segments
-/// would look orphaned to version 2.
-pub const SHM_VERSION: u32 = 2;
-
-/// Fixed header overhead (magic + version + capacity + head + tail
-/// + cache-line padding = 64 bytes).
-pub const HEADER_BYTES: usize = 64;
-
-/// Frame length that marks a padding frame (ring end, the writer wraps
-/// around afterwards).
-const PADDING_FRAME_LEN: u32 = 0xFFFF_FFFE;
+pub use crate::ring::{HEADER_BYTES, MAX_CAPACITY, SHM_MAGIC, SHM_VERSION, ShmRole};
+use crate::ring::{Next, Push, Ring};
 
 /// Default capacity 1 MiB of the data region.
 pub const DEFAULT_CAPACITY: usize = 1 << 20;
+
+/// What a waiting `recv` answers when the frame it took off the ring was
+/// corrupt (§3.3): the call cannot hand up a frame, and says why instead of
+/// waiting on as if nothing had come.
+const CORRUPT_FRAME_DROPPED: RecvError = RecvError::Io {
+    message: "shm corrupt frame dropped",
+};
+
+/// What a push answers when a ring position it computed lies outside the
+/// data region: not reached while `head` holds what this writer stored.
+const OUTSIDE_THE_RING: SendError = SendError::Io {
+    message: "shm ring position outside the ring",
+};
 
 /// Default spin-wait cycles before the sender comes back with
 /// `Backpressure`.
 const SPIN_LIMIT: u32 = 1024;
 
-/// Event-driven cross-process notify for the SHM ring (Linux).
-///
-/// The producer advances the 64-bit `head` write-pointer on every frame and
-/// then [`wake`]s; a parked consumer [`wait`]s on the **low 32 bits** of that
-/// same `head` word (it changes on every push, so it doubles as the futex
-/// sequence). This replaces the previous exponential-backoff sleep-poll, whose
-/// 10→20→40→80 µs steps injected a bimodal 66–140 µs same-host round-trip
-/// latency (vs ~24 µs for the UDP loopback it shadows). The futex is **shared**
-/// (no `FUTEX_PRIVATE_FLAG`), so wait/wake key on the underlying physical page
-/// and work across the two processes despite differing virtual addresses.
-///
-/// macOS parks through [`ring_os_sync`]; other targets keep the sleep-poll
-/// in [`PosixShmTransport::wait_for_frame`]. The wire format is the same.
-#[cfg(target_os = "linux")]
-mod ring_futex {
-    use std::time::Duration;
-
-    /// Wake up to `n` consumers parked on `addr` (the low 32 bits of `head`).
-    pub(super) fn wake(addr: *const u32, n: i32) {
-        // SAFETY: `addr` points to a live `u32` inside a shared mapping that
-        // outlives this call. `FUTEX_WAKE` ignores `*addr` and only signals
-        // parked waiters; the trailing args are unused for WAKE.
-        unsafe {
-            libc::syscall(
-                libc::SYS_futex,
-                addr,
-                libc::FUTEX_WAKE,
-                n,
-                core::ptr::null::<libc::timespec>(),
-                core::ptr::null::<u32>(),
-                0,
-            );
-        }
-    }
-
-    /// Park until `*addr != expected`, a [`wake`] arrives, or `timeout`
-    /// elapses. `FUTEX_WAIT` re-checks `*addr == expected` atomically before
-    /// sleeping, so a wake published after the caller read `expected` (but
-    /// before this call) returns `EAGAIN` immediately — no lost wakeup. The
-    /// caller always re-polls the ring afterwards, so `EAGAIN`/`EINTR`/
-    /// `ETIMEDOUT` need no distinction.
-    pub(super) fn wait(addr: *const u32, expected: u32, timeout: Option<Duration>) {
-        let ts = timeout.map(|d| libc::timespec {
-            tv_sec: d.as_secs() as libc::time_t,
-            tv_nsec: d.subsec_nanos() as libc::c_long,
-        });
-        let ts_ptr = ts
-            .as_ref()
-            .map_or(core::ptr::null(), |t| t as *const libc::timespec);
-        // SAFETY: `addr` is a live `u32` in a shared mapping; the relative
-        // `timeout` (or NULL for infinite) points to a valid stack `timespec`
-        // for the duration of the call.
-        unsafe {
-            libc::syscall(
-                libc::SYS_futex,
-                addr,
-                libc::FUTEX_WAIT,
-                expected,
-                ts_ptr,
-                core::ptr::null::<u32>(),
-                0,
-            );
-        }
-    }
-}
-
-/// The macOS counterpart of [`ring_futex`]: `os_sync_wait_on_address`
-/// (macOS 14.4) with `OS_SYNC_WAIT_ON_ADDRESS_SHARED` parks on a word in
-/// memory several processes map, as a shared futex does. Before, macOS
-/// polled with a 10 µs → 1 ms backoff: 4.45 % of a core per idle receive
-/// thread, and p50 177 µs against 58 µs over UDP loopback (measured on a
-/// Mac in a multi-process test chain, 2026-10-02).
-///
-/// The functions are looked up at run time: a binary that names them
-/// does not start on an older macOS. Without them the sleep-poll stays.
-#[cfg(target_os = "macos")]
-mod ring_os_sync {
-    use core::ffi::c_void;
-    use std::sync::OnceLock;
-    use std::time::Duration;
-
-    type WaitFn = unsafe extern "C" fn(*mut c_void, u64, usize, u32, u32, u64) -> i32;
-    type WakeFn = unsafe extern "C" fn(*mut c_void, usize, u32) -> i32;
-
-    fn api() -> Option<(WaitFn, WakeFn)> {
-        static API: OnceLock<Option<(WaitFn, WakeFn)>> = OnceLock::new();
-        *API.get_or_init(|| {
-            // SAFETY: dlsym with NUL-terminated names. A non-null result is
-            // the function of that name in <os/os_sync_wait_on_address.h>,
-            // whose C signature the two types above repeat.
-            unsafe {
-                let wait = libc::dlsym(
-                    libc::RTLD_DEFAULT,
-                    c"os_sync_wait_on_address_with_timeout".as_ptr(),
-                );
-                let wake = libc::dlsym(libc::RTLD_DEFAULT, c"os_sync_wake_by_address_all".as_ptr());
-                if wait.is_null() || wake.is_null() {
-                    return None;
-                }
-                Some((
-                    core::mem::transmute::<*mut c_void, WaitFn>(wait),
-                    core::mem::transmute::<*mut c_void, WakeFn>(wake),
-                ))
-            }
-        })
-    }
-
-    /// Whether this macOS has the functions.
-    pub(super) fn available() -> bool {
-        api().is_some()
-    }
-
-    /// Wake every consumer parked on `addr`.
-    pub(super) fn wake(addr: *const u32) {
-        if let Some((_, wake_all)) = api() {
-            // SAFETY: `addr` is a live, aligned `u32` in a shared mapping
-            // that outlives this call.
-            unsafe {
-                wake_all(addr as *mut c_void, 4, libc::OS_SYNC_WAKE_BY_ADDRESS_SHARED);
-            }
-        }
-    }
-
-    /// Park until `*addr != expected`, a [`wake`], or `timeout`. The call
-    /// compares `*addr` with `expected` before it sleeps, so a wake after
-    /// the caller read `expected` is not lost; the caller re-polls the ring
-    /// whatever the return was.
-    pub(super) fn wait(addr: *const u32, expected: u32, timeout: Option<Duration>) {
-        let Some((wait_on_address, _)) = api() else {
-            return;
-        };
-        // No deadline: an hour, and the caller's loop parks again.
-        let ns = timeout
-            .map_or(3_600_000_000_000, |d| {
-                u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
-            })
-            .max(1);
-        // SAFETY: as in `wake`; the value and size describe that `u32`.
-        unsafe {
-            wait_on_address(
-                addr as *mut c_void,
-                u64::from(expected),
-                4,
-                libc::OS_SYNC_WAIT_ON_ADDRESS_SHARED,
-                libc::OS_CLOCK_MACH_ABSOLUTE_TIME,
-                ns,
-            );
-        }
-    }
-}
-
-/// How a consumer parks on `head` on this target: the futex on Linux,
-/// `os_sync_wait_on_address` on a macOS that has it.
-/// `None` leaves the sleep-poll in [`PosixShmTransport::wait_for_frame`].
-#[cfg_attr(windows, allow(dead_code))]
-fn ring_park() -> Option<fn(*const u32, u32, Option<Duration>)> {
-    #[cfg(target_os = "linux")]
-    return Some(ring_futex::wait);
-    #[cfg(target_os = "macos")]
-    return ring_os_sync::available().then_some(ring_os_sync::wait as fn(_, _, _));
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    return None;
-}
-
-/// For [`crate::bell`]: [`ring_park`], [`ring_wake`], the hash of the
-/// short names, [`shm_unlink_by_os_id`] and the Windows event.
-#[cfg_attr(windows, allow(dead_code))]
-pub(crate) fn park_fn() -> Option<fn(*const u32, u32, Option<Duration>)> {
-    ring_park()
-}
-
-pub(crate) fn park_wake(addr: *const u32) {
-    ring_wake(addr);
-}
-
+/// For [`crate::bell`]: the hash of the short names and
+/// [`shm_unlink_by_os_id`].
 pub(crate) fn fnv1a_128_bytes(data: &[u8]) -> [u8; 16] {
     fnv1a_128(data)
 }
@@ -1154,75 +1548,10 @@ pub(crate) fn unlink_os_id(os_id: &str) {
     shm_unlink_by_os_id(os_id);
 }
 
-#[cfg(windows)]
-pub(crate) type RingEventHandle = RingEvent;
-
-/// Wakes the consumers [`ring_park`] parked on `addr`.
-fn ring_wake(addr: *const u32) {
-    #[cfg(target_os = "linux")]
-    ring_futex::wake(addr, i32::MAX);
-    #[cfg(target_os = "macos")]
-    ring_os_sync::wake(addr);
-    let _ = addr;
-}
-
-/// Windows has no wait on an address across processes (`WaitOnAddress`
-/// keys on the process's own address space), so every segment has a
-/// named auto-reset event: the owner sets it after each frame, the
-/// consumer waits on it. A set before the wait stays set, so a wake
-/// between the consumer's look at the ring and its wait is not lost.
-/// Before, Windows polled with a 10 µs → 1 ms backoff.
-#[cfg(windows)]
-pub(crate) struct RingEvent(windows_sys::Win32::Foundation::HANDLE);
-
-#[cfg(windows)]
-impl RingEvent {
-    /// Creates the event of segment `os_id`, or opens it if the other
-    /// side made it first.
-    pub(crate) fn open(os_id: &str) -> io::Result<Self> {
-        use windows_sys::Win32::System::Threading::CreateEventW;
-        let name: Vec<u16> = format!("Local\\zd-ev-{}", os_id.trim_start_matches('/'))
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        // SAFETY: `name` is NUL-terminated UTF-16 that outlives the call;
-        // no security attributes; auto-reset, initially not set.
-        let handle = unsafe { CreateEventW(core::ptr::null(), 0, 0, name.as_ptr()) };
-        if handle == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self(handle))
-    }
-
-    pub(crate) fn set(&self) {
-        // SAFETY: a live event handle owned by `self`.
-        unsafe {
-            windows_sys::Win32::System::Threading::SetEvent(self.0);
-        }
-    }
-
-    pub(crate) fn wait(&self, timeout: Option<Duration>) {
-        use windows_sys::Win32::System::Threading::{INFINITE, WaitForSingleObject};
-        let ms = timeout.map_or(INFINITE, |d| {
-            u32::try_from(d.as_millis())
-                .unwrap_or(INFINITE - 1)
-                .clamp(1, INFINITE - 1)
-        });
-        // SAFETY: a live event handle owned by `self`.
-        unsafe {
-            WaitForSingleObject(self.0, ms);
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for RingEvent {
-    fn drop(&mut self) {
-        // SAFETY: the handle `open` returned, closed once.
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.0);
-        }
-    }
+/// The pair lock of the segment or doorbell `os_id` (§5.4), for a doorbell
+/// that makes its FIFO under it.
+pub(crate) fn lock_pair_of(os_id: &str) -> io::Result<FlockGuard> {
+    lock_pair(&pair_file(os_id, "lock")?)
 }
 
 /// Default base directory for OS-backed segment files (Linux:
@@ -1245,8 +1574,9 @@ pub struct ShmConfig {
     /// Maximum datagram size; `send` rejects larger ones with
     /// `PayloadTooLarge`.
     pub max_datagram: usize,
-    /// `recv` timeout; `None` = blocking (then it spins internally with
-    /// exponential backoff).
+    /// `recv` timeout. `None`: `recv` parks (§4.4) until a frame arrives,
+    /// the owner's drop ends the segment, or
+    /// [`PosixShmTransport::interrupt_recv`] is called.
     pub recv_timeout: Option<Duration>,
 }
 
@@ -1304,166 +1634,24 @@ impl From<io::Error> for PosixShmError {
     }
 }
 
-/// Raw pointer into the mapped segment, parked in an `unsafe`-wrapping
-/// type so we can hand it around without dragging `unsafe` into every
-/// call-site.
-struct SegmentLayout {
-    /// Base pointer, lifetime-bound to the holding `Mapping`.
-    base: *mut u8,
-    /// Data region length in bytes (without the 64-byte header).
-    capacity: usize,
-}
-
-// `SegmentLayout` holds a raw pointer into memory that's mapped for
-// the lifetime of the owning `Mapping`.
-//
-// # SAFETY — happens-before invariants
-//
-// Data races between the writer (Owner) and reader (Consumer) are
-// avoided by the SpSc-ring discipline and `AcqRel`-atomics on
-// `head`/`tail`:
-//
-// - Writer path (`push_frame`):
-//   1. Reads `tail` with `Ordering::Acquire`. Any prior `tail`-store
-//      by the reader (Release) is now visible — that store happened
-//      *before* the reader finished reading previous frames out of
-//      the data region. So all bytes up to `tail` are free for reuse.
-//   2. Writes frame-length + payload bytes into the data region via
-//      plain `ptr::write_unaligned` / `ptr::copy_nonoverlapping`.
-//   3. Stores `head` with `Ordering::Release`. Any subsequent reader
-//      that sees the new `head` via `Acquire` *also* sees all bytes
-//      written in step 2. This is the publish edge.
-//
-// - Reader path (`pop_frame`) mirrors the above with head/tail swapped.
-//
-// The raw `ptr::read`/`ptr::write` in `SegmentLayout::{read,write}_*`
-// are therefore safe **only when guarded by the ring protocol above**.
-// A refactor that touches ordering (e.g. lowering to `Relaxed`,
-// introducing multi-producer paths, or adding writes to data bytes
-// that `head` does not already publish) invalidates these guarantees
-// and must re-prove happens-before by inspection. This is what makes
-// the file a safety-critical unsafe island; aarch64 in particular is
-// sensitive to weaker orderings and would surface a bug that x86 hides.
-// SAFETY: Send is OK because the ptr is only touched behind atomic APIs (see above).
-unsafe impl Send for SegmentLayout {}
-// SAFETY: Sync is OK because accesses are serialized via AcqRel atomics (see above).
-unsafe impl Sync for SegmentLayout {}
-
 // SAFETY: PosixShmTransport is Send because
 //  - `Mapping` contains a `*mut u8`; the pointer is valid in the same
 //    address space across a thread switch (mmap lifetime bound to the
 //    struct instance) and no other thread knows of it.
-//  - `SegmentLayout` (the only field that dereferences the pointer)
-//    is already Send (see above).
+//  - `Ring` (the only field that dereferences the pointer) is Send.
 //  - All other fields are inherently Send.
 // Drop is not reentrant — the move between threads ends before
 // `Drop::drop`.
 unsafe impl Send for PosixShmTransport {}
 // SAFETY: PosixShmTransport is Sync because
 //  - `&self` methods (`send`, `recv`, `local_locator`, `peer_locator`,
-//    counter reads) go exclusively through `SegmentLayout` atomics —
-//    which are themselves Sync.
+//    counter reads) go exclusively through the `Ring`'s atomics and its
+//    bounded copies, ordered by `head` and `tail` (see `crate::ring`).
 //  - SPSC discipline (1 sender, 1 receiver) is the spec contract of the
 //    ring buffer; concurrent senders/receivers on the same
 //    PosixShmTransport are UB and excluded by the caller (DcpsRuntime
 //    wave 4b).
 unsafe impl Sync for PosixShmTransport {}
-
-impl SegmentLayout {
-    /// # Safety
-    /// `base` must point to a valid, mapped region of at least
-    /// `HEADER_BYTES + capacity` bytes, and the `AtomicU64` fields
-    /// referenced by `head_ptr`/`tail_ptr` must be inside that region.
-    unsafe fn new(base: *mut u8, capacity: usize) -> Self {
-        Self { base, capacity }
-    }
-
-    fn head(&self) -> &AtomicU64 {
-        // SAFETY: base + 16 is in the mapped header, AtomicU64 is 8-byte-aligned.
-        unsafe { &*(self.base.add(16) as *const AtomicU64) }
-    }
-
-    /// The low 32 bits of `head`, the word a consumer parks on: it changes
-    /// with every frame. Byte 16 on a little-endian target, byte 20 on a
-    /// big-endian one; the futex path was little-endian-only for that
-    /// reason, and a big-endian Linux polled.
-    fn head_word(&self) -> *const u32 {
-        let offset = if cfg!(target_endian = "big") { 20 } else { 16 };
-        // SAFETY: base + 16 .. base + 24 is `head` in the mapped header.
-        unsafe { self.base.add(offset) as *const u32 }
-    }
-
-    fn tail(&self) -> &AtomicU64 {
-        // SAFETY: base + 24 is in the mapped header, AtomicU64 is 8-byte-aligned.
-        unsafe { &*(self.base.add(24) as *const AtomicU64) }
-    }
-
-    fn shutdown(&self) -> &AtomicU32 {
-        // SAFETY: base + 32 is in the mapped header, AtomicU32 is 4-byte-aligned.
-        unsafe { &*(self.base.add(32) as *const AtomicU32) }
-    }
-
-    fn owner_epoch(&self) -> &AtomicU32 {
-        // SAFETY: base + 40 is in the mapped header (formerly reserved,
-        // zero in a fresh segment), AtomicU32 is 4-byte-aligned.
-        unsafe { &*(self.base.add(40) as *const AtomicU32) }
-    }
-
-    fn consumer_attached(&self) -> &AtomicU32 {
-        // SAFETY: base + 36 is in the mapped header (formerly reserved,
-        // zero in a fresh segment), AtomicU32 is 4-byte-aligned.
-        unsafe { &*(self.base.add(36) as *const AtomicU32) }
-    }
-
-    fn data_ptr(&self) -> *mut u8 {
-        // SAFETY: the HEADER_BYTES offset is the start of the mapped data region.
-        unsafe { self.base.add(HEADER_BYTES) }
-    }
-
-    /// Read `len` bytes from `offset` (mod capacity). Panics in debug
-    /// if the read would wrap the buffer — callers must ensure
-    /// single-slot reads.
-    fn read_slice(&self, offset: usize, len: usize, out: &mut [u8]) {
-        debug_assert!(offset + len <= self.capacity, "read would wrap");
-        // SAFETY: offset + len <= capacity (debug-checked), in bounds of the data region.
-        unsafe {
-            ptr::copy_nonoverlapping(self.data_ptr().add(offset), out.as_mut_ptr(), len);
-        }
-    }
-
-    fn write_slice(&self, offset: usize, src: &[u8]) {
-        debug_assert!(offset + src.len() <= self.capacity, "write would wrap");
-        // SAFETY: offset + src.len() <= capacity (debug-checked), in bounds of the data region.
-        unsafe {
-            ptr::copy_nonoverlapping(src.as_ptr(), self.data_ptr().add(offset), src.len());
-        }
-    }
-
-    fn write_u32(&self, offset: usize, v: u32) {
-        debug_assert!(offset + 4 <= self.capacity);
-        // SAFETY: offset + 4 <= capacity (debug-checked); unaligned write is permitted.
-        unsafe {
-            ptr::write_unaligned(self.data_ptr().add(offset) as *mut u32, v.to_le());
-        }
-    }
-
-    fn read_u32(&self, offset: usize) -> u32 {
-        debug_assert!(offset + 4 <= self.capacity);
-        // SAFETY: offset + 4 <= capacity (debug-checked); unaligned read is permitted.
-        let v = unsafe { ptr::read_unaligned(self.data_ptr().add(offset) as *const u32) };
-        u32::from_le(v)
-    }
-}
-
-/// Role in the SHM pair.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ShmRole {
-    /// This transport allocates the segment (sole writer).
-    Owner,
-    /// This transport joins an existing segment (sole reader).
-    Consumer,
-}
 
 /// Cross-process SHM transport via `shm_open` + `mmap`.
 ///
@@ -1476,8 +1664,8 @@ pub enum ShmRole {
 /// `Send + Sync` are impl'd manually (see below). Background:
 /// `Mapping` contains a `*mut u8` (pointer to the mmap'd
 /// segment) that does not get `Send/Sync` automatically. The ring
-/// protocol via `SegmentLayout` is already secured by AcqRel atomics
-/// and SPSC discipline (see `unsafe impl Send for SegmentLayout`), and
+/// protocol via `Ring` is already secured by AcqRel atomics on
+/// `head` and `tail` and the SPSC discipline (see `crate::ring`), and
 /// all other fields (`role`, locators, `PathBuf`, `String`,
 /// `AtomicU64`) are inherently `Send + Sync`. The `Mapping` pointer
 /// itself stays valid as long as the `PosixShmTransport` object lives
@@ -1487,15 +1675,18 @@ pub enum ShmRole {
 /// that is the DCPS wave-4b architecture: hot-path sender in the tick
 /// worker, recv worker in the dedicated `recv_user_shm_loop`).
 pub struct PosixShmTransport {
-    _shmem: Mapping, // keeps the mapping alive; Drop unmaps
-    /// The shared `flock` on the segment that tells a sweeper this
-    /// segment is in use (see `hold_segment`); released by the kernel
-    /// when this process ends, however it ends. `None` where the segment
-    /// is not a file that takes a lock.
-    _liveness: Option<std::fs::File>,
-    /// Windows: the segment's named event a consumer waits on.
-    #[cfg(windows)]
-    ring_event: RingEvent,
+    /// Keeps the mapping alive. `Some` for the life of the transport: an
+    /// owner's drop takes it under the pair lock (see `Drop`).
+    _shmem: Option<Mapping>,
+    /// The shared lock on the segment that tells a sweeper this segment
+    /// is in use (see `hold_segment`); released by the kernel when this
+    /// process ends, however it ends.
+    _liveness: std::fs::File,
+    /// How the consumer waits on `head` and the owner wakes it (§4.4).
+    waiter: crate::wait::Waiter,
+    /// Parks of the consumer, for the tests that tell a park from a poll.
+    #[cfg(test)]
+    parks: core::sync::atomic::AtomicU64,
     /// The owner epoch this owner opened the segment under. Its drop ends
     /// the segment only while no later owner has opened it since.
     owner_epoch: u32,
@@ -1503,11 +1694,13 @@ pub struct PosixShmTransport {
     /// and a same-host channel sends from the tick, the receive threads
     /// and the application's writers at once. Unserialized, two pushes
     /// raced on `head` (measured: `used > capacity` in a reliable burst).
-    producer: std::sync::Mutex<()>,
+    /// The owners of one segment in this process share it (see
+    /// [`owner_producer_lock`]).
+    producer: std::sync::Arc<std::sync::Mutex<()>>,
     /// `false`: a push does not wake a consumer parked on `head`, because
     /// the consumer parks on a [`crate::bell::ShmDoorbell`] instead.
     wake_on_push: core::sync::atomic::AtomicBool,
-    layout: SegmentLayout,
+    layout: Ring,
     role: ShmRole,
     local_locator: Locator,
     peer_locator: Locator,
@@ -1515,7 +1708,7 @@ pub struct PosixShmTransport {
     /// For the owner: the flink path we unlink on drop.
     /// The consumer leaves the path alone (the owner owns it).
     flink_path: PathBuf,
-    /// For the owner: the `.lock` path cleaned up on drop.
+    /// The pair's lock file in [`pair_dir`], removed by the owner's drop.
     lock_path: PathBuf,
     /// OS id of the `/dev/shm` segment — we keep a copy so `Drop` can
     /// still call `shm_unlink` even on an internal mapping failure
@@ -1524,8 +1717,8 @@ pub struct PosixShmTransport {
     /// Consumed padding frames since bind. See
     /// [`padding_frames_seen`](Self::padding_frames_seen).
     padding_counter: core::sync::atomic::AtomicU64,
-    /// Corrupt-frame drops: the owner wrote a length > max_datagram.
-    /// The consumer drops the frame + skips to the ring end.
+    /// Corrupt-frame drops (§3.3, see [`Self::corrupt_frames_seen`]): the
+    /// consumer counts the frame and resumes at `head`.
     corrupt_frame_counter: core::sync::atomic::AtomicU64,
     /// Set by [`Self::interrupt_recv`]: the next or the waiting `recv`
     /// returns `Timeout` at once. Process-local, not in the segment.
@@ -1553,23 +1746,39 @@ impl Drop for PosixShmTransport {
                 Ordering::Acquire,
                 |n| n.checked_sub(1),
             );
+            // The mapping and the hold go with the fields; a consumer
+            // that made the segment does not unlink it (see `open`).
+            return;
         }
+        // An owner decides and ends under the pair lock (§5.3, §5.4): an
+        // opener of the pair runs before all of it or after all of it.
+        // Without the lock, a next owner that attached between the look at
+        // `owner_epoch` and the unlink wrote into a ring this drop ended,
+        // and one that made the ring anew in between lost its name to the
+        // mapping's own drop, which ran after this body (measured on the
+        // Linux test host: 16 of 20 runs of
+        // `shm_5_3_a_drop_racing_the_next_owner_leaves_it_a_ring_that_is_read`
+        // failed, 500 rounds each). A lock that cannot be taken (its
+        // directory gone) leaves the drop as it was without it: `Drop`
+        // cannot report.
+        let _pair = lock_pair(&self.lock_path).ok();
         // An owner that re-opened the pair (a channel closed and opened
         // again while this one was still in use) attached to this very
         // segment and carries it on: ending it here would set the shutdown
         // flag and unlink the name under the live owner, which then writes
         // into a ring nobody reads.
-        let superseded = self.role == ShmRole::Owner
-            && self.layout.owner_epoch().load(Ordering::Acquire) != self.owner_epoch;
-        if superseded {
+        let ends = !self.is_superseded();
+        if !ends {
             // Nor may the mapping unlink it, as the creator's would.
-            self._shmem.set_owner(false);
-        }
-        if self.role == ShmRole::Owner && !superseded {
+            if let Some(mapping) = self._shmem.as_mut() {
+                mapping.set_owner(false);
+            }
+        } else {
             // 0. Set the shutdown flag before we tear down the
             //    resources. A consumer in a wait_for_frame loop sees the
             //    release store and returns a targeted error instead of
-            //    running into the normal recv_timeout.
+            //    running into the normal recv_timeout. One that opens the
+            //    pair again waits for the pair lock and finds no ring.
             self.layout
                 .shutdown()
                 .store(1, core::sync::atomic::Ordering::Release);
@@ -1577,17 +1786,39 @@ impl Drop for PosixShmTransport {
             // shutdown flag immediately instead of waiting out its
             // recv_timeout. The futex keys on `head` (the wait address); a
             // bare wake with no head change still releases the waiter, which
-            // then re-checks shutdown.
+            // then re-checks shutdown. Then the FIFO goes, if this backend
+            // keeps one: the consumer's descriptor still reads the byte.
             self.wake_ring();
+            self.waiter.remove_files();
             // 1. Remove the flink file (lookup file, not a segment).
-            let _ = std::fs::remove_file(&self.flink_path);
-            // 2. Remove the lock file.
-            let _ = std::fs::remove_file(&self.lock_path);
+            let _ = remove_name(&self.flink_path);
+            // 2. Where the segment is no file, remove its hold file: a user
+            //    that still holds it keeps the lock on a name a later
+            //    opener no longer finds.
+            #[cfg(not(target_os = "linux"))]
+            if let Ok(hold) = pair_file(&self.os_id, "hold") {
+                let _ = remove_name(&hold);
+            }
             // 3. Unlink the /dev/shm segment — defense-in-depth.
             //    The mapping does this itself when it is the owner (set
             //    in the `open()` path after `create`), but an explicit
             //    call is idempotent.
             shm_unlink_by_os_id(&self.os_id);
+        }
+        // The mapping goes while the lock is held: the creator's mapping
+        // unlinks the name and removes the flink once more on its drop
+        // (on Windows it marks the backing file for deletion), and after
+        // the lock that reached a ring a next opener had made under the
+        // same name.
+        drop(self._shmem.take());
+        // 4. The pair's lock file goes last, still held: an opener that
+        //    comes now makes a new one and runs at once, and before the
+        //    rest of the drop was done it ran beside it (the first form of
+        //    this lock removed the file in step 2 and lost 5 of 30 runs of
+        //    the test above). An opener waiting on the file finds it gone
+        //    once it has the lock, and takes a new one (`lock_pair`).
+        if ends {
+            let _ = remove_name(&self.lock_path);
         }
     }
 }
@@ -1598,7 +1829,7 @@ impl core::fmt::Debug for PosixShmTransport {
             .field("role", &self.role)
             .field("local_locator", &self.local_locator)
             .field("peer_locator", &self.peer_locator)
-            .field("capacity", &self.layout.capacity)
+            .field("capacity", &self.layout.capacity())
             .finish()
     }
 }
@@ -1641,9 +1872,14 @@ impl PosixShmTransport {
         config: ShmConfig,
         role: ShmRole,
     ) -> Result<Self, PosixShmError> {
-        if config.capacity < config.max_datagram * 2 + 16 {
+        if config.capacity < config.max_datagram.saturating_mul(2).saturating_add(16) {
             return Err(PosixShmError::InvalidConfig {
                 reason: "capacity must be >= 2 * max_datagram + 16",
+            });
+        }
+        if config.capacity > MAX_CAPACITY {
+            return Err(PosixShmError::InvalidConfig {
+                reason: "capacity must be <= 2^31 (positions compare by their low 32 bits)",
             });
         }
         match std::fs::symlink_metadata(&config.flink_dir) {
@@ -1670,21 +1906,26 @@ impl PosixShmTransport {
         // regardless of the role parameter.
         //
         // Algorithm:
-        // 1. flock excl on the .lock file → serializes both sides
+        // 1. flock excl on the pair's lock file in `pair_dir`, named after
+        //    the segment alone → serializes every opener of the segment,
+        //    whichever flink directory it looks in (§5.4)
         // 2. Try opening the existing flink → ATTACH (we are not creator)
-        // 3. If open fails (ENOENT) → CREATE + initialize the header
-        // 4. flock release at the end of the block
+        // 3. No flink, but a process holds the segment (its users found it
+        //    through another flink directory) → ATTACH by name
+        // 4. Otherwise → remove a zombie, CREATE + initialize the header
+        // 5. Hold the segment (§5.5); flock release at the end of the block
         //
         // The role parameter is orthogonal: it only determines send/recv
         // semantics (the owner may send, the consumer may recv), not
         // who creates the segment.
-        let _guard = lock_pair(&flink.with_extension("lock"))?;
+        let lock_path = pair_file(&os_id, "lock")?;
+        let _guard = lock_pair(&lock_path)?;
 
         // A segment no process holds any more is discarded and made
         // again, once; see `hold_segment`.
         let mut discarded = false;
         let requested = config;
-        let (shmem, liveness, config) = loop {
+        let (shmem, liveness, config, layout) = loop {
             // What this side asked for; an attacher takes the ring's size
             // from the segment instead (see below).
             let mut config = requested.clone();
@@ -1695,26 +1936,24 @@ impl PosixShmTransport {
                 // pair's name: its users found it through another flink
                 // directory (another TMPDIR, a service's private /tmp).
                 // Unlinking it, as the branch below does, left that side
-                // on the old ring and this one on a new one.
+                // on the old ring and this one on a new one. Under the
+                // pair lock no opener is between its create and its hold,
+                // so a segment nobody holds here is orphaned.
                 Err(_) if segment_in_use(&os_id) => (Mapping::open_os_id(&os_id)?, false),
                 Err(_) => {
                     // Crash recovery: remove a zombie shm file from a
                     // previous crashed process.
                     shm_unlink_by_os_id(&os_id);
-                    let _ = std::fs::remove_file(&flink);
+                    let _ = remove_name(&flink);
                     let fresh =
                         Mapping::create(&os_id, HEADER_BYTES + config.capacity, Some(&flink));
                     match fresh {
                         Ok(fresh) => (fresh, true),
-                        // The mapping is there and the flink is not.
-                        //
-                        // On Windows that is a state the two steps above
-                        // cannot leave: `shm_unlink_by_os_id` is a no-op
-                        // there — the documented one, forty lines up — and
-                        // removing the flink file does not touch the kernel
-                        // object, which lives until the last handle closes.
-                        // So a segment another handle still holds survives
-                        // both, and `create` answers `MappingIdExists`.
+                        // The name is there although nobody holds it and
+                        // the unlink above ran: on Windows a kernel mapping
+                        // object of that name lives until its last handle
+                        // closes, whatever happened to its backing file, and
+                        // a user of an earlier protocol takes no hold.
                         //
                         // That is not a failure. It says the segment exists,
                         // which is the same thing the `open` above was
@@ -1722,6 +1961,8 @@ impl PosixShmTransport {
                         // flink. Attach by os_id, and attach as the
                         // **non-creator**: something else made it and will
                         // unlink it, and a second owner would unlink twice.
+                        // The header check and the hold below decide whether
+                        // the ring is taken.
                         Err(ShmemError::MappingIdExists) => (Mapping::open_os_id(&os_id)?, false),
                         Err(other) => return Err(other.into()),
                     }
@@ -1736,14 +1977,14 @@ impl PosixShmTransport {
                 });
             }
 
-            if is_creator {
-                // SAFETY: segment >= HEADER_BYTES, zero-init by create();
-                // we are alone in the flock region.
-                unsafe {
-                    ptr::write_unaligned(base as *mut u32, SHM_MAGIC.to_be());
-                    ptr::write_unaligned(base.add(4) as *mut u32, SHM_VERSION.to_le());
-                    ptr::write_unaligned(base.add(8) as *mut u64, (config.capacity as u64).to_le());
-                }
+            let ring = if is_creator {
+                // SAFETY: the mapping is `total_size` bytes long and lives
+                // with `shmem`; it is zero as `create` made it, and we are
+                // alone in the pair lock.
+                let ring = unsafe { Ring::create_in_zeroed(base, total_size, config.capacity) }
+                    .map_err(|_| PosixShmError::InvalidConfig {
+                        reason: "mapped segment cannot hold the requested capacity",
+                    })?;
                 // Only an owner-role creator is the mapping's owner, which
                 // unlinks the segment on drop.
                 // A consumer that made the segment first must not: its drop
@@ -1751,45 +1992,36 @@ impl PosixShmTransport {
                 // that opened the pair again made a ring of its own beside
                 // the owner's. The attacher never does (double unlink).
                 shmem.set_owner(role == ShmRole::Owner);
+                ring
             } else {
-                // SAFETY: segment >= HEADER_BYTES bytes, offset 0 holds magic.
-                let magic_be = unsafe { ptr::read_unaligned(base as *const u32) };
-                if u32::from_be(magic_be) != SHM_MAGIC {
-                    return Err(PosixShmError::InvalidHeader);
+                // Magic, version and a capacity the mapping holds. The ring
+                // is as large as its creator made it. Both sides used their
+                // own configured size before, and two sides that configured
+                // different ones (`transport.shm_max_datagram` per
+                // participant) either failed to attach or ran the ring with
+                // two different capacities.
+                // SAFETY: the mapping is `total_size` bytes long and lives
+                // with `shmem`.
+                let ring = unsafe { Ring::attach(base, total_size) }
+                    .map_err(|_| PosixShmError::InvalidHeader)?;
+                config.capacity = ring.capacity();
+                if config.max_datagram.saturating_mul(2).saturating_add(16) > config.capacity {
+                    config.max_datagram = (config.capacity - 16) / 2;
                 }
-                // SAFETY: segment >= HEADER_BYTES bytes; offset 4 holds the
-                // version field directly behind the magic.
-                let version = unsafe { ptr::read_unaligned(base.add(4) as *const u32) };
-                if u32::from_le(version) != SHM_VERSION {
-                    return Err(PosixShmError::InvalidHeader);
-                }
-                // The ring is as large as its creator made it. Both sides
-                // used their own configured size before, and two sides that
-                // configured different ones (`transport.shm_max_datagram`
-                // per participant) either failed to attach or ran the ring
-                // with two different capacities.
-                // SAFETY: segment >= HEADER_BYTES bytes; offset 8 holds the
-                // capacity the creator wrote.
-                let raw = unsafe { ptr::read_unaligned(base.add(8) as *const u64) };
-                let capacity = usize::try_from(u64::from_le(raw)).unwrap_or(usize::MAX);
-                if capacity < 32 || total_size < HEADER_BYTES.saturating_add(capacity) {
-                    return Err(PosixShmError::InvalidHeader);
-                }
-                config.capacity = capacity;
-                if config.max_datagram.saturating_mul(2).saturating_add(16) > capacity {
-                    config.max_datagram = (capacity - 16) / 2;
-                }
-            }
+                ring
+            };
 
-            match hold_segment(&os_id, &flink, is_creator)? {
-                SegmentHold::Held(file) => break (shmem, file, config),
+            match hold_segment(&os_id, is_creator)? {
+                SegmentHold::Held(file) => break (shmem, file, config, ring),
                 SegmentHold::Orphaned | SegmentHold::Vanished if !discarded => {
                     // Its ring still holds the frames of a session that is
                     // over; a consumer attaching to it would deliver them.
                     drop(shmem);
                     discard_orphaned_segment(&os_id);
-                    let _ = std::fs::remove_file(&flink);
+                    let _ = remove_name(&flink);
                     discarded = true;
+                    #[cfg(test)]
+                    ORPHANS_DISCARDED.with(|n| n.set(n.get() + 1));
                 }
                 SegmentHold::Orphaned | SegmentHold::Vanished => {
                     return Err(PosixShmError::Io(io::Error::other(
@@ -1798,17 +2030,28 @@ impl PosixShmTransport {
                 }
             }
         };
-        let base = shmem.as_ptr();
-
-        // SAFETY: base is valid for the lifetime of shmem; layout holds only refs of the same lifetime.
-        let layout = unsafe { SegmentLayout::new(base, config.capacity) };
+        // Under the pair lock: a sweep removes a FIFO whose segment is gone
+        // under it. Before the two counts below: an open that fails here
+        // leaves neither an attach nor an epoch behind.
+        let waiter = crate::wait::Waiter::open(&os_id)?;
         if role == ShmRole::Consumer {
             // A count, not a flag: a consumer that re-opens the ring before
             // its old handle is gone would otherwise be marked detached by
             // that handle's drop.
             layout.consumer_attached().fetch_add(1, Ordering::AcqRel);
         }
+        // The owners of the segment in this process share the producer
+        // lock, and the epoch goes up under it: a send of the owner this
+        // one supersedes ends before the bump, or sees it and refuses.
+        let producer = if role == ShmRole::Owner {
+            owner_producer_lock(&os_id)
+        } else {
+            std::sync::Arc::new(std::sync::Mutex::new(()))
+        };
         let owner_epoch = if role == ShmRole::Owner {
+            let _sends = producer
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             layout
                 .owner_epoch()
                 .fetch_add(1, Ordering::AcqRel)
@@ -1828,16 +2071,14 @@ impl PosixShmTransport {
             owner_id
         });
 
-        let lock_path = flink.with_extension("lock");
-        #[cfg(windows)]
-        let ring_event = RingEvent::open(&os_id)?;
         Ok(Self {
-            _shmem: shmem,
+            _shmem: Some(shmem),
             _liveness: liveness,
-            #[cfg(windows)]
-            ring_event,
+            waiter,
+            #[cfg(test)]
+            parks: core::sync::atomic::AtomicU64::new(0),
             owner_epoch,
-            producer: std::sync::Mutex::new(()),
+            producer,
             wake_on_push: core::sync::atomic::AtomicBool::new(true),
             layout,
             role,
@@ -1917,7 +2158,24 @@ impl PosixShmTransport {
         let _one_producer = self.producer.lock().map_err(|_| SendError::Io {
             message: "shm producer lock poisoned",
         })?;
+        // The segment is a later owner's (§5.3); a push of this one would
+        // race that owner's on `head`.
+        if self.is_superseded() {
+            return Err(SendError::Io {
+                message: "shm owner superseded: a later owner sends on this segment",
+            });
+        }
         self.push_frame(prefix, data)
+    }
+
+    /// Whether a later owner opened this owner's segment (`owner_epoch`,
+    /// §2.1, §5.3): the segment is the later one's, a send of this one
+    /// returns an error, and its drop leaves the segment alone. Always
+    /// `false` for a consumer.
+    #[must_use]
+    pub fn is_superseded(&self) -> bool {
+        self.role == ShmRole::Owner
+            && self.layout.owner_epoch().load(Ordering::Acquire) != self.owner_epoch
     }
 
     /// Whether a push wakes a consumer parked on this ring's `head`. A
@@ -1956,99 +2214,44 @@ impl PosixShmTransport {
     /// does not.
     #[must_use]
     pub fn consumed_bytes(&self) -> u64 {
-        self.layout.tail().load(Ordering::Acquire)
+        self.layout.tail_position()
     }
 
     /// Number of bytes in the ring not yet consumed by the reader.
     /// Diagnostic for backpressure monitoring.
     #[must_use]
     pub fn occupied_bytes(&self) -> u64 {
-        let h = self.layout.head().load(Ordering::Acquire);
-        let t = self.layout.tail().load(Ordering::Acquire);
-        h.wrapping_sub(t)
+        self.layout.occupied()
     }
 
     fn push_frame(&self, prefix: &[u8], data: &[u8]) -> Result<(), SendError> {
-        let len = prefix.len() + data.len();
-        let needed = (len + 4) as u64; // length-prefix
-        let cap = self.config.capacity as u64;
-
         let mut spins: u32 = 0;
         loop {
-            let h = self.layout.head().load(Ordering::Relaxed);
-            let t = self.layout.tail().load(Ordering::Acquire);
-            let used = h.wrapping_sub(t);
-            let free = cap - used;
-
-            let h_mod = (h % cap) as usize;
-            let tail_space = self.config.capacity - h_mod; // up to ring end
-
-            if needed > free {
-                // The reader has not consumed enough.
-                spins = spins.saturating_add(1);
-                if spins > SPIN_LIMIT {
-                    return Err(SendError::Io {
-                        message: "shm ring full, reader too slow",
+            let full = match self.layout.try_push(prefix, data) {
+                Push::Pushed => break,
+                Push::Full => "shm ring full, reader too slow",
+                Push::FullAtWrap => "shm ring full near wraparound",
+                Push::OutsideTheRing => return Err(OUTSIDE_THE_RING),
+                Push::TooLarge => {
+                    return Err(SendError::PayloadTooLarge {
+                        size: prefix.len() + data.len(),
+                        limit: self.config.max_datagram,
                     });
                 }
-                core::hint::spin_loop();
-                continue;
+            };
+            // The reader has not consumed enough: spin, then give up.
+            spins = spins.saturating_add(1);
+            if spins > SPIN_LIMIT {
+                return Err(SendError::Io { message: full });
             }
-
-            if (needed as usize) > tail_space {
-                // The frame would wrap → first fill the rest of the ring,
-                // then retry from its start. A rest of 4 bytes or more
-                // gets a padding header; a rest of 1 to 3 bytes holds no
-                // header and is skipped by its size alone, which is how
-                // `pop_frame` reads it. Without that skip a frame ending
-                // 1 to 3 bytes before the end left the writer waiting for
-                // room in an empty ring, and every later send failed.
-                //
-                // The condition `needed + tail_space <= free` is
-                // CORRECT: after the padding `used` rises by
-                // `tail_space` (the reader skips it in `pop_frame`; until
-                // it does, the bytes are ring occupancy). So before the
-                // wrap it must hold that `cap - used >= tail_space +
-                // needed`, i.e. `free >= tail_space + needed`.
-                if (needed + (tail_space as u64)) <= free {
-                    if tail_space >= 4 {
-                        self.layout.write_u32(h_mod, PADDING_FRAME_LEN);
-                    }
-                    self.layout
-                        .head()
-                        .store(h + tail_space as u64, Ordering::Release);
-                    continue;
-                }
-                // Not enough space for padding + frame — the reader must
-                // consume further first. Spin.
-                spins = spins.saturating_add(1);
-                if spins > SPIN_LIMIT {
-                    return Err(SendError::Io {
-                        message: "shm ring full near wraparound",
-                    });
-                }
-                core::hint::spin_loop();
-                continue;
-            }
-
-            // Happy path: the frame fits in one piece from h_mod.
-            let len_u32 = u32::try_from(len).map_err(|_| SendError::PayloadTooLarge {
-                size: len,
-                limit: self.config.max_datagram,
-            })?;
-            self.layout.write_u32(h_mod, len_u32);
-            self.layout.write_slice(h_mod + 4, prefix);
-            self.layout.write_slice(h_mod + 4 + prefix.len(), data);
-            self.layout.head().store(h + needed, Ordering::Release);
-            // Event-driven notify: the `head` store above is published; wake a
-            // consumer parked in `wait_for_frame` on the low 32 bits of `head`.
-            // Wake-all (typically a single consumer) keeps it correct if a
-            // future revision maps several readers onto one segment.
-            if self.wake_on_push.load(Ordering::Relaxed) {
-                self.wake_ring();
-            }
-            return Ok(());
+            core::hint::spin_loop();
         }
+        // Event-driven notify: the `head` store is published; wake a
+        // consumer parked in `wait_for_frame` on the low 32 bits of `head`.
+        if self.wake_on_push.load(Ordering::Relaxed) {
+            self.wake_ring();
+        }
+        Ok(())
     }
 
     /// Number of padding frames observed since bind. Rises every time
@@ -2065,118 +2268,82 @@ impl PosixShmTransport {
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Number of frames the consumer dropped due to the length sanity
-    /// check (`len > max_datagram`). Non-zero indicates a broken or
-    /// malicious owner — an ops-signal candidate. Atomic, Relaxed
-    /// ordering.
+    /// Number of frames the consumer dropped as corrupt (§3.3): a length
+    /// above half the ring, a frame that would cross the ring's end or the
+    /// published `head`, a skip past `head`, or a `head` more than the ring
+    /// ahead of `tail`. Non-zero indicates a broken or malicious owner; the
+    /// DCPS receive paths file each drop as the event `shm.corrupt_frame`.
+    /// Atomic, Relaxed ordering.
     #[must_use]
     pub fn corrupt_frames_seen(&self) -> u64 {
         self.corrupt_frame_counter
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// The name of the shared-memory object behind this transport, as
+    /// `shm_open` takes it (`/zd-…`; on Linux the file `/dev/shm/zd-…`).
+    #[must_use]
+    pub fn segment_name(&self) -> &str {
+        &self.os_id
+    }
+
+    /// Takes the next frame off the ring. Every value read from the ring
+    /// (`head`, the length, a padding marker) is checked against what a
+    /// writer of this protocol can publish before a byte is copied: the
+    /// other side of the segment can write anything there (§3.3,
+    /// [`Ring::next`]).
     fn pop_frame(&self) -> Option<Vec<u8>> {
-        // Iterative instead of recursion.
-        // A ring with continuous padding frames (e.g. a tiny capacity +
-        // constant wrap cycles, or a malicious owner that deliberately
-        // writes only padding) could drive the original
-        // `return self.pop_frame()` recursion to a stack overflow. The
-        // loop here terminates in at most `capacity / 4` iterations
-        // (each padding skip advances tail by `tail_space` >= 4, until
-        // `h == t`).
-        loop {
-            let t = self.layout.tail().load(Ordering::Relaxed);
-            let h = self.layout.head().load(Ordering::Acquire);
-            if h == t {
-                return None;
+        let mut paddings = 0;
+        let next = self.layout.next(&mut paddings);
+        if paddings > 0 {
+            self.padding_counter
+                .fetch_add(u64::from(paddings), Ordering::Relaxed);
+        }
+        match next {
+            Next::Empty => None,
+            Next::Corrupt => {
+                self.corrupt_frame_counter.fetch_add(1, Ordering::Relaxed);
+                None
             }
-
-            let cap = self.config.capacity as u64;
-            let t_mod = (t % cap) as usize;
-            let tail_space = self.config.capacity - t_mod;
-
-            // tail_space < 4 means: the writer left a tiny remainder at
-            // the ring end (no more length headers fit). Skip to the
-            // segment start.
-            if tail_space < 4 {
-                self.layout
-                    .tail()
-                    .store(t + tail_space as u64, Ordering::Release);
-                continue;
+            Next::Frame { offset, len, end } => {
+                let mut out = vec![0u8; len];
+                if !self.layout.read(offset, &mut out) {
+                    let _ = self.layout.drop_published();
+                    self.corrupt_frame_counter.fetch_add(1, Ordering::Relaxed);
+                    return None;
+                }
+                self.layout.release(end);
+                Some(out)
             }
-
-            let len = self.layout.read_u32(t_mod);
-            if len == PADDING_FRAME_LEN {
-                // Padding — skip the rest of the region. The counter
-                // enables diagnosis.
-                self.padding_counter
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                self.layout
-                    .tail()
-                    .store(t + tail_space as u64, Ordering::Release);
-                continue;
-            }
-
-            // DoS guard:
-            // a malicious or corrupt owner could write a `len` larger
-            // than the datagram config limit; without a check we would
-            // allocate a huge Vec. Drop + bump the counter (visible via
-            // `corrupt_frames_seen()`).
-            // The bound is the ring's, not this side's `max_datagram`: the
-            // owner may have configured a larger one, and its frames are
-            // whole up to half the ring.
-            if len as usize > self.config.capacity / 2 {
-                self.corrupt_frame_counter
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                self.layout
-                    .tail()
-                    .store(t + tail_space as u64, Ordering::Release);
-                return None;
-            }
-
-            let len = len as usize;
-            let mut out = vec![0u8; len];
-            self.layout.read_slice(t_mod + 4, len, &mut out);
-            self.layout
-                .tail()
-                .store(t + (len as u64) + 4, Ordering::Release);
-            return Some(out);
         }
     }
 
     fn wait_for_frame(&self) -> Result<Vec<u8>, RecvError> {
         let deadline = self.config.recv_timeout.map(|t| Instant::now() + t);
-        #[cfg(windows)]
-        return self.wait_parked(deadline, |_, _, timeout| self.ring_event.wait(timeout));
-        #[cfg(not(windows))]
-        match ring_park() {
-            Some(park) => self.wait_parked(deadline, park),
-            None => self.wait_polling(deadline),
-        }
+        self.wait_parked(deadline)
     }
 
     /// Wakes the consumer parked on this segment.
     fn wake_ring(&self) {
-        ring_wake(self.layout.head_word());
-        #[cfg(windows)]
-        self.ring_event.set();
+        self.waiter
+            .wake(self.layout.head_word().as_ptr().cast_const());
     }
 
-    /// Event-driven wait: park on the low 32 bits of `head` and let the
-    /// producer's wake (in `push_frame`) deliver the frame at once. The
+    /// Event-driven wait (§4.4): park on the low 32 bits of `head` and let
+    /// the producer's wake (in `push_frame`) deliver the frame at once. The
     /// `head` value is read **before** `pop_frame`, so a frame published
-    /// between the read and the park makes `*addr != expected`, and the
-    /// park returns at once: no lost wakeup.
-    fn wait_parked(
-        &self,
-        deadline: Option<Instant>,
-        park: impl Fn(*const u32, u32, Option<Duration>),
-    ) -> Result<Vec<u8>, RecvError> {
-        let head_word = self.layout.head_word();
+    /// between the read and the park makes the park return at once (the
+    /// word differs, or the wake is already there): no lost wakeup.
+    fn wait_parked(&self, deadline: Option<Instant>) -> Result<Vec<u8>, RecvError> {
+        let head_word = self.layout.head_word().as_ptr().cast_const();
         loop {
-            let expected = self.layout.head().load(Ordering::Acquire) as u32;
+            let expected = self.layout.head_word().load(Ordering::Acquire);
+            let corrupt = self.corrupt_frames_seen();
             if let Some(frame) = self.pop_frame() {
                 return Ok(frame);
+            }
+            if self.corrupt_frames_seen() != corrupt {
+                return Err(CORRUPT_FRAME_DROPPED);
             }
             // Targeted owner-gone signal: the owner sets shutdown=1 (and
             // wakes us) on drop. Checked after pop_frame, so frames
@@ -2205,37 +2372,10 @@ impl PosixShmTransport {
                 }
                 None => None,
             };
-            park(head_word, expected, remaining);
+            #[cfg(test)]
+            self.parks.fetch_add(1, Ordering::Relaxed);
+            self.waiter.park(head_word, expected, remaining);
             self.parking.store(false, Ordering::SeqCst);
-        }
-    }
-
-    /// Sleep-poll for a target [`ring_park`] has nothing for: exponential
-    /// backoff 10 µs → 1 ms. Higher tail latency and a wakeup every
-    /// millisecond while idle; identical on the wire.
-    #[cfg_attr(windows, allow(dead_code))]
-    fn wait_polling(&self, deadline: Option<Instant>) -> Result<Vec<u8>, RecvError> {
-        let mut backoff = Duration::from_micros(10);
-        let max_backoff = Duration::from_millis(1);
-        loop {
-            if let Some(frame) = self.pop_frame() {
-                return Ok(frame);
-            }
-            if self.layout.shutdown().load(Ordering::Acquire) != 0 {
-                return Err(RecvError::Io {
-                    message: "shm owner terminated",
-                });
-            }
-            if self.interrupted.swap(false, Ordering::AcqRel) {
-                return Err(RecvError::Timeout);
-            }
-            if let Some(d) = deadline
-                && Instant::now() >= d
-            {
-                return Err(RecvError::Timeout);
-            }
-            std::thread::sleep(backoff);
-            backoff = (backoff * 2).min(max_backoff);
         }
     }
 }
@@ -2302,6 +2442,9 @@ impl PosixShmTransport {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::ring::PADDING_FRAME_LEN;
+    use std::ptr;
+    use std::sync::atomic::AtomicU64;
 
     /// A GUID for the tests, distinct in every process.
     ///
@@ -2765,14 +2908,128 @@ mod tests {
 
         // Write a bogus length header straight into the ring and publish
         // it, the way a corrupt owner would.
-        owner.layout.write_u32(0, u32::try_from(bound + 1).unwrap());
-        owner
-            .layout
-            .head()
-            .store(4 + (bound as u64) + 1, Ordering::Release);
+        assert!(owner.layout.write_u32(0, u32::try_from(bound + 1).unwrap()));
+        owner.layout.store_head(4 + (bound as u64) + 1);
 
         assert!(consumer.pop_frame().is_none(), "no frame is handed up");
         assert_eq!(consumer.corrupt_frames_seen(), 1, "the drop is counted");
+    }
+
+    /// Positions an empty ring at `at`: `head` and `tail` both there, as a
+    /// ring that has carried `at` bytes looks.
+    fn place_empty_ring(owner: &PosixShmTransport, at: u64) {
+        owner.layout.store_tail(at);
+        owner.layout.store_head(at);
+    }
+
+    /// §3.3: a length below half the ring whose frame would end past the
+    /// ring's end is dropped and counted; no byte past the data region is
+    /// read. A writer of this protocol pads instead. Before, the read went
+    /// past the mapping in a release build (the bound was a
+    /// `debug_assert`).
+    #[test]
+    fn shm_3_3_a_length_past_the_ring_end_is_dropped_and_counted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_tmp(tmp.path(), 4096);
+        let owner = PosixShmTransport::open_owner(id(104), id(105), cfg.clone()).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(105), id(104), cfg).unwrap();
+        // 100 bytes before the ring's end, a length of 200 (below the
+        // bound of 2048), published whole.
+        place_empty_ring(&owner, 4096 - 100);
+        assert!(owner.layout.write_u32(4096 - 100, 200));
+        owner.layout.store_head(4096 - 100 + 204);
+        assert!(consumer.pop_frame().is_none(), "no frame is handed up");
+        assert_eq!(consumer.corrupt_frames_seen(), 1);
+        assert_eq!(consumer.occupied_bytes(), 0, "the reader resumes at head");
+    }
+
+    /// §3.3: a length whose frame ends past the published `head` is dropped
+    /// and counted. Before, the reader handed up bytes the writer had not
+    /// published and moved `tail` past `head`.
+    #[test]
+    fn shm_3_3_a_length_past_head_is_dropped_and_counted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_tmp(tmp.path(), 4096);
+        let owner = PosixShmTransport::open_owner(id(106), id(107), cfg.clone()).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(107), id(106), cfg).unwrap();
+        place_empty_ring(&owner, 1000);
+        assert!(owner.layout.write_u32(1000, 100));
+        // 8 bytes published, the length announces 104.
+        owner.layout.store_head(1008);
+        assert!(consumer.pop_frame().is_none(), "no frame is handed up");
+        assert_eq!(consumer.corrupt_frames_seen(), 1);
+        assert_eq!(consumer.consumed_bytes(), 1008, "tail stops at head");
+    }
+
+    /// §3.3: a padding marker, a remainder skip or a `head` that claim more
+    /// than the writer published, and a `head` more than the ring ahead of
+    /// `tail`, are dropped and counted each; `tail` never passes `head`.
+    #[test]
+    fn shm_3_3_skips_and_heads_beyond_what_was_published_are_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_tmp(tmp.path(), 4096);
+        let owner = PosixShmTransport::open_owner(id(108), id(109), cfg.clone()).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(109), id(108), cfg).unwrap();
+        // A padding marker 100 bytes before the end with 8 bytes published.
+        place_empty_ring(&owner, 4096 - 100);
+        assert!(owner.layout.write_u32(4096 - 100, PADDING_FRAME_LEN));
+        owner.layout.store_head(4096 - 92);
+        assert!(consumer.pop_frame().is_none());
+        assert_eq!(consumer.corrupt_frames_seen(), 1, "padding past head");
+        assert_eq!(consumer.padding_frames_seen(), 0);
+        // A remainder of 2 bytes with 1 byte published.
+        place_empty_ring(&owner, 2 * 4096 - 2);
+        owner.layout.store_head(2 * 4096 - 1);
+        assert!(consumer.pop_frame().is_none());
+        assert_eq!(consumer.corrupt_frames_seen(), 2, "remainder past head");
+        // 2 bytes published where a frame needs 4 for its length.
+        place_empty_ring(&owner, 3 * 4096);
+        owner.layout.store_head(3 * 4096 + 2);
+        assert!(consumer.pop_frame().is_none());
+        assert_eq!(consumer.corrupt_frames_seen(), 3, "a length not published");
+        // A head more than the ring ahead, and one behind the tail.
+        place_empty_ring(&owner, 4 * 4096);
+        owner.layout.store_head(6 * 4096);
+        assert!(consumer.pop_frame().is_none());
+        assert_eq!(consumer.corrupt_frames_seen(), 4, "head a ring ahead");
+        place_empty_ring(&owner, 7 * 4096);
+        owner.layout.store_head(7 * 4096 - 8);
+        assert!(consumer.pop_frame().is_none());
+        assert_eq!(consumer.corrupt_frames_seen(), 5, "head behind tail");
+        assert_eq!(consumer.occupied_bytes(), 0, "tail at head each time");
+    }
+
+    /// §3.3: after a corrupt frame the reader resumes at `head`: the waiting
+    /// `recv` returns the drop as an error, it is counted once, not again
+    /// at every poll, and the writer's next frames arrive. Before, `tail` jumped to the ring's end past `head`, the
+    /// occupancy wrapped, and the writer computed room from it.
+    #[test]
+    fn shm_3_3_the_ring_carries_frames_again_after_a_corrupt_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_tmp(tmp.path(), 4096);
+        let owner = PosixShmTransport::open_owner(id(112), id(113), cfg.clone()).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(113), id(112), cfg).unwrap();
+        let to = Locator::shm(id(113));
+        owner.send(&to, b"before").unwrap();
+        assert_eq!(&consumer.recv().unwrap().data[..], b"before");
+        // A length of 3000, above half the ring, 10 bytes published.
+        let at = owner.layout.head_position();
+        assert!(owner.layout.write_u32(at as usize, 3000));
+        owner.layout.store_head(at + 10);
+        // A waiting recv returns the drop as an error, not as a frame and
+        // not by waiting on.
+        match consumer.recv() {
+            Err(RecvError::Io { message }) => assert!(message.contains("corrupt"), "{message}"),
+            other => panic!("expected the corrupt-frame error, got {other:?}"),
+        }
+        assert!(consumer.pop_frame().is_none());
+        assert_eq!(consumer.corrupt_frames_seen(), 1, "counted once");
+        assert_eq!(owner.occupied_bytes(), 0);
+        for i in 0..200u8 {
+            owner.send(&to, &[i; 100]).unwrap();
+            assert_eq!(&consumer.recv().unwrap().data[..], &[i; 100][..]);
+        }
+        assert_eq!(consumer.corrupt_frames_seen(), 1);
     }
 
     #[test]
@@ -2807,7 +3064,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(160), id(161), cfg_tmp(tmp.path(), 4096)).unwrap();
-        let base = owner.layout.base;
+        let base = owner.layout.base();
         // SAFETY: the owner holds the mapping; offsets 0 and 4 are inside
         // the 64-byte header.
         let (magic, version, capacity) = unsafe {
@@ -2966,21 +3223,171 @@ mod tests {
                 "the ended process left {name} behind"
             );
         }
+        #[cfg(windows)]
+        {
+            let name = segment_os_id(owner, consumer);
+            let backing = backing_dir().join(name.trim_start_matches('/'));
+            assert!(
+                backing.exists(),
+                "the ended process left {} behind",
+                backing.display()
+            );
+        }
     }
 
-    /// §4.4: on Linux and on macOS from 14.4 a consumer
-    /// parks on `head` instead of polling. On macOS it polled every 10 µs
-    /// to 1 ms before.
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    /// Runs `body` once for every wait backend this host has (§4.4), with
+    /// that backend forced for the transports it opens on this thread.
+    fn for_each_backend(body: impl Fn(crate::wait::Backend)) {
+        let all = crate::wait::available();
+        assert!(!all.is_empty());
+        for backend in all {
+            crate::wait::force(Some(backend));
+            body(backend);
+            crate::wait::force(None);
+        }
+    }
+
+    /// Waits until `consumer` has parked at least `n` times.
+    fn wait_for_parks(consumer: &PosixShmTransport, n: u64) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while consumer.parks.load(Ordering::Relaxed) < n {
+            assert!(Instant::now() < deadline, "the consumer did not park");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// §4.4: an idle consumer parks once for its whole `recv_timeout`, on
+    /// every backend of the host, instead of looking at the ring again and
+    /// again. Before, every Unix but Linux and macOS from 14.4 slept 10 µs
+    /// to 1 ms between looks: a few hundred looks in 300 ms.
     #[test]
     fn shm_4_4_the_consumer_parks_instead_of_polling() {
-        assert!(ring_park().is_some());
+        for_each_backend(|backend| {
+            let tmp = tempfile::tempdir().unwrap();
+            let mut cfg = cfg_tmp(tmp.path(), 4096);
+            cfg.recv_timeout = Some(Duration::from_millis(300));
+            let _owner = PosixShmTransport::open_owner(id(138), id(139), cfg.clone()).unwrap();
+            let consumer = PosixShmTransport::open_consumer(id(139), id(138), cfg).unwrap();
+            assert_eq!(consumer.waiter.backend(), backend);
+            let start = Instant::now();
+            assert_eq!(consumer.recv(), Err(RecvError::Timeout));
+            let waited = start.elapsed();
+            let parks = consumer.parks.load(Ordering::Relaxed);
+            assert!(
+                waited >= Duration::from_millis(290),
+                "{backend:?}: {waited:?}"
+            );
+            assert!(parks <= 3, "{backend:?}: {parks} parks in {waited:?}");
+        });
+    }
+
+    /// §4.4: a push wakes a consumer that is parked on the ring at once, on
+    /// every backend of the host. A wake that does not reach it leaves it
+    /// parked until its 20 s timeout.
+    #[test]
+    fn shm_4_4_a_push_wakes_a_parked_consumer() {
+        for_each_backend(|backend| {
+            let tmp = tempfile::tempdir().unwrap();
+            let mut cfg = cfg_tmp(tmp.path(), 4096);
+            cfg.recv_timeout = Some(Duration::from_secs(20));
+            let owner = PosixShmTransport::open_owner(id(154), id(155), cfg.clone()).unwrap();
+            let consumer = std::sync::Arc::new(
+                PosixShmTransport::open_consumer(id(155), id(154), cfg).unwrap(),
+            );
+            let waiting = std::sync::Arc::clone(&consumer);
+            let t = std::thread::spawn(move || {
+                let start = Instant::now();
+                (waiting.recv().map(|d| d.data.to_vec()), start.elapsed())
+            });
+            wait_for_parks(&consumer, 1);
+            std::thread::sleep(Duration::from_millis(50));
+            owner.send(&Locator::shm(id(155)), b"wake").unwrap();
+            let (got, waited) = t.join().unwrap();
+            assert_eq!(got, Ok(b"wake".to_vec()), "{backend:?}");
+            assert!(waited < Duration::from_secs(5), "{backend:?}: {waited:?}");
+        });
+    }
+
+    /// §4.4: no wake is lost between the consumer's look at `head` and its
+    /// park. 20 000 rounds per backend; the writer sends the next frame only
+    /// once the consumer took the last, so every frame finds the consumer
+    /// about to park, parking or parked. A lost wake leaves one `recv`
+    /// waiting out its 3 s timeout.
+    #[test]
+    fn shm_4_4_no_wakeup_is_lost_between_the_look_and_the_park() {
+        for_each_backend(|backend| {
+            let tmp = tempfile::tempdir().unwrap();
+            let mut cfg = cfg_tmp(tmp.path(), 4096);
+            cfg.recv_timeout = Some(Duration::from_secs(3));
+            let owner = PosixShmTransport::open_owner(id(142), id(143), cfg.clone()).unwrap();
+            let consumer = PosixShmTransport::open_consumer(id(143), id(142), cfg).unwrap();
+            const ROUNDS: u32 = 20_000;
+            let producer = std::thread::spawn(move || {
+                for round in 0..ROUNDS {
+                    owner
+                        .send(&Locator::shm(id(143)), &round.to_le_bytes())
+                        .unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while owner.occupied_bytes() > 0 {
+                        assert!(Instant::now() < deadline, "round {round} not taken");
+                        std::thread::yield_now();
+                    }
+                }
+                owner
+            });
+            let mut slowest = Duration::ZERO;
+            for round in 0..ROUNDS {
+                let start = Instant::now();
+                let got = consumer.recv().unwrap_or_else(|e| {
+                    panic!("{backend:?}, round {round}: {e:?}");
+                });
+                slowest = slowest.max(start.elapsed());
+                assert_eq!(got.data[..], round.to_le_bytes(), "{backend:?}");
+            }
+            drop(producer.join().unwrap());
+            assert!(
+                slowest < Duration::from_millis(1500),
+                "{backend:?}: a recv took {slowest:?}"
+            );
+        });
+    }
+
+    /// §4.4, §5.3: the owner's drop wakes a consumer that is parked on the
+    /// ring, on every backend of the host; it returns the owner-gone error
+    /// at once instead of after its 20 s timeout.
+    #[test]
+    fn shm_4_4_owner_drop_wakes_a_waiting_consumer() {
+        for_each_backend(|backend| {
+            let tmp = tempfile::tempdir().unwrap();
+            let mut cfg = cfg_tmp(tmp.path(), 4096);
+            cfg.recv_timeout = Some(Duration::from_secs(20));
+            let owner = PosixShmTransport::open_owner(id(144), id(145), cfg.clone()).unwrap();
+            let consumer = std::sync::Arc::new(
+                PosixShmTransport::open_consumer(id(145), id(144), cfg).unwrap(),
+            );
+            let waiting = std::sync::Arc::clone(&consumer);
+            let t = std::thread::spawn(move || {
+                let start = Instant::now();
+                (waiting.recv(), start.elapsed())
+            });
+            wait_for_parks(&consumer, 1);
+            std::thread::sleep(Duration::from_millis(50));
+            drop(owner);
+            let (got, waited) = t.join().unwrap();
+            match got {
+                Err(RecvError::Io { message }) => {
+                    assert!(message.contains("owner"), "{backend:?}: {message}")
+                }
+                other => panic!("{backend:?}: expected the owner-gone error, got {other:?}"),
+            }
+            assert!(waited < Duration::from_secs(5), "{backend:?}: {waited:?}");
+        });
     }
 
     /// The owner sees whether a consumer has the segment open; a frame
     /// sent with a prefix arrives as one datagram.
     #[test]
-    fn the_owner_sees_the_consumer_attach_and_leave() {
+    fn shm_2_1_the_owner_sees_the_consumer_attach_and_leave() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(246), id(247), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2996,11 +3403,118 @@ mod tests {
         assert!(!owner.peer_attached());
     }
 
+    /// §2.1: `consumer_attached` is the `u32` at offset 36 and `owner_epoch`
+    /// the `u32` at offset 40, in the host's byte order (both sides of a
+    /// segment run on one host); the rest of the header up to 64 stays
+    /// zero. Read from the raw mapping, not through the accessors.
+    #[test]
+    fn shm_2_1_attach_and_epoch_words_sit_at_offsets_36_and_40() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first =
+            PosixShmTransport::open_owner(id(114), id(115), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let raw = |at: usize| {
+            // SAFETY: the owner holds the mapping; `at + 4 <= 64` lies in
+            // the header.
+            unsafe { ptr::read_unaligned(first.layout.base().add(at) as *const u32) }
+        };
+        assert_eq!((raw(36), raw(40)), (0, 1), "one owner, no consumer");
+        let consumer =
+            PosixShmTransport::open_consumer(id(115), id(114), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let again =
+            PosixShmTransport::open_consumer(id(115), id(114), cfg_tmp(tmp.path(), 4096)).unwrap();
+        assert_eq!(raw(36), 2, "two consumer handles");
+        let second =
+            PosixShmTransport::open_owner(id(114), id(115), cfg_tmp(tmp.path(), 4096)).unwrap();
+        assert_eq!(raw(40), 2, "a second owner bumps the epoch");
+        drop(again);
+        assert_eq!(raw(36), 1);
+        for at in (44..64).step_by(4) {
+            assert_eq!(raw(at), 0, "offset {at} is reserved");
+        }
+        drop((consumer, second));
+    }
+
+    /// §5.2: a zombie under the pair's name with no flink beside it and no
+    /// process holding it — a ring with a valid header and a published
+    /// frame of the ended session — is unlinked before the create: the
+    /// pair opens with an empty ring and carries only this session's frame.
+    #[test]
+    fn shm_5_2_a_zombie_segment_without_a_flink_is_unlinked_before_the_create() {
+        let tmp = tempfile::tempdir().unwrap();
+        let os_id = segment_os_id(id(116), id(117));
+        shm_unlink_by_os_id(&os_id);
+        let mut zombie = Mapping::create(&os_id, HEADER_BYTES + 4096, None).unwrap();
+        let stale = b"frame of a crashed session";
+        // SAFETY: the mapping is HEADER_BYTES + 4096 bytes long; the header
+        // and one frame at the start of the data region are written as a
+        // creator and a push write them.
+        unsafe {
+            let base = zombie.as_ptr();
+            ptr::write_unaligned(base as *mut u32, SHM_MAGIC.to_be());
+            ptr::write_unaligned(base.add(4) as *mut u32, SHM_VERSION.to_le());
+            ptr::write_unaligned(base.add(8) as *mut u64, 4096u64.to_le());
+            ptr::write_unaligned(
+                base.add(HEADER_BYTES) as *mut u32,
+                (stale.len() as u32).to_le(),
+            );
+            ptr::copy_nonoverlapping(stale.as_ptr(), base.add(HEADER_BYTES + 4), stale.len());
+            (*(base.add(16) as *const AtomicU64)).store(4 + stale.len() as u64, Ordering::Release);
+        }
+        // What a crash leaves: the name stays, nobody maps or holds it.
+        zombie.set_owner(false);
+        drop(zombie);
+        assert!(Mapping::open_os_id(&os_id).is_ok(), "the zombie is there");
+        assert!(!segment_flink(tmp.path(), id(116), id(117)).exists());
+
+        let discarded = ORPHANS_DISCARDED.with(core::cell::Cell::get);
+        let owner =
+            PosixShmTransport::open_owner(id(116), id(117), cfg_tmp(tmp.path(), 4096)).unwrap();
+        // The unlink before the create took the zombie, not the path of
+        // §5.5, which ends at the same fresh ring: without the unlink the
+        // create finds the name, the open attaches, finds no holder and
+        // discards the segment. On Windows the unlink removes the backing
+        // file (before, it was a no-op there, and that path was the one).
+        assert_eq!(
+            ORPHANS_DISCARDED.with(core::cell::Cell::get),
+            discarded,
+            "the zombie went before the create, not as an orphan"
+        );
+        let consumer =
+            PosixShmTransport::open_consumer(id(117), id(116), cfg_tmp(tmp.path(), 4096)).unwrap();
+        assert_eq!(consumer.occupied_bytes(), 0, "a fresh ring");
+        owner.send(&Locator::shm(id(117)), b"this session").unwrap();
+        assert_eq!(&consumer.recv().unwrap().data[..], b"this session");
+    }
+
+    /// §5.3: frames the owner published before its drop still arrive, in
+    /// order; the next `recv` returns the owner-gone error at once.
+    #[test]
+    fn shm_5_3_frames_published_before_the_drop_still_arrive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = cfg_tmp(tmp.path(), 4096);
+        cfg.recv_timeout = Some(Duration::from_secs(10));
+        let owner = PosixShmTransport::open_owner(id(118), id(119), cfg.clone()).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(119), id(118), cfg).unwrap();
+        for frame in [&b"one"[..], b"two", b"three"] {
+            owner.send(&Locator::shm(id(119)), frame).unwrap();
+        }
+        drop(owner);
+        for frame in [&b"one"[..], b"two", b"three"] {
+            assert_eq!(&consumer.recv().unwrap().data[..], frame);
+        }
+        let start = Instant::now();
+        match consumer.recv() {
+            Err(RecvError::Io { message }) => assert!(message.contains("owner"), "{message}"),
+            other => panic!("expected the owner-gone error, got {other:?}"),
+        }
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
     /// An owner dropped after a second owner opened the same segment
     /// leaves it to the second: no shutdown flag, the name stays, and the
     /// consumer keeps receiving from the second owner.
     #[test]
-    fn a_superseded_owner_leaves_the_segment_to_its_successor() {
+    fn shm_5_3_a_superseded_owner_leaves_the_segment_to_its_successor() {
         let tmp = tempfile::tempdir().unwrap();
         let first =
             PosixShmTransport::open_owner(id(248), id(249), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -3020,11 +3534,212 @@ mod tests {
         );
     }
 
+    /// §5.3: the drop of an owner and the open of the pair's next owner do
+    /// not interleave. Whichever comes first, the next owner writes into a
+    /// ring its consumer reads: the old one, which it carries on, or a new
+    /// one the consumer opens after the old ring's shutdown flag. Before,
+    /// the drop decided outside the pair lock that it was the last owner,
+    /// and a next owner that attached between that decision and the unlink
+    /// wrote into a ring nobody read; so did one that made the ring anew
+    /// before the old mapping's own drop unlinked the name once more.
+    #[test]
+    fn shm_5_3_a_drop_racing_the_next_owner_leaves_it_a_ring_that_is_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = cfg_tmp(tmp.path(), 4096);
+        cfg.recv_timeout = Some(Duration::from_secs(1));
+        for round in 0..500u32 {
+            let first = PosixShmTransport::open_owner(id(146), id(147), cfg.clone()).unwrap();
+            let mut consumer =
+                PosixShmTransport::open_consumer(id(147), id(146), cfg.clone()).unwrap();
+            let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let dropper = {
+                let start = std::sync::Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    drop(first);
+                })
+            };
+            start.wait();
+            let next = PosixShmTransport::open_owner(id(146), id(147), cfg.clone()).unwrap();
+            dropper.join().unwrap();
+            // A consumer whose owner ended the ring opens the pair again,
+            // as the receive thread of a same-host channel does.
+            if consumer.try_recv().is_err() {
+                consumer = PosixShmTransport::open_consumer(id(147), id(146), cfg.clone()).unwrap();
+            }
+            assert!(
+                next.peer_attached(),
+                "round {round}: the consumer reads the next owner's ring"
+            );
+            next.send(&Locator::shm(id(147)), &round.to_le_bytes())
+                .unwrap();
+            assert_eq!(
+                &consumer.recv().expect("the frame of the next owner").data[..],
+                &round.to_le_bytes()[..],
+                "round {round}"
+            );
+        }
+    }
+
+    /// §5.3: an owner whose segment a later owner opened sends no more:
+    /// the ring has one producer. Its send returns an error, and the frame
+    /// it sent before is followed in the ring by the later owner's alone.
+    #[test]
+    fn shm_5_3_a_superseded_owner_refuses_to_send() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first =
+            PosixShmTransport::open_owner(id(148), id(149), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let consumer =
+            PosixShmTransport::open_consumer(id(149), id(148), cfg_tmp(tmp.path(), 4096)).unwrap();
+        first.send(&Locator::shm(id(149)), b"before").unwrap();
+        assert!(!first.is_superseded());
+        let second =
+            PosixShmTransport::open_owner(id(148), id(149), cfg_tmp(tmp.path(), 4096)).unwrap();
+        assert!(first.is_superseded() && !second.is_superseded());
+        assert!(!consumer.is_superseded(), "a consumer is never superseded");
+        match first.send(&Locator::shm(id(149)), b"after") {
+            Err(SendError::Io { message }) => assert!(message.contains("superseded"), "{message}"),
+            other => panic!("expected the superseded error, got {other:?}"),
+        }
+        second
+            .send(&Locator::shm(id(149)), b"from the successor")
+            .unwrap();
+        assert_eq!(&consumer.recv().unwrap().data[..], b"before");
+        assert_eq!(&consumer.recv().unwrap().data[..], b"from the successor");
+        assert!(matches!(consumer.try_recv(), Ok(None)));
+    }
+
+    /// §5.3: an owner that keeps sending while a later owner of its segment
+    /// in the same process opens and sends does not push at the same time:
+    /// every frame a send reported as sent arrives whole and in order, and
+    /// the earlier owner's sends end at the open. Before, each owner had a
+    /// producer lock of its own, and the two raced on `head`.
+    #[test]
+    fn shm_5_3_two_owners_of_one_segment_never_push_at_once() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::{Arc, Mutex};
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = cfg_tmp(tmp.path(), 65536);
+        cfg.recv_timeout = Some(Duration::from_millis(300));
+        let frame = |sender: u8, seq: u32| {
+            let mut f = vec![sender; 64];
+            f[..4].copy_from_slice(&seq.to_le_bytes());
+            f
+        };
+        let consumer = PosixShmTransport::open_consumer(id(157), id(156), cfg.clone()).unwrap();
+        let first = PosixShmTransport::open_owner(id(156), id(157), cfg.clone()).unwrap();
+        let senders_done = Arc::new(AtomicBool::new(false));
+        let received = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let reader = {
+            let (done, received) = (Arc::clone(&senders_done), Arc::clone(&received));
+            std::thread::spawn(move || {
+                loop {
+                    match consumer.recv() {
+                        Ok(dg) => received.lock().unwrap().push(dg.data.to_vec()),
+                        Err(_) if done.load(Ordering::Acquire) => break,
+                        Err(_) => {}
+                    }
+                }
+                consumer.corrupt_frames_seen()
+            })
+        };
+        let first_started = Arc::new(AtomicBool::new(false));
+        let earlier = {
+            let started = Arc::clone(&first_started);
+            std::thread::spawn(move || {
+                let mut sent = 0u32;
+                loop {
+                    match first.send(&Locator::shm(id(157)), &frame(1, sent)) {
+                        Ok(()) => {
+                            sent += 1;
+                            started.store(true, Ordering::Release);
+                        }
+                        Err(SendError::Io { message }) if message.contains("superseded") => {
+                            break;
+                        }
+                        Err(_) => std::thread::yield_now(),
+                    }
+                    if sent >= 200_000 {
+                        break;
+                    }
+                }
+                sent
+            })
+        };
+        while !first_started.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        let second = PosixShmTransport::open_owner(id(156), id(157), cfg).unwrap();
+        let mut sent_second = 0u32;
+        while sent_second < 5000 {
+            match second.send(&Locator::shm(id(157)), &frame(2, sent_second)) {
+                Ok(()) => sent_second += 1,
+                Err(_) => std::thread::yield_now(),
+            }
+        }
+        let sent_first = earlier.join().unwrap();
+        senders_done.store(true, Ordering::Release);
+        let corrupt = reader.join().unwrap();
+        let received = received.lock().unwrap();
+        assert_eq!(corrupt, 0, "no frame broken by two pushes at once");
+        let mut next = [0u32; 2];
+        for f in received.iter() {
+            assert_eq!(f.len(), 64);
+            let sender = f[4];
+            assert!(sender == 1 || sender == 2, "a whole frame: {f:?}");
+            assert!(f[4..].iter().all(|b| *b == sender), "a whole frame: {f:?}");
+            let seq = u32::from_le_bytes([f[0], f[1], f[2], f[3]]);
+            let slot = usize::from(sender - 1);
+            assert_eq!(seq, next[slot], "sender {sender} in order, none lost");
+            next[slot] += 1;
+        }
+        assert_eq!(next, [sent_first, sent_second], "every frame sent arrived");
+        assert!(
+            sent_first < 200_000,
+            "the earlier owner's sends ended at the open"
+        );
+    }
+
+    /// §2.1: an attacher whose `max_datagram` does not fit twice in the
+    /// creator's ring lowers it to `(capacity - 16) / 2`. As owner it
+    /// refuses a frame above that with `PayloadTooLarge` and sends one of
+    /// exactly that size; as consumer it reports the same limit.
+    #[test]
+    fn shm_2_1_an_attacher_lowers_its_max_datagram_to_the_creators_ring() {
+        let tmp = tempfile::tempdir().unwrap();
+        let small = cfg_tmp(tmp.path(), 4096);
+        let large = cfg_tmp(tmp.path(), 65536);
+        assert!(large.max_datagram > (4096 - 16) / 2);
+        let limit = (4096 - 16) / 2;
+        // The consumer with the small ring creates, the owner attaches.
+        let consumer = PosixShmTransport::open_consumer(id(153), id(152), small.clone()).unwrap();
+        let owner = PosixShmTransport::open_owner(id(152), id(153), large.clone()).unwrap();
+        assert_eq!(owner.max_message_size(), limit);
+        match owner.send(&Locator::shm(id(153)), &vec![1u8; limit + 1]) {
+            Err(SendError::PayloadTooLarge { size, limit: l }) => {
+                assert_eq!((size, l), (limit + 1, limit));
+            }
+            other => panic!("expected PayloadTooLarge, got {other:?}"),
+        }
+        owner
+            .send(&Locator::shm(id(153)), &vec![2u8; limit])
+            .unwrap();
+        assert_eq!(&consumer.recv().unwrap().data[..], &vec![2u8; limit][..]);
+        // The owner with the small ring creates, the consumer attaches.
+        let owner = PosixShmTransport::open_owner(id(158), id(159), small).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(159), id(158), large).unwrap();
+        assert_eq!(consumer.max_message_size(), limit);
+        assert_eq!(
+            owner.max_message_size(),
+            cfg_tmp(tmp.path(), 4096).max_datagram
+        );
+    }
+
     /// A consumer that made the segment before its owner leaves the name
     /// to the owner: a consumer that opens the pair again finds the live
     /// ring, not a new one of its own.
     #[test]
-    fn a_consumer_that_made_the_segment_leaves_it_to_the_owner() {
+    fn shm_4_3_a_consumer_that_made_the_segment_leaves_it_to_the_owner() {
         let tmp = tempfile::tempdir().unwrap();
         let consumer =
             PosixShmTransport::open_consumer(id(251), id(250), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -3043,7 +3758,7 @@ mod tests {
     /// creator made, each way round, and a frame larger than the
     /// consumer's own `max_datagram` still arrives.
     #[test]
-    fn sides_with_different_ring_sizes_share_the_creators_ring() {
+    fn shm_2_1_sides_with_different_ring_sizes_share_the_creators_ring() {
         let tmp = tempfile::tempdir().unwrap();
         let small = cfg_tmp(tmp.path(), 4096);
         let large = cfg_tmp(tmp.path(), 65536);
@@ -3132,8 +3847,7 @@ mod tests {
     /// directories (another TMPDIR, a service's private /tmp) share it.
     /// Before, the second found no flink, unlinked the live segment and
     /// made its own: the owner wrote into one ring, the consumer read
-    /// another.
-    #[cfg(target_os = "linux")]
+    /// another. On every platform: before, the repair was Linux's alone.
     #[test]
     fn shm_5_4_users_in_different_flink_directories_share_the_segment() {
         let (here, there) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -3146,11 +3860,287 @@ mod tests {
         assert_eq!(&consumer.recv().unwrap().data[..], b"one ring");
     }
 
+    /// §5.4: the lock that serializes the openers of a segment is
+    /// `<name>.lock` in the pair directory, named after the segment alone;
+    /// the flink directory holds no lock file. Where a segment is no file
+    /// (all but Linux), its users hold `<name>.hold` beside it.
+    #[test]
+    fn shm_5_4_the_pair_lock_lies_in_the_pair_dir_not_in_the_flink_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let owner =
+            PosixShmTransport::open_owner(id(122), id(123), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let os_id = segment_os_id(id(122), id(123));
+        let lock = pair_file(&os_id, "lock").unwrap();
+        assert!(lock.exists(), "{}", lock.display());
+        assert_eq!(lock.parent(), Some(pair_dir().unwrap().as_path()));
+        assert!(
+            !segment_flink(tmp.path(), id(122), id(123))
+                .with_extension("lock")
+                .exists()
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(pair_dir().unwrap(), Path::new(DEV_SHM));
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(segment_in_use(&os_id), "the owner holds <name>.hold");
+            assert!(pair_file(&os_id, "hold").unwrap().exists());
+        }
+        #[cfg(all(unix, not(target_os = "linux")))]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let meta = std::fs::symlink_metadata(pair_dir().unwrap()).unwrap();
+            assert_eq!(meta.mode() & 0o077, 0, "the pair directory is private");
+        }
+        drop(owner);
+        assert!(!lock.exists(), "the owner's drop removes the lock file");
+    }
+
+    /// §5.4: a pair file is never opened through a symlink. A symlink
+    /// under the name of a pair's lock file makes the open fail, and the
+    /// file it points to stays as it was.
+    #[cfg(unix)]
+    #[test]
+    fn shm_5_4_a_pair_file_behind_a_symlink_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("elsewhere");
+        std::fs::write(&target, b"not a lock").unwrap();
+        let os_id = segment_os_id(id(162), id(163));
+        let lock = pair_file(&os_id, "lock").unwrap();
+        std::os::unix::fs::symlink(&target, &lock).unwrap();
+        let opened = PosixShmTransport::open_owner(id(162), id(163), cfg_tmp(tmp.path(), 4096));
+        let _ = std::fs::remove_file(&lock);
+        assert!(opened.is_err(), "the open went through the symlink");
+        assert_eq!(std::fs::read(&target).unwrap(), b"not a lock");
+    }
+
+    /// §5.4 outside Linux (`private_dir`, here on every Unix): a missing
+    /// pair directory is made 0700. One of this user that group and others
+    /// may only read and search (0755, as `create_dir_all` makes the root
+    /// of the flink directories) is taken and made 0700. One they may
+    /// write to is refused and keeps its mode, and so are a symlink to a
+    /// private directory and a file.
+    #[cfg(unix)]
+    #[test]
+    fn shm_5_4_a_pair_dir_others_may_only_read_is_made_private_one_they_may_write_is_refused() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let tmp = tempfile::tempdir().unwrap();
+        let mode = |p: &Path| std::fs::symlink_metadata(p).unwrap().mode() & 0o7777;
+        let made = tmp.path().join("made");
+        assert_eq!(private_dir(&made).unwrap(), made);
+        assert_eq!(mode(&made), 0o700);
+        let readable = tmp.path().join("readable");
+        std::fs::create_dir(&readable).unwrap();
+        std::fs::set_permissions(&readable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(private_dir(&readable).unwrap(), readable);
+        assert_eq!(mode(&readable), 0o700, "made private");
+        for writable in [0o720, 0o702, 0o775, 0o1777] {
+            let dir = tmp.path().join(format!("w{writable:o}"));
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(writable)).unwrap();
+            let err = private_dir(&dir).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::PermissionDenied, "{writable:o}");
+            assert!(err.to_string().contains("not a directory private to user"));
+            assert_eq!(mode(&dir), writable, "left as it was");
+        }
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&made, &link).unwrap();
+        let file = tmp.path().join("file");
+        std::fs::write(&file, b"no directory").unwrap();
+        for path in [&link, &file] {
+            let err = private_dir(path).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::PermissionDenied, "{path:?}");
+        }
+    }
+
+    /// §5.4 on macOS and the other Unixes: a pair directory that a flink
+    /// directory made first, with the 0755 the umask leaves, does not fail
+    /// the open (every open failed so on the macOS runner, job 238161); the
+    /// open makes it private.
+    #[cfg(all(unix, not(target_os = "linux")))]
+    #[test]
+    fn shm_5_4_an_open_takes_a_pair_dir_made_0755_and_makes_it_private() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir = pair_dir().unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let owner =
+            PosixShmTransport::open_owner(id(182), id(183), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let consumer =
+            PosixShmTransport::open_consumer(id(183), id(182), cfg_tmp(tmp.path(), 4096)).unwrap();
+        owner.send(&Locator::shm(id(183)), b"private").unwrap();
+        assert_eq!(&consumer.recv().unwrap().data[..], b"private");
+        let meta = std::fs::symlink_metadata(&dir).unwrap();
+        assert_eq!(meta.mode() & 0o777, 0o700);
+    }
+
+    /// §5.4 on Windows: a pair directory that is a junction is refused, a
+    /// plain one is taken.
+    #[cfg(windows)]
+    #[test]
+    fn shm_5_4_a_pair_dir_that_is_a_junction_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plain = tmp.path().join("plain");
+        assert_eq!(plain_dir(&plain).unwrap(), plain);
+        let junction = tmp.path().join("junction");
+        let made = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&plain)
+            .status()
+            .unwrap();
+        assert!(made.success(), "mklink /J");
+        let refused = plain_dir(&junction).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    /// §5.4: an owner and a consumer that look the pair up in different
+    /// flink directories and open it at the same moment end on one ring,
+    /// round after round. Before, on Linux the second could find the
+    /// segment between the first one's create and its hold, take it for
+    /// an orphan and make its own; elsewhere it always did.
+    #[test]
+    fn shm_5_4_openers_in_different_flink_directories_race_to_one_segment() {
+        let (here, there) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        for round in 0..200u32 {
+            let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let (cfg_o, cfg_c) = (cfg_tmp(here.path(), 4096), cfg_tmp(there.path(), 4096));
+            let g = std::sync::Arc::clone(&gate);
+            let o = std::thread::spawn(move || {
+                g.wait();
+                PosixShmTransport::open_owner(id(124), id(125), cfg_o)
+            });
+            let g = std::sync::Arc::clone(&gate);
+            let c = std::thread::spawn(move || {
+                g.wait();
+                PosixShmTransport::open_consumer(id(125), id(124), cfg_c)
+            });
+            let owner = o.join().unwrap().expect("owner");
+            let consumer = c.join().unwrap().expect("consumer");
+            let frame = round.to_le_bytes();
+            owner.send(&Locator::shm(id(125)), &frame).unwrap();
+            assert_eq!(
+                consumer.recv().map(|d| d.data.to_vec()),
+                Ok(frame.to_vec()),
+                "round {round}: one ring"
+            );
+            drop(owner);
+            drop(consumer);
+        }
+    }
+
+    /// The environment variable that turns [`pair_opener`] from a no-op
+    /// into the other process of
+    /// `shm_5_4_two_processes_open_the_pair_at_once`.
+    const OPENER_SPEC: &str = "ZERODDS_SHM_TEST_OPENER";
+
+    /// Not a test of its own: the body of the process that
+    /// `shm_5_4_two_processes_open_the_pair_at_once` starts. At the moment
+    /// it is given (milliseconds since the epoch) it opens the owner side in
+    /// its own flink directory, waits for the consumer, sends one frame and
+    /// waits until it is taken.
+    #[test]
+    fn pair_opener() {
+        let Ok(spec) = std::env::var(OPENER_SPEC) else {
+            return;
+        };
+        let parts: Vec<&str> = spec.split(';').collect();
+        let bytes = |h: &str| -> [u8; 16] {
+            let mut b = [0u8; 16];
+            for (i, chunk) in b.iter_mut().enumerate() {
+                *chunk = u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap();
+            }
+            b
+        };
+        let (owner, consumer) = (bytes(parts[0]), bytes(parts[1]));
+        let at: u128 = parts[3].parse().unwrap();
+        wait_until_epoch_ms(at);
+        let t = PosixShmTransport::open_owner(owner, consumer, cfg_tmp(Path::new(parts[2]), 4096))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !t.peer_attached() {
+            assert!(Instant::now() < deadline, "no consumer attached");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        t.send(&Locator::shm(consumer), b"from the other process")
+            .unwrap();
+        while t.occupied_bytes() > 0 {
+            assert!(Instant::now() < deadline, "the frame was not taken");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn epoch_ms() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    }
+
+    fn wait_until_epoch_ms(at: u128) {
+        let now = epoch_ms();
+        if at > now {
+            std::thread::sleep(Duration::from_millis(u64::try_from(at - now).unwrap()));
+        }
+    }
+
+    /// §5.4 across processes: a child process opens the owner side in its
+    /// flink directory at the same moment as this one opens the consumer
+    /// side in another; the frame the child sends arrives, round after
+    /// round.
+    #[test]
+    fn shm_5_4_two_processes_open_the_pair_at_once() {
+        let (here, there) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let exe = std::env::current_exe().unwrap();
+        for round in 0..10 {
+            let at = epoch_ms() + 300;
+            let runner = std::env::var("ZERODDS_TEST_RUNNER").unwrap_or_default();
+            let mut runner = runner.split_whitespace();
+            let mut command = match runner.next() {
+                Some(program) => {
+                    let mut c = std::process::Command::new(program);
+                    c.args(runner).arg(&exe);
+                    c
+                }
+                None => std::process::Command::new(&exe),
+            };
+            let child = command
+                .args(["--exact", "posix::tests::pair_opener", "--test-threads=1"])
+                .env(
+                    OPENER_SPEC,
+                    format!(
+                        "{};{};{};{at}",
+                        hex16(id(126)),
+                        hex16(id(127)),
+                        there.path().display()
+                    ),
+                )
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            wait_until_epoch_ms(at);
+            let mut cfg = cfg_tmp(here.path(), 4096);
+            cfg.recv_timeout = Some(Duration::from_secs(10));
+            let consumer = PosixShmTransport::open_consumer(id(127), id(126), cfg).unwrap();
+            assert_eq!(
+                consumer.recv().map(|d| d.data.to_vec()),
+                Ok(b"from the other process".to_vec()),
+                "round {round}"
+            );
+            let status = child.wait_with_output().unwrap().status;
+            assert!(
+                status.success(),
+                "round {round}: the other process: {status}"
+            );
+        }
+    }
+
     /// §5.5: a consumer that finds the segment of an ended session under
     /// its pair's name makes it anew. Before, it attached and delivered the
     /// frame the ended owner had left in the ring. On Windows (§6.3) the
-    /// mapping goes with the ended process's last handle, and the same
-    /// name opens fresh.
+    /// mapping stays on its backing file after the ended process; nobody
+    /// holds its hold file, and the opener discards it as everywhere.
     #[test]
     fn shm_5_5_an_orphaned_segment_is_made_anew_not_attached() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3164,10 +4154,157 @@ mod tests {
         assert_eq!(&consumer.recv().unwrap().data[..], b"this session");
     }
 
+    /// §6.4: the ring of a named segment and the ring over a caller's
+    /// region are one layout: a region consumer over the bytes of a POSIX
+    /// owner's mapping receives its frames, and a POSIX consumer receives
+    /// what a region owner writes into its mapping; across the ring's end.
+    #[test]
+    fn shm_6_4_region_and_posix_transport_share_one_layout() {
+        use crate::region::{RegionConfig, RegionShmTransport, SpinWait};
+        let frame = |i: u32| {
+            let mut f = i.to_le_bytes().to_vec();
+            f.resize(4 + (i as usize * 29) % 500, i as u8);
+            f
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_tmp(tmp.path(), 4096);
+        let wait = SpinWait {
+            spins_per_ms: 100_000,
+        };
+        let region_cfg = RegionConfig {
+            max_datagram: 1024,
+            recv_timeout: Some(Duration::from_secs(2)),
+        };
+        let owner = PosixShmTransport::open_owner(id(174), id(175), cfg.clone()).unwrap();
+        let len = HEADER_BYTES + owner.layout.capacity();
+        // SAFETY: the owner's mapping is `len` bytes long and outlives the
+        // consumer; nobody else reads the ring.
+        let consumer = unsafe {
+            RegionShmTransport::open_consumer(
+                owner.layout.base(),
+                len,
+                id(175),
+                id(174),
+                region_cfg,
+                wait,
+            )
+        }
+        .unwrap();
+        assert!(
+            owner.peer_attached(),
+            "the region consumer counts as attached"
+        );
+        for i in 0..300u32 {
+            owner.send(&Locator::shm(id(175)), &frame(i)).unwrap();
+            assert_eq!(
+                &consumer.recv().unwrap().data[..],
+                &frame(i)[..],
+                "frame {i}"
+            );
+        }
+        assert!(consumer.padding_frames_seen() > 0);
+        drop(consumer);
+        drop(owner);
+
+        let consumer = PosixShmTransport::open_consumer(id(177), id(176), cfg).unwrap();
+        let len = HEADER_BYTES + consumer.layout.capacity();
+        // SAFETY: as above, the consumer's mapping.
+        let owner = unsafe {
+            RegionShmTransport::open_owner(
+                consumer.layout.base(),
+                len,
+                id(176),
+                id(177),
+                region_cfg,
+                wait,
+            )
+        }
+        .unwrap();
+        for i in 0..300u32 {
+            owner.send(&Locator::shm(id(177)), &frame(i)).unwrap();
+            assert_eq!(
+                &consumer.recv().unwrap().data[..],
+                &frame(i)[..],
+                "frame {i}"
+            );
+        }
+        assert!(consumer.padding_frames_seen() > 0);
+        drop(owner);
+        assert!(matches!(
+            consumer.recv(),
+            Err(RecvError::Io {
+                message: "shm owner terminated"
+            })
+        ));
+    }
+
+    /// §6.3: what an owner that ended without its drop leaves on Windows —
+    /// the ring's backing file with the frame of its session, its flink,
+    /// its hold and its lock file — goes with the sweeps a participant runs
+    /// at its start when nobody opens the pair again: the backing file, the
+    /// hold and the lock with the sweep of the pair directory, the flink
+    /// with the flink sweep. A ring whose creator ended before it took its
+    /// hold (no hold file, no flink) goes with the sweep of the backing
+    /// files. A held pair stays and carries a frame after. Before, nothing
+    /// swept on Windows, and each such ring stayed on disk for good.
+    #[cfg(windows)]
+    #[test]
+    fn shm_6_3_the_sweep_removes_what_an_ended_owner_left_on_windows() {
+        let tmp = tempfile::tempdir().unwrap();
+        leave_orphan(id(164), id(165), tmp.path());
+        let orphan = segment_os_id(id(164), id(165));
+        let backing = backing_dir().join(&orphan[1..]);
+        let hold = pair_file(&orphan, "hold").unwrap();
+        let lock = pair_file(&orphan, "lock").unwrap();
+        let flink = segment_flink(tmp.path(), id(164), id(165));
+        assert!(hold.exists() && lock.exists() && flink.exists());
+        let report = sweep_pair_files(&orphan[1..], Duration::ZERO).unwrap();
+        assert_eq!(report.removed, 1, "{report:?}");
+        assert!(!backing.exists(), "the ring with the ended session's frame");
+        assert!(!hold.exists() && !lock.exists());
+        let report = sweep_orphaned_flinks(tmp.path(), Duration::ZERO).unwrap();
+        assert_eq!(report.removed, 1, "{report:?}");
+        assert!(!flink.exists());
+
+        // A ring made and left before its creator took the hold.
+        let early = segment_os_id(id(166), id(167));
+        let mut ring = Mapping::create(&early, HEADER_BYTES + 4096, None).unwrap();
+        // SAFETY: the mapping is HEADER_BYTES + 4096 bytes long.
+        unsafe {
+            ptr::write_unaligned(ring.as_ptr() as *mut u32, SHM_MAGIC.to_be());
+            ptr::write_unaligned(ring.as_ptr().add(4) as *mut u32, SHM_VERSION.to_le());
+        }
+        ring.set_owner(false);
+        drop(ring);
+        let early_file = backing_dir().join(&early[1..]);
+        assert!(early_file.exists() && !pair_file(&early, "hold").unwrap().exists());
+        let report = sweep_backing_files_under(&early[1..], Duration::from_secs(3600)).unwrap();
+        assert_eq!((report.young, report.removed), (1, 0), "{report:?}");
+        let report = sweep_backing_files_under(&early[1..], Duration::ZERO).unwrap();
+        assert_eq!(report.removed, 1, "{report:?}");
+        assert!(!early_file.exists());
+
+        let owner =
+            PosixShmTransport::open_owner(id(168), id(169), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let consumer =
+            PosixShmTransport::open_consumer(id(169), id(168), cfg_tmp(tmp.path(), 4096)).unwrap();
+        let live = segment_os_id(id(168), id(169));
+        let pairs = sweep_pair_files(&live[1..], Duration::ZERO).unwrap();
+        let rings = sweep_backing_files_under(&live[1..], Duration::ZERO).unwrap();
+        let flinks = sweep_orphaned_flinks(tmp.path(), Duration::ZERO).unwrap();
+        assert_eq!(
+            (pairs.removed, rings.removed, rings.held, flinks.removed),
+            (0, 0, 1, 0),
+            "{pairs:?} {rings:?} {flinks:?}"
+        );
+        assert!(backing_dir().join(&live[1..]).exists());
+        owner.send(&Locator::shm(id(169)), b"still bound").unwrap();
+        assert_eq!(&consumer.recv().unwrap().data[..], b"still bound");
+    }
+
     /// A `.lock` file without a flink beside it goes once nobody holds it;
     /// a young one and one whose pair lock is held stay, and so does the
     /// lock file of an open pair.
-    #[cfg(unix)]
     #[test]
     fn shm_5_5_the_pair_file_sweep_removes_lone_lock_files_and_keeps_the_rest() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3193,8 +4330,8 @@ mod tests {
             PosixShmTransport::open_consumer(id(25), id(24), cfg_tmp(dir, 4096)).unwrap();
         sweep_stale_pair_files(dir, Duration::ZERO).unwrap();
         assert!(
-            segment_flink(dir, id(24), id(25))
-                .with_extension("lock")
+            pair_file(&segment_os_id(id(24), id(25)), "lock")
+                .unwrap()
                 .exists()
         );
         owner
@@ -3203,9 +4340,112 @@ mod tests {
         assert_eq!(&consumer.recv().unwrap().data[..], b"after the sweep");
     }
 
+    /// §5.5 on Linux: the sweep of a flink directory builds the path of a
+    /// pair's lock file from the name a flink holds. A flink whose name
+    /// climbs out of `/dev/shm` (`/zd-<dir>/../../../<path>/secret`) counts
+    /// as foreign and stays, and so does the file it points to. Before, the
+    /// sweep removed `<path>/secret.lock` in any directory the user may
+    /// write to.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shm_5_5_the_flink_sweep_leaves_a_flink_whose_name_points_outside_dev_shm() {
+        let flinks = tempfile::tempdir().unwrap();
+        let victim = tempfile::tempdir().unwrap();
+        let kept = victim.path().join("secret.lock");
+        std::fs::write(&kept, b"kept").unwrap();
+        // `..` resolves only behind a directory that exists.
+        let step = format!("zd-sweep-probe-{}", std::process::id());
+        let step_dir = Path::new(DEV_SHM).join(&step);
+        std::fs::create_dir(&step_dir).unwrap();
+        let name = format!("/{step}/../../..{}/secret", victim.path().display());
+        let flink = flinks.path().join("x.shm");
+        std::fs::write(&flink, &name).unwrap();
+        let report = sweep_stale_pair_files(flinks.path(), Duration::ZERO);
+        let _ = std::fs::remove_dir(&step_dir);
+        let report = report.unwrap();
+        assert!(kept.exists(), "{name}: the sweep removed it ({report:?})");
+        assert_eq!((report.removed, report.foreign), (0, 1), "{report:?}");
+        assert!(flink.exists(), "a foreign flink stays");
+    }
+
+    /// §5.5 on every platform but Linux, the counterpart of the test
+    /// above: [`sweep_orphaned_flinks`] builds the paths of a pair's lock
+    /// and hold files in [`pair_dir`] from the name a flink holds. A flink
+    /// whose name climbs out of the pair directory
+    /// (`/zd-<dir>/../../<victim>/secret`) counts as foreign and stays; the
+    /// sweep neither makes nor removes a file where the name leads. Without
+    /// the shape check it took the pair lock on `<victim>/secret.lock`,
+    /// which it made for that, before the mapping refused the name.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn shm_5_5_the_flink_sweep_leaves_a_flink_whose_name_points_outside_the_pair_dir() {
+        let dir = pair_dir().unwrap();
+        let victim = tempfile::tempdir_in(dir.parent().unwrap()).unwrap();
+        let hold = victim.path().join("secret.hold");
+        let lock = victim.path().join("secret.lock");
+        std::fs::write(&hold, b"kept").unwrap();
+        // `..` resolves only behind a directory that exists (Unix).
+        let step = format!("zd-sweep-probe-{}", std::process::id());
+        let step_dir = dir.join(&step);
+        std::fs::create_dir(&step_dir).unwrap();
+        let victim_name = victim.path().file_name().unwrap().to_str().unwrap();
+        let name = format!("/{step}/../../{victim_name}/secret");
+        let flinks = tempfile::tempdir().unwrap();
+        let flink = flinks.path().join("x.shm");
+        std::fs::write(&flink, &name).unwrap();
+        // The name does lead there: the test checks the sweep, not a path
+        // that misses.
+        let led_to = pair_file(&name, "hold").unwrap().canonicalize();
+        let report = sweep_orphaned_flinks(flinks.path(), Duration::ZERO);
+        let _ = std::fs::remove_dir(&step_dir);
+        assert_eq!(led_to.unwrap(), hold.canonicalize().unwrap());
+        let report = report.unwrap();
+        assert!(hold.exists(), "{name}: the sweep removed it ({report:?})");
+        assert!(
+            !lock.exists(),
+            "{name}: the sweep made {} ({report:?})",
+            lock.display()
+        );
+        assert_eq!((report.removed, report.foreign), (0, 1), "{report:?}");
+        assert!(flink.exists(), "a foreign flink stays");
+    }
+
+    /// The sweeps take a name from a flink only in the shape
+    /// `segment_os_id` gives it: `/zd-` and the two ids in lowercase hex,
+    /// or the 26 hex digits of the short form; nothing that would lead a
+    /// path out of its directory.
+    #[test]
+    fn shm_5_5_a_name_from_a_flink_has_the_shape_segment_os_id_gives() {
+        // Fixed ids, no segment: the names are only looked at.
+        let (owner, consumer) = ([0xab; 16], [0xcd; 16]);
+        for short in [false, true] {
+            let name = segment_os_id_in(owner, consumer, short);
+            assert!(is_segment_os_id(&name), "{name}");
+        }
+        let long = segment_os_id_in(owner, consumer, false);
+        for name in [
+            String::new(),
+            "/zd-".to_owned(),
+            long[1..].to_owned(),
+            format!("/zd-{}", long[4..].to_uppercase()),
+            format!("{long}0"),
+            format!("{long}\n"),
+            long.replacen("-", "/", 2),
+            format!("/zd-{}", "0".repeat(25)),
+            format!("/zd-{}.", "0".repeat(25)),
+            format!("/zd-{}-{}", "0".repeat(32), "0".repeat(31)),
+            format!("/zd-x/../../../tmp/{}", "0".repeat(26)),
+            format!("/zd-{}/../{}", "0".repeat(26), "0".repeat(26)),
+        ] {
+            assert!(!is_segment_os_id(&name), "{name:?}");
+        }
+    }
+
     /// An opener that waited on a lock file someone removed meanwhile does
-    /// not keep that lock: it locks the file now under the name.
-    #[cfg(unix)]
+    /// not keep that lock: it locks the file now under the name. On Windows
+    /// too, where before the name was not compared with the locked file. The
+    /// file goes as an owner's drop and the sweeps remove it
+    /// ([`remove_name`]).
     #[test]
     fn shm_5_5_a_lock_taken_on_a_removed_lock_file_is_taken_anew() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3216,13 +4456,74 @@ mod tests {
             std::thread::spawn(move || lock_pair(&path).map(|g| g.file))
         };
         std::thread::sleep(Duration::from_millis(50));
-        std::fs::remove_file(&path).unwrap();
+        remove_name(&path).unwrap();
         drop(first);
         let file = waiter.join().unwrap().unwrap();
-        use std::os::unix::fs::MetadataExt;
-        let held = file.metadata().unwrap();
-        let named = std::fs::metadata(&path).unwrap();
-        assert_eq!((held.dev(), held.ino()), (named.dev(), named.ino()));
+        assert!(path.exists(), "the waiter made the lock file anew");
+        assert!(
+            still_named(&file, &path).unwrap(),
+            "and holds the file under the name"
+        );
+        // The check can fail: a file the name no longer names is told apart,
+        // one that was removed and one that was moved away.
+        let gone = tmp.path().join("gone.lock");
+        let old = open_pair_file(&gone).unwrap();
+        remove_name(&gone).unwrap();
+        assert!(!still_named(&old, &gone).unwrap(), "a removed file");
+        let named = tmp.path().join("named.lock");
+        let moved = tmp.path().join("moved.lock");
+        let held = open_pair_file(&named).unwrap();
+        std::fs::rename(&named, &moved).unwrap();
+        let _other = open_pair_file(&named).unwrap();
+        assert!(
+            !still_named(&held, &named).unwrap(),
+            "another file, same name"
+        );
+        assert!(still_named(&held, &moved).unwrap(), "its new name");
+    }
+
+    /// A pair file or segment file that is removed frees its name at once,
+    /// while another handle still holds it: a new file can be made under
+    /// the name, and the old handle keeps its own bytes and its lock. Where
+    /// Windows deletes the old way, and under Wine, a plain removal kept the
+    /// name until the last handle closed.
+    #[test]
+    fn shm_5_4_a_removed_pair_file_frees_its_name_at_once() {
+        use std::io::{Read, Seek, Write};
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("pair.hold");
+        let mut old = open_pair_file(&path).unwrap();
+        old.write_all(b"old").unwrap();
+        file_lock::shared(&old).unwrap();
+        remove_name(&path).unwrap();
+        assert!(!path.exists(), "the name is gone");
+        let mut new = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        new.write_all(b"new").unwrap();
+        assert!(file_lock::try_exclusive(&new).unwrap(), "a file of its own");
+        let mut bytes = String::new();
+        old.rewind().unwrap();
+        old.read_to_string(&mut bytes).unwrap();
+        assert_eq!(bytes, "old");
+        assert!(
+            remove_name(&tmp.path().join("missing"))
+                .is_err_and(|e| e.kind() == io::ErrorKind::NotFound)
+        );
+        drop(old);
+        let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name())
+            .filter(|n| n != "pair.hold")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "the removed file goes with its handle: {leftovers:?}"
+        );
     }
 
     /// §5.5: the sweep unlinks a segment no process holds, leaves a
@@ -3263,7 +4564,7 @@ mod tests {
     /// when no process maps it and stays while one does.
     #[cfg(target_os = "linux")]
     #[test]
-    fn a_ring_of_an_earlier_layout_goes_unless_a_process_maps_it() {
+    fn shm_5_5_a_ring_of_an_earlier_layout_goes_unless_a_process_maps_it() {
         use std::os::unix::io::AsRawFd;
         let prefix = format!("{SEGMENT_NAME_PREFIX}oldlayout-{}-", std::process::id());
         let mut header = [0u8; 64];
@@ -3316,9 +4617,120 @@ mod tests {
         assert!(!mapped.exists());
     }
 
-    /// §5.5 on macOS: the flink sweep unlinks a segment no process holds,
-    /// leaves a young one alone, and keeps one that is held.
-    #[cfg(all(unix, not(target_os = "linux")))]
+    /// A FIFO at `path`, as the FIFO backend makes a segment's `.wake`
+    /// (§4.4): `std::fs::write` would make a regular file.
+    #[cfg(unix)]
+    fn make_fifo(path: &Path) {
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::FileTypeExt;
+        let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: a NUL-terminated path; the result is checked.
+        let made = unsafe { libc::mkfifo(name.as_ptr(), 0o600) };
+        assert_eq!(
+            made,
+            0,
+            "{}: {}",
+            path.display(),
+            io::Error::last_os_error()
+        );
+        let meta = std::fs::symlink_metadata(path).unwrap();
+        assert!(meta.file_type().is_fifo() && !meta.is_file());
+    }
+
+    /// §5.5: the sweep of the pair directory removes the files of pairs
+    /// whose segments are gone, the wait FIFOs of §4.4 among them, and,
+    /// where a segment is no file, the orphaned segment its hold file
+    /// names; it keeps what a process holds and what is younger than the
+    /// minimum age.
+    #[test]
+    fn shm_5_5_the_pair_dir_sweep_removes_what_gone_segments_left() {
+        #[cfg(target_os = "linux")]
+        {
+            let prefix = format!("{SEGMENT_PREFIX}pairsweep-{}-", std::process::id());
+            let dir = pair_dir().unwrap();
+            let lone = dir.join(format!("{prefix}a.lock"));
+            let live = dir.join(format!("{prefix}b.lock"));
+            let segment = dir.join(format!("{prefix}b"));
+            let held = dir.join(format!("{prefix}c.lock"));
+            let fifo = dir.join(format!("{prefix}d.wake"));
+            let live_fifo = dir.join(format!("{prefix}b.wake"));
+            for file in [&lone, &live, &segment, &held] {
+                std::fs::write(file, b"").unwrap();
+            }
+            make_fifo(&fifo);
+            make_fifo(&live_fifo);
+            let guard = lock_pair(&held).unwrap();
+            let report = sweep_pair_files(&prefix, Duration::from_secs(3600)).unwrap();
+            assert_eq!((report.young, report.removed), (3, 0), "{report:?}");
+            let report = sweep_pair_files(&prefix, Duration::ZERO).unwrap();
+            assert_eq!((report.removed, report.held), (2, 1), "{report:?}");
+            assert!(!lone.exists(), "the lock file of a gone segment goes");
+            assert!(
+                std::fs::symlink_metadata(&fifo).is_err(),
+                "and its wait FIFO"
+            );
+            assert!(live.exists() && held.exists());
+            assert!(
+                std::fs::symlink_metadata(&live_fifo).is_ok(),
+                "the wait FIFO of a segment that is there stays"
+            );
+            drop(guard);
+            for file in [&live, &segment, &held, &live_fifo] {
+                std::fs::remove_file(file).unwrap();
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            leave_orphan(id(128), id(129), tmp.path());
+            let orphan = segment_os_id(id(128), id(129));
+            let hold = pair_file(&orphan, "hold").unwrap();
+            assert!(hold.exists(), "the ended process left its hold file");
+            let report = sweep_pair_files(&orphan[1..], Duration::from_secs(3600)).unwrap();
+            assert_eq!((report.young, report.removed), (1, 0), "{report:?}");
+            let report = sweep_pair_files(&orphan[1..], Duration::ZERO).unwrap();
+            assert_eq!(report.removed, 1, "{report:?}");
+            assert!(!hold.exists());
+            assert!(
+                Mapping::open_os_id(&orphan).is_err(),
+                "the segment it named is unlinked"
+            );
+            let owner =
+                PosixShmTransport::open_owner(id(134), id(135), cfg_tmp(tmp.path(), 4096)).unwrap();
+            let live = segment_os_id(id(134), id(135));
+            // The wait FIFO of §4.4 beside the live segment, as an owner
+            // on the FIFO backend makes it; the owner here waits on its
+            // own backend and does not remove it.
+            #[cfg(unix)]
+            let fifo = pair_file(&live, "wake").unwrap();
+            #[cfg(unix)]
+            make_fifo(&fifo);
+            let report = sweep_pair_files(&live[1..], Duration::ZERO).unwrap();
+            assert_eq!((report.removed, report.held), (0, 1), "{report:?}");
+            #[cfg(unix)]
+            assert!(
+                std::fs::symlink_metadata(&fifo).is_ok(),
+                "the wait FIFO of a segment that is there stays"
+            );
+            drop(owner);
+            // The owner's drop unlinked the segment and left the FIFO, as a
+            // process on the FIFO backend that ended without its drop does.
+            #[cfg(unix)]
+            {
+                let report = sweep_pair_files(&live[1..], Duration::ZERO).unwrap();
+                assert_eq!(report.removed, 1, "{report:?}");
+                assert!(
+                    std::fs::symlink_metadata(&fifo).is_err(),
+                    "the wait FIFO of a gone segment goes"
+                );
+            }
+        }
+    }
+
+    /// §5.5 on every platform but Linux: the flink sweep unlinks a segment
+    /// no process holds, leaves a young one alone, keeps one that is held
+    /// and one of another layout version.
+    #[cfg(not(target_os = "linux"))]
     #[test]
     fn shm_5_5_the_flink_sweep_removes_orphaned_segments_and_keeps_held_ones() {
         let orphaned = tempfile::tempdir().unwrap();
@@ -3342,6 +4754,26 @@ mod tests {
         assert_eq!((report.removed, report.held), (0, 1), "{report:?}");
         owner.send(&Locator::shm(id(245)), b"still bound").unwrap();
         assert_eq!(&consumer.recv().unwrap().data[..], b"still bound");
+
+        // A ring of layout version 1 nobody holds: the sweep cannot tell
+        // whether a user of that version still maps it and leaves it.
+        let foreign = tempfile::tempdir().unwrap();
+        let os_id = segment_os_id(id(136), id(137));
+        let flink = segment_flink(foreign.path(), id(136), id(137));
+        let mut v1 = Mapping::create(&os_id, HEADER_BYTES + 4096, Some(&flink)).unwrap();
+        // SAFETY: the mapping is at least HEADER_BYTES long.
+        unsafe {
+            ptr::write_unaligned(v1.as_ptr() as *mut u32, SHM_MAGIC.to_be());
+            ptr::write_unaligned(v1.as_ptr().add(4) as *mut u32, 1u32.to_le());
+        }
+        v1.set_owner(false);
+        drop(v1);
+        let report = sweep_orphaned_flinks(foreign.path(), Duration::ZERO).unwrap();
+        assert_eq!((report.removed, report.foreign), (0, 1), "{report:?}");
+        assert!(flink.exists());
+        assert!(Mapping::open_os_id(&os_id).is_ok(), "the ring stays");
+        shm_unlink_by_os_id(&os_id);
+        let _ = std::fs::remove_file(pair_file(&os_id, "lock").unwrap());
     }
 
     /// §5.1: the os_id is a pure function of the pair and stays inside
@@ -3477,12 +4909,46 @@ mod tests {
         let owner = PosixShmTransport::open_owner(id(130), id(131), cfg.clone()).unwrap();
         let consumer = PosixShmTransport::open_consumer(id(131), id(130), cfg).unwrap();
         // 5 frames of 60 bytes = 5 * 64 bytes; wraparound needed for ring 300.
+        // Frames 0 to 3 fill 0..256; the fifth does not fit the 44 bytes
+        // left and goes to 0, behind a padding marker at 256.
         for i in 0..5u8 {
             let p = vec![i; 60];
             owner.send(&Locator::shm(id(131)), &p).unwrap();
+            if i == 4 {
+                assert_eq!(
+                    owner.layout.read_u32(256),
+                    Some(0xFFFF_FFFE),
+                    "the writer marks the rest of the ring as padding"
+                );
+                assert_eq!(consumer.padding_frames_seen(), 0);
+            }
             let got = consumer.recv().unwrap();
             assert_eq!(&got.data[..], p.as_slice());
         }
+        assert_eq!(consumer.padding_frames_seen(), 1, "the reader counts it");
+    }
+
+    /// §3.2: the reader counts each padding frame once. 64-byte frames in a
+    /// 300-byte ring wrap after every fourth frame with 44 bytes of
+    /// padding: 201 frames cross the ring's end 50 times.
+    #[test]
+    fn shm_3_2_a_padding_frame_is_counted_once_per_wrap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = ShmConfig {
+            capacity: 300,
+            flink_dir: tmp.path().to_path_buf(),
+            max_datagram: 100,
+            recv_timeout: Some(Duration::from_secs(1)),
+        };
+        let owner = PosixShmTransport::open_owner(id(132), id(133), cfg.clone()).unwrap();
+        let consumer = PosixShmTransport::open_consumer(id(133), id(132), cfg).unwrap();
+        for i in 0..201u32 {
+            let p = vec![(i % 251) as u8; 60];
+            owner.send(&Locator::shm(id(133)), &p).unwrap();
+            assert_eq!(&consumer.recv().unwrap().data[..], p.as_slice());
+        }
+        assert_eq!(consumer.padding_frames_seen(), 50);
+        assert_eq!(consumer.corrupt_frames_seen(), 0);
     }
 
     /// DDSI-RTPS 2.5 §8.4.14.1: the transport states its datagram limit.

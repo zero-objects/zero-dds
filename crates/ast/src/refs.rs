@@ -225,6 +225,7 @@ impl Ast {
                 let (key, kind) = match reference {
                     CorbaRef::Interface(reference) => (reference.pending_key(), RefKind::Interface),
                     CorbaRef::Type(reference) => (reference.pending_key(), RefKind::Type),
+                    CorbaRef::Exception(reference) => (reference.pending_key(), RefKind::Exception),
                 };
                 if let Some(key) = key {
                     out.push(PendingSlot {
@@ -270,6 +271,9 @@ impl Ast {
                     replace(reference, id)
                 }
                 (Some(CorbaRefMut::Type(reference)), AnyId::Type(id, _)) => replace(reference, id),
+                (Some(CorbaRefMut::Exception(reference)), AnyId::Exception(id, _)) => {
+                    replace(reference, id)
+                }
                 _ => false,
             };
         }
@@ -390,6 +394,7 @@ impl Ast {
             return match corba_refs_mut(corba).into_iter().nth(index) {
                 Some(CorbaRefMut::Interface(reference)) => break_ref(reference, cause),
                 Some(CorbaRefMut::Type(reference)) => break_ref(reference, cause),
+                Some(CorbaRefMut::Exception(reference)) => break_ref(reference, cause),
                 None => false,
             };
         }
@@ -508,6 +513,8 @@ enum CorbaRef<'a> {
     Interface(&'a Ref<crate::InterfaceNode>),
     /// Names a type.
     Type(&'a Ref<crate::TypeNode>),
+    /// Names an exception.
+    Exception(&'a Ref<crate::ExceptionNode>),
 }
 
 /// The same, mutably.
@@ -516,6 +523,8 @@ enum CorbaRefMut<'a> {
     Interface(&'a mut Ref<crate::InterfaceNode>),
     /// Names a type.
     Type(&'a mut Ref<crate::TypeNode>),
+    /// Names an exception.
+    Exception(&'a mut Ref<crate::ExceptionNode>),
 }
 
 /// Every reference a CORBA facet holds, in slot order.
@@ -561,8 +570,10 @@ fn corba_refs(corba: &crate::CorbaFacet) -> Vec<CorbaRef<'_>> {
         }
     }
     for arg in &corba.template_args {
-        if let crate::TemplateArg::Type(reference) = arg {
-            out.push(CorbaRef::Type(reference));
+        match arg {
+            crate::TemplateArg::Type(reference) => out.push(CorbaRef::Type(reference)),
+            crate::TemplateArg::Exception(reference) => out.push(CorbaRef::Exception(reference)),
+            crate::TemplateArg::Const(_) => {}
         }
     }
     out
@@ -607,8 +618,12 @@ fn corba_refs_mut(corba: &mut crate::CorbaFacet) -> Vec<CorbaRefMut<'_>> {
         }
     }
     for arg in &mut corba.template_args {
-        if let crate::TemplateArg::Type(reference) = arg {
-            out.push(CorbaRefMut::Type(reference));
+        match arg {
+            crate::TemplateArg::Type(reference) => out.push(CorbaRefMut::Type(reference)),
+            crate::TemplateArg::Exception(reference) => {
+                out.push(CorbaRefMut::Exception(reference));
+            }
+            crate::TemplateArg::Const(_) => {}
         }
     }
     out

@@ -316,6 +316,66 @@ pub fn serve_prometheus(addr: SocketAddr, registry: Arc<Registry>) -> Result<Joi
 Mini HTTP server (TcpListener, no hyper dependency); `GET /metrics` → Prometheus text,
 unknown paths → 404.
 
+### §6.4 Admin endpoints of a daemon (feature `prometheus-server`)
+
+```rust
+pub struct AdminEndpoints<F: Fn() -> String> {
+    pub service_name: String,
+    pub metrics_path: String,     // `metrics.path`, else "/metrics"
+    pub catalog: F,               // renders the JSON of /catalog
+    pub registry: Arc<Registry>,
+    pub healthy: Arc<AtomicBool>,
+}
+pub fn serve_admin_endpoints<F>(addr: SocketAddr, thread_name: &str,
+    endpoints: AdminEndpoints<F>, stop: Arc<AtomicBool>)
+    -> io::Result<(JoinHandle<()>, SocketAddr)>;
+pub fn serve_connections<H: FnMut(&mut TcpStream)>(addr: SocketAddr, thread_name: &str,
+    stop: Arc<AtomicBool>, handle: H) -> io::Result<(JoinHandle<()>, SocketAddr)>;
+pub fn http_response(status: &str, content_type: &str, body: &str) -> String;
+pub fn health_response(healthy: &AtomicBool) -> String;
+pub fn request_path(request: &str) -> &str;
+```
+
+One HTTP/1.1 request per connection; each response carries `Content-Type`,
+`Content-Length` and `Connection: close`. The path is the request target
+without its query (`/` when the request line names none):
+
+| Path | Response |
+|---|---|
+| `/catalog` | `200 OK`, `application/json`, the text `catalog` renders |
+| `/healthz` | `200 OK` with `OK` while `healthy` is set, else `503 Service Unavailable` with `DOWN` (`text/plain; charset=utf-8`) |
+| `metrics_path` | `200 OK`, `text/plain; version=0.0.4; charset=utf-8`, the Prometheus text of `registry` |
+| `/` | `200 OK`, the service name and the line `endpoints: /catalog /healthz <metrics_path>` |
+| other | `404 Not Found`, empty body |
+
+The listener is non-blocking; the thread looks at `stop` before each accept and
+every 50 ms while no connection waits. An accepted connection blocks with read
+and write timeouts of 2 s; the first 1024 bytes are read as the request. A
+connection that cannot be read gets no response. The returned address names the
+port the system chose when `addr` asks for port 0.
+
+### §6.5 JSON log line
+
+```rust
+pub enum Level { Trace, Debug, Info, Warn, Error }   // the order of `log_level`
+pub struct Threshold(..);                             // `info` until set
+pub enum Value { Text(String), Number(u64), Integer(i64), Bool(bool) }
+pub fn render_line(unix_millis: u64, level: Level, event: &str,
+    fields: &[(&str, Value)]) -> String;
+pub fn push_escaped(out: &mut String, s: &str);
+pub fn escape(s: &str) -> String;
+pub fn rfc3339_millis(unix_millis: u64) -> String;
+pub fn unix_millis() -> u64;
+```
+
+A line is one JSON object: `timestamp` (RFC 3339 §5.6 in UTC with
+milliseconds, `1970-01-01T00:00:00.000Z`), `level`, `event`, then the fields in
+their order; text is escaped by RFC 8259 §7 (the quotation mark, the reverse
+solidus and every control character, `\n`, `\r` and `\t` in short form, the
+others as `\u00XX`), numbers and flags are JSON literals. `Level::of` reads a
+`log_level` value; any other text is `info`. A line is written when its level
+reaches the threshold.
+
 ## §7 Hook point table (normative)
 
 Which crate emits which metric/span? This table is **normative** — every

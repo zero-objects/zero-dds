@@ -24,7 +24,10 @@
 //!
 //! This module is behind the `security` feature.
 
+use alloc::string::String;
 use alloc::vec::Vec;
+
+use zerodds_opcua_gateway::data_value::{Variant, VariantValue};
 
 use aes::{Aes128, Aes256};
 use aes_gcm::aead::{Aead, Payload};
@@ -74,6 +77,15 @@ impl SecurityPolicy {
             Self::Aes256Ctr => "http://opcfoundation.org/UA/SecurityPolicy#PubSub-Aes256-CTR",
             Self::Aes256Gcm => "http://opcfoundation.org/UA/SecurityPolicy#PubSub-Aes256-GCM",
         }
+    }
+
+    /// The policy a SecurityPolicy URI names; `None` for one this crate
+    /// does not support.
+    #[must_use]
+    pub fn from_uri(uri: &str) -> Option<Self> {
+        [Self::Aes128Ctr, Self::Aes256Ctr, Self::Aes256Gcm]
+            .into_iter()
+            .find(|policy| policy.uri() == uri)
     }
 
     /// `true` for the AEAD (GCM) policy, whose tag provides integrity without
@@ -236,7 +248,28 @@ pub struct SecurityKeyService {
     security_group_id: alloc::string::String,
     current: SecurityKey,
     future: Vec<SecurityKey>,
+    /// The keys before the current one, oldest first (Part 14 §8.4.1
+    /// `MaxPastKeyCount`): a subscriber reads the messages sent with the
+    /// previous key while publishers switch, and `GetSecurityKeys` with a
+    /// past `StartingTokenId` returns them.
+    past: Vec<SecurityKey>,
+    max_past_key_count: usize,
     key_lifetime_ms: f64,
+    /// The time to the next key as the owner last set it
+    /// ([`Self::set_time_to_next_key_ms`]); the key lifetime until then.
+    time_to_next_key_ms: Option<f64>,
+}
+
+/// The `SecurityTokenId` after `token_id` (Part 14 §8.3.2: "If the
+/// SecurityTokenId increments past the maximum value of UInt32 it restarts
+/// at 1").
+#[must_use]
+pub const fn next_token_id(token_id: u32) -> u32 {
+    if token_id == u32::MAX {
+        1
+    } else {
+        token_id + 1
+    }
 }
 
 impl SecurityKeyService {
@@ -252,8 +285,92 @@ impl SecurityKeyService {
             security_group_id: security_group_id.into(),
             current,
             future: Vec::new(),
+            past: Vec::new(),
+            max_past_key_count: 1,
             key_lifetime_ms: 3_600_000.0,
+            time_to_next_key_ms: None,
         }
+    }
+
+    /// The SecurityGroupId the keys are for.
+    #[must_use]
+    pub fn security_group_id(&self) -> &str {
+        &self.security_group_id
+    }
+
+    /// The future keys, in token order.
+    #[must_use]
+    pub fn future_keys(&self) -> &[SecurityKey] {
+        &self.future
+    }
+
+    /// The past keys kept, oldest first.
+    #[must_use]
+    pub fn past_keys(&self) -> &[SecurityKey] {
+        &self.past
+    }
+
+    /// The key lifetime in milliseconds.
+    #[must_use]
+    pub const fn key_lifetime_ms(&self) -> f64 {
+        self.key_lifetime_ms
+    }
+
+    /// How many past keys are kept (Part 14 §8.4.1 `MaxPastKeyCount`).
+    pub fn set_max_past_key_count(&mut self, count: usize) -> &mut Self {
+        self.max_past_key_count = count;
+        let excess = self.past.len().saturating_sub(count);
+        self.past.drain(..excess);
+        self
+    }
+
+    /// The time, in milliseconds, before the current key expires, as the
+    /// owner of the service counts it; what `GetSecurityKeys` answers as
+    /// `TimeToNextKey`.
+    pub fn set_time_to_next_key_ms(&mut self, ms: f64) -> &mut Self {
+        self.time_to_next_key_ms = Some(ms);
+        self
+    }
+
+    /// Takes the keys a `GetSecurityKeys` call returned (Part 14 §8.3.2):
+    /// "the FirstTokenId is used to match the existing list with the
+    /// fetched list and to eliminate duplicates. If the FirstTokenId is
+    /// unknown, the existing list shall be discarded and replaced." With
+    /// `StartingTokenId` 0 the first key is the current one. `keys` empty
+    /// changes nothing.
+    pub fn apply_fetched(&mut self, first_token_id: u32, keys: Vec<SecurityKey>) {
+        let mut keys = keys.into_iter();
+        let Some(first) = keys.next() else {
+            return;
+        };
+        if self.current.token_id == first_token_id {
+            self.current = first;
+        } else if self.future.iter().any(|k| k.token_id == first_token_id) {
+            while self.current.token_id != first_token_id && self.rotate() {}
+            self.current = first;
+        } else if self.past.iter().any(|k| k.token_id == first_token_id) {
+            // A list that starts in the past: the keys from the current
+            // one on are in it as well.
+            let mut ordered: Vec<SecurityKey> = core::iter::once(first).chain(keys).collect();
+            let at = ordered
+                .iter()
+                .position(|k| k.token_id == self.current.token_id)
+                .unwrap_or(0);
+            let rest = ordered.split_off(at);
+            self.past
+                .retain(|k| !ordered.iter().any(|o| o.token_id == k.token_id));
+            self.past.extend(ordered);
+            let mut rest = rest.into_iter();
+            if let Some(current) = rest.next() {
+                self.current = current;
+            }
+            self.future = rest.collect();
+            return;
+        } else {
+            self.past.clear();
+            self.current = first;
+        }
+        self.future = keys.collect();
     }
 
     /// The SecurityPolicy.
@@ -285,8 +402,24 @@ impl SecurityKeyService {
         if self.future.is_empty() {
             return false;
         }
-        self.current = self.future.remove(0);
+        let next = self.future.remove(0);
+        let previous = core::mem::replace(&mut self.current, next);
+        if self.max_past_key_count > 0 {
+            self.past.push(previous);
+            let excess = self.past.len().saturating_sub(self.max_past_key_count);
+            self.past.drain(..excess);
+        }
+        self.time_to_next_key_ms = None;
         true
+    }
+
+    /// Replaces the current and every future key (Part 14 §8.4.2
+    /// `InvalidateKeys`): the new current key has a token beyond the last
+    /// one invalidated; the invalidated keys are not kept as past keys.
+    pub fn invalidate(&mut self, current: SecurityKey) {
+        self.current = current;
+        self.future.clear();
+        self.time_to_next_key_ms = None;
     }
 
     /// Looks up a key by token id across the current and future keys.
@@ -295,7 +428,10 @@ impl SecurityKeyService {
         if self.current.token_id == token_id {
             return Some(&self.current);
         }
-        self.future.iter().find(|k| k.token_id == token_id)
+        self.future
+            .iter()
+            .chain(self.past.iter())
+            .find(|k| k.token_id == token_id)
     }
 
     /// Builds the `GetSecurityKeys` response snapshot.
@@ -329,21 +465,29 @@ impl SecurityKeyService {
         if security_group_id != self.security_group_id {
             return None;
         }
-        // Ordered key sequence: current first, then the queued future keys.
-        let ordered = core::iter::once(&self.current).chain(self.future.iter());
+        // Part 14 §8.3.2: the keys in token order, past ones first.
+        let ordered: Vec<&SecurityKey> = self
+            .past
+            .iter()
+            .chain(core::iter::once(&self.current))
+            .chain(self.future.iter())
+            .collect();
+        // "The current token and the related current key is requested by
+        // passing 0"; "If the StartingTokenId is unknown, the oldest
+        // available tokens are returned."
         let start = if starting_token_id == 0 {
             self.current.token_id
         } else {
             starting_token_id
         };
-        let selected: Vec<&SecurityKey> = ordered
-            .skip_while(|k| k.token_id != start)
-            .take(if requested_key_count == 0 {
-                usize::MAX
-            } else {
-                requested_key_count as usize
-            })
-            .collect();
+        let from = ordered
+            .iter()
+            .position(|k| k.token_id == start)
+            .unwrap_or(0);
+        // "If 0 is requested, no future keys are returned": the first key
+        // alone.
+        let count = (requested_key_count as usize).max(1);
+        let selected: Vec<&SecurityKey> = ordered.into_iter().skip(from).take(count).collect();
         let first_token_id = selected.first().map_or(start, |k| k.token_id);
         let keys = selected
             .iter()
@@ -361,7 +505,7 @@ impl SecurityKeyService {
             security_policy_uri: alloc::string::String::from(self.policy.uri()),
             first_token_id,
             keys,
-            time_to_next_key_ms: self.key_lifetime_ms,
+            time_to_next_key_ms: self.time_to_next_key_ms.unwrap_or(self.key_lifetime_ms),
             key_lifetime_ms: self.key_lifetime_ms,
         })
     }
@@ -380,6 +524,232 @@ pub struct GetSecurityKeysResult {
     pub time_to_next_key_ms: f64,
     /// Key lifetime in milliseconds.
     pub key_lifetime_ms: f64,
+}
+
+fn array(values: Vec<VariantValue>) -> Variant {
+    Variant {
+        array_dimensions: alloc::vec![u32::try_from(values.len()).unwrap_or(u32::MAX)],
+        value: values,
+    }
+}
+
+fn scalar_of(args: &[Variant], index: usize) -> Option<&VariantValue> {
+    args.get(index)
+        .filter(|v| v.is_scalar())
+        .and_then(|v| v.value.first())
+}
+
+fn byte_strings(args: &[Variant], index: usize) -> Option<Vec<Vec<u8>>> {
+    let variant = args.get(index)?;
+    if variant.is_scalar() && !variant.value.is_empty() {
+        return None;
+    }
+    variant
+        .value
+        .iter()
+        .map(|v| match v {
+            VariantValue::ByteString(bytes) => Some(bytes.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn duration_of(value: Option<&VariantValue>) -> Option<f64> {
+    match value? {
+        VariantValue::Double(ms) => Some(*ms),
+        VariantValue::Float(ms) => Some(f64::from(*ms)),
+        _ => None,
+    }
+}
+
+/// The input arguments of `GetSecurityKeys` (Part 14 §8.3.2):
+/// `SecurityGroupId`, `StartingTokenId`, `RequestedKeyCount`.
+#[must_use]
+pub fn get_security_keys_input(
+    security_group_id: &str,
+    starting_token_id: u32,
+    requested_key_count: u32,
+) -> Vec<Variant> {
+    alloc::vec![
+        Variant::scalar(VariantValue::String(security_group_id.into())),
+        Variant::scalar(VariantValue::UInt32(starting_token_id)),
+        Variant::scalar(VariantValue::UInt32(requested_key_count)),
+    ]
+}
+
+/// Reads the input arguments of `GetSecurityKeys`; `None` when they are
+/// not a `String` and two `UInt32`s (Part 4 §5.11.2: `Bad_InvalidArgument`).
+#[must_use]
+pub fn parse_get_security_keys_input(args: &[Variant]) -> Option<(String, u32, u32)> {
+    if args.len() != 3 {
+        return None;
+    }
+    let VariantValue::String(group) = scalar_of(args, 0)? else {
+        return None;
+    };
+    let VariantValue::UInt32(start) = scalar_of(args, 1)? else {
+        return None;
+    };
+    let VariantValue::UInt32(count) = scalar_of(args, 2)? else {
+        return None;
+    };
+    Some((group.clone(), *start, *count))
+}
+
+impl GetSecurityKeysResult {
+    /// The output arguments of `GetSecurityKeys` (Part 14 §8.3.2):
+    /// `SecurityPolicyUri`, `FirstTokenId`, `Keys`, `TimeToNextKey`,
+    /// `KeyLifetime` (the durations as `Duration`, a Double of
+    /// milliseconds).
+    #[must_use]
+    pub fn to_output_arguments(&self) -> Vec<Variant> {
+        alloc::vec![
+            Variant::scalar(VariantValue::String(self.security_policy_uri.clone())),
+            Variant::scalar(VariantValue::UInt32(self.first_token_id)),
+            array(
+                self.keys
+                    .iter()
+                    .map(|k| VariantValue::ByteString(k.clone()))
+                    .collect()
+            ),
+            Variant::scalar(VariantValue::Double(self.time_to_next_key_ms)),
+            Variant::scalar(VariantValue::Double(self.key_lifetime_ms)),
+        ]
+    }
+
+    /// Reads the output arguments of `GetSecurityKeys`.
+    ///
+    /// # Errors
+    /// [`SecurityError::BadArguments`] when they are not the five of
+    /// §8.3.2.
+    pub fn from_output_arguments(args: &[Variant]) -> Result<Self, SecurityError> {
+        let bad = || SecurityError::BadArguments;
+        if args.len() != 5 {
+            return Err(bad());
+        }
+        let VariantValue::String(uri) = scalar_of(args, 0).ok_or_else(bad)? else {
+            return Err(bad());
+        };
+        let VariantValue::UInt32(first_token_id) = scalar_of(args, 1).ok_or_else(bad)? else {
+            return Err(bad());
+        };
+        Ok(Self {
+            security_policy_uri: uri.clone(),
+            first_token_id: *first_token_id,
+            keys: byte_strings(args, 2).ok_or_else(bad)?,
+            time_to_next_key_ms: duration_of(scalar_of(args, 3)).ok_or_else(bad)?,
+            key_lifetime_ms: duration_of(scalar_of(args, 4)).ok_or_else(bad)?,
+        })
+    }
+
+    /// The policy and the keys, split by the policy's key lengths, their
+    /// tokens counting up from `FirstTokenId`.
+    ///
+    /// # Errors
+    /// [`SecurityError::UnsupportedPolicy`] for a policy URI this crate
+    /// does not support; [`SecurityError::BadKeyLength`] for a key of
+    /// another length.
+    pub fn security_keys(&self) -> Result<(SecurityPolicy, Vec<SecurityKey>), SecurityError> {
+        let policy = SecurityPolicy::from_uri(&self.security_policy_uri)
+            .ok_or(SecurityError::UnsupportedPolicy)?;
+        let mut token = self.first_token_id;
+        let mut keys = Vec::with_capacity(self.keys.len());
+        for blob in &self.keys {
+            keys.push(SecurityKey::from_blob(policy, token, blob)?);
+            token = next_token_id(token);
+        }
+        Ok((policy, keys))
+    }
+}
+
+/// The input arguments of `SetSecurityKeys` (Part 14 §9.1.3.3), with which
+/// an SKS pushes the keys of a SecurityGroup to a Publisher or Subscriber.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetSecurityKeysInput {
+    /// `SecurityGroupId`.
+    pub security_group_id: String,
+    /// `SecurityPolicyUri`.
+    pub security_policy_uri: String,
+    /// `CurrentTokenId`.
+    pub current_token_id: u32,
+    /// `CurrentKey`.
+    pub current_key: Vec<u8>,
+    /// `FutureKeys`.
+    pub future_keys: Vec<Vec<u8>>,
+    /// `TimeToNextKey`, milliseconds.
+    pub time_to_next_key_ms: f64,
+    /// `KeyLifetime`, milliseconds.
+    pub key_lifetime_ms: f64,
+}
+
+impl SetSecurityKeysInput {
+    /// The seven input arguments of §9.1.3.3.
+    #[must_use]
+    pub fn to_arguments(&self) -> Vec<Variant> {
+        alloc::vec![
+            Variant::scalar(VariantValue::String(self.security_group_id.clone())),
+            Variant::scalar(VariantValue::String(self.security_policy_uri.clone())),
+            Variant::scalar(VariantValue::UInt32(self.current_token_id)),
+            Variant::scalar(VariantValue::ByteString(self.current_key.clone())),
+            array(
+                self.future_keys
+                    .iter()
+                    .map(|k| VariantValue::ByteString(k.clone()))
+                    .collect()
+            ),
+            Variant::scalar(VariantValue::Double(self.time_to_next_key_ms)),
+            Variant::scalar(VariantValue::Double(self.key_lifetime_ms)),
+        ]
+    }
+
+    /// Reads the input arguments of `SetSecurityKeys`.
+    ///
+    /// # Errors
+    /// [`SecurityError::BadArguments`] when they are not the seven of
+    /// §9.1.3.3.
+    pub fn from_arguments(args: &[Variant]) -> Result<Self, SecurityError> {
+        let bad = || SecurityError::BadArguments;
+        if args.len() != 7 {
+            return Err(bad());
+        }
+        let text = |index: usize| match scalar_of(args, index) {
+            Some(VariantValue::String(text)) => Ok(text.clone()),
+            _ => Err(bad()),
+        };
+        let VariantValue::UInt32(current_token_id) = scalar_of(args, 2).ok_or_else(bad)? else {
+            return Err(bad());
+        };
+        let VariantValue::ByteString(current_key) = scalar_of(args, 3).ok_or_else(bad)? else {
+            return Err(bad());
+        };
+        Ok(Self {
+            security_group_id: text(0)?,
+            security_policy_uri: text(1)?,
+            current_token_id: *current_token_id,
+            current_key: current_key.clone(),
+            future_keys: byte_strings(args, 4).ok_or_else(bad)?,
+            time_to_next_key_ms: duration_of(scalar_of(args, 5)).ok_or_else(bad)?,
+            key_lifetime_ms: duration_of(scalar_of(args, 6)).ok_or_else(bad)?,
+        })
+    }
+
+    /// The policy and the keys: the current one first, the future ones
+    /// after it with the tokens that follow.
+    ///
+    /// # Errors
+    /// As [`GetSecurityKeysResult::security_keys`].
+    pub fn security_keys(&self) -> Result<(SecurityPolicy, Vec<SecurityKey>), SecurityError> {
+        GetSecurityKeysResult {
+            security_policy_uri: self.security_policy_uri.clone(),
+            first_token_id: self.current_token_id,
+            keys: core::iter::once(self.current_key.clone())
+                .chain(self.future_keys.iter().cloned())
+                .collect(),
+            time_to_next_key_ms: self.time_to_next_key_ms,
+            key_lifetime_ms: self.key_lifetime_ms,
+        }
+        .security_keys()
+    }
 }
 
 /// An error from message protection / key handling.
@@ -401,6 +771,10 @@ pub enum SecurityError {
     BadNonceLength,
     /// The secured message was truncated (missing footer/signature bytes).
     Truncated,
+    /// The arguments of a key method are not the ones Part 14 names.
+    BadArguments,
+    /// A SecurityPolicy URI this crate does not support.
+    UnsupportedPolicy,
 }
 
 impl From<EncodeError> for SecurityError {
@@ -426,6 +800,8 @@ impl core::fmt::Display for SecurityError {
             Self::BadKeyLength => write!(f, "key field length does not match the policy"),
             Self::BadNonceLength => write!(f, "MessageNonce length does not match the policy"),
             Self::Truncated => write!(f, "secured NetworkMessage is truncated"),
+            Self::BadArguments => write!(f, "the method arguments are not the ones Part 14 names"),
+            Self::UnsupportedPolicy => write!(f, "unsupported SecurityPolicy URI"),
         }
     }
 }
@@ -626,7 +1002,6 @@ mod tests {
     use super::*;
     use crate::uadp::dataset_message::DataSetMessage;
     use crate::uadp::network_message::PublisherId;
-    use zerodds_opcua_gateway::data_value::{Variant, VariantValue};
 
     fn sks(policy: SecurityPolicy) -> SecurityKeyService {
         let blob = alloc::vec![0xABu8; policy.key_material_len()];
@@ -890,16 +1265,115 @@ mod tests {
         // Unknown group → None.
         assert!(svc.get_security_keys_for("other", 0, 0).is_none());
 
-        // starting = 0 (current), all keys → tokens 7 then 8.
+        // starting = 0 (current), count 0: "no future keys are returned".
         let r = svc.get_security_keys_for("group-1", 0, 0).expect("result");
         assert_eq!(r.security_policy_uri, policy.uri());
         assert_eq!(r.first_token_id, 7);
-        assert_eq!(r.keys.len(), 2);
+        assert_eq!(r.keys.len(), 1);
         assert_eq!(r.keys[0].len(), policy.key_material_len());
+
+        // starting = 0, count 2: the current key and the future one.
+        let r = svc.get_security_keys_for("group-1", 0, 2).expect("result");
+        assert_eq!((r.first_token_id, r.keys.len()), (7, 2));
 
         // starting = 8, count = 1 → only the future key.
         let r2 = svc.get_security_keys_for("group-1", 8, 1).expect("result");
         assert_eq!(r2.first_token_id, 8);
         assert_eq!(r2.keys.len(), 1);
+
+        // After a rotation token 7 is a past key; an unknown token starts
+        // at the oldest one there is.
+        svc.set_time_to_next_key_ms(1500.0);
+        assert!(svc.rotate());
+        let r3 = svc.get_security_keys_for("group-1", 7, 5).expect("result");
+        assert_eq!((r3.first_token_id, r3.keys.len()), (7, 2));
+        let r4 = svc.get_security_keys_for("group-1", 99, 1).expect("result");
+        assert_eq!(r4.first_token_id, 7);
+        svc.set_time_to_next_key_ms(1500.0);
+        assert_eq!(
+            svc.get_security_keys_for("group-1", 0, 0)
+                .expect("result")
+                .time_to_next_key_ms,
+            1500.0
+        );
+    }
+
+    /// Part 14 §8.3.2 and §9.1.3.3: the arguments of `GetSecurityKeys` and
+    /// `SetSecurityKeys` as Variants, and back to keys.
+    #[test]
+    fn uapubsub_8_3_2_the_key_method_arguments_round_trip() {
+        let policy = SecurityPolicy::Aes256Ctr;
+        let input = get_security_keys_input("g", 0, 3);
+        assert_eq!(
+            parse_get_security_keys_input(&input),
+            Some((String::from("g"), 0, 3))
+        );
+        assert_eq!(parse_get_security_keys_input(&input[..2]), None);
+        let blob = |b: u8| alloc::vec![b; policy.key_material_len()];
+        let result = GetSecurityKeysResult {
+            security_policy_uri: policy.uri().into(),
+            first_token_id: u32::MAX,
+            keys: alloc::vec![blob(1), blob(2)],
+            time_to_next_key_ms: 250.0,
+            key_lifetime_ms: 1000.0,
+        };
+        let back = GetSecurityKeysResult::from_output_arguments(&result.to_output_arguments())
+            .expect("parse");
+        assert_eq!(back, result);
+        let (read_policy, keys) = back.security_keys().expect("keys");
+        assert_eq!(read_policy, policy);
+        assert_eq!(
+            keys.iter().map(|k| k.token_id).collect::<Vec<_>>(),
+            [u32::MAX, 1],
+            "the token after the largest is 1"
+        );
+        let set = SetSecurityKeysInput {
+            security_group_id: "g".into(),
+            security_policy_uri: policy.uri().into(),
+            current_token_id: 4,
+            current_key: blob(4),
+            future_keys: alloc::vec![blob(5)],
+            time_to_next_key_ms: 10.0,
+            key_lifetime_ms: 20.0,
+        };
+        let read = SetSecurityKeysInput::from_arguments(&set.to_arguments()).expect("parse");
+        assert_eq!(read, set);
+        let (_, keys) = read.security_keys().expect("keys");
+        assert_eq!(keys.iter().map(|k| k.token_id).collect::<Vec<_>>(), [4, 5]);
+        let mut wrong = result.clone();
+        wrong.security_policy_uri = "http://example.org/none".into();
+        assert_eq!(wrong.security_keys(), Err(SecurityError::UnsupportedPolicy));
+    }
+
+    /// Part 14 §8.3.2: the fetched list is matched on its FirstTokenId; an
+    /// unknown one replaces the keys at hand. The token after the largest
+    /// UInt32 is 1.
+    #[test]
+    fn uapubsub_8_3_2_fetched_keys_are_matched_on_their_first_token() {
+        let policy = SecurityPolicy::Aes128Ctr;
+        let key = |token: u32| {
+            SecurityKey::from_blob(
+                policy,
+                token,
+                &alloc::vec![token as u8; policy.key_material_len()],
+            )
+            .expect("key")
+        };
+        let mut svc = SecurityKeyService::new(policy, "g", key(7));
+        svc.apply_fetched(7, alloc::vec![key(7), key(8), key(9)]);
+        assert_eq!(svc.current_key().token_id, 7);
+        assert_eq!(svc.future_keys().len(), 2);
+        // The next fetch starts at 8: 7 is past now.
+        svc.apply_fetched(8, alloc::vec![key(8), key(9), key(10)]);
+        assert_eq!(svc.current_key().token_id, 8);
+        assert_eq!(svc.future_keys().len(), 2);
+        assert!(svc.key_for_token(7).is_some(), "the previous key is kept");
+        // A list that matches nothing replaces it all.
+        svc.apply_fetched(40, alloc::vec![key(40)]);
+        assert_eq!(svc.current_key().token_id, 40);
+        assert!(svc.future_keys().is_empty());
+        assert!(svc.key_for_token(8).is_none());
+        assert_eq!(next_token_id(u32::MAX), 1);
+        assert_eq!(next_token_id(4), 5);
     }
 }

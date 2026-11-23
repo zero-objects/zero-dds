@@ -48,6 +48,16 @@ std = [
     "dep:zerodds-observability-otlp",
     "dep:zerodds-qos",
     "dep:signal-hook",
+    "dep:zerodds-foundation",
+    "dep:getrandom",
+    "dep:zerodds-ast",
+    "dep:zerodds-ast-core",
+    "dep:zerodds-ast-layout",
+    "dep:zerodds-idl-cst",
+    "dep:zerodds-idl-parse",
+    "dep:zerodds-idl-compose",
+    "dep:zerodds-wire-codec",
+    "dep:serde_json",
     "dep:zerodds-config",
     "dep:zerodds-dcps",
     "dep:zerodds-rtps",
@@ -87,6 +97,20 @@ zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
+# Spec §8.3: the spans of an exchange (`zerodds_foundation::tracing`)
+# and their random trace ids.
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", optional = true, default-features = false, features = ["std"] }
+# §5.2: the IDL of a mapping's interface is read, the DDS types are
+# generated from it, and a user exception's members are read with them.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", optional = true }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core", optional = true }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout", optional = true }
+zerodds-idl-cst = { version = "1.0.0-rc.7", path = "../idl-cst", optional = true }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse", optional = true }
+zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../idl-compose", optional = true }
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", optional = true }
+serde_json = { version = "1.0", optional = true }
+getrandom = { version = "0.2", optional = true }
 
 [dev-dependencies]
 # Self-signed certs for §7.1 TLS tests in `tests/security_e2e.rs`.

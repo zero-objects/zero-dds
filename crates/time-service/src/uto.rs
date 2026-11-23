@@ -20,7 +20,8 @@
 //! as Rust methods on [`Uto`].
 
 #[cfg(feature = "std")]
-use crate::time_base::current_time;
+use crate::exception::AbsoluteTimeError;
+use crate::exception::BadParam;
 use crate::time_base::{InaccuracyT, IntervalT, TdfT, TimeT, UtcT};
 use crate::tio::Tio;
 
@@ -63,10 +64,13 @@ impl Uto {
 
     /// Constructor from the individual fields (Spec §2.1.2.1
     /// `new_universal_time`).
-    #[must_use]
-    pub const fn new(time: TimeT, inaccuracy: InaccuracyT, tdf: TdfT) -> Self {
-        Self {
-            inner: UtcT::new(time, inaccuracy, tdf),
+    ///
+    /// # Errors
+    /// [`BadParam`] if `inaccuracy` does not fit 48 bits (§2.1.2.1).
+    pub const fn new(time: TimeT, inaccuracy: InaccuracyT, tdf: TdfT) -> Result<Self, BadParam> {
+        match UtcT::new(time, inaccuracy, tdf) {
+            Ok(inner) => Ok(Self { inner }),
+            Err(e) => Err(e),
         }
     }
 
@@ -95,18 +99,20 @@ impl Uto {
     }
 
     /// Spec §1.3.4.5 — `absolute_time()`. Converts a relative UTO
-    /// into an absolute one: `absolute = current + relative.time`.
-    /// Raises `DATA_CONVERSION` on overflow — we return `None`.
+    /// into an absolute one: `absolute = current + relative.time`, read
+    /// from the platform clock of [`crate::TimeService::default`]. The
+    /// result keeps the inaccuracy of `self` and carries the time
+    /// displacement factor of the local time zone at the absolute time
+    /// (§1.3.2.4). [`crate::TimeService::absolute_time`] does the same on
+    /// the clock and zone of a given service.
+    ///
+    /// # Errors
+    /// [`AbsoluteTimeError::DataConversion`] on overflow
+    /// (`CORBA::DATA_CONVERSION`), [`AbsoluteTimeError::TimeUnavailable`]
+    /// if the platform clock gives no time.
     #[cfg(feature = "std")]
-    #[must_use]
-    pub fn absolute_time(self) -> Option<Self> {
-        let now = current_time();
-        let absolute = now.checked_add(self.inner.time)?;
-        Some(Self::from_utc(UtcT::new(
-            absolute,
-            self.inner.inaccuracy(),
-            self.inner.tdf,
-        )))
+    pub fn absolute_time(self) -> Result<Self, AbsoluteTimeError> {
+        crate::TimeService::default().absolute_time(self)
     }
 
     /// Spec §1.3.4.6 — `compare_time(comparison_type, uto)`.
@@ -182,7 +188,7 @@ mod tests {
     #[test]
     fn attributes_return_constructor_values() {
         // Spec §1.3.4.1-4.
-        let uto = Uto::new(1_000, 50, 60);
+        let uto = Uto::new(1_000, 50, 60).unwrap();
         assert_eq!(uto.time(), 1_000);
         assert_eq!(uto.inaccuracy(), 50);
         assert_eq!(uto.tdf(), 60);
@@ -193,8 +199,8 @@ mod tests {
 
     #[test]
     fn compare_time_midc_equal() {
-        let a = Uto::new(100, 50, 0);
-        let b = Uto::new(100, 200, 0);
+        let a = Uto::new(100, 50, 0).unwrap();
+        let b = Uto::new(100, 200, 0).unwrap();
         assert_eq!(
             a.compare_time(ComparisonType::MidC, b),
             TimeComparison::EqualTo
@@ -203,8 +209,8 @@ mod tests {
 
     #[test]
     fn compare_time_midc_less_than() {
-        let a = Uto::new(100, 0, 0);
-        let b = Uto::new(200, 0, 0);
+        let a = Uto::new(100, 0, 0).unwrap();
+        let b = Uto::new(200, 0, 0).unwrap();
         assert_eq!(
             a.compare_time(ComparisonType::MidC, b),
             TimeComparison::LessThan
@@ -213,8 +219,8 @@ mod tests {
 
     #[test]
     fn compare_time_midc_greater_than() {
-        let a = Uto::new(300, 0, 0);
-        let b = Uto::new(200, 0, 0);
+        let a = Uto::new(300, 0, 0).unwrap();
+        let b = Uto::new(200, 0, 0).unwrap();
         assert_eq!(
             a.compare_time(ComparisonType::MidC, b),
             TimeComparison::GreaterThan
@@ -223,8 +229,8 @@ mod tests {
 
     #[test]
     fn compare_time_intervalc_equal_when_inaccuracy_zero_and_time_match() {
-        let a = Uto::new(100, 0, 0);
-        let b = Uto::new(100, 0, 0);
+        let a = Uto::new(100, 0, 0).unwrap();
+        let b = Uto::new(100, 0, 0).unwrap();
         assert_eq!(
             a.compare_time(ComparisonType::IntervalC, b),
             TimeComparison::EqualTo
@@ -234,8 +240,8 @@ mod tests {
     #[test]
     fn compare_time_intervalc_indeterminate_on_envelope_overlap() {
         // Spec §1.3.2.7: TCIndeterminate when envelopes overlap.
-        let a = Uto::new(100, 50, 0); // [50, 150]
-        let b = Uto::new(120, 50, 0); // [70, 170]
+        let a = Uto::new(100, 50, 0).unwrap(); // [50, 150]
+        let b = Uto::new(120, 50, 0).unwrap(); // [70, 170]
         assert_eq!(
             a.compare_time(ComparisonType::IntervalC, b),
             TimeComparison::Indeterminate
@@ -244,8 +250,8 @@ mod tests {
 
     #[test]
     fn compare_time_intervalc_less_than_when_envelopes_disjoint() {
-        let a = Uto::new(100, 10, 0); // [90, 110]
-        let b = Uto::new(200, 10, 0); // [190, 210]
+        let a = Uto::new(100, 10, 0).unwrap(); // [90, 110]
+        let b = Uto::new(200, 10, 0).unwrap(); // [190, 210]
         assert_eq!(
             a.compare_time(ComparisonType::IntervalC, b),
             TimeComparison::LessThan
@@ -254,8 +260,8 @@ mod tests {
 
     #[test]
     fn compare_time_intervalc_greater_than_when_envelopes_disjoint() {
-        let a = Uto::new(300, 10, 0);
-        let b = Uto::new(200, 10, 0);
+        let a = Uto::new(300, 10, 0).unwrap();
+        let b = Uto::new(200, 10, 0).unwrap();
         assert_eq!(
             a.compare_time(ComparisonType::IntervalC, b),
             TimeComparison::GreaterThan
@@ -266,8 +272,8 @@ mod tests {
     fn time_to_interval_uses_midpoints() {
         // Spec §1.3.4.7: interval between the midpoints, inaccuracies
         // are not taken into account.
-        let a = Uto::new(100, 9999, 0);
-        let b = Uto::new(200, 9999, 0);
+        let a = Uto::new(100, 9999, 0).unwrap();
+        let b = Uto::new(200, 9999, 0).unwrap();
         let tio = a.time_to_interval(b).expect("ok");
         assert_eq!(tio.time_interval().lower_bound, 100);
         assert_eq!(tio.time_interval().upper_bound, 200);
@@ -276,7 +282,7 @@ mod tests {
     #[test]
     fn interval_returns_inaccuracy_envelope() {
         // Spec §1.3.4.8: TIO.upper = time + inaccuracy, TIO.lower = time - inaccuracy.
-        let uto = Uto::new(1_000, 50, 0);
+        let uto = Uto::new(1_000, 50, 0).unwrap();
         let tio = uto.interval();
         assert_eq!(tio.time_interval().lower_bound, 950);
         assert_eq!(tio.time_interval().upper_bound, 1_050);
@@ -285,9 +291,33 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn absolute_time_adds_current_to_relative() {
-        let relative = Uto::new(1_000, 0, 0);
+        let before = crate::time_base::current_time();
+        let relative = Uto::new(1_000, 7, 0).unwrap();
         let absolute = relative.absolute_time().expect("ok");
-        // Absolute > current_time (should at least be > base time).
-        assert!(absolute.time() > 1_000);
+        let after = crate::time_base::current_time();
+        // Spec §1.3.4.5: absolute = current time + relative time.
+        assert!(absolute.time() >= before + 1_000);
+        assert!(absolute.time() <= after + 1_000);
+        assert_eq!(absolute.inaccuracy(), 7);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn time_1_3_4_5_absolute_time_overflow_is_data_conversion() {
+        // Spec §1.3.4.5: "Raises CORBA::DATA_CONVERSION exception if the
+        // attempt to obtain absolute time causes an overflow."
+        let relative = Uto::new(u64::MAX - 1, 0, 0).unwrap();
+        assert_eq!(
+            relative.absolute_time(),
+            Err(AbsoluteTimeError::DataConversion)
+        );
+    }
+
+    #[test]
+    fn time_2_1_2_1_uto_new_rejects_inaccuracy_above_48_bits() {
+        assert_eq!(
+            Uto::new(1, crate::time_base::MAX_INACCURACY + 1, 0),
+            Err(BadParam)
+        );
     }
 }

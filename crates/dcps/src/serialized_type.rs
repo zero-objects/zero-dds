@@ -125,7 +125,7 @@ impl SerializedSample {
         self.big_endian
     }
     /// The instance's `KeyHash` (DDS 1.4 §2.2.2.4.2, DDSI-RTPS 2.5
-    /// §9.6.3.3), computed by `SerializedTypeSupport::read_body` when the
+    /// §9.6.4.8), computed by `SerializedTypeSupport::read_body` when the
     /// type is keyed — `None` for an unkeyed type. Exposed as a plain
     /// accessor (rather than only through the crate-private `TopicCodec`
     /// trait `key_material` computes it for) so a caller that only has a
@@ -562,7 +562,7 @@ impl SerializedTypeSupport {
     /// filled by `DcpsRuntime::register_type_object`) instead of caller-owned
     /// bytes. Used by the receive path to compute a keyed reader's KeyHash
     /// from the type when a writer's DATA carries none (DDSI-RTPS 2.5
-    /// §9.6.3.3 leaves `PID_KEY_HASH` optional) — public so a caller outside
+    /// §8.7.10) — public so a caller outside
     /// `crates/dcps` holding a `CompleteTypeObject` from
     /// `DcpsRuntime::type_lookup_server` (e.g. a bridge daemon resolving an
     /// auto-discovered topic's type, `DiscoveredEndpointInfo::type_identifier`)
@@ -731,8 +731,17 @@ impl SerializedTypeSupport {
         Ok(Arc::new(renamed))
     }
 
-    /// The `TypeObject`s of the support: the type and what it needs.
-    pub(crate) fn type_objects(&self) -> impl Iterator<Item = &TypeObject> {
+    /// The `TypeIdentifier` of the support's type, the one an endpoint of
+    /// the type announces (XTypes 1.3 §7.6.3.2.2).
+    #[must_use]
+    pub fn type_identifier(&self) -> &zerodds_types::TypeIdentifier {
+        &self.metadata.type_identifier
+    }
+
+    /// The `TypeObject`s of the support: the type and what it needs, what
+    /// a TypeLookup service answers a `getTypes` of the type with
+    /// (XTypes 1.3 §7.6.3.3).
+    pub fn type_objects(&self) -> impl Iterator<Item = &TypeObject> {
         self.metadata
             .type_object
             .iter()

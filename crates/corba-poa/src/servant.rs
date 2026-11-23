@@ -11,6 +11,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use zerodds_corba_giop::AlignedBody;
 use zerodds_corba_giop::object_ops::{self, OBJECT_REPOSITORY_ID, ObjectOpReply};
 use zerodds_corba_ir::{IrResult, RepositoryId};
 use zerodds_wire::Endianness;
@@ -69,10 +70,13 @@ pub trait Servant: core::fmt::Debug + Send + Sync {
     /// most-derived repository id and [`Servant::is_a`] for the
     /// base-interface chain; a servant with a structured identity it
     /// would rather not restring can override it directly.
+    ///
+    /// `body` is the request body at its offset in the GIOP message
+    /// (CORBA 3.3 Part 2 §9.4.2.1); `_is_a` reads its argument there.
     fn dispatch_object_operation(
         &self,
         operation: &str,
-        body: &[u8],
+        body: &AlignedBody,
         endianness: Endianness,
     ) -> Option<ObjectOpReply> {
         object_ops::dispatch(
@@ -84,13 +88,27 @@ pub trait Servant: core::fmt::Debug + Send + Sync {
         )
     }
 
-    /// Processes a request — opaque body bytes in, reply
-    /// body bytes out. The GIOP header layer is managed by the
-    /// POA caller.
+    /// Processes a request: the request body in, the reply body out. The
+    /// GIOP header layer is managed by the POA caller.
+    ///
+    /// `request_body` is the body at its offset in the GIOP message, in
+    /// the byte order `endianness` of that message. CDR aligns the
+    /// arguments from the first octet of the message (CORBA 3.3 Part 2
+    /// §9.4); a GIOP 1.0 or 1.1 request body follows the header without
+    /// padding (§9.4.2.1), so its offset is any number. The arguments
+    /// are read with `request_body.reader(endianness)`, which counts the
+    /// alignment from the message start. The reply body is written in
+    /// `endianness`, from offset 0: the caller sends the reply in that
+    /// byte order and places its body on a multiple of 8.
     ///
     /// # Errors
     /// Implementer-specific (user exception or system exception).
-    fn invoke(&self, operation: &str, request_body: &[u8]) -> Vec<u8>;
+    fn invoke(
+        &self,
+        operation: &str,
+        request_body: &AlignedBody,
+        endianness: Endianness,
+    ) -> Vec<u8>;
 }
 
 /// Test helper servant for unit tests.
@@ -106,8 +124,8 @@ impl Servant for EchoServant {
         self.repo_id.clone()
     }
 
-    fn invoke(&self, _operation: &str, request_body: &[u8]) -> Vec<u8> {
-        request_body.to_vec()
+    fn invoke(&self, _operation: &str, request_body: &AlignedBody, _: Endianness) -> Vec<u8> {
+        request_body.bytes().to_vec()
     }
 }
 
@@ -121,7 +139,7 @@ mod tests {
         let s = EchoServant {
             repo_id: "IDL:demo/Echo:1.0".into(),
         };
-        let out = s.invoke("ping", &[1, 2, 3]);
+        let out = s.invoke("ping", &AlignedBody::new(&[1, 2, 3], 0), Endianness::Big);
         assert_eq!(out, alloc::vec![1, 2, 3]);
     }
 
@@ -154,20 +172,25 @@ mod tests {
             w.write_string("IDL:demo/Echo:1.0");
             w.finish()
         };
-        let Some(ObjectOpReply::Ok(reply)) = s.dispatch_object_operation("_is_a", &body, e) else {
+        let empty = AlignedBody::new(&[], 0);
+        let Some(ObjectOpReply::Ok(reply)) =
+            s.dispatch_object_operation("_is_a", &AlignedBody::new(&body, 0), e)
+        else {
             panic!("expected Ok");
         };
         let mut r = zerodds_wire::Reader::new(&reply, e);
         assert!(r.read_bool().unwrap());
 
-        let Some(ObjectOpReply::Ok(reply)) = s.dispatch_object_operation("_repository_id", &[], e)
+        let Some(ObjectOpReply::Ok(reply)) =
+            s.dispatch_object_operation("_repository_id", &empty, e)
         else {
             panic!("expected Ok");
         };
         let mut r = zerodds_wire::Reader::new(&reply, e);
         assert_eq!(r.read_string().unwrap(), "IDL:demo/Echo:1.0");
 
-        let Some(ObjectOpReply::Ok(reply)) = s.dispatch_object_operation("_non_existent", &[], e)
+        let Some(ObjectOpReply::Ok(reply)) =
+            s.dispatch_object_operation("_non_existent", &empty, e)
         else {
             panic!("expected Ok");
         };
@@ -176,7 +199,7 @@ mod tests {
 
         // Not one of the six — the servant's own `invoke` continues to
         // handle it.
-        assert_eq!(s.dispatch_object_operation("ping", &[], e), None);
+        assert_eq!(s.dispatch_object_operation("ping", &empty, e), None);
     }
 
     #[test]
@@ -199,7 +222,7 @@ mod tests {
             fn primary_interface(&self) -> String {
                 "not-a-repo-id".into()
             }
-            fn invoke(&self, _: &str, _: &[u8]) -> Vec<u8> {
+            fn invoke(&self, _: &str, _: &AlignedBody, _: Endianness) -> Vec<u8> {
                 Vec::new()
             }
         }

@@ -271,8 +271,17 @@ pub fn category_supported(category: CompositionCategory) -> bool {
 /// narrower finding.
 #[must_use]
 pub fn composition_exclusion(composition: &Composition) -> Option<LwccmExclusion> {
-    if !category_supported(composition.category) || composition.home_storage.is_some() {
+    let he = &composition.home_executor;
+    let stored = he.binds_to.is_some()
+        || he.stored_on.is_some()
+        || he.executor.segments.iter().any(|s| s.stored_on.is_some());
+    if !category_supported(composition.category) || stored {
         return Some(LwccmExclusion::Persistence);
+    }
+    // §13.4 (p. 277): "restrict the multiplicity of the association
+    // between ComponentImplDef and SegmentDef to 1:1".
+    if composition.is_segmented() {
+        return Some(LwccmExclusion::Segmentation);
     }
     Some(LwccmExclusion::Cidl)
 }
@@ -281,6 +290,7 @@ pub fn composition_exclusion(composition: &Composition) -> Option<LwccmExclusion
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::cidl::HomeExecutorDef;
     use alloc::string::ToString;
 
     #[test]
@@ -356,8 +366,12 @@ mod tests {
         let entity = Composition {
             name: "OrderImpl".to_string(),
             category: CompositionCategory::Entity,
-            home_executor: "OrderHomeExec".to_string(),
-            home_storage: Some("OrderStorageHome".to_string()),
+            home_executor: HomeExecutorDef {
+                name: "OrderHomeExec".to_string(),
+                binds_to: Some("OrderStorageHome".to_string()),
+                ..HomeExecutorDef::default()
+            },
+            proxy_home: None,
         };
         assert_eq!(
             composition_exclusion(&entity),
@@ -375,15 +389,33 @@ mod tests {
         // the consequence. A session composition is conformant as a
         // component category and still has no place in the profile as a
         // CIDL construct.
-        let session = Composition {
+        let mut session = Composition {
             name: "TraderImpl".to_string(),
             category: CompositionCategory::Session,
-            home_executor: "TraderHomeExec".to_string(),
-            home_storage: None,
+            home_executor: HomeExecutorDef {
+                name: "TraderHomeExec".to_string(),
+                ..HomeExecutorDef::default()
+            },
+            proxy_home: None,
         };
         assert!(category_supported(session.category));
         assert_eq!(composition_exclusion(&session), Some(LwccmExclusion::Cidl));
         assert_eq!(LwccmExclusion::Cidl.spec_section(), "13.10");
+        // A segmented executor is the narrower finding of §13.4.
+        session
+            .home_executor
+            .executor
+            .segments
+            .push(crate::cidl::SegmentDef {
+                name: "S".to_string(),
+                id: 1,
+                stored_on: None,
+                facets: alloc::vec!["f".to_string()],
+            });
+        assert_eq!(
+            composition_exclusion(&session),
+            Some(LwccmExclusion::Segmentation)
+        );
     }
 
     #[test]

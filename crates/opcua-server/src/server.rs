@@ -220,6 +220,10 @@ pub struct Server {
     #[cfg(feature = "crypto")]
     security: Option<ServerSecurity>,
     write_hook: Option<WriteHook>,
+    /// The SecureChannel of the request being handled signs / encrypts.
+    current_channel_signed: bool,
+    current_channel_encrypted: bool,
+    write_commit: Option<WriteCommit>,
 }
 
 /// A hook [`Server`] calls on every `Write` service target, before it ever
@@ -235,6 +239,22 @@ pub struct Server {
 /// this closes).
 pub type WriteHook =
     Box<dyn FnMut(&crate::services::WriteValue, &ClientUserId) -> Option<u32> + Send>;
+
+/// What a `Write` of a Value that the AddressSpace accepted is handed to
+/// before the client is answered ([`Server::set_write_commit`]): the node
+/// written and the AddressSpace with the new value in it. The status it
+/// returns is the status of the write; for one that is not `Good` the
+/// server puts the previous value back, so that the client's answer and
+/// the AddressSpace agree. An owner that carries the value on to another
+/// system (a bridge) reports through it whether that system took it.
+pub type WriteCommit = Box<dyn FnMut(&NodeId, &mut AddressSpace) -> u32 + Send>;
+
+/// The ApplicationUri of this server: its `ApplicationDescription`
+/// (Part 4 §7.2), index 0 of `ServerArray` and index 1 of `NamespaceArray`
+/// (Part 5 §6.3.1: "The ApplicationUri of an OPC UA Server shall be
+/// identical to the URI set in index 0 of the ServerArray and index 1 of
+/// the NamespaceArray").
+pub const APPLICATION_URI: &str = "urn:zerodds:opcua-server";
 
 impl core::fmt::Debug for Server {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -270,6 +290,9 @@ impl Server {
             #[cfg(feature = "crypto")]
             security: None,
             write_hook: None,
+            current_channel_signed: false,
+            current_channel_encrypted: false,
+            write_commit: None,
         }
     }
 
@@ -277,6 +300,12 @@ impl Server {
     /// service target is offered to first.
     pub fn set_write_hook(&mut self, hook: WriteHook) {
         self.write_hook = Some(hook);
+    }
+
+    /// Installs (or replaces) the [`WriteCommit`] every `Write` of a Value
+    /// the AddressSpace accepted is handed to.
+    pub fn set_write_commit(&mut self, commit: WriteCommit) {
+        self.write_commit = Some(commit);
     }
 
     /// Whether a request whose header carries no send time (Part 4 §7.33) is
@@ -304,6 +333,12 @@ impl Server {
     #[cfg(feature = "crypto")]
     pub fn set_security(&mut self, security: ServerSecurity) {
         self.security = Some(security);
+    }
+
+    /// The AddressSpace, to read.
+    #[must_use]
+    pub fn address_space(&self) -> &AddressSpace {
+        &self.address_space
     }
 
     /// Mutable access to the served AddressSpace.
@@ -400,6 +435,11 @@ impl Server {
                     ChunkOutcome::Complete(chunk) => chunk,
                 };
                 let req = ServiceRequest::decode(&chunk.body)?;
+                let (signed, encrypted) = self
+                    .channel_mut(channel_id)
+                    .map_or((false, false), |c| (c.is_signed(), c.is_encrypted()));
+                self.current_channel_signed = signed;
+                self.current_channel_encrypted = encrypted;
                 let resp = if self.verify_request_timestamp && req.request_header().timestamp == 0 {
                     ServiceResponse::ServiceFault(ServiceFault::new(
                         req.request_header().request_handle,
@@ -1065,11 +1105,22 @@ impl Server {
                 })
             }
             ServiceRequest::Call(r) => {
+                let context = crate::address_space::MethodContext {
+                    user: self
+                        .session_of(&token)
+                        .map_or(ClientUserId::Anonymous, |s| s.user.clone()),
+                    signed: self.current_channel_signed,
+                    encrypted: self.current_channel_encrypted,
+                };
                 let results = r
                     .methods_to_call
                     .iter()
-                    .map(
-                        |m| match self.address_space.call(&m.method_id, &m.input_arguments) {
+                    .map(|m| {
+                        match self.address_space.call_mut(
+                            &context,
+                            &m.method_id,
+                            &m.input_arguments,
+                        ) {
                             Some(outcome) => CallMethodResult {
                                 status_code: outcome.status_code,
                                 input_argument_results: m
@@ -1084,8 +1135,8 @@ impl Server {
                                 input_argument_results: Vec::new(),
                                 output_arguments: Vec::new(),
                             },
-                        },
-                    )
+                        }
+                    })
                     .collect();
                 ServiceResponse::Call(CallResponse {
                     response_header: ResponseHeader::new(handle, GOOD),
@@ -1277,6 +1328,35 @@ impl Server {
         {
             return status;
         }
+        if self.write_commit.is_none() || wv.attribute_id != crate::services::ATTRIBUTE_VALUE {
+            return self.write_to_address_space(wv);
+        }
+        // The value before, to put back when the commit refuses the new one.
+        let before = self
+            .address_space
+            .read_attribute(&wv.node_id, wv.attribute_id)
+            .ok();
+        let status = self.write_to_address_space(wv);
+        if status != GOOD {
+            return status;
+        }
+        let Some(commit) = self.write_commit.as_mut() else {
+            return status;
+        };
+        let committed = commit(&wv.node_id, &mut self.address_space);
+        if committed != GOOD
+            && let Some(before) = before
+        {
+            // The node took the value a moment ago, so it takes its
+            // previous one; the status of the write is the commit's.
+            self.address_space.set_value(wv.node_id.clone(), before);
+        }
+        committed
+    }
+
+    /// Writes `wv` into the AddressSpace, whole or as the slice its
+    /// `indexRange` names.
+    fn write_to_address_space(&mut self, wv: &crate::services::WriteValue) -> u32 {
         let range = match NumericRange::parse(&wv.index_range) {
             Ok(r) => r,
             Err(code) => return code,
@@ -1579,7 +1659,7 @@ impl Server {
         EndpointDescription {
             endpoint_url: self.endpoint_url.clone(),
             server: ApplicationDescription {
-                application_uri: String::from("urn:zerodds:opcua-server"),
+                application_uri: String::from(APPLICATION_URI),
                 product_uri: String::from("urn:zerodds"),
                 application_name: LocalizedText {
                     locale: None,

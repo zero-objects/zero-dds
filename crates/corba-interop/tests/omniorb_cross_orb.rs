@@ -23,6 +23,7 @@
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use zerodds_corba_rust::marshaled_body;
 
 use zerodds_corba_interop::runtime::{
     AmiClient, CorbaServer, IiopCorbaConnection, object_reference, object_reference_from_ior,
@@ -32,6 +33,8 @@ use zerodds_wire::{Endianness, Reader, Writer};
 
 #[path = "support/peers.rs"]
 mod peers;
+#[path = "support/relay.rs"]
+mod relay;
 
 include!(concat!(env!("OUT_DIR"), "/corba_gen.rs"));
 use corba_gen::{
@@ -69,6 +72,27 @@ fn corbarust_13_an_omniorb_client_calls_echo_and_bench_on_a_zerodds_server() {
     let bench = server.ior("BENCH_IOR=");
     omniorb_client("omniorb_interop_client", &["echo", &echo]);
     omniorb_client("omniorb_interop_client", &["bench", &bench]);
+}
+
+/// CORBA 3.3 Part 2 §9.7.2: a client "must accept any profile with a major
+/// version of 1, regardless of the minor version number" and sends at most
+/// its own version. Measured: omniORB 4.3.3 calls a ZeroDDS server through
+/// an IIOP 1.4 profile it got as a string (it sends GIOP 1.2, the server
+/// processes GIOP 1.0 to 1.4), and raises `INV_OBJREF` when it unmarshals
+/// a reference with an IIOP 1.4 profile from a reply (`Bench::echo_ref`
+/// returns the reference it was given). This is why
+/// `runtime::DEFAULT_PROFILE_VERSION` is 1.2.
+#[test]
+#[ignore = "needs omniORB 4.3 (integration-bridges-vendor-corba)"]
+fn corba_p2_9_7_2_an_omniorb_client_calls_through_a_1_4_profile_and_refuses_one_in_a_reply() {
+    let mut server = peers::zerodds_server();
+    let echo = peers::with_profile_version(&server.ior("ECHO_IOR="), 4);
+    let bench = peers::with_profile_version(&server.ior("BENCH_IOR="), 4);
+    omniorb_client("omniorb_interop_client", &["echo", &echo]);
+    let mut command = Command::new(peers::peer("omniorb_interop_client"));
+    command.args(["bench", &bench]);
+    let output = peers::run_client_failing(command);
+    assert!(output.contains("INV_OBJREF"), "{output}");
 }
 
 #[test]
@@ -194,22 +218,24 @@ fn corbarust_5_the_ami_client_calls_an_omniorb_server_by_callback_and_by_polling
     client
         .send(
             "add",
-            &two_longs(7, 5),
+            &marshaled_body(&two_longs(7, 5), 0),
             Box::new(move |reply| {
                 let (body, e) = reply.expect("omniORB's add reply");
-                *sink.lock().unwrap() = Some(Reader::new(&body, e).read_i32().unwrap());
+                *sink.lock().unwrap() = Some(body.reader(e).read_i32().unwrap());
             }),
         )
         .unwrap();
     client.perform_all().unwrap();
     assert_eq!(*got.lock().unwrap(), Some(12), "add(7, 5) by callback");
 
-    let id = client.send_poll("divmod", &two_longs(17, 5)).unwrap();
+    let id = client
+        .send_poll("divmod", &marshaled_body(&two_longs(17, 5), 0))
+        .unwrap();
     let (body, e) = client
         .get_reply(id)
         .unwrap()
         .expect("omniORB's divmod reply");
-    let mut r = Reader::new(&body, e);
+    let mut r = body.reader(e);
     assert_eq!(
         (r.read_i32().unwrap(), r.read_i32().unwrap()),
         (3, 2),
@@ -484,4 +510,252 @@ fn corbarust_13_an_omniorb_client_calls_every_operation_of_the_generated_feature
         std::thread::sleep(Duration::from_millis(10));
     }
     acceptor.shutdown();
+}
+
+/// The ZIOP policies of the ZeroDDS side of the ZIOP cells: compression
+/// enabled with zlib at level 6, every body compressed.
+fn ziop_zlib() -> zerodds_corba_giop::ziop::ZiopPolicies {
+    zerodds_corba_giop::ziop::ZiopPolicies {
+        low_value: 0,
+        ..zerodds_corba_giop::ziop::ZiopPolicies::enabled(vec![
+            zerodds_corba_giop::ziop::DEFAULT_COMPRESSOR,
+        ])
+    }
+}
+
+/// A compressible string of `n` characters.
+fn compressible(n: usize) -> String {
+    "ZeroDDS ZIOP ".chars().cycle().take(n).collect()
+}
+
+#[test]
+#[ignore = "needs omniORB 4.3 with omniZIOP (integration-bridges-vendor-corba)"]
+fn corba_p2_12_zerodds_sends_ziop_to_an_omniorb_server_and_reads_its_ziop_replies() {
+    let mut server = omniorb_server("omniorb_ziop_server");
+    let ior = server.ior("ECHO_IOR=");
+    let reference = object_reference_from_ior(&ior).unwrap();
+    // omniORB's reference declares ZIOP with zlib (§12.4).
+    let mut profile =
+        zerodds_corba_iiop::IiopProfileBody::decode_encapsulation(&reference.iiop_profile).unwrap();
+    let tag = profile
+        .components
+        .iter()
+        .find(|c| c.tag == zerodds_corba_giop::messaging::TAG_POLICIES)
+        .expect("omniORB reference without TAG_POLICIES");
+    let declared = zerodds_corba_giop::ziop::PeerZiop::from_policy_values(
+        &zerodds_corba_giop::messaging::decode_policy_values(&tag.component_data).unwrap(),
+    )
+    .unwrap();
+    assert!(declared.compression_enabled, "{declared:?}");
+    assert!(
+        declared
+            .compressor_ids
+            .iter()
+            .any(|c| c.compressor_id == zerodds_corba_giop::ziop::COMPRESSORID_ZLIB),
+        "{declared:?}"
+    );
+    // The calls go through a relay that records the magics.
+    let r = relay::relay(&profile.host, profile.port);
+    profile.host = "127.0.0.1".into();
+    profile.port = r.port;
+    let relayed = zerodds_corba_rust::ObjectReference {
+        type_id: reference.type_id.clone(),
+        iiop_profile: profile.encode_encapsulation(Endianness::Big).unwrap(),
+        policy_overrides: Vec::new(),
+        profiles: Vec::new(),
+    };
+    let client = IiopCorbaConnection::new().with_ziop(
+        ziop_zlib(),
+        Arc::new(zerodds_corba_ccm::compression::CompressionManager::with_default_factories()),
+    );
+    for endianness in [Endianness::Big, Endianness::Little] {
+        let text = compressible(6000);
+        let mut w = Writer::new(endianness);
+        w.write_string(&text);
+        let (reply, e) = client
+            .invoke(
+                &relayed,
+                "ping",
+                endianness,
+                &marshaled_body(&w.finish(), 0),
+            )
+            .unwrap();
+        let mut rd = Reader::new(&reply, e);
+        assert_eq!(rd.read_string().unwrap(), text);
+    }
+    let request = zerodds_corba_giop::MessageType::Request.as_u8();
+    let reply = zerodds_corba_giop::MessageType::Reply.as_u8();
+    assert_eq!(relay::magics_of(&r.to_server, request), vec![*b"ZIOP"; 2]);
+    assert_eq!(relay::magics_of(&r.to_client, reply), vec![*b"ZIOP"; 2]);
+}
+
+#[test]
+#[ignore = "needs omniORB 4.3 with omniZIOP (integration-bridges-vendor-corba)"]
+fn corba_p2_12_an_omniorb_client_sends_ziop_to_a_zerodds_server_and_reads_its_ziop_replies() {
+    let server = CorbaServer::new();
+    server.register(b"ZiopEcho", |op, body, e| {
+        assert_eq!(op, "ping");
+        let mut rd = body.reader(e);
+        let text = rd.read_string().unwrap();
+        let mut w = Writer::new(e);
+        w.write_string(&text);
+        zerodds_corba_rust::SkeletonResult::Reply(w.finish())
+    });
+    server.set_ziop(
+        ziop_zlib(),
+        Arc::new(zerodds_corba_ccm::compression::CompressionManager::with_default_factories()),
+    );
+    let acceptor = server.serve("127.0.0.1:0".parse().unwrap()).unwrap();
+    let r = relay::relay("127.0.0.1", acceptor.listen_addr().port());
+    let reference = server.object_reference("IDL:Echo:1.0", "127.0.0.1", r.port, b"ZiopEcho");
+    let ior = zerodds_corba_interop::runtime::stringify_object_reference(&reference).unwrap();
+    omniorb_client("omniorb_ziop_client", &[&ior]);
+    let request = zerodds_corba_giop::MessageType::Request.as_u8();
+    let reply = zerodds_corba_giop::MessageType::Reply.as_u8();
+    assert_eq!(relay::magics_of(&r.to_server, request), vec![*b"ZIOP"; 2]);
+    assert_eq!(relay::magics_of(&r.to_client, reply), vec![*b"ZIOP"; 2]);
+}
+
+/// Part 2 §7.6.10.4: an omniORB client converts `corbaloc` URLs naming
+/// the Echo object of a ZeroDDS server (IIOP 1.0 by default, 1.2 by
+/// version, a dead address ahead of the live one) and calls it.
+#[test]
+#[ignore = "needs omniORB 4.3 (integration-bridges-vendor-corba)"]
+fn corba_p2_7_6_10_4_an_omniorb_client_reaches_a_zerodds_server_by_corbaloc() {
+    let mut server = peers::zerodds_server();
+    let echo = object_reference_from_ior(&server.ior("ECHO_IOR=")).unwrap();
+    let p = zerodds_corba_iiop::IiopProfileBody::decode_encapsulation(&echo.iiop_profile).unwrap();
+    let key = zerodds_corba_ior::escape_key_string(&p.object_key);
+    let (host, port) = (p.host.as_str(), p.port);
+    for url in [
+        format!("corbaloc::{host}:{port}/{key}"),
+        format!("corbaloc:iiop:1.2@{host}:{port}/{key}"),
+        format!(
+            "corbaloc::{host}:{},:{host}:{port}/{key}",
+            peers::free_port()
+        ),
+    ] {
+        omniorb_client("omniorb_interop_client", &["echo", &url]);
+    }
+}
+
+/// omniNames on a free port of loopback, and its port.
+fn omninames() -> (peers::Server, u16) {
+    let data = peers::scratch("omninames-url");
+    let port = peers::free_port();
+    let mut command = Command::new("sh");
+    command
+        .args([
+            "-c",
+            "exec omniNames \"$@\" 2>&1",
+            "omniNames",
+            "-start",
+            &port.to_string(),
+            "-datadir",
+        ])
+        .arg(&data)
+        .args(["-ORBendPoint", &format!("giop:tcp:127.0.0.1:{port}")]);
+    let mut names = peers::Server::start(command);
+    names.value("Root context is ");
+    (names, port)
+}
+
+/// `nameclt` of omniORB against the naming service on `port`.
+fn nameclt(port: u16, args: &[&str]) {
+    let output = Command::new("nameclt")
+        .args([
+            "-ORBInitRef",
+            &format!("NameService=corbaloc::127.0.0.1:{port}/NameService"),
+        ])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "nameclt {args:?}: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Part 2 §7.6.10.5: ZeroDDS converts `corbaname` URLs through omniNames
+/// — with and without the key `NameService`, with an escaped name, and
+/// `corbaname:rir:` over the ORB's `-ORBInitRef NameService`; the result
+/// is the reference omniORB's `nameclt` bound, every profile of it, and it
+/// answers. A name omniNames does not have is BAD_PARAM minor 10.
+#[test]
+#[ignore = "needs omniORB 4.3 with omniNames and nameclt (integration-bridges-vendor-corba)"]
+fn corba_p2_7_6_10_5_zerodds_resolves_corbaname_urls_through_omninames() {
+    let (_names, port) = omninames();
+    let mut server = peers::zerodds_server();
+    let echo_ior = server.ior("ECHO_IOR=");
+    let echo = object_reference_from_ior(&echo_ior).unwrap();
+    nameclt(port, &["bind_new_context", "zerodds"]);
+    nameclt(port, &["bind", "zerodds/echo.obj", &echo_ior]);
+
+    let mut argv = vec![
+        "-ORBInitRef".to_string(),
+        format!("NameService=corbaloc::127.0.0.1:{port}/NameService"),
+    ];
+    let orb = zerodds_corba_interop::runtime::orb_init(&mut argv, "corbaname-omninames").unwrap();
+    for url in [
+        format!("corbaname::127.0.0.1:{port}#zerodds/echo.obj"),
+        format!("corbaname::127.0.0.1:{port}/NameService#zerodds/echo.obj"),
+        format!("corbaname:iiop:1.2@127.0.0.1:{port}#zerodds%2fecho.obj"),
+        "corbaname:rir:#zerodds/echo.obj".to_string(),
+    ] {
+        let obj = orb.string_to_object(&url).unwrap();
+        assert_eq!(obj.reference(), Some(&echo), "{url}");
+    }
+    let resolved = orb
+        .string_to_object(&format!("corbaname::127.0.0.1:{port}#zerodds/echo.obj"))
+        .unwrap();
+    let ior =
+        zerodds_corba_interop::runtime::stringify_object_reference(resolved.reference().unwrap())
+            .unwrap();
+    peers::zerodds_client("echo", &ior);
+    let e = orb
+        .string_to_object(&format!("corbaname::127.0.0.1:{port}#zerodds/nope.obj"))
+        .unwrap_err();
+    assert_eq!(e.omg_minor(), Some(10));
+    orb.destroy().unwrap();
+}
+
+/// Part 2 §7.6.10: ZeroDDS and omniORB convert the same URLs, or refuse
+/// them with the same BAD_PARAM minor code: an unknown scheme (7), a bad
+/// port or an unclosed IPv6 bracket (8), a `rir` id the ORB does not know
+/// (10), and the IPv6, local host and two-address forms of the clause.
+/// omniORB 4.3.3 deviates from the clause elsewhere (it refuses a
+/// `corbaloc` without `/`, refuses the future protocol `atm:` as a bad
+/// scheme, reports key escapes and `rir` beside another address as minor
+/// 10, accepts port 0 and a bracketed host that is no IPv6 address); those
+/// URLs are not compared.
+#[test]
+#[ignore = "needs omniORB 4.3 (integration-bridges-vendor-corba)"]
+fn corba_p2_7_6_10_minor_codes_agree_with_omniorb() {
+    let urls = [
+        "telnet://host",
+        "no scheme",
+        "corbaloc:iiop:host:99999/key",
+        "corbaloc::[::1/k",
+        "corbaloc:rir:/NoSuchService",
+        "corbaloc::[::1]/k",
+        "corbaloc::[1080::8:800:200C:417A]:88/DefaultEventChannel",
+        "corbaloc::/k",
+        "corbaloc::555xyz.com,:556xyz.com:80/Dev/NameService",
+        "corbaloc:iiop:1.1@555xyz.com/Prod/TradingService",
+    ];
+    let output = omniorb_client("omniorb_url_minor", &urls);
+    let orb = zerodds_corba_ccm::orb_core::Orb::init(
+        zerodds_corba_ccm::orb_core::ThreadingMode::SingleThreaded,
+    );
+    for (url, line) in urls.iter().zip(output.lines()) {
+        let omniorb: Vec<&str> = line.split('\t').collect();
+        assert_eq!(omniorb[0], *url);
+        let zerodds = match orb.string_to_object(url) {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("{}\t{:x}", e.kind.name(), e.minor),
+        };
+        assert_eq!(omniorb[1..].join("\t"), zerodds, "{url}");
+    }
 }

@@ -41,6 +41,8 @@ aws-lc-rs = { version = "1", optional = true }
 x509-parser = "0.18"
 # Base64 for JWT header/payload/signature.
 base64 = { version = "0.22", default-features = false, features = ["std"] }
+# SASLprep (RFC 4013) of the SCRAM user name and password (RFC 5802 §5.1).
+stringprep = "0.1.5"
 
 [dev-dependencies]
 # Self-signed test certs.

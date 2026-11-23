@@ -1756,3 +1756,484 @@ fn idl_7_4_12_4_2_a_const_formal_has_its_type_and_is_an_actual_argument() {
         matches!(args[1], zerodds_ast::TemplateArg::Const(expr) if expr == ast.constant(capacity_id).unwrap().expr)
     );
 }
+
+// -- CORBA 3.3 Part 3 §6.13 point 10 --------------------------------------
+
+/// IDL of every conformance point of CORBA 3.3 Part 3: the component
+/// model of §6 (components, homes with factories, finders and primary
+/// keys, event types and every port kind), the extended ports and
+/// connectors of §7 (IDL3+: `porttype`, `port`, `mirrorport`,
+/// `connector`, template modules and their instances), repository id
+/// declarations, beside plain interfaces, value types and data types.
+const PART3_IDL: &str = r#"
+module Shop {
+  typeprefix Shop "example.org";
+  exception Rejected { string reason; };
+  struct Order { long id; string item; };
+  typedef sequence<Order> Orders;
+  union Choice switch (long) { case 1: long n; default: string s; };
+  valuetype Note { public string text; factory create(in string text); };
+  interface Till { void ring(); };
+  local interface Drawer { void open(); };
+  eventtype Sold { public long id; factory make(in long id); };
+  eventtype Restocked : Sold { public long count; };
+  component Base { attribute long level getraises (Rejected) setraises (Rejected); };
+  component Store : Base supports Till {
+    provides Till till;
+    uses Drawer drawer;
+    uses multiple Till others;
+    emits Sold sold;
+    publishes Restocked restocked;
+    consumes Sold incoming;
+    readonly attribute Orders backlog raises (Rejected);
+  };
+  struct StoreKey { long branch; };
+  home StoreHome manages Store {
+    factory open_store(in string name) raises (Rejected);
+    finder find_store(in string name);
+    attribute string region;
+  };
+  home BranchHome supports Till manages Store primarykey StoreKey {
+    factory open_branch(in long branch);
+  };
+  porttype Feed {
+    provides Till push;
+    uses Drawer pull;
+    attribute long depth;
+  };
+  component Hub {
+    port Feed feed;
+    mirrorport Feed mirror;
+  };
+  connector Link {
+    port Feed source;
+    mirrorport Feed sink;
+    attribute string topic;
+  };
+  connector Relay : Link { attribute long retries; };
+};
+module Buffered<typename T, const long Capacity> {
+  struct Slot { T value; };
+  porttype Writer { provides Shop::Till put; };
+  connector Queue { port Writer in_port; };
+};
+module Buffered<long, 16> LongBuffer;
+typeid Shop::Till "IDL:example.org/Shop/Till:2.0";
+"#;
+
+/// Every dialect the parser has: strict OMG IDL, each vendor flag alone,
+/// all vendors together, ROS 2 and case-sensitive identifiers.
+fn every_dialect() -> Vec<(&'static str, zerodds_idl_parse::Dialect)> {
+    use zerodds_idl_parse::Dialect;
+    let one = |set: fn(&mut Dialect)| {
+        let mut d = Dialect::STRICT;
+        set(&mut d);
+        d
+    };
+    vec![
+        ("strict", Dialect::STRICT),
+        ("rti", one(|d| d.rti = true)),
+        ("cyclone", one(|d| d.cyclone = true)),
+        ("fast_dds", one(|d| d.fast_dds = true)),
+        ("open_dds", one(|d| d.open_dds = true)),
+        ("ros2", one(|d| d.ros2 = true)),
+        ("case_sensitive", one(|d| d.case_sensitive = true)),
+        ("all_vendors", Dialect::ALL_VENDORS),
+    ]
+}
+
+#[test]
+fn corba_p3_6_13_point_10_the_component_grammar_parses_in_every_dialect() {
+    for (label, dialect) in every_dialect() {
+        let parsed = zerodds_idl_parse::parse_with(PART3_IDL, dialect);
+        assert!(!parsed.has_errors(), "{label}: {:?}", parsed.diagnostics());
+        let lowered = lower(&parsed.syntax(), "part3.idl");
+        assert!(
+            lowered.diagnostics.is_empty(),
+            "{label}: lowering reported {:?}",
+            lowered.diagnostics
+        );
+        let ast = lowered.ast;
+        for (path, kind) in [
+            (&["Shop", "Store"][..], InterfaceKind::Component),
+            (&["Shop", "StoreHome"][..], InterfaceKind::Home),
+            (&["Shop", "BranchHome"][..], InterfaceKind::Home),
+            (&["Shop", "Feed"][..], InterfaceKind::PortType),
+            (&["Shop", "Hub"][..], InterfaceKind::Component),
+            (&["Shop", "Link"][..], InterfaceKind::Connector),
+            (&["Shop", "Relay"][..], InterfaceKind::Connector),
+            (&["Shop", "Drawer"][..], InterfaceKind::Local),
+        ] {
+            match ast.find_by_scoped_name(&scoped(path)) {
+                Ok(AnyId::Interface(id, _)) => assert_eq!(
+                    ast.interface(id).expect("interface").kind,
+                    kind,
+                    "{label}: {path:?}"
+                ),
+                other => panic!("{label}: {path:?} is not an interface: {other:?}"),
+            }
+        }
+        // Part 3 rule (6) lets a connector body be empty
+        // (`<connector_export>*`); OMG IDL 4.2 rule (180), the newer text,
+        // asks for at least one export, and lowering follows it.
+        let empty = zerodds_idl_parse::parse_with(
+            "module M { interface Data { }; porttype P { provides Data d; }; \
+             connector Base { port P p; }; connector Empty : Base { }; };",
+            dialect,
+        );
+        assert!(!empty.has_errors(), "{label}: {:?}", empty.diagnostics());
+        let refused = lower(&empty.syntax(), "empty.idl").diagnostics;
+        assert!(
+            refused.len() == 1
+                && refused[0].code == zerodds_idl_parse::DiagnosticCode::UnexpectedToken,
+            "{label}: {refused:?}"
+        );
+    }
+}
+
+// -- CORBA 3.3 Part 3 §7.3.2.1: the type constraints of formal parameters --
+
+/// Lower and resolve `source`: the model, the diagnostics and the
+/// resolve report.
+fn instantiated(
+    source: &str,
+) -> (
+    Ast,
+    Vec<zerodds_idl_parse::Diagnostic>,
+    zerodds_ast::ResolveReport,
+) {
+    let parsed = parse(source);
+    assert!(
+        !parsed.has_errors(),
+        "{source:?}: {:?}",
+        parsed.diagnostics()
+    );
+    let mut lowered = lower(&parsed.syntax(), "test.idl");
+    let report = lowered.ast.resolve_all_by_name().expect("resolve");
+    (lowered.ast, lowered.diagnostics, report)
+}
+
+/// The actual arguments the instance `name` records.
+fn template_args_of(ast: &Ast, name: &str) -> Vec<zerodds_ast::TemplateArg> {
+    ast.module_by_path(&scoped(&[name]))
+        .and_then(|id| ast.module(id).ok())
+        .and_then(|module| module.facets.corba.as_ref())
+        .map(|corba| corba.template_args.clone())
+        .unwrap_or_default()
+}
+
+/// Part 3 §7.3.2.1: "Only the concrete values that comply with their
+/// formal parameter type constraints will be accepted." Each constraint
+/// accepts the kind it names: `typename` any type, `interface` all
+/// interfaces, `valuetype` all valuetypes, `eventtype` all eventtypes,
+/// `struct`, `union`, `enum` and `sequence` all types of that kind, a
+/// `const` a constant of its type, a sequence specification its sequence;
+/// IDL 4.2 §7.4.12.4.1 adds `exception`. A `typedef` is the type it
+/// names.
+#[test]
+fn corba_p3_7_3_2_1_each_constraint_accepts_the_kind_it_names() {
+    let cases: &[(&str, &str, usize)] = &[
+        (
+            "typename, a basic type",
+            "module M<typename T> { struct S { T a; }; };\nmodule M<long> N;",
+            1,
+        ),
+        (
+            "typename, an interface",
+            "interface I {};\nmodule M<typename T> { struct S { T a; }; };\nmodule M<I> N;",
+            1,
+        ),
+        (
+            "interface, an interface",
+            "interface I {};\nmodule M<interface T> { struct S { T a; }; };\nmodule M<I> N;",
+            1,
+        ),
+        (
+            "interface, a local interface",
+            "local interface I {};\nmodule M<interface T> { local interface J : T {}; };\nmodule M<I> N;",
+            1,
+        ),
+        (
+            "interface, an abstract interface",
+            "abstract interface I {};\nmodule M<interface T> { interface J : T {}; };\nmodule M<I> N;",
+            1,
+        ),
+        (
+            "valuetype, a valuetype",
+            "valuetype V { public long x; };\nmodule M<valuetype T> { interface J { T get(); }; };\nmodule M<V> N;",
+            1,
+        ),
+        (
+            "valuetype, an eventtype",
+            "eventtype E { public long x; };\nmodule M<valuetype T> { interface J { T get(); }; };\nmodule M<E> N;",
+            1,
+        ),
+        (
+            "eventtype, an eventtype",
+            "eventtype E { public long x; };\nmodule M<eventtype T> { interface J { T get(); }; };\nmodule M<E> N;",
+            1,
+        ),
+        (
+            "struct, a struct",
+            "struct D { long x; };\nmodule M<struct T> { struct S { T a; }; };\nmodule M<D> N;",
+            1,
+        ),
+        (
+            "struct, a typedef of a struct",
+            "struct D { long x; };\ntypedef D DD;\nmodule M<struct T> { struct S { T a; }; };\nmodule M<DD> N;",
+            1,
+        ),
+        (
+            "union, a union",
+            "union U switch (long) { case 1: long a; };\nmodule M<union T> { struct S { T a; }; };\nmodule M<U> N;",
+            1,
+        ),
+        (
+            "enum, an enum",
+            "enum C { RED, GREEN };\nmodule M<enum T> { struct S { T a; }; };\nmodule M<C> N;",
+            1,
+        ),
+        (
+            "exception, an exception",
+            "exception X { long code; };\nmodule M<exception T> { interface J { void f() raises (T); }; };\nmodule M<X> N;",
+            1,
+        ),
+        (
+            "sequence, a sequence",
+            "typedef sequence<long> LS;\nmodule M<sequence T> { struct S { T a; }; };\nmodule M<LS> N;",
+            1,
+        ),
+        (
+            "a sequence specification, its sequence",
+            "typedef sequence<long> LS;\nmodule M<typename T, sequence<T> TS> { struct S { TS a; }; };\nmodule M<long, LS> N;",
+            2,
+        ),
+        (
+            "const, a constant of its type",
+            "module M<const long K> { const long Size = K; };\nmodule M<8> N;",
+            1,
+        ),
+    ];
+    for (label, source, count) in cases {
+        let (ast, diagnostics, report) = instantiated(source);
+        assert!(diagnostics.is_empty(), "{label}: {diagnostics:?}");
+        assert!(report.broken.is_empty(), "{label}: {:?}", report.broken);
+        assert_eq!(
+            template_args_of(&ast, "N").len(),
+            *count,
+            "{label}: the instance does not record its actuals"
+        );
+    }
+}
+
+/// Part 3 §7.3.2.1: an actual that does not comply with its formal's
+/// constraint is refused with a diagnostic, whichever constraint it
+/// violates; nothing is bound for it.
+#[test]
+fn corba_p3_7_3_2_1_each_constraint_refuses_another_kind() {
+    let cases: &[(&str, &str, &str)] = &[
+        (
+            "struct, a basic type",
+            "module M<struct T> { struct S { T a; }; };\nmodule M<long> N;",
+            "is a basic type, and its formal parameter admits only a struct type",
+        ),
+        (
+            "interface, a struct",
+            "struct D { long x; };\nmodule M<interface T> { struct S { T a; }; };\nmodule M<D> N;",
+            "is a struct type, and its formal parameter admits only an interface",
+        ),
+        (
+            "interface, a component",
+            "component Cp {};\nmodule M<interface T> { struct S { T a; }; };\nmodule M<Cp> N;",
+            "is a `component`",
+        ),
+        (
+            "union, an enum",
+            "enum C { RED };\nmodule M<union T> { struct S { T a; }; };\nmodule M<C> N;",
+            "is an enum type, and its formal parameter admits only a union type",
+        ),
+        (
+            "eventtype, a valuetype",
+            "valuetype V { public long x; };\nmodule M<eventtype T> { interface J { T get(); }; };\nmodule M<V> N;",
+            "is a valuetype, and its formal parameter admits only an eventtype",
+        ),
+        (
+            "valuetype, a struct",
+            "struct D { long x; };\nmodule M<valuetype T> { interface J { T get(); }; };\nmodule M<D> N;",
+            "admits only a valuetype",
+        ),
+        (
+            "enum, a struct",
+            "struct D { long x; };\nmodule M<enum T> { struct S { T a; }; };\nmodule M<D> N;",
+            "admits only an enum type",
+        ),
+        (
+            "exception, a struct",
+            "struct D { long x; };\nmodule M<exception T> { interface J { void f() raises (T); }; };\nmodule M<D> N;",
+            "admits only an exception",
+        ),
+        (
+            "sequence, a struct",
+            "struct D { long x; };\nmodule M<sequence T> { struct S { T a; }; };\nmodule M<D> N;",
+            "admits only a sequence type",
+        ),
+        (
+            "a sequence specification, another sequence",
+            "typedef sequence<short> SS;\nmodule M<typename T, sequence<T> TS> { struct S { TS a; }; };\nmodule M<long, SS> N;",
+            "not the sequence type its formal parameter declares",
+        ),
+        (
+            "typename, an exception",
+            "exception X {};\nmodule M<typename T> { struct S { T a; }; };\nmodule M<X> N;",
+            "is an exception, and its formal parameter admits only a type",
+        ),
+        (
+            "typename, a porttype",
+            "interface I {};\nporttype P { provides I p; };\nmodule M<typename T> { struct S { T a; }; };\nmodule M<P> N;",
+            "is a `porttype`",
+        ),
+        (
+            "typename, a constant expression",
+            "module M<typename T> { struct S { T a; }; };\nmodule M<8> N;",
+            "is a constant expression, and its formal parameter admits only a type",
+        ),
+        (
+            "typename, a named constant",
+            "const long K = 3;\nmodule M<typename T> { struct S { T a; }; };\nmodule M<K> N;",
+            "is a constant, and its formal parameter admits only a type",
+        ),
+    ];
+    for (label, source, fragment) in cases {
+        let (_, diagnostics, _) = instantiated(source);
+        let refused: Vec<&zerodds_idl_parse::Diagnostic> = diagnostics
+            .iter()
+            .filter(|d| d.code == zerodds_idl_parse::DiagnosticCode::TypeMismatch)
+            .collect();
+        assert!(
+            refused.iter().any(|d| d.message.contains(fragment)),
+            "{label}: {diagnostics:?}"
+        );
+    }
+    // A `const` formal takes "any constant of the required primitive
+    // type": a string literal is none, nor is a value outside the type.
+    for source in [
+        "module M<const long K> { const long Size = K; };\nmodule M<\"x\"> N;",
+        "module M<const short K> { const short Size = K; };\nmodule M<70000> N;",
+    ] {
+        let (_, diagnostics, _) = instantiated(source);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == zerodds_idl_parse::DiagnosticCode::TypeMismatch),
+            "{source:?}: {diagnostics:?}"
+        );
+    }
+}
+
+/// An `alias` hands its enclosing template's bindings on (rule (193)),
+/// and the referenced template's constraints hold for them too.
+#[test]
+fn corba_p3_7_3_2_1_an_alias_hands_on_only_what_the_inner_constraint_admits() {
+    let source = "module Inner<struct T> { struct Held { T v; }; };\n\
+                  module Outer<typename U> { alias Inner<U> Nested; };\n\
+                  module Outer<long> Concrete;";
+    let (_, diagnostics, _) = instantiated(source);
+    assert!(
+        diagnostics.iter().any(
+            |d| d.code == zerodds_idl_parse::DiagnosticCode::TypeMismatch
+                && d.message.contains("admits only a struct type")
+        ),
+        "{diagnostics:?}"
+    );
+    let (ast, diagnostics, report) = instantiated(
+        "struct D { long x; };\n\
+         module Inner<struct T> { struct Held { T v; }; };\n\
+         module Outer<typename U> { alias Inner<U> Nested; };\n\
+         module Outer<D> Concrete;",
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(report.broken.is_empty(), "{:?}", report.broken);
+    assert!(type_names(&ast).contains(&"Concrete::Nested::Held".to_string()));
+}
+
+/// An interface as the actual of an `interface` formal: the instance's
+/// member typed by the formal is an object reference to it, and an
+/// interface of the instance derives from it.
+#[test]
+fn corba_p3_7_3_2_1_an_interface_actual_is_bound_in_the_instance() {
+    let (ast, diagnostics, report) = instantiated(
+        "interface I {};\n\
+         module M<interface T> { struct S { T r; }; interface J : T {}; };\n\
+         module M<I> N;",
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(report.broken.is_empty(), "{:?}", report.broken);
+    let i = interface_of(&ast, "I");
+    let s = ast
+        .find_by_scoped_name(&scoped(&["N", "S"]))
+        .ok()
+        .and_then(AnyId::as_type)
+        .expect("N::S");
+    let member = ast.members_of(s).first().copied().expect("r");
+    let target = ast
+        .member(member)
+        .expect("r")
+        .type_
+        .resolved()
+        .expect("the member's type");
+    match &ast.type_(target).expect("the type").kind {
+        zerodds_ast::TypeKind::ObjectRef {
+            interface: Some(reference),
+        } => assert_eq!(reference.resolved(), Some(i)),
+        other => panic!("N::S::r is {other:?}"),
+    }
+    let j = match ast.find_by_scoped_name(&scoped(&["N", "J"])) {
+        Ok(AnyId::Interface(id, _)) => id,
+        other => panic!("N::J is {other:?}"),
+    };
+    let bases: Vec<_> = ast
+        .interface(j)
+        .expect("J")
+        .bases
+        .iter()
+        .filter_map(zerodds_ast_core::Ref::resolved)
+        .collect();
+    assert_eq!(bases, [i]);
+    assert!(matches!(
+        template_args_of(&ast, "N").as_slice(),
+        [zerodds_ast::TemplateArg::Type(reference)] if reference.resolved().is_some()
+    ));
+}
+
+/// An exception as the actual of an `exception` formal: the instance
+/// raises it, and records it as an exception argument.
+#[test]
+fn corba_p3_7_3_2_1_an_exception_actual_is_raised_by_the_instance() {
+    let (ast, diagnostics, report) = instantiated(
+        "exception X { long code; };\n\
+         module M<exception E> { interface J { void f() raises (E); }; };\n\
+         module M<X> N;",
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(report.broken.is_empty(), "{:?}", report.broken);
+    let x = match ast.find_by_scoped_name(&scoped(&["X"])) {
+        Ok(AnyId::Exception(id, _)) => id,
+        other => panic!("X is {other:?}"),
+    };
+    let (_, f) = ast
+        .operations()
+        .find(|(_, op)| op.name == "f")
+        .expect("N::J::f");
+    let raised: Vec<_> = f
+        .raises
+        .iter()
+        .filter_map(zerodds_ast_core::Ref::resolved)
+        .collect();
+    assert_eq!(raised, [x]);
+    assert_eq!(
+        template_args_of(&ast, "N"),
+        [zerodds_ast::TemplateArg::Exception(
+            zerodds_ast_core::Ref::Resolved(x)
+        )]
+    );
+}

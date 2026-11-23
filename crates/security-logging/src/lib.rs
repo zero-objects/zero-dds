@@ -20,6 +20,10 @@
 //!   (DDS-Security 1.2 §10.6): publishes `BuiltinLoggingTypeV2` on
 //!   `DDS:Security:LogTopicV2` through a [`LogTopicPublisher`].
 //! - [`FanOutLoggingPlugin`] — fan-out to multiple backends.
+//! - `time_audit` (feature `time-service`) — [`JsonLinesLoggingPlugin`] as
+//!   the `AuditSink` of the OMG Time Service administration (Time Service
+//!   1.1 App. B.1); [`JsonLinesLoggingPlugin::append_synced`] writes a line
+//!   past the level filter and synchronized to the disk.
 //!
 //! # What this crate provides
 //!
@@ -62,6 +66,8 @@ mod jsonl;
 mod log_topic;
 mod stderr_sink;
 mod syslog;
+#[cfg(feature = "time-service")]
+pub mod time_audit;
 
 pub use control::{LogControl, LogOptionsError};
 pub use fanout::FanOutLoggingPlugin;

@@ -181,6 +181,18 @@ construct admitted only by a flag MUST record which flag admitted it, so
 that a later profile validation against `Profile::Idl42Core` can report
 it.
 
+`Dialect::cidl` is not a vendor flag: it reads OMG CIDL (CORBA 3.3 Part 3
+§8), IDL plus the PSDL declarations of Persistent State Service 2.0 §3.2
+(`abstract storagetype`, `abstract storagehome`, `storagetype`,
+`storagehome`) and the `composition`. The words of Table 8.2 and of
+PSDL's Table 3-2 are keywords under it and identifiers otherwise; the
+parser marks them over the finished token stream, so the lexer and the
+preprocessor stay dialect-free, and the escaped form (`_state`) stays an
+identifier. An identifier that differs from one of them only in case
+collides, as an IDL keyword's does (§7.2.3, §7.2.4). A file whose name
+ends in `.cdl` is read with it (§8.1); `zerodds-idlc` sets it from the
+extension.
+
 ### §3.6 The suffix form of an annotation
 
 DDS-XTypes 1.3 §7.3.1.2.5, Table 24 gives a second production for
@@ -215,6 +227,19 @@ pass.
 
 Every node the lowering creates MUST carry a `SourceFacet` naming the
 file, the byte range and the macro chain.
+
+A CIDL file is lowered by `lower_cidl`, which returns the model, the
+diagnostics and a `zerodds_ast::cidl::CidlModel`. A PSDL declaration
+becomes a local interface of the model, its state members attributes
+and its local operations operations, so that it takes part in scopes,
+inheritance and name resolution like an IDL interface; what PSDL adds
+(the kind, `of`, `implements`, keys, factories, store directives) and the
+compositions are in the `CidlModel`, with every name resolved to its
+scoped name. After the walk the composition rules of CORBA 3.3 Part 3
+§8 run: `Composition::validate` for the rules that read names, the
+lowering for Table 8.6 and the signature rules of §8.15. Each is a
+`CompositionRule` (`IDL0024`), `TypeMismatch` or `UnresolvedName`
+diagnostic at the clause it is about.
 
 ## §5 Completion
 

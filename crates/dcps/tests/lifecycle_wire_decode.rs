@@ -196,6 +196,7 @@ fn xtypes_7_6_8_a_dispose_with_a_foreign_key_hash_disposes_the_instance_of_its_k
         .unwrap()
         .push(zerodds_dcps::runtime::UserSample::Lifecycle {
             key_hash: foreign_hash,
+            key_hash_unavailable: false,
             kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
             key_holder: Some(holder.as_bytes().to_vec()),
             source_timestamp: None,

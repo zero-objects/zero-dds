@@ -14,10 +14,10 @@
 //   the synchronous refusal paths.
 // * wrong password -> CSIv2 rejects -> NO_PERMISSION, immediately,
 //   with a SAS ContextError attached.
-// * no SecurityAttributeService context at all -> CSIv2 has nothing to
-//   evaluate (additive, not required) -> falls through to the ACL,
-//   which denies every unauthenticated caller here -> NO_PERMISSION,
-//   with no SAS context attached (the denial is ACL's, not CSIv2's).
+// * no SecurityAttributeService context and no client certificate ->
+//   CSIv2 requires trust in the client (the IOR's mechanisms say so) ->
+//   NO_PERMISSION, with no SAS context attached (there is no context to
+//   answer).
 //
 // Each test spawns its own real DDS participant. Run with
 // `--test-threads=1`: three such daemons starting at once on one
@@ -284,13 +284,11 @@ fn csiv2_wrong_password_is_no_permission_with_a_context_error() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// No `SecurityAttributeService` context at all: CSIv2 has nothing to
-/// evaluate (additive here, unlike `zerodds-naming-svc`'s required
-/// stance), so the request falls through to the ACL, which denies every
-/// caller without the `gssup:alice` identity — NO_PERMISSION, but no SAS
-/// context attached (this is the ACL's refusal, not CSIv2's).
+/// No `SecurityAttributeService` context and no client certificate:
+/// CSIv2 requires trust in the client, so the request is NO_PERMISSION,
+/// without a SAS context (there is no context to answer).
 #[test]
-fn missing_credentials_falls_through_to_the_acl_which_denies() {
+fn corbabridge_7_2_missing_credentials_are_refused_by_csiv2() {
     let (_guard, port, dir) = spawn_daemon();
     let mut s = connect(port);
     let reply = call(&mut s, 1, ServiceContextList::default());
@@ -298,7 +296,7 @@ fn missing_credentials_falls_through_to_the_acl_which_denies() {
     assert_eq!(system_exception_name(&reply.body), "NO_PERMISSION");
     assert!(
         !has_sas_context(&reply),
-        "no SAS context: this is an ACL denial, not a CSIv2 one"
+        "no SAS context: the request brought none"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

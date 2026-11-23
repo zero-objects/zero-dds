@@ -401,7 +401,7 @@ case sensitive."
 
 **Tests:** `crates/xml/src/qos_parser.rs::tests::parse_bool_strict_accepts_only_lowercase`, `crates/xml/src/types.rs::tests::bool_invalid`, `crates/xml/tests/qos_profile.rs::t14_boolean_case_sensitive_strict`
 
-**Status:** done — `True` and `TRUE` are rejected. `crates/xml/src/types.rs::parse_bool`, exported by `lib.rs`, takes only `1`, `true`, `0` and `false`. Commit `167d1009ef8`.
+**Status:** done — `True` and `TRUE` are rejected. `crates/xml/src/types.rs::parse_bool`, exported by `lib.rs`, takes only `1`, `true`, `0` and `false`. Commit `167d1009ef8`. In the four Boolean fields of a QoS profile the further forms of DDS4CCM 1.1 §7.4.2.1 Table 7.1 (`yes`, `no`, `BOOLEAN_TRUE`, `BOOLEAN_FALSE`, every case of the eight) are vendor forms: without `VendorForms::Accept` they end with `XmlError::VendorForm`, with it they are read and reported (`crates/xml/tests/normative_forms.rs::vendor_forms_are_refused_unless_accepted`, rows `boolean_*`).
 
 ### §7.1.4 Table 7.1 boolean: no as `0` or `false`
 
@@ -413,7 +413,7 @@ sensitive."
 **Tests:** `crates/xml/src/qos_parser.rs::tests::parse_bool_strict_accepts_only_lowercase`,
 `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`
 
-**Status:** done — `False` and `FALSE` are rejected.
+**Status:** done — `False` and `FALSE` are rejected (as a vendor form of DDS4CCM 1.1 Table 7.1, see above).
 
 ### §7.1.4 Table 7.1 enum: DCPS IDL literal as a string
 
@@ -467,12 +467,15 @@ QoS Policies in the DCPS IDL".
 
 **Spec:** §7.1.4, Table 7.1, p. 16 — "or 0x80000000 to 0x7fffffff".
 
-**Repo:** `crates/xml/src/types.rs::parse_long`
+**Repo:** `crates/xml/src/types.rs::parse_long`, `crates/xml/src/qos_parser.rs::table_7_1_hex`
 
-**Tests:** `crates/xml/src/types.rs::tests::long_hex`
+**Tests:** `crates/xml/src/types.rs::tests::long_hex`, `crates/xml/tests/spec_items.rs::numbers_outside_the_schemas_types_are_refused`
 
 **Status:** done — `0x80000000` to `0xFFFFFFFF` are read as two's complement
-(`0x80000000` = -2147483648); `0x0` to `0x7FFFFFFF` as positive values.
+(`0x80000000` = -2147483648); `0x0` to `0x7FFFFFFF` as positive values. In
+the numeric fields of the QoS policies the schema type has decimal digits
+only (item §7.2.2.1 simpleTypes); there the hexadecimal number is a vendor
+form, which the default reading refuses with `XmlError::VendorForm`.
 
 ### §7.1.4 Table 7.1 long: LENGTH_UNLIMITED
 
@@ -776,7 +779,7 @@ or as the name of the constant."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/src/types.rs::tests::duration_accepts_the_named_constants`
 
-**Status:** done — the four simpleTypes are in the OMG's XSD (`nonNegativeInteger_UNLIMITED`, `positiveInteger_UNLIMITED`, `nonNegativeInteger_Duration_SEC`, `nonNegativeInteger_Duration_NSEC`) and used by the policies' elements. The reader takes a number or a name; `max_samples`, `max_instances` and `max_samples_per_instance` are read as `positiveInteger_UNLIMITED` (1 or more, or the name; commit `7fbca3f5f05`); the names the pattern does not list (`DURATION_ZERO_*`, `TIME_INVALID_*`) it accepts because the sentence of §7.2.2 allows "the name of the constant". Commits `b04504693c4`, `5563ccdbefe`.
+**Status:** done — the four simpleTypes are in the OMG's XSD (`nonNegativeInteger_UNLIMITED`, `positiveInteger_UNLIMITED`, `nonNegativeInteger_Duration_SEC`, `nonNegativeInteger_Duration_NSEC`) and used by the policies' elements. The reader takes a number or a name; `max_samples`, `max_instances` and `max_samples_per_instance` are read as `positiveInteger_UNLIMITED` (1 or more, or the name; commit `7fbca3f5f05`); the names the pattern does not list (`DURATION_ZERO_*`, `TIME_INVALID_*`) it accepts because the sentence of §7.2.2 allows "the name of the constant". Commits `b04504693c4`, `5563ccdbefe`. These four simpleTypes, `xs:positiveInteger` (`history/depth`, `durability_service/history_depth`, `resource_limits/initial_samples` and `initial_instances`) and `xs:nonNegativeInteger` (`ownership_strength/value`, `transport_priority/value`) have decimal digits only; Table 7.1 of §7.1.4 gives a Long the hexadecimal form and the negative half as well (so does Table 7.1 of DDS4CCM 1.1 §7.4.2.1). Text and schema disagree; the default reading follows the schema: a hexadecimal number in any of these fields and a negative value or `LENGTH_UNLIMITED` in an `xs:nonNegativeInteger` field are vendor forms, without `VendorForms::Accept` `XmlError::VendorForm`; the message names Table 7.1 and the schema type (`crates/xml/tests/spec_items.rs::numbers_outside_the_schemas_types_are_refused`, `crates/xml/tests/dds4ccm_profiles.rs::dds4ccm_7_4_2_1_table_7_1_the_default_reading_names_the_form`).
 
 ### §7.2.2 LENGTH_UNLIMITED = -1
 

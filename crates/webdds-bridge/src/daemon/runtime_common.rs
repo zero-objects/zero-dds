@@ -17,13 +17,14 @@
 
 #![allow(clippy::print_stderr)]
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::sync::atomic::AtomicBool;
+use std::thread::JoinHandle;
 
 use zerodds_monitor::Registry;
+use zerodds_monitor::admin::AdminEndpoints;
+use zerodds_monitor::json::push_escaped as push_json_str;
 
 use super::config::DaemonConfig;
 
@@ -105,23 +106,6 @@ impl CatalogSnapshot {
     }
 }
 
-fn push_json_str(out: &mut String, s: &str) {
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                use std::fmt::Write as _;
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-}
-
 /// Mini HTTP worker serving `/catalog`, `/healthz` and `/metrics` on
 /// the admin port. Returns the join handle and the bound address (the
 /// caller asked for port `0`, this is where it actually landed).
@@ -132,98 +116,26 @@ pub fn serve_admin_endpoints(
     healthy: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<(JoinHandle<()>, SocketAddr)> {
-    let listener = TcpListener::bind(addr)?;
-    let bound = listener.local_addr()?;
-    listener.set_nonblocking(true)?;
-
-    let h = thread::Builder::new()
-        .name("zerodds-webdds-admin".into())
-        .spawn(move || {
-            loop {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match listener.accept() {
-                    Ok((mut s, _peer)) => {
-                        let _ = s.set_nonblocking(false);
-                        let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-                        let _ = s.set_write_timeout(Some(Duration::from_secs(2)));
-                        admin_handle(&mut s, &catalog, &registry, &healthy);
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(100));
-                    }
-                }
-            }
-        })?;
-    Ok((h, bound))
-}
-
-fn admin_handle(
-    stream: &mut std::net::TcpStream,
-    catalog: &CatalogSnapshot,
-    registry: &Registry,
-    healthy: &AtomicBool,
-) {
-    use std::io::{Read, Write};
-    let mut buf = [0u8; 1024];
-    let n = match stream.read(&mut buf) {
-        Ok(n) => n,
-        Err(_) => return,
-    };
-    let req = String::from_utf8_lossy(&buf[..n]);
-    let first_line = req.lines().next().unwrap_or("");
-    let path = first_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .split('?')
-        .next()
-        .unwrap_or("/");
-
-    let (status, ctype, body) = match path {
-        "/catalog" => ("200 OK", "application/json", catalog.render_json()),
-        "/healthz" => {
-            if healthy.load(Ordering::SeqCst) {
-                ("200 OK", "text/plain; charset=utf-8", "OK\n".to_string())
-            } else {
-                (
-                    "503 Service Unavailable",
-                    "text/plain; charset=utf-8",
-                    "DOWN\n".to_string(),
-                )
-            }
-        }
-        "/metrics" => (
-            "200 OK",
-            "text/plain; version=0.0.4; charset=utf-8",
-            registry.render_prometheus(),
-        ),
-        "/" => (
-            "200 OK",
-            "text/plain; charset=utf-8",
-            format!("{SERVICE_NAME}\nendpoints: /catalog /healthz /metrics\n"),
-        ),
-        _ => ("404 Not Found", "text/plain; charset=utf-8", String::new()),
-    };
-
-    let resp = format!(
-        "HTTP/1.1 {status}\r\n\
-         Content-Type: {ctype}\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(resp.as_bytes());
+    zerodds_monitor::admin::serve_admin_endpoints(
+        addr,
+        "zerodds-webdds-admin",
+        AdminEndpoints {
+            service_name: SERVICE_NAME.into(),
+            metrics_path: "/metrics".into(),
+            catalog: move || catalog.render_json(),
+            registry,
+            healthy,
+        },
+        stop,
+    )
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     #[test]
     fn catalog_render_json_contains_config_fields() {

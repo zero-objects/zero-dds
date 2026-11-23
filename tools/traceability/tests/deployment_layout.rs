@@ -17,7 +17,16 @@
 use std::path::{Path, PathBuf};
 
 /// The seven programs of §1.1, in the spelling the packaging files use.
-const BRIDGES: [&str; 7] = ["ws", "mqtt", "coap", "amqp", "grpc", "corba", "ros2-shim"];
+const BRIDGES: [&str; 8] = [
+    "ws",
+    "mqtt",
+    "coap",
+    "amqp",
+    "grpc",
+    "corba",
+    "opcua",
+    "ros2-shim",
+];
 
 /// The six of them that run as a service. `zerodds-ros2-shim` is the RMW's
 /// diagnostics CLI: rcl loads the RMW into each node, nothing runs beside it.

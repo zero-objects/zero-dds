@@ -90,6 +90,7 @@ pub mod blockwise;
 pub mod bridge;
 pub mod caching_proxy;
 pub mod codec;
+pub mod content_format;
 pub mod core_link;
 #[cfg(feature = "daemon")]
 pub mod daemon;

@@ -1,0 +1,3789 @@
+{
+ "setup": "tests/perf/speed/speed.py",
+ "commits": {
+  "shm": [
+   "248c262b0b06d020a5b8902fc39113d58d0d9fb1"
+  ]
+ },
+ "reference": "main",
+ "host": "linux-test-host",
+ "kernel": "7.0.14-28",
+ "cpu_model": "AMD Ryzen Threadripper PRO 3955WX 16-Cores",
+ "cpus": 16,
+ "governor": "performance",
+ "transport": "shm",
+ "vendors": {
+  "cyclone": "11.0.1",
+  "fastdds": "3.6.1.0",
+  "rti": "7.7.0",
+  "opendds": "3.34.0",
+  "opensplice": "6.9.210323OSS",
+  "hdds": "1.1.5",
+  "dust": "0.16.0"
+ },
+ "measured_from": "2026-11-13T07:43:48+00:00",
+ "measured_to": "2026-11-13T08:06:12+00:00",
+ "write_secs": 5,
+ "lat_samples": 10000,
+ "sizes": [
+  64,
+  1024,
+  65536
+ ],
+ "max_samples": {
+  "64": 100000,
+  "1024": 100000,
+  "65536": 2048
+ },
+ "busy_processes": [],
+ "load1_range": [
+  3.11,
+  15.49
+ ],
+ "notes": [
+  "The speed setup with --transport shm (tests/perf/speed/speed.py): each stack's self pair over its shared-memory route, measured on the Linux test host in one exclusive board window on 2026-11-13; ZeroDDS three runs, the vendors two.",
+  "A cell's udp_out_datagrams (the UDP datagrams the host sent while it ran) says which way the samples went: 0 to 128 per cell for these four rows, with up to three million samples written.",
+  "Cyclone DDS 11.0.1 through its PSMX plugin for iceoryx (libpsmx_iox, iox-roudi running); Fast DDS 3.6.1 with its shared-memory transport and data sharing at its default; RTI Connext 7.7.0 with the shmem builtin transport; ZeroDDS with transport.same_host_shm.",
+  "Not in this file: OpenDDS 3.34.0 (its shmem configuration delivered 0.13 % of the samples), HDDS 1.1.5 (sent every sample as a UDP datagram with shm_require), OpenSplice 6.9 (single-process configurations only), Dust DDS 0.16.0 (no shared-memory transport); OPEN-ITEMS 52."
+ ],
+ "values": [
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    15.339,
+    15.659
+   ],
+   "median": 15.499,
+   "min": 15.339,
+   "max": 15.659,
+   "spread_pct": 2.06
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    24.607,
+    28.224
+   ],
+   "median": 26.4155,
+   "min": 24.607,
+   "max": 28.224,
+   "spread_pct": 13.69
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    39.004,
+    41.308
+   ],
+   "median": 40.156,
+   "min": 39.004,
+   "max": 41.308,
+   "spread_pct": 5.74
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    18.415,
+    20.399
+   ],
+   "median": 19.407,
+   "min": 18.415,
+   "max": 20.399,
+   "spread_pct": 10.22
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    26.721,
+    32.952
+   ],
+   "median": 29.8365,
+   "min": 26.721,
+   "max": 32.952,
+   "spread_pct": 20.88
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    38.884,
+    60.444
+   ],
+   "median": 49.664,
+   "min": 38.884,
+   "max": 60.444,
+   "spread_pct": 43.41
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    25.138,
+    23.604
+   ],
+   "median": 24.371,
+   "min": 23.604,
+   "max": 25.138,
+   "spread_pct": 6.29
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    38.764,
+    41.508
+   ],
+   "median": 40.136,
+   "min": 38.764,
+   "max": 41.508,
+   "spread_pct": 6.84
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    60.654,
+    52.629
+   ],
+   "median": 56.6415,
+   "min": 52.629,
+   "max": 60.654,
+   "spread_pct": 14.17
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    402.612,
+    497.55
+   ],
+   "median": 450.081,
+   "min": 402.612,
+   "max": 497.55,
+   "spread_pct": 21.09
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    25.767,
+    31.843
+   ],
+   "median": 28.805,
+   "min": 25.767,
+   "max": 31.843,
+   "spread_pct": 21.09
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.4828,
+    2.0094
+   ],
+   "median": 2.2461,
+   "min": 2.0094,
+   "max": 2.4828,
+   "spread_pct": 21.08
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.4841,
+    2.0172
+   ],
+   "median": 2.2507,
+   "min": 2.0172,
+   "max": 2.4841,
+   "spread_pct": 20.75
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    464.829,
+    361.408
+   ],
+   "median": 413.1185,
+   "min": 361.408,
+   "max": 464.829,
+   "spread_pct": 25.03
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    475.985,
+    370.082
+   ],
+   "median": 423.0335,
+   "min": 370.082,
+   "max": 475.985,
+   "spread_pct": 25.03
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.1509,
+    2.7655
+   ],
+   "median": 2.4582,
+   "min": 2.1509,
+   "max": 2.7655,
+   "spread_pct": 25.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.1526,
+    2.7706
+   ],
+   "median": 2.4616,
+   "min": 2.1526,
+   "max": 2.7706,
+   "spread_pct": 25.11
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    198.643,
+    239.593
+   ],
+   "median": 219.118,
+   "min": 198.643,
+   "max": 239.593,
+   "spread_pct": 18.69
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    13018.28,
+    15701.939
+   ],
+   "median": 14360.1095,
+   "min": 13018.28,
+   "max": 15701.939,
+   "spread_pct": 18.69
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    5.0283,
+    4.1717
+   ],
+   "median": 4.6,
+   "min": 4.1717,
+   "max": 5.0283,
+   "spread_pct": 18.62
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    4.8335,
+    4.1419
+   ],
+   "median": 4.4877,
+   "min": 4.1419,
+   "max": 4.8335,
+   "spread_pct": 15.41
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    495.953,
+    491.48
+   ],
+   "median": 493.7165,
+   "min": 491.48,
+   "max": 495.953,
+   "spread_pct": 0.91
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    31.741,
+    31.455
+   ],
+   "median": 31.598,
+   "min": 31.455,
+   "max": 31.741,
+   "spread_pct": 0.91
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.0149,
+    2.0333
+   ],
+   "median": 2.0241,
+   "min": 2.0149,
+   "max": 2.0333,
+   "spread_pct": 0.91
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.0197,
+    2.0368
+   ],
+   "median": 2.0282,
+   "min": 2.0197,
+   "max": 2.0368,
+   "spread_pct": 0.84
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    514.924,
+    406.667
+   ],
+   "median": 460.7955,
+   "min": 406.667,
+   "max": 514.924,
+   "spread_pct": 23.49
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    527.282,
+    416.427
+   ],
+   "median": 471.8545,
+   "min": 416.427,
+   "max": 527.282,
+   "spread_pct": 23.49
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    1.9411,
+    2.4591
+   ],
+   "median": 2.2001,
+   "min": 1.9411,
+   "max": 2.4591,
+   "spread_pct": 23.54
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    1.9454,
+    2.462
+   ],
+   "median": 2.2037,
+   "min": 1.9454,
+   "max": 2.462,
+   "spread_pct": 23.44
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    111.358,
+    234.386
+   ],
+   "median": 172.872,
+   "min": 111.358,
+   "max": 234.386,
+   "spread_pct": 71.17
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    7297.951,
+    15360.728
+   ],
+   "median": 11329.3395,
+   "min": 7297.951,
+   "max": 15360.728,
+   "spread_pct": 71.17
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    8.9768,
+    4.2616
+   ],
+   "median": 6.6192,
+   "min": 4.2616,
+   "max": 8.9768,
+   "spread_pct": 71.24
+  },
+  {
+   "row": "cyclone",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    7.9671,
+    4.2164
+   ],
+   "median": 6.0918,
+   "min": 4.2164,
+   "max": 7.9671,
+   "spread_pct": 61.57
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    189.549,
+    186.423
+   ],
+   "median": 187.986,
+   "min": 186.423,
+   "max": 189.549,
+   "spread_pct": 1.66
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    678.995,
+    797.5
+   ],
+   "median": 738.2475,
+   "min": 678.995,
+   "max": 797.5,
+   "spread_pct": 16.05
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    902.018,
+    1088.94
+   ],
+   "median": 995.479,
+   "min": 902.018,
+   "max": 1088.94,
+   "spread_pct": 18.78
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    219.306,
+    190.741
+   ],
+   "median": 205.0235,
+   "min": 190.741,
+   "max": 219.306,
+   "spread_pct": 13.93
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    767.884,
+    688.604
+   ],
+   "median": 728.244,
+   "min": 688.604,
+   "max": 767.884,
+   "spread_pct": 10.89
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    967.061,
+    890.637
+   ],
+   "median": 928.849,
+   "min": 890.637,
+   "max": 967.061,
+   "spread_pct": 8.23
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    55.225,
+    55.285
+   ],
+   "median": 55.255,
+   "min": 55.225,
+   "max": 55.285,
+   "spread_pct": 0.11
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    192.094,
+    181.563
+   ],
+   "median": 186.8285,
+   "min": 181.563,
+   "max": 192.094,
+   "spread_pct": 5.64
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    244.012,
+    247.419
+   ],
+   "median": 245.7155,
+   "min": 244.012,
+   "max": 247.419,
+   "spread_pct": 1.39
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    74.906,
+    74.281
+   ],
+   "median": 74.5935,
+   "min": 74.281,
+   "max": 74.906,
+   "spread_pct": 0.84
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    4.794,
+    4.754
+   ],
+   "median": 4.774,
+   "min": 4.754,
+   "max": 4.794,
+   "spread_pct": 0.84
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    13.3385,
+    13.4534
+   ],
+   "median": 13.3959,
+   "min": 13.3385,
+   "max": 13.4534,
+   "spread_pct": 0.86
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    5.8638,
+    5.7171
+   ],
+   "median": 5.7904,
+   "min": 5.7171,
+   "max": 5.8638,
+   "spread_pct": 2.53
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    74.244,
+    71.313
+   ],
+   "median": 72.7785,
+   "min": 71.313,
+   "max": 74.244,
+   "spread_pct": 4.03
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    76.026,
+    73.024
+   ],
+   "median": 74.525,
+   "min": 73.024,
+   "max": 76.026,
+   "spread_pct": 4.03
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    99.9658
+   ],
+   "median": 99.9829,
+   "min": 99.9658,
+   "max": 100.0,
+   "spread_pct": 0.03
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    13.4566,
+    14.0221
+   ],
+   "median": 13.7393,
+   "min": 13.4566,
+   "max": 14.0221,
+   "spread_pct": 4.12
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    5.7217,
+    6.4228
+   ],
+   "median": 6.0723,
+   "min": 5.7217,
+   "max": 6.4228,
+   "spread_pct": 11.55
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    68.2,
+    85.88
+   ],
+   "median": 77.04,
+   "min": 68.2,
+   "max": 85.88,
+   "spread_pct": 22.95
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    4469.584,
+    5628.241
+   ],
+   "median": 5048.9125,
+   "min": 4469.584,
+   "max": 5628.241,
+   "spread_pct": 22.95
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    99.6543,
+    99.8742
+   ],
+   "median": 99.7643,
+   "min": 99.6543,
+   "max": 99.8742,
+   "spread_pct": 0.22
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    14.6589,
+    11.6418
+   ],
+   "median": 13.1503,
+   "min": 11.6418,
+   "max": 14.6589,
+   "spread_pct": 22.94
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    11.1818,
+    9.1286
+   ],
+   "median": 10.1552,
+   "min": 9.1286,
+   "max": 11.1818,
+   "spread_pct": 20.22
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    6.979,
+    7.519
+   ],
+   "median": 7.249,
+   "min": 6.979,
+   "max": 7.519,
+   "spread_pct": 7.45
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0.447,
+    0.481
+   ],
+   "median": 0.464,
+   "min": 0.447,
+   "max": 0.481,
+   "spread_pct": 7.33
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    147.0792,
+    136.2722
+   ],
+   "median": 141.6757,
+   "min": 136.2722,
+   "max": 147.0792,
+   "spread_pct": 7.63
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    7.1296,
+    6.4098
+   ],
+   "median": 6.7697,
+   "min": 6.4098,
+   "max": 7.1296,
+   "spread_pct": 10.63
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    3.924,
+    3.933
+   ],
+   "median": 3.9285,
+   "min": 3.924,
+   "max": 3.933,
+   "spread_pct": 0.23
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    4.018,
+    4.027
+   ],
+   "median": 4.0225,
+   "min": 4.018,
+   "max": 4.027,
+   "spread_pct": 0.22
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    259.5454,
+    258.7492
+   ],
+   "median": 259.1473,
+   "min": 258.7492,
+   "max": 259.5454,
+   "spread_pct": 0.31
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    10.6437,
+    9.9316
+   ],
+   "median": 10.2876,
+   "min": 9.9316,
+   "max": 10.6437,
+   "spread_pct": 6.92
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    10.14,
+    12.278
+   ],
+   "median": 11.209,
+   "min": 10.14,
+   "max": 12.278,
+   "spread_pct": 19.07
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    664.537,
+    804.623
+   ],
+   "median": 734.58,
+   "min": 664.537,
+   "max": 804.623,
+   "spread_pct": 19.07
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    35.0021,
+    36.2158
+   ],
+   "median": 35.609,
+   "min": 35.0021,
+   "max": 36.2158,
+   "spread_pct": 3.41
+  },
+  {
+   "row": "fastdds",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    31.4959,
+    28.9381
+   ],
+   "median": 30.217,
+   "min": 28.9381,
+   "max": 31.4959,
+   "spread_pct": 8.46
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    23.464,
+    25.528
+   ],
+   "median": 24.496,
+   "min": 23.464,
+   "max": 25.528,
+   "spread_pct": 8.43
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    48.171,
+    46.949
+   ],
+   "median": 47.56,
+   "min": 46.949,
+   "max": 48.171,
+   "spread_pct": 2.57
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    98.647,
+    114.878
+   ],
+   "median": 106.7625,
+   "min": 98.647,
+   "max": 114.878,
+   "spread_pct": 15.2
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    29.375,
+    29.206
+   ],
+   "median": 29.2905,
+   "min": 29.206,
+   "max": 29.375,
+   "spread_pct": 0.58
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    49.033,
+    61.666
+   ],
+   "median": 55.3495,
+   "min": 49.033,
+   "max": 61.666,
+   "spread_pct": 22.82
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    148.031,
+    193.026
+   ],
+   "median": 170.5285,
+   "min": 148.031,
+   "max": 193.026,
+   "spread_pct": 26.39
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    0,
+    0
+   ],
+   "median": 0.0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    91.073,
+    103.997
+   ],
+   "median": 97.535,
+   "min": 91.073,
+   "max": 103.997,
+   "spread_pct": 13.25
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    218.594,
+    217.572
+   ],
+   "median": 218.083,
+   "min": 217.572,
+   "max": 218.594,
+   "spread_pct": 0.47
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    820.904,
+    639.651
+   ],
+   "median": 730.2775,
+   "min": 639.651,
+   "max": 820.904,
+   "spread_pct": 24.82
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2,
+    1
+   ],
+   "median": 1.5,
+   "min": 1,
+   "max": 2,
+   "spread_pct": 66.67
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    255.747,
+    252.769
+   ],
+   "median": 254.258,
+   "min": 252.769,
+   "max": 255.747,
+   "spread_pct": 1.17
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    16.368,
+    16.177
+   ],
+   "median": 16.2725,
+   "min": 16.177,
+   "max": 16.368,
+   "spread_pct": 1.17
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    99.8145,
+    99.9843
+   ],
+   "median": 99.8994,
+   "min": 99.8145,
+   "max": 99.9843,
+   "spread_pct": 0.17
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    3.907,
+    3.9567
+   ],
+   "median": 3.9318,
+   "min": 3.907,
+   "max": 3.9567,
+   "spread_pct": 1.26
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    3.2324,
+    3.2504
+   ],
+   "median": 3.2414,
+   "min": 3.2324,
+   "max": 3.2504,
+   "spread_pct": 0.56
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    251.983,
+    240.628
+   ],
+   "median": 246.3055,
+   "min": 240.628,
+   "max": 251.983,
+   "spread_pct": 4.61
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    258.03,
+    246.403
+   ],
+   "median": 252.2165,
+   "min": 246.403,
+   "max": 258.03,
+   "spread_pct": 4.61
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    99.6283,
+    99.9148
+   ],
+   "median": 99.7715,
+   "min": 99.6283,
+   "max": 99.9148,
+   "spread_pct": 0.29
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    3.9695,
+    4.1576
+   ],
+   "median": 4.0636,
+   "min": 3.9695,
+   "max": 4.1576,
+   "spread_pct": 4.63
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    3.2897,
+    3.3468
+   ],
+   "median": 3.3182,
+   "min": 3.2897,
+   "max": 3.3468,
+   "spread_pct": 1.72
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    97.055,
+    125.509
+   ],
+   "median": 111.282,
+   "min": 97.055,
+   "max": 125.509,
+   "spread_pct": 25.57
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    6360.61,
+    8225.387
+   ],
+   "median": 7292.9985,
+   "min": 6360.61,
+   "max": 8225.387,
+   "spread_pct": 25.57
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    91.493,
+    99.876
+   ],
+   "median": 95.6845,
+   "min": 91.493,
+   "max": 99.876,
+   "spread_pct": 8.76
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    10.33,
+    7.9708
+   ],
+   "median": 9.1504,
+   "min": 7.9708,
+   "max": 10.33,
+   "spread_pct": 25.78
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    10.4709,
+    7.7635
+   ],
+   "median": 9.1172,
+   "min": 7.7635,
+   "max": 10.4709,
+   "spread_pct": 29.7
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    46.554,
+    24.471
+   ],
+   "median": 35.5125,
+   "min": 24.471,
+   "max": 46.554,
+   "spread_pct": 62.18
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    2.979,
+    1.566
+   ],
+   "median": 2.2725,
+   "min": 1.566,
+   "max": 2.979,
+   "spread_pct": 62.18
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    67.8784,
+    38.1048
+   ],
+   "median": 52.9916,
+   "min": 38.1048,
+   "max": 67.8784,
+   "spread_pct": 56.19
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    4.9561,
+    5.3623
+   ],
+   "median": 5.1592,
+   "min": 4.9561,
+   "max": 5.3623,
+   "spread_pct": 7.87
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    5.7066,
+    11.0518
+   ],
+   "median": 8.3792,
+   "min": 5.7066,
+   "max": 11.0518,
+   "spread_pct": 63.79
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    35.7,
+    20.914
+   ],
+   "median": 28.307,
+   "min": 20.914,
+   "max": 35.7,
+   "spread_pct": 52.23
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    36.557,
+    21.416
+   ],
+   "median": 28.9865,
+   "min": 21.416,
+   "max": 36.557,
+   "spread_pct": 52.23
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    50.5992,
+    16.7189
+   ],
+   "median": 33.6591,
+   "min": 16.7189,
+   "max": 50.5992,
+   "spread_pct": 100.66
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    6.7417,
+    7.605
+   ],
+   "median": 7.1734,
+   "min": 6.7417,
+   "max": 7.605,
+   "spread_pct": 12.03
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    9.571,
+    29.4944
+   ],
+   "median": 19.5327,
+   "min": 9.571,
+   "max": 29.4944,
+   "spread_pct": 102.0
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    4.48,
+    4.88
+   ],
+   "median": 4.68,
+   "min": 4.48,
+   "max": 4.88,
+   "spread_pct": 8.55
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    293.614,
+    319.833
+   ],
+   "median": 306.7235,
+   "min": 293.614,
+   "max": 319.833,
+   "spread_pct": 8.55
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    94.0918,
+    94.6493
+   ],
+   "median": 94.3706,
+   "min": 94.0918,
+   "max": 94.6493,
+   "spread_pct": 0.59
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    20.048,
+    20.7836
+   ],
+   "median": 20.4158,
+   "min": 20.048,
+   "max": 20.7836,
+   "spread_pct": 3.6
+  },
+  {
+   "row": "rti",
+   "label": "vendors",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 2,
+   "statuses": {
+    "ok": 2
+   },
+   "runs": [
+    15.9854,
+    14.6769
+   ],
+   "median": 15.3312,
+   "min": 14.6769,
+   "max": 15.9854,
+   "spread_pct": 8.53
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    23.154,
+    24.997,
+    23.745
+   ],
+   "median": 23.745,
+   "min": 23.154,
+   "max": 24.997,
+   "spread_pct": 7.76
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    38.433,
+    41.969,
+    40.467
+   ],
+   "median": 40.467,
+   "min": 38.433,
+   "max": 41.969,
+   "spread_pct": 8.74
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    52.239,
+    68.89,
+    58.34
+   ],
+   "median": 58.34,
+   "min": 52.239,
+   "max": 68.89,
+   "spread_pct": 28.54
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 64,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    0,
+    0,
+    0
+   ],
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    24.897,
+    24.386,
+    24.166
+   ],
+   "median": 24.386,
+   "min": 24.166,
+   "max": 24.897,
+   "spread_pct": 3.0
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    41.378,
+    43.323,
+    38.342
+   ],
+   "median": 41.378,
+   "min": 38.342,
+   "max": 43.323,
+   "spread_pct": 12.04
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    63.38,
+    79.892,
+    76.164
+   ],
+   "median": 76.164,
+   "min": 63.38,
+   "max": 79.892,
+   "spread_pct": 21.68
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    0,
+    0,
+    0
+   ],
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p50_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    130.748,
+    128.093,
+    131.278
+   ],
+   "median": 130.748,
+   "min": 128.093,
+   "max": 131.278,
+   "spread_pct": 2.44
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p99_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    100325.0,
+    100307.0,
+    100345.0
+   ],
+   "median": 100325.0,
+   "min": 100307.0,
+   "max": 100345.0,
+   "spread_pct": 0.04
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "p999_us",
+   "unit": "us",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    100404.0,
+    100374.0,
+    100399.0
+   ],
+   "median": 100399.0,
+   "min": 100374.0,
+   "max": 100404.0,
+   "spread_pct": 0.03
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "lat",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "lost",
+   "unit": "samples",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    0,
+    0,
+    0
+   ],
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "spread_pct": null
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    598.631,
+    639.294,
+    559.871
+   ],
+   "median": 598.631,
+   "min": 559.871,
+   "max": 639.294,
+   "spread_pct": 13.27
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    38.312,
+    40.915,
+    35.832
+   ],
+   "median": 38.312,
+   "min": 35.832,
+   "max": 40.915,
+   "spread_pct": 13.27
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    100.0,
+    100.0,
+    99.9358
+   ],
+   "median": 100.0,
+   "min": 99.9358,
+   "max": 100.0,
+   "spread_pct": 0.06
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    1.6752,
+    1.5685,
+    1.7914
+   ],
+   "median": 1.6752,
+   "min": 1.5685,
+   "max": 1.7914,
+   "spread_pct": 13.31
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    3.0211,
+    3.0112,
+    3.2702
+   ],
+   "median": 3.0211,
+   "min": 3.0112,
+   "max": 3.2702,
+   "spread_pct": 8.57
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    544.523,
+    530.223,
+    580.131
+   ],
+   "median": 544.523,
+   "min": 530.223,
+   "max": 580.131,
+   "spread_pct": 9.17
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    557.592,
+    542.948,
+    594.055
+   ],
+   "median": 557.592,
+   "min": 542.948,
+   "max": 594.055,
+   "spread_pct": 9.17
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    99.976,
+    99.9971,
+    99.9918
+   ],
+   "median": 99.9918,
+   "min": 99.976,
+   "max": 99.9971,
+   "spread_pct": 0.02
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    1.8385,
+    1.8933,
+    1.7303
+   ],
+   "median": 1.8385,
+   "min": 1.7303,
+   "max": 1.8933,
+   "spread_pct": 8.87
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    3.2847,
+    3.521,
+    3.2483
+   ],
+   "median": 3.2847,
+   "min": 3.2483,
+   "max": 3.521,
+   "spread_pct": 8.3
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    12.415,
+    12.367,
+    11.845
+   ],
+   "median": 12.367,
+   "min": 11.845,
+   "max": 12.415,
+   "spread_pct": 4.61
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    813.603,
+    810.479,
+    776.295
+   ],
+   "median": 810.479,
+   "min": 776.295,
+   "max": 813.603,
+   "spread_pct": 4.6
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    99.9485,
+    99.9935,
+    99.9916
+   ],
+   "median": 99.9916,
+   "min": 99.9485,
+   "max": 99.9935,
+   "spread_pct": 0.05
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    80.8181,
+    81.1732,
+    84.6753
+   ],
+   "median": 81.1732,
+   "min": 80.8181,
+   "max": 84.6753,
+   "spread_pct": 4.75
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "be",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    28.0269,
+    28.9309,
+    41.7165
+   ],
+   "median": 28.9309,
+   "min": 28.0269,
+   "max": 41.7165,
+   "spread_pct": 47.32
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    188.448,
+    171.723,
+    190.101
+   ],
+   "median": 188.448,
+   "min": 171.723,
+   "max": 190.101,
+   "spread_pct": 9.75
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    12.061,
+    10.99,
+    12.166
+   ],
+   "median": 12.061,
+   "min": 10.99,
+   "max": 12.166,
+   "spread_pct": 9.75
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    100.0,
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    2.6775,
+    2.8374,
+    2.5435
+   ],
+   "median": 2.6775,
+   "min": 2.5435,
+   "max": 2.8374,
+   "spread_pct": 10.98
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 64,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    3.6873,
+    3.8388,
+    3.6649
+   ],
+   "median": 3.6873,
+   "min": 3.6649,
+   "max": 3.8388,
+   "spread_pct": 4.72
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    16.951,
+    16.982,
+    16.965
+   ],
+   "median": 16.965,
+   "min": 16.951,
+   "max": 16.982,
+   "spread_pct": 0.18
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    17.358,
+    17.39,
+    17.373
+   ],
+   "median": 17.373,
+   "min": 17.358,
+   "max": 17.39,
+   "spread_pct": 0.18
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    100.0,
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    4.1505,
+    3.9977,
+    4.0871
+   ],
+   "median": 4.0871,
+   "min": 3.9977,
+   "max": 4.1505,
+   "spread_pct": 3.74
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 1024,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    7.1712,
+    6.9351,
+    7.1379
+   ],
+   "median": 7.1379,
+   "min": 6.9351,
+   "max": 7.1712,
+   "spread_pct": 3.31
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "ks_per_s",
+   "unit": "kS/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    0.262,
+    0.283,
+    0.262
+   ],
+   "median": 0.262,
+   "min": 0.262,
+   "max": 0.283,
+   "spread_pct": 8.02
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "mb_per_s",
+   "unit": "MB/s",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    17.2,
+    18.515,
+    17.194
+   ],
+   "median": 17.2,
+   "min": 17.194,
+   "max": 18.515,
+   "spread_pct": 7.68
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "received_pct",
+   "unit": "%",
+   "better": "higher",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    100.0,
+    100.0,
+    100.0
+   ],
+   "median": 100.0,
+   "min": 100.0,
+   "max": 100.0,
+   "spread_pct": 0.0
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "pub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    153.0209,
+    154.9881,
+    168.9067
+   ],
+   "median": 154.9881,
+   "min": 153.0209,
+   "max": 168.9067,
+   "spread_pct": 10.25
+  },
+  {
+   "row": "zerodds",
+   "label": "main",
+   "kind": "tput",
+   "qos": "rel",
+   "size": 65536,
+   "metric": "sub_cpu_us",
+   "unit": "us/sample",
+   "better": "lower",
+   "n": 3,
+   "statuses": {
+    "ok": 3
+   },
+   "runs": [
+    197.9509,
+    220.3736,
+    206.1284
+   ],
+   "median": 206.1284,
+   "min": 197.9509,
+   "max": 220.3736,
+   "spread_pct": 10.88
+  }
+ ]
+}

@@ -116,7 +116,10 @@ void apply_transport_env() {
     if (!t) t = "UDPv4";
     std::string xml;
     if (std::string(t) == "SHM") {
-        xml = R"(<CycloneDDS><Domain><SharedMemory><Enable>true</Enable></SharedMemory></Domain></CycloneDDS>)";
+        // Cyclone DDS 11 carries samples in shared memory through a PSMX
+        // plugin (iceoryx: libpsmx_iox, with iox-roudi running); the
+        // <SharedMemory> element of 0.10 is no longer in its configuration.
+        xml = R"(<CycloneDDS><Domain><General><Interfaces><PubSubMessageExchange name="iox" library="psmx_iox"/></Interfaces></General></Domain></CycloneDDS>)";
     } else if (std::string(t) == "UDPv6") {
         xml = R"(<CycloneDDS><Domain><General><Transport>udp6</Transport></General></Domain></CycloneDDS>)";
     } else if (std::string(t) == "TCPv4") {

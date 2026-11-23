@@ -74,9 +74,9 @@ mod parser;
 mod path;
 mod topic_expression;
 
-pub use ast::{Expr, Value};
+pub use ast::{CmpOp, Expr, Operand, Value};
 pub use evaluator::{EvalError, RowAccess};
-pub use parser::{ParseError, parse};
+pub use parser::{Grammar, ParseError, parse, parse_with};
 pub use path::{PathStep, split_path};
 pub use topic_expression::{
     QueryExpression, Select, SubjectField, TopicExpression, parse_query_expression,

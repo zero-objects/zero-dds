@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// The interface of the MIOP cells (CORBA 3.3 Part 2 §11): a group of
+// GreetingService objects receives oneway requests over multicast.
+interface GreetingService {
+    oneway void greeting_oneway(in string str);
+};

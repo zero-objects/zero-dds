@@ -69,6 +69,9 @@ members = [
     # `idl-parse` + `idl-lower` — step 2 of 0b2e8df9f6b:docs/rebuild-plan.md.
     "crates/ccm",
     "crates/ami4ccm",
+    # DDS for Lightweight CCM: the connector fragments of the DDS-DCPS ports
+    # over the DCPS entities.
+    "crates/dds4ccm",
     "endpoints/codegen",
     # The AMQP 1.0 endpoint stack and its daemon. The endpoint's only tie to
     # the frontend is the Annex-A round-trip test, which parses the
@@ -198,6 +201,8 @@ members = [
     # that kept them out was the `daemon` feature's path dep on
     # `crates/dcps`, which is a member since fd6f31225.
     "crates/coap-bridge",
+    # DTLS 1.2 on OpenSSL for coaps:// (RFC 7252 §9, RFC 7250).
+    "crates/dtls-openssl",
     "crates/mqtt-bridge",
     "crates/websocket-bridge",
     # The gRPC bridge and the two crates it sits on. None of the three
@@ -401,7 +406,9 @@ exclude = [
     # are driven by their own scripts on a host that has the harness. Naming
     # them keeps the regeneration command in the open item (`git ls-files
     # '*/Cargo.toml'` with neither list naming a directory) quiet.
+    "crates/grpc-bridge/tests/interop/tonic",
     "crates/iceoryx-cyclone/proofs/dcps-interop",
+    "crates/transport-shm/bare-metal/two-cores",
     "examples/demos/dds-warehouse/orchestrator",
     "examples/demos/dds-warehouse/stations/01-catalog-dlrl/code",
     "examples/demos/dds-warehouse/stations/02-time-sync/code",
@@ -575,10 +582,10 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 # proptest for property tests on state machines (TS-1 foundation
 # hardening). Dev-dependency only. Pure-Rust + minimal deps.
 proptest = { version = "1.4", default-features = false, features = ["std"] }
-# flate2 for the CORBA 3.3 §18 compression codec (Zlib/Gzip/Deflate).
-# Pure-Rust backend, no C build, std-only. Used in
-# `crates/corba-ccm/src/orb_extensions.rs::CompressionAlgorithm` as a
-# real wire codec; replaces the former stub.
+# flate2 for the built-in compressors of the CORBA 3.3 Part 1 §18
+# Compression module (zlib and gzip). Pure-Rust backend, no C build,
+# std-only. Used in `crates/corba-ccm/src/compression.rs`
+# (`FlateCompressorFactory`).
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # === Dep-hygiene sprint 1 (2026-05-18) ===
 # Centralized common deps with an identical spec across multiple crates.
@@ -676,7 +683,10 @@ debug = 2
 # 22 to 75 s): the weekly job `interop-results` (ci/weekly-old-suite.yml)
 # runs them in this profile, a test build (debug assertions, overflow checks)
 # compiled with optimizations, 4.0 to 16.4 s each on the CI runner host (pipelines 8854 and
-# 8877).
+# 8877). The Autobahn|TestSuite jobs of the WebSocket library
+# (`integration-bridges-vendor-autobahn*`, ci/integration_scenarios.py) build
+# crates/websocket-bridge/tests/autobahn_e2e.rs in it: its cases 12 and 13 are
+# a thousand DEFLATE messages each.
 [profile.corpus]
 inherits = "test"
 opt-level = 2

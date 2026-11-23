@@ -7,6 +7,7 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- BREAKING: `set_tcp_kinds_fast_dds` is removed; the process-wide switch made every TCP locator of a process go out with 4 and 8. `LocatorKind` has the variants `Tcpv4Kind4` (4) and `Tcpv6Kind8` (8) beside `Tcpv4` (`0x01F0_0004`) and `Tcpv6` (`0x01F0_0005`); `from_i32` keeps the kind a locator was written with (it read 4 and 8 as `Tcpv4` and `Tcpv6`), and `as_i32` is the value of the variant. `TcpKindSet`, `LocatorKind::tcp_v4`, `tcp_v6`, `is_tcp_v4`, `is_tcp_v6`, `tcp_kind_set`, `transport_kind` and `Locator::with_tcp_kind_set` choose and query the set per locator (`zerodds-tcp-transport-1.0` §1.1).
 - `Payload` holds either an `Arc<[u8]>` or a shared `Vec<u8>` (`Payload::of_shared_vec`, `From<Vec<u8>>` takes the vector over without copying it); `Payload::sub` narrows a payload, `shares_buffer_with` and `is_range_of` replace `buffer()`, which is gone with `range()`. `DataSubmessage::read_body_in` and `datagram::decode_datagram_payload_into` decode a datagram that is a `Payload`; the `Arc<[u8]>` functions stay.
 - `ReliableWriter` counts the length of a sample's in-line QoS from its parts (the writer's QoS, the change's own parameters, the coherent-set and group parameters, the key hash) instead of building the list and measuring it. For the largest list, which the fragment size is made of, that copied every parameter of the writer's QoS for each sample written: 53 % of the writing thread's allocations. Linux test host, 1 kB samples, BEST_EFFORT: 4.1 instead of 14.1 allocations per sample, 707–712 instead of 596–610 kS/s written. Test: `the_counted_inline_qos_length_is_the_built_lists`.
 - `ReceiverState::unicast_reply_locator_list` and `multicast_reply_locator_list` are a `ReplyLocators` (derefs to `[Locator]`) instead of a `Vec<Locator>`: one locator in place, an INFO_REPLY's list shared. The receiver state is cloned with every submessage it walks; the two `Vec`s were 58 % of the receive thread's allocations (Linux test host, 1 kB samples, BEST_EFFORT, 600 kS/s), now 20.2 instead of 59.7 million in 15 s. CPU time per sample is unchanged within the measurement's spread (1.23–1.33 µs).
@@ -22,6 +23,8 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 
 ### Added
+
+- `HeaderExtension::with_message_length`: a message with a HeaderExtension that states its length, inserted behind the RTPS header or set in the extension the message has, the checksum computed anew (DDSI-RTPS 2.5 §8.3.3; what a stream transport needs, `zerodds-tcp-transport-1.0` §2.5).
 
 - `dialect::WriterGroupInfoWidth` (`RtpsBehaviour::writer_group_info_width`,
   `with_writer_group_info_width`): `Sixteen` writes `PID_WRITER_GROUP_INFO`

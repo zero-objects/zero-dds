@@ -17,7 +17,7 @@ ros2-shim.
 `crates/mqtt-bridge/src/bin/zerodds-mqtt-bridged.rs`,
 `crates/coap-bridge/src/bin/zerodds-coap-bridged.rs`,
 `crates/amqp-endpoint/src/bin/zerodds-amqp-bridged.rs`,
-`crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs`,
+`crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs` mit `crates/grpc-bridge/src/bridge_daemon/`,
 `crates/corba-dds-bridge/src/bin/zerodds-corba-bridged.rs`,
 `crates/rmw-zerodds-shim/src/bin/zerodds-ros2-shim.rs`.
 

@@ -311,11 +311,11 @@ fn serve_connection(
         let Ok((msg, endianness, req_version)) = conn.read_message_full() else {
             return;
         };
-        let reply_version = if req_version.is_at_least(1, 3) {
-            Version::V1_2
-        } else {
-            req_version
-        };
+        // The reply goes in the version of the request, 1.0 to 1.4 (the
+        // reader refuses a higher one; 1.3 and 1.4 take the 1.2 formats,
+        // Part 2 §9.4): a reference for an IPv6 host is an IIOP 1.4
+        // profile (§7.9 Table 7.2), and its client speaks GIOP 1.4.
+        let reply_version = req_version;
         let req = match msg {
             Message::LocateRequest(lr) => {
                 let status = match &lr.target {
@@ -376,7 +376,17 @@ fn serve_connection(
             }
         }
 
-        let dispatched = servant.dispatch(&object_key, &req.operation, &req.body, endianness);
+        // CORBA 3.3 Part 2 §9.4.2.1: CDR aligns the arguments from the
+        // message start; the servant reads the body at its offset.
+        let dispatched = match req.body_offset(req_version, endianness) {
+            Ok(offset) => servant.dispatch(
+                &object_key,
+                &req.operation,
+                &zerodds_corba_giop::AlignedBody::new(&req.body, offset),
+                endianness,
+            ),
+            Err(_) => ServantReply::Marshal,
+        };
         if !respond {
             continue;
         }

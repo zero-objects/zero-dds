@@ -12,7 +12,9 @@ ExecStart=/usr/bin/zerodds-ws-bridged --config /etc/zerodds/ws-bridged.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
 KillSignal=SIGTERM
-TimeoutStopSec=30
+# Above the drain of shutdown_drain_ms (30 s) plus 2 s for the connections
+# (zerodds-ws-bridge-1.0 §9.2).
+TimeoutStopSec=40
 Restart=on-failure
 RestartSec=5
 User=zerodds

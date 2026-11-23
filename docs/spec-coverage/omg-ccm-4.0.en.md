@@ -120,7 +120,7 @@ Configurator, generic-op skeletons) + ORB singleton in
 `crates/corba-ccm/src/lifecycle.rs::tests::facet_lifetime_rejects_use_after_destroy`,
 `::receptacle_multiplex_allows_multiple_connects`;
 `crates/corba-ccm/src/orb_core.rs::tests::orb_init_yields_running`,
-`::orb_destroy_transitions_to_shutdown`;
+`::corba_p1_8_2_5_5_a_destroyed_orb_raises_object_not_exist`;
 `crates/corba-ccm/src/lwccm.rs::tests::only_session_and_service_components_are_supported`,
 `::the_lightweight_filter_reports_a_component_it_would_empty`.
 
@@ -165,12 +165,12 @@ XML D&C in `crates/corba-ccm-lib/` + `corba-dnc/`; ORB stub layer
 
 **Tests:** `crates/ccm/tests/equivalent_idl.rs::a_component_with_supports_inherits_ccmobject_and_the_supported_ones`,
 `::a_keyed_home_yields_the_four_operations_and_inherits_nothing`;
-`crates/corba-ccm/src/cidl.rs::tests::all_four_composition_categories_distinct`,
-`::entity_composition_with_storage_valid`;
+`crates/ast/src/cidl.rs::tests::corba_p3_8_5_1_session_and_service_forbid_binding_primary_key_finders_and_segments`,
+`::corba_p3_8_5_1_entity_requires_a_primary_key`;
 `crates/corba-ccm/src/lifecycle.rs::tests::configurator_registry_register_and_lookup`;
 `crates/corba-dnc/src/xml.rs::tests::parses_minimal_plan`,
 `::validation_fails_on_unknown_impl_reference`;
-`crates/corba-ccm/src/orb_core.rs::tests::orb_set_get_policy_round_trip`.
+`crates/corba-ccm/src/policy_management.rs::tests::corba_p1_8_9_3_set_and_add_override_at_a_scope`.
 
 **Status:** done — IDL+CIDL+D&C model + ORB stub + container
 lifecycle covered.
@@ -243,14 +243,14 @@ component-specific extensions on the ORB singleton:
 `interceptor_registry()` (cross-ref `corba-3.3.md` §16),
 `with_messaging_policy(MessagingPolicy)` /
 `messaging_policies()` (cross-ref §17),
-`with_compression(CompressionAlgorithm)` /
-`compression()` (cross-ref §18). Plus default lifecycle/
+`with_compression(CompressorIdLevel)` /
+`compression()` / `compression_manager()` (cross-ref §18). Plus default lifecycle/
 threading modes/policy domain manager. Conformance marker
 `corba-ccm::conformance::CCM_ORB_VENDOR_STUB`.
 
 **Tests:** `crates/corba-ccm/src/orb_core.rs::tests::{orb_vendor_config_interceptor_registry,
 orb_vendor_config_compression_and_messaging_policies}` +
-`crates/corba-ccm/src/orb_core.rs::tests::orb_set_get_policy_round_trip` + cross-ref
+`crates/corba-ccm/src/policy_management.rs::tests::corba_p1_8_9_3_set_and_add_override_at_a_scope` + cross-ref
 conformance-marker tests.
 
 **Status:** done — ORB-vendor configuration surface for all three
@@ -1113,12 +1113,11 @@ persistence, executor, segment, facet, feature delegation, etc.
 **Repo:** `crates/corba-ccm/src/cidl.rs` (CIDL lexer + grammar AST +
 composition/home/segment/storage/executor definitions).
 
-**Tests:** `crates/corba-ccm/src/cidl.rs::tests::{
-session_composition_does_not_require_storage,
-entity_composition_without_storage_invalid,
-entity_composition_with_storage_valid, storage_type_can_inherit,
-home_executor_optional_component_binding,
-all_four_composition_categories_distinct}`.
+**Tests:** `crates/ast/src/cidl.rs::tests::{corba_p3_8_5_1_session_and_service_forbid_binding_primary_key_finders_and_segments,
+corba_p3_8_5_1_process_forbids_a_primary_key, corba_p3_8_5_1_entity_requires_a_primary_key,
+corba_p3_8_15_storage_home_delegation_targets_one_operation_each_way,
+corba_p3_8_16_only_factories_delegate_to_the_executor}`;
+`crates/corba-ccm/src/cidl.rs::tests::corba_p3_8_5_1_an_entity_composition_needs_a_keyed_home_at_run_time`.
 
 **Status:** done
 

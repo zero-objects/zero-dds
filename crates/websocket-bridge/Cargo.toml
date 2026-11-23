@@ -28,7 +28,11 @@ default = ["std", "daemon", "ring-backend"]
 # default list without ring-backend>,aws-lc`; with both, aws-lc is used.
 ring-backend = ["zerodds-bridge-security?/ring-backend"]
 aws-lc = ["zerodds-bridge-security?/aws-lc"]
-std = ["alloc"]
+# `std` brings the operating system's random source for the masking keys
+# (RFC 6455 §5.3, `getrandom`) and DEFLATE for permessage-deflate (RFC 7692,
+# `flate2` over `zlib-rs`, which sets the LZ77 window of
+# `server_max_window_bits` and `client_max_window_bits`).
+std = ["alloc", "dep:getrandom", "dep:flate2"]
 alloc = []
 # `daemon` enables the `zerodds-ws-bridged` binary + DDS pump module.
 # Pulls in `std` and a path dep on `zerodds-dcps`. Production
@@ -43,6 +47,7 @@ daemon = [
     "dep:zerodds-types",
     "dep:zerodds-monitor",
     "dep:zerodds-observability-otlp",
+    "dep:zerodds-foundation",
     "dep:signal-hook",
     "dep:zerodds-bridge-security",
     "dep:rustls",
@@ -62,6 +67,12 @@ cross-vendor-tests = ["daemon"]
 rt = ["daemon", "zerodds-dcps/rt"]
 
 [dependencies]
+# The masking keys of a client (RFC 6455 §5.3, §10.3): the operating
+# system's random source.
+getrandom = { version = "0.2", optional = true }
+# permessage-deflate (RFC 7692): raw DEFLATE with a window of 9 to 15 bits,
+# which the `rust_backend` of the workspace does not set.
+flate2 = { workspace = true, optional = true, features = ["zlib-rs"] }
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
 zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
@@ -76,6 +87,8 @@ zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, de
 # `no_std` library layer stays intact.
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
+# The span model the OTLP exporter takes (§8.3: `tracing::Span`).
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", optional = true, default-features = false, features = ["std"] }
 signal-hook = { workspace = true, optional = true }
 # Bridge security substrate (bridge spec §7.1 TLS, §7.2 auth modes,
 # §7.3 topic ACL). Per-crate dep, no workspace edit.
@@ -107,12 +120,22 @@ ring = { workspace = true }
 base64 = { workspace = true, features = ["std"] }
 # DDS domains of the daemon tests, leased from the host's share of the band.
 zerodds-test-domains = { path = "../test-domains" }
+# The XML type representation of `/schema/<slug>.xml` (spec §5.2) read back
+# by the DDS-XML front end, to compare its type with the one of the IDL.
+zerodds-xml-compose = { path = "../xml-compose" }
 
 # The contract with zerodds-dcps (internal/release/rc8-test-suite.md, "Crate
 # tier"): this crate reaches zerodds-dcps only with `daemon`.
 [[test]]
 name = "contract_dcps"
 path = "tests/contract_dcps.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-rtps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-rtps only with `daemon`.
+[[test]]
+name = "contract_rtps"
+path = "tests/contract_rtps.rs"
 required-features = ["daemon"]
 
 # The contract with zerodds-types (internal/release/rc8-test-suite.md, "Crate

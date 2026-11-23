@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ZeroDDS-TCP-Transport — RTPS-over-TCP per DDSI-RTPS 2.5 §9.4+§9.5, Length-Prefix-Framing + ZeroDDS-eigener Handshake + Cyclone-Compat-Mode."
+description = "ZeroDDS TCP transport: RTPS messages over TCP with a length-prefix framing, the ZeroDDS handshake and a connection pool (ZeroDDS TCP Transport 1.0)."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-transport-tcp"
@@ -28,6 +28,16 @@ alloc = []
 [dependencies]
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
 zerodds-transport = { version = "1.0.0-rc.7", path = "../transport" }
+
+# TCP keepalive on accepted connections (§3.6), and on Unix `recv` with
+# flags on a borrowed stream.
+socket2 = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+# The look at an outgoing connection before each write, in one syscall:
+# `recv` through socket2 with the flags `MSG_PEEK` and `MSG_DONTWAIT`
+# from libc.
+libc = { workspace = true }
 
 [dev-dependencies]
 zerodds-rtps = { path = "../rtps" }

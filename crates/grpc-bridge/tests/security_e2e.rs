@@ -31,7 +31,10 @@ use zerodds_grpc_bridge::bridge_security::{
     AclEntry, AclOp, AuthMode, AuthSubject, SecurityConfig, authenticate_grpc, authorize,
     authorize_grpc, build_ctx,
 };
-use zerodds_grpc_bridge::daemon_runtime::build_grpc_tls_config;
+use zerodds_grpc_bridge::daemon_runtime::{
+    GrpcTlsOptions, TlsMinVersion, build_grpc_tls_config, build_grpc_tls_config_opts,
+    provider_cipher_suites, select_tls_suites,
+};
 
 fn write_temp(name: &str, body: &[u8]) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -164,4 +167,76 @@ fn auth_none_yields_anonymous_for_open_grpc_endpoint() {
     let auth = AuthMode::None;
     let s = authenticate_grpc(&auth, &[], None).unwrap();
     assert_eq!(s.name, "anonymous");
+}
+
+/// §7.1 `grpc.tls.cipher_suites`: the suites of the server configuration
+/// are the named ones, in the order named; the server's order decides.
+#[test]
+fn grpcbridge_7_1_the_configured_cipher_suites_are_the_ones_in_the_config() {
+    let (cert, key) = gen_self_signed();
+    let c = write_temp("suites_cert.pem", cert.as_bytes());
+    let k = write_temp("suites_key.pem", key.as_bytes());
+    let opts = GrpcTlsOptions {
+        min_version: TlsMinVersion::Tls12,
+        cipher_suites: vec![
+            "TLS_CHACHA20_POLY1305_SHA256".into(),
+            "TLS_AES_128_GCM_SHA256".into(),
+        ],
+    };
+    let cfg = build_grpc_tls_config_opts(c, k, None, false, &opts).expect("build");
+    let names: Vec<String> = cfg
+        .crypto_provider()
+        .cipher_suites
+        .iter()
+        .map(|s| format!("{:?}", s.suite()))
+        .collect();
+    assert_eq!(
+        names,
+        ["TLS13_CHACHA20_POLY1305_SHA256", "TLS13_AES_128_GCM_SHA256"]
+    );
+    assert!(cfg.ignore_client_order);
+    // Without a list: every suite of the provider, the client's order.
+    let (cert, key) = gen_self_signed();
+    let c = write_temp("suites_cert2.pem", cert.as_bytes());
+    let k = write_temp("suites_key2.pem", key.as_bytes());
+    let all = build_grpc_tls_config_opts(c, k, None, false, &GrpcTlsOptions::default()).unwrap();
+    assert_eq!(
+        all.crypto_provider().cipher_suites.len(),
+        provider_cipher_suites().len()
+    );
+    assert!(!all.ignore_client_order);
+    assert!(provider_cipher_suites().contains(&"TLS_AES_128_GCM_SHA256".to_string()));
+    assert!(
+        provider_cipher_suites().contains(&"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256".to_string())
+    );
+}
+
+/// §7.1: a suite the build does not offer, a suite named twice, and
+/// `min_version: 1.3` with TLS 1.2 suites only are refused.
+#[test]
+fn grpcbridge_7_1_an_unknown_suite_does_not_load() {
+    let opts = |min, names: &[&str]| GrpcTlsOptions {
+        min_version: min,
+        cipher_suites: names.iter().map(|n| n.to_string()).collect(),
+    };
+    let e =
+        select_tls_suites(&opts(TlsMinVersion::Tls12, &["TLS_RSA_WITH_RC4_128_SHA"])).unwrap_err();
+    assert!(e.contains("not offered"), "{e}");
+    let e = select_tls_suites(&opts(
+        TlsMinVersion::Tls12,
+        &["TLS_AES_128_GCM_SHA256", "TLS13_AES_128_GCM_SHA256"],
+    ))
+    .unwrap_err();
+    assert!(e.contains("twice"), "{e}");
+    let e = select_tls_suites(&opts(
+        TlsMinVersion::Tls13,
+        &["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"],
+    ))
+    .unwrap_err();
+    assert!(e.contains("1.3"), "{e}");
+    let (_, versions) = select_tls_suites(&opts(TlsMinVersion::Tls13, &[])).unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].version, rustls::ProtocolVersion::TLSv1_3);
+    let (_, versions) = select_tls_suites(&GrpcTlsOptions::default()).unwrap();
+    assert_eq!(versions.len(), 2);
 }

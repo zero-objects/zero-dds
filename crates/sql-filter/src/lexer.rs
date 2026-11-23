@@ -5,9 +5,19 @@
 //!
 //! All keywords case-insensitive. String literals: `'...'` with
 //! `''` escaping (SQL-92).
+//!
+//! [`Grammar::Dlrl12`] tokenizes DDS 1.2 Annex B, the syntax of DLRL
+//! queries and filters: `<>` is the only inequality (`!=` is refused),
+//! `LIKE` is refused, `TRUE`, `FALSE` and `null` are field names, a
+//! STRING "starts with a left or right quote, but ends with a right
+//! quote" and holds no right quote (no `''` escape) and no new-line, in
+//! a collection subscript `[STRING]` as outside it, and a collection
+//! subscript `[INTEGERVALUE]` takes a sign and the `0x` form.
 
 use alloc::string::String;
 use alloc::vec::Vec;
+
+use crate::parser::Grammar;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Token {
@@ -37,7 +47,13 @@ pub(crate) enum Token {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LexError(pub String);
 
+#[cfg(test)]
 pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
+    tokenize_with(input, Grammar::Dcps14)
+}
+
+pub(crate) fn tokenize_with(input: &str, grammar: Grammar) -> Result<Vec<Token>, LexError> {
+    let dlrl = grammar == Grammar::Dlrl12;
     let mut out = Vec::new();
     let bytes = input.as_bytes();
     let mut i = 0;
@@ -71,6 +87,11 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
 
         // Multi-char operators.
         if c == b'!' && bytes.get(i + 1) == Some(&b'=') {
+            if dlrl {
+                return Err(LexError(alloc::format!(
+                    "'!=' at position {i} is not a RelOp of DDS 1.2 Annex B (use '<>')"
+                )));
+            }
             out.push(Token::Neq);
             i += 2;
             continue;
@@ -124,13 +145,13 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
         // String literal: '...' with '' -> '. Annex B.2 STRING: "Any series
         // of characters encapsulated in single quotes, except a new-line
         // character". The characters are copied whole, not byte by byte.
-        if c == b'\'' {
+        if c == b'\'' || (dlrl && c == b'`') {
             let mut s = String::new();
             let mut chars = input[i + 1..].char_indices().peekable();
             let mut end = None;
             while let Some((offset, ch)) = chars.next() {
                 match ch {
-                    '\'' if matches!(chars.peek(), Some((_, '\''))) => {
+                    '\'' if !dlrl && matches!(chars.peek(), Some((_, '\''))) => {
                         s.push('\'');
                         chars.next();
                     }
@@ -237,8 +258,8 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
         // sequence element), `['key']` (map value or bitmask flag),
         // XTypes 1.3 §7.6.7.1. A union's discriminator is the name
         // `#discriminator` (DDS-XTypes 1.4 Beta 1 §7.6.7.1).
-        if c.is_ascii_alphabetic() || c == b'_' || discriminator_at(bytes, i) {
-            let (word, j, subscripted) = scan_field(input, i)?;
+        if c.is_ascii_alphabetic() || c == b'_' || (!dlrl && discriminator_at(bytes, i)) {
+            let (word, j, subscripted) = scan_field(input, i, grammar)?;
             if subscripted {
                 out.push(Token::Ident(word));
                 i = j;
@@ -255,8 +276,15 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                 "AND" => Token::And,
                 "OR" => Token::Or,
                 "NOT" => Token::Not,
+                "LIKE" if dlrl => {
+                    return Err(LexError(alloc::format!(
+                        "LIKE at position {i} is not in DDS 1.2 Annex B"
+                    )));
+                }
                 "LIKE" => Token::Like,
                 "BETWEEN" => Token::Between,
+                "TRUE" | "FALSE" if dlrl => Token::Ident(word),
+                _ if dlrl && word == "null" => Token::Ident(word),
                 "TRUE" => Token::BoolLit(true),
                 "FALSE" => Token::BoolLit(false),
                 // §7.6.7.3: "The NULLVALUE token shall always be null."
@@ -297,8 +325,16 @@ fn discriminator_at(bytes: &[u8], at: usize) -> bool {
 ///
 /// A subscript is a non-negative integer (§7.6.7.1: "zero-based
 /// subscript") or a single-quoted string (a map key or a bitmask flag
-/// name, "according to the syntax of STRING").
-fn scan_field(input: &str, start: usize) -> Result<(String, usize, bool), LexError> {
+/// name, "according to the syntax of STRING"). Under
+/// [`Grammar::Dlrl12`] the key is the STRING of DDS 1.2 Annex B.2, as
+/// outside the brackets, and the subscript integer takes a sign and the
+/// `0x` form.
+fn scan_field(
+    input: &str,
+    start: usize,
+    grammar: Grammar,
+) -> Result<(String, usize, bool), LexError> {
+    let dlrl = grammar == Grammar::Dlrl12;
     let bytes = input.as_bytes();
     let mut text = String::new();
     let mut j = start;
@@ -308,7 +344,7 @@ fn scan_field(input: &str, start: usize) -> Result<(String, usize, bool), LexErr
         while j < bytes.len() {
             if bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'.' {
                 j += 1;
-            } else if (j == start || bytes[j - 1] == b'.') && discriminator_at(bytes, j) {
+            } else if !dlrl && (j == start || bytes[j - 1] == b'.') && discriminator_at(bytes, j) {
                 j += DISCRIMINATOR.len();
             } else {
                 break;
@@ -335,6 +371,42 @@ fn scan_field(input: &str, start: usize) -> Result<(String, usize, bool), LexErr
         }
         text.push('[');
         match bytes.get(j) {
+            // DDS 1.2 Annex B: the subscript is an INTEGERVALUE, with an
+            // optional sign and the 0x form (an IntMap key may be
+            // negative). It is written into the field text in decimal.
+            Some(d)
+                if dlrl
+                    && (d.is_ascii_digit()
+                        || ((*d == b'-' || *d == b'+')
+                            && bytes.get(j + 1).is_some_and(u8::is_ascii_digit))) =>
+            {
+                let negative = *d == b'-';
+                if !d.is_ascii_digit() {
+                    j += 1;
+                }
+                let hex =
+                    bytes.get(j) == Some(&b'0') && matches!(bytes.get(j + 1), Some(b'x' | b'X'));
+                if hex {
+                    j += 2;
+                }
+                let digits_start = j;
+                while bytes.get(j).is_some_and(|b| {
+                    if hex {
+                        b.is_ascii_hexdigit()
+                    } else {
+                        b.is_ascii_digit()
+                    }
+                }) {
+                    j += 1;
+                }
+                let digits = &input[digits_start..j];
+                let magnitude =
+                    i64::from_str_radix(digits, if hex { 16 } else { 10 }).map_err(|_| {
+                        LexError(alloc::format!("not an integer subscript: '{digits}'"))
+                    })?;
+                let key = if negative { -magnitude } else { magnitude };
+                text.push_str(&alloc::format!("{key}"));
+            }
             Some(d) if d.is_ascii_digit() => {
                 let digits_start = j;
                 while bytes.get(j).is_some_and(u8::is_ascii_digit) {
@@ -345,6 +417,25 @@ fn scan_field(input: &str, start: usize) -> Result<(String, usize, bool), LexErr
                     .parse()
                     .map_err(|_| LexError(alloc::format!("subscript '{digits}' > u32::MAX")))?;
                 text.push_str(&alloc::format!("{index}"));
+            }
+            // DDS 1.2 Annex B: the key is the token STRING as outside the
+            // brackets: opened by a left or right quote, ended by the
+            // first right quote, no `''` escape, no new-line.
+            Some(b'\'' | b'`') if dlrl => {
+                let key_start = j + 1;
+                let Some(len) = input[key_start..].find(['\'', '\n', '\r']) else {
+                    return Err(LexError("unterminated subscript key".into()));
+                };
+                j = key_start + len;
+                if bytes[j] != b'\'' {
+                    return Err(LexError(alloc::format!(
+                        "a subscript key may not contain a new-line, at position {j}"
+                    )));
+                }
+                text.push('\'');
+                text.push_str(&input[key_start..j]);
+                text.push('\'');
+                j += 1;
             }
             Some(b'\'') => {
                 j += 1;

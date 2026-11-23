@@ -102,16 +102,16 @@ fn convert(ty: &DynamicType, depth: usize) -> Result<DdsType, ConvertError> {
         TypeKind::Array => array(ty, depth),
         TypeKind::Sequence => sequence(ty, depth),
         TypeKind::Map => map(ty, depth),
-        TypeKind::Float128 => Err(ConvertError::UnmappedKind(
-            "float128 (long double)",
-            ty.qualified_name(),
-        )),
-        TypeKind::Bitset => Err(ConvertError::UnmappedKind("a bitset", ty.qualified_name())),
+        TypeKind::Float128 => Ok(DdsType::Float128),
+        TypeKind::Bitset => Ok(DdsType::Struct(bitset_def(ty))),
         TypeKind::Annotation => Err(ConvertError::UnmappedKind(
             "an annotation type",
             ty.qualified_name(),
         )),
-        TypeKind::NoType => Err(ConvertError::UnmappedKind("TK_NONE", ty.qualified_name())),
+        TypeKind::NoType => match fixed_of(ty) {
+            Some((digits, scale)) => Ok(DdsType::Fixed { digits, scale }),
+            None => Err(ConvertError::UnmappedKind("TK_NONE", ty.qualified_name())),
+        },
         // `TypeKind` is `#[non_exhaustive]`; a kind added later refuses by
         // name rather than being silently misread as one of the above.
         other => Err(ConvertError::UnmappedKind(
@@ -190,6 +190,90 @@ fn struct_def(ty: &DynamicType, depth: usize) -> Result<StructDef, ConvertError>
         name: ty.qualified_name(),
         members,
     })
+}
+
+/// The named bitfields of the bitset `ty`, those of its base first, each
+/// with the kind of the number it holds: the holder the IDL names, or the
+/// one IDL 4.2 §7.4.13.4.3.3 gives a bitfield of its width (1 bit a
+/// boolean, up to 8 an octet, up to 16, 32 and 64 the unsigned integer of
+/// that size). An anonymous bitfield is padding and not among them.
+pub(crate) fn bitfields(ty: &DynamicType) -> Vec<(String, TypeKind)> {
+    let ast = ty.ast();
+    ast.all_bitfields_of(ty.id())
+        .iter()
+        .filter_map(|id| {
+            let field = ast.bitfield(*id).ok()?;
+            let name = field.name.clone()?;
+            let declared = field
+                .holder_type
+                .as_ref()
+                .and_then(|holder| holder.resolved())
+                .map(|holder| DynamicType::new(std::sync::Arc::clone(ast), holder).kind())
+                .filter(|kind| {
+                    matches!(
+                        kind,
+                        TypeKind::Boolean
+                            | TypeKind::Byte
+                            | TypeKind::Int8
+                            | TypeKind::UInt8
+                            | TypeKind::Int16
+                            | TypeKind::UInt16
+                            | TypeKind::Int32
+                            | TypeKind::UInt32
+                            | TypeKind::Int64
+                            | TypeKind::UInt64
+                    )
+                });
+            let kind = declared.unwrap_or(match field.bits {
+                0 | 1 => TypeKind::Boolean,
+                2..=8 => TypeKind::UInt8,
+                9..=16 => TypeKind::UInt16,
+                17..=32 => TypeKind::UInt32,
+                _ => TypeKind::UInt64,
+            });
+            Some((name, kind))
+        })
+        .collect()
+}
+
+/// The digits and the scale of `ty` when it is a `fixed<digits, scale>`,
+/// a kind the XTypes type system has no `TypeKind` for (it reads
+/// `TK_NONE`).
+#[must_use]
+pub(crate) fn fixed_of(ty: &DynamicType) -> Option<(u8, u8)> {
+    match &ty.ast().type_(ty.id()).ok()?.kind {
+        zerodds_ast::TypeKind::Fixed { digits, scale } => Some((*digits, *scale)),
+        _ => None,
+    }
+}
+
+/// A bitset as the structure of its named bitfields, each a member of the
+/// kind of number it holds (spec §5.3; Gateway 1.0 has no clause for a
+/// bitset).
+fn bitset_def(ty: &DynamicType) -> StructDef {
+    let members = bitfields(ty)
+        .into_iter()
+        .map(|(name, kind)| MemberDef {
+            name,
+            member_type: match kind {
+                TypeKind::Boolean => DdsType::Boolean,
+                TypeKind::Int8 => DdsType::Int8,
+                TypeKind::Int16 => DdsType::Int16,
+                TypeKind::UInt16 => DdsType::UInt16,
+                TypeKind::Int32 => DdsType::Int32,
+                TypeKind::UInt32 => DdsType::UInt32,
+                TypeKind::Int64 => DdsType::Int64,
+                TypeKind::UInt64 => DdsType::UInt64,
+                _ => DdsType::UInt8,
+            },
+            is_optional: false,
+            is_key: false,
+        })
+        .collect();
+    StructDef {
+        name: ty.qualified_name(),
+        members,
+    }
 }
 
 /// zerodds-lint: recursion-depth 64 (type nesting levels; every descent
@@ -459,15 +543,49 @@ mod tests {
         assert!(u.cases[1].is_default);
     }
 
+    /// Gateway 1.0 §9.2.1: `long double` is a `ByteString` (of length 16).
     #[test]
-    fn opcuabridge_5_3_fixed_point_type_is_a_named_unmapped_error() {
-        // `fixed<P,S>` is CORBA-only in this codebase's own IDL surface;
-        // this test documents the refusal shape without depending on a
-        // parseable `fixed` declaration (float128 is a stand-in that also
-        // has no Gateway 1.0 §9.2 mapping).
+    fn opcuabridge_5_3_long_double_is_a_byte_string() {
         let ast = ast_of("struct S { long double v; };");
         let dt = DynamicType::find(&ast, "S").expect("type");
-        let err = to_dds_type(&dt).expect_err("float128 has no mapping");
-        assert!(matches!(err, ConvertError::UnmappedKind(_, _)));
+        let DdsType::Struct(s) = to_dds_type(&dt).expect("converts") else {
+            panic!("expected a struct");
+        };
+        assert_eq!(s.members[0].member_type, DdsType::Float128);
+        assert_eq!(s.members[0].member_type.opc_ua_data_type(), "ByteString");
+    }
+
+    /// OPC 10000-6 §5.1.10: a `fixed<P,S>` is a `Decimal`.
+    #[test]
+    fn opcuabridge_5_3_a_fixed_is_a_decimal() {
+        let ast = ast_of("struct S { fixed<7,3> price; };");
+        let dt = DynamicType::find(&ast, "S").expect("type");
+        let DdsType::Struct(s) = to_dds_type(&dt).expect("converts") else {
+            panic!("expected a struct");
+        };
+        assert_eq!(
+            s.members[0].member_type,
+            DdsType::Fixed {
+                digits: 7,
+                scale: 3
+            }
+        );
+        assert_eq!(s.members[0].member_type.opc_ua_data_type(), "Decimal");
+    }
+
+    /// Spec §5.3: a bitset is the structure of its named bitfields.
+    #[test]
+    fn opcuabridge_5_3_a_bitset_is_the_structure_of_its_named_bitfields() {
+        let ast =
+            ast_of("bitset B { bitfield<3> a; bitfield<2>; bitfield<12> b; }; struct S { B v; };");
+        let dt = DynamicType::find(&ast, "S").expect("type");
+        let DdsType::Struct(s) = to_dds_type(&dt).expect("converts") else {
+            panic!("expected a struct");
+        };
+        let DdsType::Struct(bitset) = &s.members[0].member_type else {
+            panic!("expected the bitset as a struct");
+        };
+        let names: Vec<&str> = bitset.members.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["a", "b"], "the anonymous bitfield is no member");
     }
 }

@@ -358,6 +358,67 @@ fn dcps_2_2_2_5_3_18_next_instance_w_condition_walks_the_instances_the_condition
     assert!(left.iter().all(|(_, v)| *v < 15));
 }
 
+/// `read_instance_w_condition`: the read of §2.2.2.5.3.14 with the condition
+/// of §2.2.2.5.3.7. It returns the samples of the one instance the condition
+/// accepts, marks only those READ, and is NO_DATA for an instance without
+/// such a sample.
+#[test]
+fn dcps_2_2_2_5_3_14_read_instance_w_condition_reads_one_instance_through_the_condition() {
+    let r = rig();
+    feed(
+        &r.writer,
+        &r.reader,
+        &[rec(1, 5), rec(2, 20), rec(2, 6), rec(2, 30), rec(3, 40)],
+    );
+    // A read of no sample takes what arrived into the cache and marks
+    // nothing READ; the instances are known from then on.
+    assert!(matches!(
+        r.reader.read_selected(&ReadSelection::limited(0)),
+        Err(DdsError::NoData)
+    ));
+    let two = r.reader.lookup_instance(&rec(2, 0));
+    let one = r.reader.lookup_instance(&rec(1, 0));
+    assert!(!two.is_nil() && !one.is_nil());
+    let big = r
+        .reader
+        .create_querycondition(
+            sample_state_mask::ANY,
+            view_state_mask::ANY,
+            instance_state_mask::ANY,
+            "value > 15",
+            Vec::new(),
+        )
+        .unwrap();
+
+    let got = r.reader.read_instance_w_condition(two, &big).unwrap();
+    let values: Vec<u32> = got.iter().map(|s| s.data.value).collect();
+    assert_eq!(values, [20, 30], "the samples of instance 2 above 15");
+    assert!(got.iter().all(|s| s.info.instance_handle == two));
+    assert!(matches!(
+        r.reader.read_instance_w_condition(one, &big),
+        Err(DdsError::NoData)
+    ));
+    assert!(matches!(
+        r.reader.read_instance_w_condition(HANDLE_NIL, &big),
+        Err(DdsError::BadParameter { .. })
+    ));
+
+    // Only what was returned is READ: the sample of instance 3 and the
+    // sample of instance 2 below 15 are still NOT_READ.
+    let unread: Vec<(u32, u32)> = r
+        .reader
+        .read_selected(&ReadSelection {
+            sample_states: sample_state_mask::NOT_READ,
+            ..ReadSelection::ANY
+        })
+        .unwrap()
+        .iter()
+        .map(|s| (s.data.id, s.data.value))
+        .collect();
+    assert_eq!(unread.len(), 3, "{unread:?}");
+    assert!(unread.contains(&(1, 5)) && unread.contains(&(2, 6)) && unread.contains(&(3, 40)));
+}
+
 /// §2.2.2.5.3.20: this API returns the samples owned and loans nothing, so
 /// `return_loan` has no loan to give back and leaves the reader as it is;
 /// after the reader is deleted it is an error as every operation is.

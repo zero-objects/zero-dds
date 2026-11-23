@@ -518,14 +518,17 @@ fn announce_locator(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Locat
     // V6 resolution: with a `::` bind, announce `::1` (loopback) as a
     // sensible default reachability. Cross-host v6 is its own sprint
     // (needs a v6 interface probe analogous to the v4 path below).
-    if raw.kind == LocatorKind::UdpV6 || raw.kind == LocatorKind::Tcpv6 {
+    if raw.kind == LocatorKind::UdpV6 || raw.kind.is_tcp_v6() {
         let all_zero = raw.address.iter().all(|b| *b == 0);
         if all_zero {
             let mut loopback_addr = [0u8; 16];
             loopback_addr[15] = 1;
-            return match raw.kind {
-                LocatorKind::Tcpv6 => Locator::tcp_v6(loopback_addr, port),
-                _ => Locator::udp_v6(loopback_addr, port),
+            // The kind is the transport's: a TCP locator keeps the kind set
+            // it was bound with.
+            return Locator {
+                kind: raw.kind,
+                port,
+                address: loopback_addr,
             };
         }
         return raw;
@@ -533,7 +536,7 @@ fn announce_locator(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Locat
     // V4 resolution: only meaningful for UDPv4/TCPv4 locators with an
     // UNSPECIFIED bind. For SHM, return raw — the locator kind has its
     // own pairing resolution (its own sprint).
-    if raw.kind != LocatorKind::UdpV4 && raw.kind != LocatorKind::Tcpv4 {
+    if raw.kind != LocatorKind::UdpV4 && !raw.kind.is_tcp_v4() {
         return raw;
     }
     // Extract the address — only the last 4 bytes are the IPv4.
@@ -546,12 +549,13 @@ fn announce_locator(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Locat
     if !ip.is_unspecified() {
         return raw;
     }
-    // Helper: construct a locator with the original kind (UdpV4 or
-    // Tcpv4) and the now-resolved v4 address.
+    // Helper: construct a locator with the original kind (UdpV4, or the
+    // TCPv4 kind of the transport's kind set) and the now-resolved v4
+    // address.
     let to_locator = |octets: [u8; 4]| -> Locator {
-        match raw.kind {
-            LocatorKind::Tcpv4 => Locator::tcp_v4(octets, port),
-            _ => Locator::udp_v4(octets, port),
+        Locator {
+            kind: raw.kind,
+            ..Locator::udp_v4(octets, port)
         }
     };
     // Interface pinning: an explicitly set interface
@@ -1043,18 +1047,20 @@ pub enum UserTransportKind {
     UdpV4,
     /// UDP IPv6.
     UdpV6,
-    /// TCP IPv4 (DDS-TCP-PSM `LOCATOR_KIND_TCPV4`).
+    /// TCP IPv4 (`zerodds-tcp-transport-1.0`).
     TcpV4,
-    /// TCP IPv6 (DDS-TCP-PSM `LOCATOR_KIND_TCPV6`).
+    /// TCP IPv6 (`zerodds-tcp-transport-1.0`).
     TcpV6,
     /// POSIX shared memory (same-host). Only with the `same-host-shm`
     /// feature.
     #[cfg(feature = "same-host-shm")]
     Shm,
     /// Unix domain socket (same-host, container-friendly). Only with the
-    /// `same-host-uds` feature on a Unix target: `zerodds-transport-uds`
-    /// is empty elsewhere.
-    #[cfg(all(feature = "same-host-uds", unix))]
+    /// `same-host-uds` feature on a Unix or Windows target:
+    /// `zerodds-transport-uds` is empty elsewhere. Datagrams or a stream
+    /// of frames after [`RuntimeConfig::uds`]`.mode`; Windows has the
+    /// stream only (`zerodds-uds-transport-1.0` §3.5, §6.2).
+    #[cfg(all(feature = "same-host-uds", any(unix, windows)))]
     Uds,
     /// TSN L2 transport (AF_PACKET, RTPS direct on Ethernet, EtherType
     /// 0x88B5). Only with the `tsn-live` feature on Linux. Interface/VLAN/
@@ -1062,6 +1068,87 @@ pub enum UserTransportKind {
     /// [`RuntimeConfig::tsn_pcp`] (config `tsn.interface`/`_VLAN`/`_PCP`).
     #[cfg(all(feature = "tsn-live", target_os = "linux"))]
     Tsn,
+}
+
+/// The dialect of a runtime's TCP connections
+/// ([`RuntimeConfig::tcp_dialect`]).
+pub use zerodds_transport_tcp::TcpDialect;
+
+/// The dialect `transport.tcp_dialect` names: `zerodds`, `rtps`,
+/// `cyclone` or `fastdds`.
+fn parse_tcp_dialect(value: &str) -> Option<TcpDialect> {
+    TcpDialect::from_name(value.trim())
+}
+
+/// A dialect list for `transport.tcp_accept_dialects`: comma-separated
+/// names of dialects, each once at most. `None` for a name that is no
+/// dialect and for the empty list: a transport reads an empty list as "no
+/// dialect" (`TcpTransport::with_accepted_dialects`), a listener that
+/// takes nobody, and "every dialect" is the unset key.
+fn parse_tcp_dialect_list(value: &str) -> Option<Vec<TcpDialect>> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    let mut out = Vec::new();
+    for name in value.split(',') {
+        let dialect = parse_tcp_dialect(name)?;
+        if !out.contains(&dialect) {
+            out.push(dialect);
+        }
+    }
+    Some(out)
+}
+
+/// The transports `discovery.unicast_transports` names: `(udp, tcp)`.
+/// `None` for another name and for the empty list.
+fn parse_unicast_transports(value: &str) -> Option<(bool, bool)> {
+    let (mut udp, mut tcp) = (false, false);
+    for name in value.split(',') {
+        match name.trim() {
+            "udp" => udp = true,
+            "tcp" => tcp = true,
+            _ => return None,
+        }
+    }
+    (udp || tcp).then_some((udp, tcp))
+}
+
+/// One entry of `discovery.peers` that names a TCP listener:
+/// `tcp://ip:port` or `tcp://[ipv6]:port`, the port in `1..=65535`,
+/// optionally followed by `/logical`, the logical port in `1..=65535` of
+/// a listener of the dialect `fastdds` (`zerodds-tcp-transport-1.0`
+/// §6.1).
+fn parse_tcp_peer(spec: &str) -> Option<(SocketAddr, Option<u16>)> {
+    let rest = spec.strip_prefix("tcp://")?;
+    let (addr, logical) = match rest.split_once('/') {
+        Some((addr, logical)) => (addr, Some(logical.parse::<u16>().ok().filter(|p| *p > 0)?)),
+        None => (rest, None),
+    };
+    let addr = addr.parse::<SocketAddr>().ok()?;
+    (addr.port() > 0).then_some((addr, logical))
+}
+
+/// A vendor list for `transport.tcp_accepted_vendors`: comma-separated
+/// vendor ids, each four hex digits (`01f0`). `None` for an entry that is
+/// not four hex digits and for the empty list: a transport reads an empty
+/// list as "no vendor" (`TcpTransport::with_accepted_vendors`), a listener
+/// that takes nobody, and "every vendor" is the unset key. The setting
+/// takes neither meaning for it.
+fn parse_vendor_list(value: &str) -> Option<Vec<[u8; 2]>> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    value
+        .split(',')
+        .map(|entry| {
+            let digits = entry.trim().as_bytes();
+            if digits.len() != 4 || !digits.iter().all(u8::is_ascii_hexdigit) {
+                return None;
+            }
+            let id = u16::from_str_radix(core::str::from_utf8(digits).ok()?, 16).ok()?;
+            Some(id.to_be_bytes())
+        })
+        .collect()
 }
 
 /// A CPU list for `threads.recv_cpus` / `threads.tick_cpus`: comma-separated
@@ -1589,7 +1676,7 @@ fn parse_user_transport(value: &str) -> Option<UserTransportKind> {
         "TCPv6" => Some(UserTransportKind::TcpV6),
         #[cfg(feature = "same-host-shm")]
         "SHM" => Some(UserTransportKind::Shm),
-        #[cfg(all(feature = "same-host-uds", unix))]
+        #[cfg(all(feature = "same-host-uds", any(unix, windows)))]
         "UDS" => Some(UserTransportKind::Uds),
         #[cfg(all(feature = "tsn-live", target_os = "linux"))]
         "TSN" => Some(UserTransportKind::Tsn),
@@ -1604,6 +1691,76 @@ type UserTransportSelection = (
     Option<Arc<zerodds_transport_tcp::TcpTransport>>,
 );
 
+/// The TCP leg of one address family on `port` (`transport.tcp_port`, or
+/// the port the TCPv4 listener got, see [`select_tcp_pair`]; 0 lets the
+/// system choose). The IPv4 listener takes the pinned interface, as
+/// UDPv4 does. A TCPv6 listener on a port of its own beside a TCPv4 one
+/// of the same runtime takes IPv6 connections only, where a socket on
+/// `::` took the IPv4 ones of that port as well
+/// (`zerodds-tcp-transport-1.0` §4.3).
+fn select_tcp_transport(
+    v6: bool,
+    pinned: Ipv4Addr,
+    port: u16,
+    config: &RuntimeConfig,
+) -> Result<UserTransportSelection> {
+    let bound = if !v6 {
+        zerodds_transport_tcp::TcpTransport::bind_v4(pinned, port).map_err(|_| {
+            DdsError::TransportError {
+                label: "user unicast bind (TCPv4)",
+            }
+        })?
+    } else {
+        let both_families = port != 0 && config.user_transports.contains(&UserTransportKind::TcpV4);
+        let unspecified = std::net::Ipv6Addr::UNSPECIFIED;
+        if both_families {
+            zerodds_transport_tcp::TcpTransport::bind_v6_only(unspecified, port)
+        } else {
+            zerodds_transport_tcp::TcpTransport::bind_v6(unspecified, port)
+        }
+        .map_err(|_| DdsError::TransportError {
+            label: "user unicast bind (TCPv6)",
+        })?
+    };
+    let tcp = bound.with_locator_kinds(config.tcp_kind_set());
+    let arc = Arc::new(config.apply_tcp_settings(tcp));
+    Ok((config.tcp_leg(&arc), Some(arc)))
+}
+
+/// How often [`select_tcp_pair`] binds a TCPv4 listener anew when the
+/// port the system gave it is taken for IPv6.
+const TCP_PAIR_ATTEMPTS: usize = 8;
+
+/// zerodds-tcp-transport-1.0 §4.3: the TCPv4 and the TCPv6 listener of a
+/// runtime hold one port, also when `transport.tcp_port` leaves the
+/// choice to the system. The TCPv4 listener takes a port of the system's
+/// choosing and the TCPv6 listener that port. Where another socket holds
+/// it for IPv6, the TCPv4 listener is dropped and bound again, at most
+/// [`TCP_PAIR_ATTEMPTS`] times; then the start fails.
+fn select_tcp_pair(
+    pinned: Ipv4Addr,
+    config: &RuntimeConfig,
+) -> Result<(UserTransportSelection, UserTransportSelection)> {
+    for _ in 0..TCP_PAIR_ATTEMPTS {
+        let v4 = select_tcp_transport(false, pinned, 0, config)?;
+        // The port the listener holds: in the dialect `fastdds` the port
+        // of the locator carries the logical port above it (§6.1).
+        let port =
+            v4.1.as_ref()
+                .map(|tcp| tcp.listener_port())
+                .filter(|port| *port != 0)
+                .ok_or(DdsError::TransportError {
+                    label: "user unicast bind (TCPv4)",
+                })?;
+        if let Ok(v6) = select_tcp_transport(true, pinned, port, config) {
+            return Ok((v4, v6));
+        }
+    }
+    Err(DdsError::TransportError {
+        label: "user unicast bind (TCPv6) on the port of the TCPv4 listener",
+    })
+}
+
 /// Binds the user-traffic transport for the selected
 /// [`UserTransportKind`]. Discovery (SPDP/SEDP) runs separately over
 /// UDPv4 multicast; this transport carries only the DCPS user traffic.
@@ -1611,11 +1768,14 @@ type UserTransportSelection = (
 /// Additionally returns an optional `TcpTransport` accept handle: TCP has
 /// no implicit accept thread in the constructor, so the caller starts an
 /// `accept_one` worker for it.
-// `guid_prefix`/`domain_id` are only read by the SHM/UDS arms, `config` only
-// by the TSN arm — a build without those features has no use for them.
+// `guid_prefix`/`domain_id` are only read by the SHM/UDS arms — a build
+// without those features has no use for them.
 #[cfg_attr(
     not(all(
-        any(feature = "same-host-shm", all(feature = "same-host-uds", unix)),
+        any(
+            feature = "same-host-shm",
+            all(feature = "same-host-uds", any(unix, windows))
+        ),
         feature = "tsn-live",
         target_os = "linux"
     )),
@@ -1680,27 +1840,8 @@ fn select_user_transport(
             })?;
             Ok((Arc::new(udp), None))
         }
-        UserTransportKind::TcpV4 => {
-            // Interface pinning analogous to UDPv4.
-            let tcp = zerodds_transport_tcp::TcpTransport::bind_v4(pinned, 0).map_err(|_| {
-                DdsError::TransportError {
-                    label: "user unicast bind (TCPv4)",
-                }
-            })?;
-            let arc = Arc::new(tcp);
-            let dynamic: Arc<dyn Transport + Send + Sync> = arc.clone();
-            Ok((dynamic, Some(arc)))
-        }
-        UserTransportKind::TcpV6 => {
-            let tcp =
-                zerodds_transport_tcp::TcpTransport::bind_v6(std::net::Ipv6Addr::UNSPECIFIED, 0)
-                    .map_err(|_| DdsError::TransportError {
-                        label: "user unicast bind (TCPv6)",
-                    })?;
-            let arc = Arc::new(tcp);
-            let dynamic: Arc<dyn Transport + Send + Sync> = arc.clone();
-            Ok((dynamic, Some(arc)))
-        }
+        UserTransportKind::TcpV4 => select_tcp_transport(false, pinned, config.tcp_port, config),
+        UserTransportKind::TcpV6 => select_tcp_transport(true, pinned, config.tcp_port, config),
         #[cfg(feature = "same-host-shm")]
         UserTransportKind::Shm => {
             // local_id = guid_prefix (12 bytes) + 4-byte domain id so that
@@ -1712,10 +1853,11 @@ fn select_user_transport(
             let shm = crate::shm_user::ShmUserTransport::new(
                 local_id,
                 zerodds_transport_shm::posix::ShmConfig::default(),
-            );
+            )
+            .with_observability(config.observability.clone());
             Ok((Arc::new(shm), None))
         }
-        #[cfg(all(feature = "same-host-uds", unix))]
+        #[cfg(all(feature = "same-host-uds", any(unix, windows)))]
         UserTransportKind::Uds => {
             // local_id = guid_prefix (12 bytes) + 4-byte domain id — the
             // peer resolves this id from the announced UDS locator into the
@@ -1726,17 +1868,60 @@ fn select_user_transport(
             // recv_timeout analogous to the UDP path: the recv loop must
             // periodically check the stop flag (otherwise a thread hang on
             // shutdown on a blocking recv).
+            // Base directory, modes and datagram limit from
+            // `transport.uds.*` (`zerodds-uds-transport-1.0` §5.1).
             let uds_cfg = zerodds_transport_uds::UdsConfig {
+                base_dir: config.uds.base_dir.clone(),
+                max_datagram: config.uds.max_datagram,
                 recv_timeout: Some(Duration::from_secs(1)),
-                ..zerodds_transport_uds::UdsConfig::default()
+                // A send to a peer that has stopped reading waits this long
+                // for room and then fails (§4.3); it does not hold the
+                // sending thread until the peer reads.
+                send_timeout: zerodds_transport_uds::DEFAULT_SEND_TIMEOUT,
+                socket_mode: config.uds.socket_mode,
+                base_dir_mode: config.uds.base_dir_mode,
             };
-            let uds =
-                zerodds_transport_uds::UdsTransport::bind(local_id, uds_cfg).map_err(|_| {
-                    DdsError::TransportError {
-                        label: "user unicast bind (UDS)",
+            // The label is static; the bind's own error (a refused
+            // `max_datagram`, a permission on the directory, a mode the
+            // platform does not have) goes to the observability sink, where
+            // an operator reads why.
+            let uds: core::result::Result<Arc<dyn Transport + Send + Sync>, std::io::Error> =
+                match config.uds.mode {
+                    #[cfg(unix)]
+                    UdsMode::Datagram => {
+                        zerodds_transport_uds::UdsTransport::bind(local_id, uds_cfg)
+                            .map(|t| Arc::new(t) as Arc<dyn Transport + Send + Sync>)
                     }
-                })?;
-            Ok((Arc::new(uds), None))
+                    #[cfg(not(unix))]
+                    UdsMode::Datagram => Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "uds mode datagram: Windows has no SOCK_DGRAM for AF_UNIX; \
+                         transport.uds.mode stream",
+                    )),
+                    UdsMode::Stream => {
+                        zerodds_transport_uds::UdsStreamTransport::bind(local_id, uds_cfg)
+                            .map(|t| Arc::new(t) as Arc<dyn Transport + Send + Sync>)
+                    }
+                };
+            let uds = uds.map_err(|error| {
+                config.observability.record(
+                    &zerodds_foundation::observability::Event::new(
+                        zerodds_foundation::observability::Level::Error,
+                        zerodds_foundation::observability::Component::Dcps,
+                        "transport.uds.bind_failed",
+                    )
+                    .with_attr(
+                        "base_dir",
+                        config.uds.base_dir.display().to_string().as_str(),
+                    )
+                    .with_attr("mode", config.uds.mode.as_str())
+                    .with_attr("error", alloc::format!("{error}").as_str()),
+                );
+                DdsError::TransportError {
+                    label: "user unicast bind (UDS)",
+                }
+            })?;
+            Ok((uds, None))
         }
         #[cfg(all(feature = "tsn-live", target_os = "linux"))]
         UserTransportKind::Tsn => {
@@ -1765,6 +1950,149 @@ fn select_user_transport(
 
 /// Compiled default datagram limit for the same-host SHM path.
 pub const DEFAULT_SHM_MAX_DATAGRAM: usize = 64 * 1024;
+
+/// How the UDS user transport carries messages (`transport.uds.mode`,
+/// `zerodds-uds-transport-1.0` §3.1, §3.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UdsMode {
+    /// `datagram`: one `SOCK_DGRAM` datagram per message (§3.1). Unix only.
+    Datagram,
+    /// `stream`: a `SOCK_STREAM` connection per peer, each message a
+    /// length-prefixed frame (§3.5); the only mode on Windows (§6.2).
+    Stream,
+}
+
+impl UdsMode {
+    /// The value of `transport.uds.mode`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Datagram => "datagram",
+            Self::Stream => "stream",
+        }
+    }
+
+    /// The mode a value of `transport.uds.mode` names.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "datagram" => Some(Self::Datagram),
+            "stream" => Some(Self::Stream),
+            _ => None,
+        }
+    }
+}
+
+/// Default of [`UdsUserConfig::mode`]: `datagram` on Unix, `stream` on
+/// Windows, which has no `SOCK_DGRAM` for `AF_UNIX`.
+pub const DEFAULT_UDS_MODE: UdsMode = if cfg!(windows) {
+    UdsMode::Stream
+} else {
+    UdsMode::Datagram
+};
+
+/// The `transport.uds.*` settings: what the UDS user transport
+/// (`transport.user_transport = UDS`, feature `same-host-uds`) binds with
+/// (`zerodds-uds-transport-1.0` §3.5, §5.1, §6.2). The defaults are those
+/// of `zerodds_transport_uds::UdsConfig`.
+///
+/// A shared volume between containers is mounted at `base_dir`. Peers
+/// under different UIDs need a group they share, a directory of that group
+/// with group write permission, the set-group-ID bit and the sticky bit
+/// (`base_dir_mode` `0o3770` when the first runtime creates it) and socket
+/// files with group write permission (`socket_mode` `0o660`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UdsUserConfig {
+    /// `transport.uds.base_dir`, env `ZERODDS_UDS_BASE_DIR`: the directory
+    /// of the socket files, an absolute path. Default `/tmp/zerodds/uds`.
+    pub base_dir: std::path::PathBuf,
+    /// `transport.uds.socket_mode`, env `ZERODDS_UDS_SOCKET_MODE`: the mode
+    /// of the socket file, octal, at most `0777`. `None` (the value
+    /// `umask`, the default) keeps the mode the process umask gives.
+    pub socket_mode: Option<u32>,
+    /// `transport.uds.base_dir_mode`, env `ZERODDS_UDS_BASE_DIR_MODE`: the
+    /// mode of `base_dir` when the runtime creates it, octal, at most
+    /// `07777`. Default `0700`; an existing directory keeps its mode.
+    pub base_dir_mode: u32,
+    /// `transport.uds.max_datagram`, env `ZERODDS_UDS_MAX_DATAGRAM`: the
+    /// largest datagram the transport sends or receives, bytes. Default
+    /// 65 536. The start fails when the kernel does not grant socket
+    /// buffers that carry it.
+    pub max_datagram: usize,
+    /// `transport.uds.mode`, env `ZERODDS_UDS_MODE`: `datagram` or
+    /// `stream`. Default [`DEFAULT_UDS_MODE`]. On Windows `datagram` fails
+    /// the start, and so do a `socket_mode` and a `base_dir_mode` other than
+    /// `0700`: Windows has no mode bits, a created directory gets an access
+    /// control list of the user and SYSTEM.
+    pub mode: UdsMode,
+}
+
+/// Default of [`UdsUserConfig::base_dir`].
+pub const DEFAULT_UDS_BASE_DIR: &str = "/tmp/zerodds/uds";
+/// Default of [`UdsUserConfig::base_dir_mode`].
+pub const DEFAULT_UDS_BASE_DIR_MODE: u32 = 0o700;
+/// Default of [`UdsUserConfig::max_datagram`].
+pub const DEFAULT_UDS_MAX_DATAGRAM: usize = 65_536;
+
+impl Default for UdsUserConfig {
+    fn default() -> Self {
+        Self {
+            base_dir: std::path::PathBuf::from(DEFAULT_UDS_BASE_DIR),
+            socket_mode: None,
+            base_dir_mode: DEFAULT_UDS_BASE_DIR_MODE,
+            max_datagram: DEFAULT_UDS_MAX_DATAGRAM,
+            mode: DEFAULT_UDS_MODE,
+        }
+    }
+}
+
+/// An octal mode of at most `max` (`0700`, also with a `0o` prefix).
+fn parse_octal_mode(value: &str, max: u32) -> Option<u32> {
+    let digits = value.trim();
+    let digits = digits.strip_prefix("0o").unwrap_or(digits);
+    if digits.is_empty() || !digits.bytes().all(|b| (b'0'..=b'7').contains(&b)) {
+        return None;
+    }
+    u32::from_str_radix(digits, 8)
+        .ok()
+        .filter(|mode| *mode <= max)
+}
+
+/// `transport.uds.socket_mode`: `umask` (no mode of its own) or an octal
+/// mode of at most `0777`. The outer `None` is a value the key refuses.
+fn parse_uds_socket_mode(value: &str) -> Option<Option<u32>> {
+    if value.trim() == "umask" {
+        return Some(None);
+    }
+    parse_octal_mode(value, 0o777).map(Some)
+}
+
+/// The `transport.uds.*` settings over [`UdsUserConfig::default`]. Values
+/// were validated before.
+fn uds_config_from(source: &ConfigSource) -> UdsUserConfig {
+    let d = UdsUserConfig::default();
+    UdsUserConfig {
+        base_dir: source
+            .var("ZERODDS_UDS_BASE_DIR")
+            .map_or(d.base_dir, |v| std::path::PathBuf::from(v.trim())),
+        socket_mode: source
+            .var("ZERODDS_UDS_SOCKET_MODE")
+            .and_then(|v| parse_uds_socket_mode(&v))
+            .unwrap_or(d.socket_mode),
+        base_dir_mode: source
+            .var("ZERODDS_UDS_BASE_DIR_MODE")
+            .and_then(|v| parse_octal_mode(&v, 0o7777))
+            .unwrap_or(d.base_dir_mode),
+        max_datagram: source
+            .var("ZERODDS_UDS_MAX_DATAGRAM")
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(d.max_datagram),
+        mode: source
+            .var("ZERODDS_UDS_MODE")
+            .and_then(|v| UdsMode::parse(&v))
+            .unwrap_or(d.mode),
+    }
+}
 
 /// Configuration for the runtime. Exposed via DomainParticipant factory
 /// methods.
@@ -1826,11 +2154,19 @@ pub struct RuntimeConfig {
     /// budget — CycloneDDS does exactly that. What it does not permit is
     /// creating one, and in this tree the two are the same act: a synchronous
     /// `write()` has no backlog until the send is moved off the calling
-    /// thread, and once it is, the writer outruns the receiver. Measured on
-    /// the Linux test host, 1 kB, own domain: 602 kS/s written against 450 kS/s drained,
-    /// BEST_EFFORT losing 20-32 % and RELIABLE 38-92 %, with `RcvbufErrors`
-    /// counting the difference. The switch exists so that verdict can be
-    /// re-measured against a faster receive path without a rebuild.
+    /// thread. A writer that may wait says so with a LATENCY_BUDGET above
+    /// zero, and batches then.
+    ///
+    /// Measured on the Linux test host (the host reserved exclusively, the
+    /// speed setup's cells, three runs, median, KEEP_ALL, own domain per
+    /// cell), with the switch against without it: BEST_EFFORT, the Rust API,
+    /// 1 005 against 183 kS/s written at 64 octets with 99.6 % received, 934
+    /// against 172 kS/s at 1 KiB with 93.5 % received (the C API: 828 kS/s,
+    /// 99.8 %), every sample not received dropped by the reader's kernel
+    /// (`RcvbufErrors`); RELIABLE at 64 octets 192 against 148 kS/s. The
+    /// round trip pays for it: p50 44.8 against 28.8 µs at 64 octets, 48.2
+    /// against 32.0 µs at 1 KiB. When the switch was added, the receive
+    /// path drained 450 kS/s of 602 kS/s written.
     pub batch_at_zero_budget: bool,
     /// SPDP announce period. Default 5 s.
     pub spdp_period: Duration,
@@ -2062,8 +2398,8 @@ pub struct RuntimeConfig {
     pub nack_suppression_duration: Duration,
 
     /// Flow-control window of every user writer with reliable readers:
-    /// octets of serialized payload written and not yet acknowledged by
-    /// all of them. A write that would go past it waits for
+    /// octets of payload in its history not yet acknowledged by all of
+    /// them (not what KEEP_LAST replaced). A write past it waits for
     /// acknowledgements up to RELIABILITY `max_blocking_time`, then goes
     /// out past it. `writer.unacked_window_bytes`, env
     /// `ZERODDS_WRITER_UNACKED_WINDOW`; default
@@ -2297,12 +2633,83 @@ pub struct RuntimeConfig {
     /// configuration file when a peer needs it.
     pub data_rep_match_mode: zerodds_rtps::publication_data::data_representation::DataRepMatchMode,
     /// `transport.tcp_locator_kinds`, env `ZERODDS_TCP_LOCATOR_KINDS`:
-    /// `false` (`vendor`, default) sends TCP locators with ZeroDDS's own
-    /// kinds in the vendor range of DDSI-RTPS 2.5 §9.3.2.4 (`0x01F0_0004`,
-    /// `0x01F0_0005`); `true` (`fast-dds`) sends 4 and 8, the values of Fast
-    /// DDS, for TCP interoperation with it. Reading accepts both. The
-    /// setting is the process's and is only ever turned on at `start`.
+    /// `false` (`vendor`, default) announces the TCP locators of this
+    /// runtime with ZeroDDS's own kinds in the vendor range of DDSI-RTPS
+    /// 2.5 §9.3.2.4 (`0x01F0_0004`, `0x01F0_0005`); `true` (`fast-dds`)
+    /// announces 4 and 8, the values of Cyclone DDS and Fast DDS. Reading
+    /// accepts both and keeps the kind a peer wrote. The setting is this
+    /// runtime's: another runtime of the process announces its own
+    /// ([`Self::tcp_kind_set`]).
     pub tcp_locator_kinds_fast_dds: bool,
+    /// `transport.tcp_accepted_vendors`, env `ZERODDS_TCP_ACCEPTED_VENDORS`:
+    /// the vendor ids whose TCP connections this runtime's listener takes
+    /// (`zerodds-tcp-transport-1.0` §3.3), each as four hex digits
+    /// (`01f0` is ZeroDDS). A request of another vendor is answered with
+    /// Reject/`VendorNotAccepted`. `None`, the default, takes every
+    /// vendor. The setting has at least one id: an empty list is refused
+    /// as a value of the key.
+    pub tcp_accepted_vendors: Option<Vec<[u8; 2]>>,
+    /// `transport.tcp_logical_port_claim`, env
+    /// `ZERODDS_TCP_LOGICAL_PORT_CLAIM`: `true` (`listener`, default) has
+    /// each outgoing TCP connection claim the port of this runtime's TCP
+    /// listener as its logical port (`zerodds-tcp-transport-1.0` §3.6);
+    /// `false` (`none`) claims no port, for hosts behind one translated
+    /// address.
+    pub tcp_logical_port_claim: bool,
+    /// `transport.tcp_dialect`, env `ZERODDS_TCP_DIALECT`: how the TCP
+    /// connections this runtime opens are opened and their messages
+    /// delimited. `zerodds` (default) is the handshake and the
+    /// length-prefixed frames of `zerodds-tcp-transport-1.0` §3 and §2.1;
+    /// `rtps` is RTPS messages back to back with no handshake, each
+    /// delimited by the messageLength of its HeaderExtension (DDSI-RTPS
+    /// 2.5 §8.3.3; `zerodds-tcp-transport-1.0` §2.5), which the runtime
+    /// then puts into every message it sends over TCP; `cyclone` is the
+    /// stream of Cyclone DDS (§4.1), whose length submessage the transport
+    /// puts in and takes out, with messages of 65528 octets at most and
+    /// the locator kinds 4 and 8 ([`Self::tcp_kind_set`]); `fastdds` is
+    /// the TCP protocol of Fast DDS (§6.1), with the bind of each
+    /// connection, the logical ports of the participant (its metatraffic
+    /// and user unicast port) in the upper 16 bits of the locator port,
+    /// the locator kinds 4 and 8 and messages of 65500 octets at most. A
+    /// destination whose locator names a logical port is reached in the
+    /// dialect `fastdds` whatever this setting is. The dialect of
+    /// a connection the runtime accepts is found at its first octets
+    /// ([`Self::tcp_accept_dialects`]). A message protected as a whole
+    /// (DDS-Security) carries the HeaderExtension in front of its
+    /// SRTPS_PREFIX; where the protection authenticates the RTPS header
+    /// (a pre-shared key, or the form with additional authenticated
+    /// data), a runtime of the dialect `rtps`, and one whose TCP listener
+    /// takes connections of that dialect, puts the HeaderExtension in
+    /// before the protection, into every message it protects so,
+    /// whichever transport carries it
+    /// ([`Self::may_write_tcp_dialect_rtps`]).
+    pub tcp_dialect: zerodds_transport_tcp::TcpDialect,
+    /// `transport.tcp_accept_dialects`, env `ZERODDS_TCP_ACCEPT_DIALECTS`:
+    /// the dialects a TCP connection to this runtime's listener may begin
+    /// in (`zerodds-tcp-transport-1.0` §4.2). The listener finds the
+    /// dialect of a connection at its first octets. `None`, the default,
+    /// takes every dialect. The setting has at least one dialect: an
+    /// empty list is refused as a value of the key.
+    pub tcp_accept_dialects: Option<Vec<zerodds_transport_tcp::TcpDialect>>,
+    /// `transport.tcp_port`, env `ZERODDS_TCP_PORT`: the port of this
+    /// runtime's TCP listeners (`zerodds-tcp-transport-1.0` §4.3), the
+    /// one a peer names in its `discovery.peers`. `0`, the default, lets
+    /// the system choose. A port that is taken fails the start of the
+    /// runtime.
+    pub tcp_port: u16,
+    /// `discovery.unicast_transports`, env
+    /// `ZERODDS_DISCOVERY_UNICAST_TRANSPORTS`: whether the UDP
+    /// metatraffic socket is announced as a metatraffic unicast locator
+    /// (`zerodds-tcp-transport-1.0` §4.3). Default `true`. With `false`
+    /// (the list names `tcp` alone) a peer has only the TCP listeners to
+    /// send metatraffic to: the setting for a network that carries no
+    /// UDP.
+    pub metatraffic_over_udp: bool,
+    /// `discovery.unicast_transports`: whether the TCP listeners of this
+    /// runtime are announced as metatraffic unicast locators
+    /// (`zerodds-tcp-transport-1.0` §4.3). Default `true`; a runtime
+    /// without a TCP transport has none to announce.
+    pub metatraffic_over_tcp: bool,
     /// XTypes 1.3 Table 19 key-member bullets: `enforced` (the clause,
     /// default) or `ignored`. File: `xtypes.key_member_bounds`; see
     /// `zerodds_types::assignability::KeyMemberBounds`.
@@ -2588,6 +2995,12 @@ pub struct RuntimeConfig {
     /// `ZERODDS_UDP_CACHE_SNDBUF`, `ZERODDS_UDP_RCVBUF`,
     /// `ZERODDS_UDP_DONTROUTE`. A buffer size of 0 leaves the kernel default.
     pub udp: UdpTransportConfig,
+
+    /// What the UDS user transport binds with: `transport.uds.base_dir`,
+    /// `transport.uds.socket_mode`, `transport.uds.base_dir_mode`,
+    /// `transport.uds.max_datagram` ([`UdsUserConfig`],
+    /// `zerodds-uds-transport-1.0` §5.1).
+    pub uds: UdsUserConfig,
 }
 
 /// Configuration entry for a physical or logical network interface.
@@ -2697,6 +3110,8 @@ fn is_routable_user_locator(loc: &Locator) -> bool {
             | LocatorKind::UdpV6
             | LocatorKind::Tcpv4
             | LocatorKind::Tcpv6
+            | LocatorKind::Tcpv4Kind4
+            | LocatorKind::Tcpv6Kind8
             | LocatorKind::Shm
             | LocatorKind::Uds
             | LocatorKind::Tsn
@@ -2902,6 +3317,13 @@ impl core::fmt::Debug for RuntimeConfig {
             "tcp_locator_kinds_fast_dds",
             &self.tcp_locator_kinds_fast_dds,
         );
+        dbg.field("tcp_accepted_vendors", &self.tcp_accepted_vendors);
+        dbg.field("tcp_logical_port_claim", &self.tcp_logical_port_claim);
+        dbg.field("tcp_dialect", &self.tcp_dialect);
+        dbg.field("tcp_accept_dialects", &self.tcp_accept_dialects);
+        dbg.field("tcp_port", &self.tcp_port);
+        dbg.field("metatraffic_over_udp", &self.metatraffic_over_udp);
+        dbg.field("metatraffic_over_tcp", &self.metatraffic_over_tcp);
         dbg.field("key_member_bounds", &self.key_member_bounds);
         dbg.field("strong_assignability", &self.strong_assignability);
         dbg.field("key_must_understand", &self.key_must_understand);
@@ -2949,6 +3371,7 @@ impl core::fmt::Debug for RuntimeConfig {
         dbg.field("phase_dump", &self.phase_dump);
         dbg.field("phase_timing", &self.phase_timing);
         dbg.field("udp", &self.udp);
+        dbg.field("uds", &self.uds);
         dbg.field("observability", &"<sink>");
         dbg.field("time_source", &"<time source>");
         #[cfg(feature = "security")]
@@ -3256,6 +3679,24 @@ pub const SETTINGS: &[(&str, &str)] = &[
     ("ZERODDS_EXTRA_RECV_THREADS", "threads.extra_recv"),
     ("ZERODDS_DATA_REPR_MATCH", "wire.data_representation_match"),
     ("ZERODDS_TCP_LOCATOR_KINDS", "transport.tcp_locator_kinds"),
+    (
+        "ZERODDS_TCP_ACCEPTED_VENDORS",
+        "transport.tcp_accepted_vendors",
+    ),
+    (
+        "ZERODDS_TCP_LOGICAL_PORT_CLAIM",
+        "transport.tcp_logical_port_claim",
+    ),
+    ("ZERODDS_TCP_DIALECT", "transport.tcp_dialect"),
+    (
+        "ZERODDS_TCP_ACCEPT_DIALECTS",
+        "transport.tcp_accept_dialects",
+    ),
+    ("ZERODDS_TCP_PORT", "transport.tcp_port"),
+    (
+        "ZERODDS_DISCOVERY_UNICAST_TRANSPORTS",
+        "discovery.unicast_transports",
+    ),
     ("ZERODDS_UDP_CACHE_ENABLE", "transport.udp.connected_cache"),
     ("ZERODDS_UDP_CACHE_MAX", "transport.udp.cache_max_entries"),
     ("ZERODDS_UDP_CACHE_SNDBUF", "transport.udp.cache_sndbuf"),
@@ -3265,6 +3706,11 @@ pub const SETTINGS: &[(&str, &str)] = &[
         "ZERODDS_UDP_MAX_MESSAGE_SIZE",
         "transport.udp.max_message_size",
     ),
+    ("ZERODDS_UDS_BASE_DIR", "transport.uds.base_dir"),
+    ("ZERODDS_UDS_SOCKET_MODE", "transport.uds.socket_mode"),
+    ("ZERODDS_UDS_BASE_DIR_MODE", "transport.uds.base_dir_mode"),
+    ("ZERODDS_UDS_MAX_DATAGRAM", "transport.uds.max_datagram"),
+    ("ZERODDS_UDS_MODE", "transport.uds.mode"),
     ("ZERODDS_TIME_SOURCE", "time.source"),
 ];
 
@@ -3839,12 +4285,26 @@ fn runtime_default_text(path: &str) -> String {
         "threads.extra_recv" => d.extra_recv_threads.to_string(),
         "wire.data_representation_match" => String::from("strict"),
         "transport.tcp_locator_kinds" => String::from("vendor"),
+        "transport.tcp_accepted_vendors" => String::from("(every vendor)"),
+        "transport.tcp_logical_port_claim" => String::from("listener"),
+        "transport.tcp_dialect" => String::from("zerodds"),
+        "transport.tcp_accept_dialects" => String::from("(every dialect)"),
+        "transport.tcp_port" => d.tcp_port.to_string(),
+        "discovery.unicast_transports" => String::from("udp,tcp"),
         "transport.udp.connected_cache" => flag(d.udp.connected_cache_enabled),
         "transport.udp.cache_max_entries" => d.udp.connected_cache_max_entries.to_string(),
         "transport.udp.cache_sndbuf" => d.udp.connected_cache_sndbuf.unwrap_or(0).to_string(),
         "transport.udp.recv_buffer" => d.udp.recv_buffer_size.unwrap_or(0).to_string(),
         "transport.udp.dont_route" => flag(d.udp.dont_route),
         "transport.udp.max_message_size" => d.udp.max_message_size.to_string(),
+        "transport.uds.base_dir" => d.uds.base_dir.display().to_string(),
+        "transport.uds.socket_mode" => d
+            .uds
+            .socket_mode
+            .map_or(String::from("umask"), |mode| alloc::format!("{mode:04o}")),
+        "transport.uds.base_dir_mode" => alloc::format!("{:04o}", d.uds.base_dir_mode),
+        "transport.uds.max_datagram" => d.uds.max_datagram.to_string(),
+        "transport.uds.mode" => String::from(d.uds.mode.as_str()),
         "durability.dir" => String::from("(temp dir)/zerodds-durability"),
         "time.source" => String::from("system"),
         "threads.recv_cpus" => d
@@ -3890,7 +4350,10 @@ fn runtime_expectation(path: &str) -> &'static str {
         "transport.interface" => "an IPv4 address",
         "discovery.spdp_multicast_group" => "an IPv4 multicast address",
         "discovery.multicast_allowlist" => "IPv4 multicast addresses",
-        "discovery.peers" => "IPv4 addresses, optionally with :port",
+        "discovery.peers" => {
+            "IPv4 addresses, optionally with :port, and TCP listeners as tcp://ip:port or \
+             tcp://[ipv6]:port, optionally with /logical-port (dialect fastdds)"
+        }
         "wire.data_representation_offer" => "XCDR1 and/or XCDR2",
         "wire.rtps_dialect" => "cyclone, fastdds, opendds or maximally-interoperable",
         "wire.codec_dialect" => {
@@ -3947,6 +4410,16 @@ fn runtime_expectation(path: &str) -> &'static str {
         "threads.extra_recv" => "an integer in 0..=64",
         "wire.data_representation_match" => "strict or tolerant",
         "transport.tcp_locator_kinds" => "vendor or fast-dds",
+        "transport.tcp_accepted_vendors" => {
+            "a non-empty list of vendor ids, four hex digits each (01f0)"
+        }
+        "transport.tcp_logical_port_claim" => "listener or none",
+        "transport.tcp_dialect" => "zerodds, rtps, cyclone or fastdds",
+        "transport.tcp_accept_dialects" => {
+            "a non-empty list of dialects: zerodds, rtps, cyclone, fastdds"
+        }
+        "transport.tcp_port" => "an integer in 0..=65535; 0 lets the system choose",
+        "discovery.unicast_transports" => "a non-empty list of udp and tcp",
         "ros2.time_based_filter" => "entries SECONDS or /topic=SECONDS, seconds >= 0",
         "time.source" => "system, or tai (Linux only, CLOCK_TAI)",
         "transport.udp.cache_max_entries" => "an integer > 0",
@@ -3954,6 +4427,13 @@ fn runtime_expectation(path: &str) -> &'static str {
         "transport.udp.cache_sndbuf" | "transport.udp.recv_buffer" => {
             "bytes, an integer; 0 leaves the kernel default"
         }
+        "transport.uds.base_dir" => {
+            "an absolute directory path (Windows: from the root of a drive)"
+        }
+        "transport.uds.socket_mode" => "umask, or an octal mode of at most 0777",
+        "transport.uds.base_dir_mode" => "an octal mode of at most 07777",
+        "transport.uds.max_datagram" => "bytes, an integer > 0",
+        "transport.uds.mode" => "datagram (Unix only) or stream",
         _ => "a supported value",
     }
 }
@@ -4008,6 +4488,7 @@ fn valid_runtime_value(path: &str, value: &str) -> bool {
                     v.parse::<Ipv4Addr>().is_ok()
                         || v.parse::<std::net::SocketAddrV4>()
                             .is_ok_and(|v| v.port() > 0)
+                        || parse_tcp_peer(v).is_some()
                 })
         }
         "wire.data_representation_offer" => parse_data_repr_offer_str(value).is_some(),
@@ -4082,6 +4563,12 @@ fn valid_runtime_value(path: &str, value: &str) -> bool {
         "threads.extra_recv" => value.parse::<usize>().is_ok_and(|v| v <= 64),
         "wire.data_representation_match" => parse_data_rep_match(value).is_some(),
         "transport.tcp_locator_kinds" => matches!(value.trim(), "vendor" | "fast-dds"),
+        "transport.tcp_accepted_vendors" => parse_vendor_list(value).is_some(),
+        "transport.tcp_logical_port_claim" => matches!(value.trim(), "listener" | "none"),
+        "transport.tcp_dialect" => parse_tcp_dialect(value).is_some(),
+        "transport.tcp_accept_dialects" => parse_tcp_dialect_list(value).is_some(),
+        "transport.tcp_port" => value.parse::<u16>().is_ok(),
+        "discovery.unicast_transports" => parse_unicast_transports(value).is_some(),
         "ros2.time_based_filter" => parse_time_based_filter(value).is_some(),
         "time.source" => match value {
             "system" => true,
@@ -4098,6 +4585,21 @@ fn valid_runtime_value(path: &str, value: &str) -> bool {
         "transport.udp.cache_sndbuf" | "transport.udp.recv_buffer" => {
             value.parse::<usize>().is_ok()
         }
+        // Windows: a path from the root of a drive (`\tmp\zerodds` on the
+        // current one, `C:\zerodds`); one relative to the working directory
+        // is refused there as well.
+        "transport.uds.base_dir" => {
+            let path = std::path::Path::new(value.trim());
+            if cfg!(windows) {
+                path.has_root()
+            } else {
+                path.is_absolute()
+            }
+        }
+        "transport.uds.socket_mode" => parse_uds_socket_mode(value).is_some(),
+        "transport.uds.base_dir_mode" => parse_octal_mode(value, 0o7777).is_some(),
+        "transport.uds.max_datagram" => value.parse::<usize>().is_ok_and(|v| v > 0),
+        "transport.uds.mode" => UdsMode::parse(value).is_some(),
         _ => true,
     }
 }
@@ -4112,6 +4614,9 @@ fn runtime_list(path: &str) -> bool {
             | "wire.data_representation_offer"
             | "ros2.time_based_filter"
             | "transport.user_transports"
+            | "transport.tcp_accepted_vendors"
+            | "transport.tcp_accept_dialects"
+            | "discovery.unicast_transports"
             | "threads.recv_cpus"
             | "threads.tick_cpus"
     )
@@ -4320,6 +4825,10 @@ impl RuntimeConfig {
 
     #[allow(clippy::too_many_lines)]
     fn from_validated_source(source: &ConfigSource) -> Self {
+        let unicast_transports = source
+            .var("ZERODDS_DISCOVERY_UNICAST_TRANSPORTS")
+            .and_then(|v| parse_unicast_transports(&v))
+            .unwrap_or((true, true));
         let participant_lease_duration = source
             .var("ZERODDS_PARTICIPANT_LEASE_MS")
             .and_then(|s| s.parse::<u64>().ok())
@@ -4708,6 +5217,25 @@ impl RuntimeConfig {
             tcp_locator_kinds_fast_dds: source
                 .var("ZERODDS_TCP_LOCATOR_KINDS")
                 .is_some_and(|v| v.trim() == "fast-dds"),
+            tcp_accepted_vendors: source
+                .var("ZERODDS_TCP_ACCEPTED_VENDORS")
+                .and_then(|v| parse_vendor_list(&v)),
+            tcp_logical_port_claim: source
+                .var("ZERODDS_TCP_LOGICAL_PORT_CLAIM")
+                .is_none_or(|v| v.trim() != "none"),
+            tcp_dialect: source
+                .var("ZERODDS_TCP_DIALECT")
+                .and_then(|v| parse_tcp_dialect(&v))
+                .unwrap_or_default(),
+            tcp_accept_dialects: source
+                .var("ZERODDS_TCP_ACCEPT_DIALECTS")
+                .and_then(|v| parse_tcp_dialect_list(&v)),
+            tcp_port: source
+                .var("ZERODDS_TCP_PORT")
+                .and_then(|v| v.parse::<u16>().ok())
+                .unwrap_or(0),
+            metatraffic_over_udp: unicast_transports.0,
+            metatraffic_over_tcp: unicast_transports.1,
             absent_type_consistency: source
                 .var("ZERODDS_TYPE_CONSISTENCY_ABSENT")
                 .as_deref()
@@ -4788,11 +5316,110 @@ impl RuntimeConfig {
             phase_dump: source.var("ZERODDS_PHASE_DUMP").is_some_and(|s| s == "1"),
             phase_timing: source.var("ZERODDS_PHASE_TIMING").is_some_and(|s| s == "1"),
             udp: udp_config_from(source),
+            uds: uds_config_from(source),
         }
     }
 }
 
 impl RuntimeConfig {
+    /// The `LocatorKind` values this runtime's TCP locators are announced
+    /// with (`transport.tcp_locator_kinds`,
+    /// [`Self::tcp_locator_kinds_fast_dds`]). With `vendor`, the default,
+    /// they are the kinds of the vendor whose dialect the runtime speaks
+    /// (`zerodds-tcp-transport-1.0` §1.1): ZeroDDS's own for the dialects
+    /// `zerodds` and `rtps`, 4 and 8 for the dialects `cyclone` and
+    /// `fastdds`. With `fast-dds` they are 4 and 8 in every dialect.
+    #[must_use]
+    pub fn tcp_kind_set(&self) -> zerodds_rtps::wire_types::TcpKindSet {
+        if self.tcp_locator_kinds_fast_dds
+            || matches!(
+                self.tcp_dialect,
+                zerodds_transport_tcp::TcpDialect::Cyclone
+                    | zerodds_transport_tcp::TcpDialect::FastDds
+            )
+        {
+            zerodds_rtps::wire_types::TcpKindSet::Kinds4And8
+        } else {
+            zerodds_rtps::wire_types::TcpKindSet::ZeroDds
+        }
+    }
+
+    /// Whether this runtime runs a TCP leg (`transport.user_transports`,
+    /// or `transport.user_transport` when that list is empty).
+    #[must_use]
+    pub fn uses_tcp(&self) -> bool {
+        let tcp = |kind: &UserTransportKind| {
+            matches!(kind, UserTransportKind::TcpV4 | UserTransportKind::TcpV6)
+        };
+        if self.user_transports.is_empty() {
+            self.user_transport.as_ref().is_some_and(tcp)
+        } else {
+            self.user_transports.iter().any(tcp)
+        }
+    }
+
+    /// Whether a message of this runtime may go to a TCP connection of the
+    /// dialect `rtps` (`zerodds-tcp-transport-1.0` §2.5, §4.1): in its own
+    /// dialect `rtps`, and when its TCP listener takes connections of that
+    /// dialect (`transport.tcp_accept_dialects`, every dialect by
+    /// default), whose messages the runtime answers on the accepted
+    /// connection whatever its own dialect. A message protected so that
+    /// the tag covers the RTPS header (flag A) then gets the
+    /// HeaderExtension with its length before the protection: the leg
+    /// cannot add it behind the protection, and the protection is applied
+    /// once for every destination of the message.
+    #[must_use]
+    pub fn may_write_tcp_dialect_rtps(&self) -> bool {
+        use zerodds_transport_tcp::TcpDialect;
+        self.tcp_dialect == TcpDialect::Rtps
+            || (self.uses_tcp()
+                && self
+                    .tcp_accept_dialects
+                    .as_ref()
+                    .is_none_or(|dialects| dialects.contains(&TcpDialect::Rtps)))
+    }
+
+    /// Hands the TCP settings of this runtime to a transport just bound:
+    /// its dialect (`transport.tcp_dialect`), the dialects its listener
+    /// takes (`transport.tcp_accept_dialects`), the vendors its listener
+    /// takes (`transport.tcp_accepted_vendors`) and whether its outgoing
+    /// connections claim the listener's port
+    /// (`transport.tcp_logical_port_claim`).
+    fn apply_tcp_settings(
+        &self,
+        tcp: zerodds_transport_tcp::TcpTransport,
+    ) -> zerodds_transport_tcp::TcpTransport {
+        let tcp = tcp
+            .with_dialect(self.tcp_dialect)
+            .with_logical_port_claim(self.tcp_logical_port_claim);
+        let tcp = match &self.tcp_accept_dialects {
+            Some(dialects) => tcp.with_accepted_dialects(dialects),
+            None => tcp,
+        };
+        match &self.tcp_accepted_vendors {
+            Some(vendors) => tcp.with_accepted_vendors(vendors.clone()),
+            None => tcp,
+        }
+    }
+
+    /// The leg the runtime sends and receives over for a TCP transport.
+    /// In the dialect `rtps` the transport takes only messages that state
+    /// their own length (`zerodds-tcp-transport-1.0` §2.5). A connection
+    /// of that dialect is either one the runtime opens in its own dialect
+    /// `rtps` or one it accepted from a peer of that dialect (§4.1, §4.2),
+    /// whatever the runtime's own dialect. So the leg is one that puts the
+    /// length into each message whose destination the transport writes to
+    /// in the dialect `rtps`, and leaves every other message as it is
+    /// ([`crate::stream_length_leg::StreamLengthLeg::for_tcp`]).
+    fn tcp_leg(
+        &self,
+        tcp: &Arc<zerodds_transport_tcp::TcpTransport>,
+    ) -> Arc<dyn Transport + Send + Sync> {
+        Arc::new(crate::stream_length_leg::StreamLengthLeg::for_tcp(
+            Arc::clone(tcp),
+        ))
+    }
+
     /// The TIME_BASED_FILTER minimum separation for a ROS topic: its own
     /// entry of [`Self::ros2_time_based_filter`] if there is one, otherwise
     /// the last entry without a topic. `None` when neither exists or the
@@ -5226,6 +5853,46 @@ fn expand_initial_peer_specs(
     out
 }
 
+/// The initial peers of a runtime with the locator kinds `tcp_kinds` on
+/// its TCP peers (`zerodds-tcp-transport-1.0` §1.1). A TCP peer with a
+/// logical port (`tcp://ip:port/logical`) stays as it is. In the dialect
+/// `fastdds` (`fastdds`) one without a logical port becomes one locator
+/// per participant id below `max_participants`, its logical port the
+/// metatraffic unicast port of that id (DDSI-RTPS 2.5 §9.6.1.4.1): Fast
+/// DDS opens a logical port at the metatraffic unicast port of its
+/// participant and asks an initial peer without a logical port so
+/// (`TCPTransportInterface::configureInitialPeerLocator`, §6.1).
+fn fastdds_initial_peers(
+    peers: Vec<Locator>,
+    tcp_kinds: zerodds_rtps::wire_types::TcpKindSet,
+    fastdds: bool,
+    domain_id: u32,
+    max_participants: u32,
+    ports: &zerodds_rtps::wire_types::PortMapping,
+) -> Vec<Locator> {
+    let mut out = Vec::new();
+    for peer in peers {
+        let tcp = peer.kind.is_tcp_v4() || peer.kind.is_tcp_v6();
+        if !tcp || peer.port > u32::from(u16::MAX) {
+            out.push(peer);
+            continue;
+        }
+        let peer = peer.with_tcp_kind_set(tcp_kinds);
+        if !fastdds {
+            out.push(peer);
+            continue;
+        }
+        for pid in 0..max_participants {
+            if let Ok(logical) = u16::try_from(ports.spdp_unicast_port(domain_id, pid)) {
+                let mut asked = peer;
+                asked.port |= u32::from(logical) << 16;
+                out.push(asked);
+            }
+        }
+    }
+    out
+}
+
 /// Expands a single peer spec into locator(s) and appends them to `out`.
 /// `ip:port` → exact locator. Just `ip` → well-known SPDP unicast ports
 /// of participant indices `0..max_participants` (Spec §9.6.1.4.1).
@@ -5238,6 +5905,23 @@ fn expand_initial_peer(
     out: &mut Vec<Locator>,
 ) {
     if spec.is_empty() {
+        return;
+    }
+    // `tcp://ip:port`: the TCP listener of a peer
+    // (`zerodds-tcp-transport-1.0` §4.3). A TCP listener has no well-known
+    // port, so the entry names one. With `/logical` it is a listener of
+    // the dialect `fastdds` (§6.1), whose locator is of kind 4 or 8 and
+    // holds the logical port above the port.
+    if let Some((addr, logical)) = parse_tcp_peer(spec) {
+        let mut locator = match addr {
+            SocketAddr::V4(v4) => Locator::tcp_v4(v4.ip().octets(), u32::from(v4.port())),
+            SocketAddr::V6(v6) => Locator::tcp_v6(v6.ip().octets(), u32::from(v6.port())),
+        };
+        if let Some(logical) = logical {
+            locator = locator.with_tcp_kind_set(zerodds_rtps::wire_types::TcpKindSet::Kinds4And8);
+            locator.port |= u32::from(logical) << 16;
+        }
+        out.push(locator);
         return;
     }
     if let Some((ip_s, port_s)) = spec.rsplit_once(':')
@@ -5372,6 +6056,59 @@ fn rtps_message_protection_exempt(
     !relevant.is_empty() && relevant.iter().all(|&b| b)
 }
 
+/// `bytes` as a runtime that may write in the TCP dialect `rtps`
+/// ([`RuntimeConfig::may_write_tcp_dialect_rtps`]) hands it to a
+/// protection that authenticates the RTPS Header and the HeaderExtension
+/// (the flag A of the SRTPS_PREFIX): with the HeaderExtension that states
+/// the message length (`zerodds-tcp-transport-1.0` §2.5, §4.1). The tag
+/// covers the HeaderExtension with its messageLength zero, and the plugin
+/// sets the length to the protected message afterwards (DDS-Security 1.2
+/// §10.5.3.3.1 Table 80, 3; §10.9.3.3.1 Table 89), so the leg that states
+/// the length of each message finds it in place and changes nothing. A
+/// HeaderExtension added behind the protection would not be the one the
+/// tag covers. For a runtime that writes in no connection of the dialect
+/// `rtps`, and for what cannot carry a HeaderExtension, the message as it
+/// is.
+#[cfg(feature = "security")]
+fn stated_for_authenticated_stream<'a>(
+    rt: &DcpsRuntime,
+    bytes: &'a [u8],
+) -> alloc::borrow::Cow<'a, [u8]> {
+    if !rt.config.may_write_tcp_dialect_rtps() {
+        return alloc::borrow::Cow::Borrowed(bytes);
+    }
+    match zerodds_rtps::header_extension::HeaderExtension::with_message_length(bytes) {
+        Ok(stated) => alloc::borrow::Cow::Owned(stated),
+        Err(_) => alloc::borrow::Cow::Borrowed(bytes),
+    }
+}
+
+/// Protects `bytes` with `protect` for a runtime that may write in the TCP
+/// dialect `rtps` when the form of the protection is the plugin's to know: the exchanged
+/// key authenticates the RTPS Header and the HeaderExtension only with
+/// `org.zerodds.crypto.rtps_additional_authenticated_data`, and the
+/// output shows it (the flag A). A message protected so without a
+/// HeaderExtension is protected again with the HeaderExtension in place
+/// ([`stated_for_authenticated_stream`]). The form without the flag takes
+/// no HeaderExtension as input (DDS-Security 1.2 §10.5.3.3.1 Table 80,
+/// 1); its output stays, and the leg adds the HeaderExtension behind the
+/// protection.
+#[cfg(feature = "security")]
+fn protect_for_stream(
+    bytes: &[u8],
+    mut protect: impl FnMut(&[u8]) -> Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
+    use zerodds_security_runtime::SharedSecurityGate;
+    let protected = protect(bytes)?;
+    if !SharedSecurityGate::authenticates_header_without_extension(&protected) {
+        return Some(protected);
+    }
+    match zerodds_rtps::header_extension::HeaderExtension::with_message_length(bytes) {
+        Ok(stated) => protect(&stated),
+        Err(_) => Some(protected),
+    }
+}
+
 #[cfg(feature = "security")]
 fn secure_outbound_bytes<'a>(
     rt: &DcpsRuntime,
@@ -5395,9 +6132,15 @@ fn secure_outbound_bytes<'a>(
         // others with the exchanged key (`rtps_protection_kind` not NONE) or,
         // without that, with the pre-shared key as well. A message that
         // cannot be protected is not sent in the clear.
+        // The pre-shared key always authenticates the header (Table 89):
+        // where a message may go to a TCP connection of the dialect `rtps`
+        // the HeaderExtension with the message length goes in before the
+        // protection.
         Some(gate) if rtps_message_protection_exempt(bytes, false, false) => {
             if gate.has_rtps_psk() {
-                gate.psk_encode(bytes).ok().map(alloc::borrow::Cow::Owned)
+                gate.psk_encode(&stated_for_authenticated_stream(rt, bytes))
+                    .ok()
+                    .map(alloc::borrow::Cow::Owned)
             } else {
                 Some(alloc::borrow::Cow::Borrowed(bytes))
             }
@@ -5407,7 +6150,13 @@ fn secure_outbound_bytes<'a>(
                 && gate.rtps_protection().unwrap_or(ProtectionLevel::None)
                     == ProtectionLevel::None =>
         {
-            gate.psk_encode(bytes).ok().map(alloc::borrow::Cow::Owned)
+            gate.psk_encode(&stated_for_authenticated_stream(rt, bytes))
+                .ok()
+                .map(alloc::borrow::Cow::Owned)
+        }
+        Some(gate) if rt.config.may_write_tcp_dialect_rtps() => {
+            protect_for_stream(bytes, |message| gate.transform_outbound(message).ok())
+                .map(alloc::borrow::Cow::Owned)
         }
         Some(gate) => gate
             .transform_outbound(bytes)
@@ -5483,7 +6232,7 @@ fn secure_inbound_bytes<'a>(
             }
         };
     }
-    let looks_srtps = bytes.len() > 20usize && bytes[20usize] == 0x33;
+    let looks_srtps = SharedSecurityGate::is_message_protected(bytes);
     if !looks_srtps && rtps_message_protection_exempt(bytes, false, false) {
         record_inbound_refusal(
             rt,
@@ -5513,7 +6262,7 @@ fn secure_inbound_bytes_after_psk<'a>(
     // this exception classify_inbound discards plain SPDP on the WAN iface under
     // rtps_protection as LegacyBlocked -> no discovery (match timeout).
     {
-        let looks_srtps = bytes.len() > 20usize && bytes[20usize] == 0x33;
+        let looks_srtps = zerodds_security_runtime::SharedSecurityGate::is_message_protected(bytes);
         if !looks_srtps
             && rtps_message_protection_exempt(
                 bytes,
@@ -6191,6 +6940,33 @@ fn drain_due_batches(
 
 /// User-writer slot in the runtime. Carries ReliableWriter + topic meta +
 /// fragment size (from QoS).
+/// Evaluates a DDSSQL content filter against the serialized body of a
+/// sample of a writer's type: the body (without the encapsulation header),
+/// its representation (`0` XCDR1, `1` XCDR2), whether it is big-endian, the
+/// parsed expression and its parameters. `None` when the body does not
+/// decode or the expression cannot be evaluated against the type; the
+/// writer then leaves the filter to the reader (DDSI-RTPS 2.5 §8.7.3.4).
+pub type WriterFilterEvaluator = Arc<
+    dyn Fn(&[u8], u8, bool, &zerodds_sql_filter::Expr, &[zerodds_sql_filter::Value]) -> Option<bool>
+        + Send
+        + Sync,
+>;
+
+/// The most content filters of remote readers one writer applies; the
+/// readers of further filters filter themselves (DDSI-RTPS 2.5 §8.7.3.4:
+/// "a resource limit on the number of remote readers each writer is able
+/// to store filter information for").
+const MAX_REMOTE_FILTERS_PER_WRITER: usize = 32;
+
+/// A content filter of matched remote readers, as a writer applies it.
+struct RemoteFilter {
+    signature: zerodds_rtps::content_filter_info::FilterSignature,
+    expression: zerodds_sql_filter::Expr,
+    parameters: Vec<zerodds_sql_filter::Value>,
+    /// The matched readers that announced it.
+    readers: Vec<Guid>,
+}
+
 struct UserWriterSlot {
     writer: ReliableWriter,
     /// The writer's Publisher (DDSI-RTPS 2.5 Table 9.19).
@@ -6370,6 +7146,20 @@ struct UserWriterSlot {
     /// canonical key holder into the wire `serializedKey` a dispose/
     /// unregister DATA carries.
     key_hash_support: KeyHashSupport,
+    /// Evaluates a content filter against a sample of this writer's type
+    /// ([`DcpsRuntime::set_user_writer_filter_evaluator`]); `None` for a
+    /// writer that has only the serialized sample and filters nothing.
+    filter_evaluator: Option<WriterFilterEvaluator>,
+    /// The content filters of the matched remote readers this writer
+    /// applies (DDSI-RTPS 2.5 §8.7.3), one entry per filter signature.
+    remote_filters: Vec<RemoteFilter>,
+    /// Per instance and filter, whether the last sample written passed
+    /// (§8.7.3.4: "a Writer needs maintain state per Instance and per
+    /// 'content filtered' Reader"); readers with one signature share it.
+    filter_last_passed: alloc::collections::BTreeMap<
+        ([u8; 16], zerodds_rtps::content_filter_info::FilterSignature),
+        bool,
+    >,
     /// `true` once `writer.lifecycle.serialized_key_unavailable` has been
     /// filed for this writer — filed at most once, not once per
     /// dispose/unregister, mirroring
@@ -6530,6 +7320,122 @@ fn await_writer_room<'a>(
 }
 
 impl UserWriterSlot {
+    /// Takes the content filter the matched remote reader `reader`
+    /// announces (`None`: it has none, or it is gone) and applies it from
+    /// the next sample on, when the writer can: it has an evaluator for its
+    /// type, the filter is of class `DDSSQL`, the expression parses and has
+    /// its parameters, and the writer holds fewer than
+    /// [`MAX_REMOTE_FILTERS_PER_WRITER`]. Otherwise the reader filters
+    /// (DDSI-RTPS 2.5 §8.7.3.1: "the Writer will simply ignore the filter
+    /// information and not filter any data samples"). Changed parameters
+    /// are a new signature (§8.7.3.3).
+    fn set_reader_content_filter(
+        &mut self,
+        reader: Guid,
+        filter: Option<&zerodds_rtps::subscription_data::ContentFilterProperty>,
+    ) {
+        for known in &mut self.remote_filters {
+            known.readers.retain(|r| *r != reader);
+        }
+        let signature = filter
+            .filter(|_| self.filter_evaluator.is_some())
+            .and_then(|f| self.remote_filter_for(reader, f));
+        self.remote_filters.retain(|f| !f.readers.is_empty());
+        let filters = &self.remote_filters;
+        self.filter_last_passed
+            .retain(|(_, s), _| filters.iter().any(|f| f.signature == *s));
+        self.writer.set_reader_filter_signature(reader, signature);
+    }
+
+    /// Registers `reader` with the filter `property`, known or new; `None`
+    /// when the writer does not apply it.
+    fn remote_filter_for(
+        &mut self,
+        reader: Guid,
+        property: &zerodds_rtps::subscription_data::ContentFilterProperty,
+    ) -> Option<zerodds_rtps::content_filter_info::FilterSignature> {
+        if property.filter_class_name != zerodds_rtps::subscription_data::filter_class::DDSSQL {
+            return None;
+        }
+        let signature = zerodds_rtps::content_filter_info::filter_signature(property);
+        if let Some(known) = self
+            .remote_filters
+            .iter_mut()
+            .find(|f| f.signature == signature)
+        {
+            known.readers.push(reader);
+            return Some(signature);
+        }
+        let live = self
+            .remote_filters
+            .iter()
+            .filter(|f| !f.readers.is_empty())
+            .count();
+        if live >= MAX_REMOTE_FILTERS_PER_WRITER {
+            return None;
+        }
+        let expression = zerodds_sql_filter::parse(&property.filter_expression).ok()?;
+        let parameters: Vec<zerodds_sql_filter::Value> = property
+            .expression_parameters
+            .iter()
+            .map(|p| zerodds_sql_filter::Value::from_parameter(p))
+            .collect();
+        if expression
+            .collect_param_indices()
+            .iter()
+            .any(|index| *index as usize >= parameters.len())
+        {
+            return None;
+        }
+        self.remote_filters.push(RemoteFilter {
+            signature,
+            expression,
+            parameters,
+            readers: alloc::vec![reader],
+        });
+        Some(signature)
+    }
+
+    /// What the remote readers' content filters make of the sample `body`
+    /// of instance `key` (DDSI-RTPS 2.5 §8.7.3.3), and records per instance
+    /// and filter whether it passed (§8.7.3.4). `None` when the writer
+    /// applies no filter or none could be evaluated.
+    fn filter_outcomes(
+        &mut self,
+        body: &[u8],
+        representation: u8,
+        big_endian: bool,
+        key: [u8; 16],
+    ) -> Option<Vec<zerodds_rtps::content_filter_info::FilterOutcome>> {
+        if self.remote_filters.is_empty() {
+            return None;
+        }
+        let evaluate = self.filter_evaluator.as_ref()?;
+        let mut outcomes = Vec::with_capacity(self.remote_filters.len());
+        for filter in &self.remote_filters {
+            let Some(passed) = evaluate(
+                body,
+                representation,
+                big_endian,
+                &filter.expression,
+                &filter.parameters,
+            ) else {
+                continue;
+            };
+            let before = self
+                .filter_last_passed
+                .insert((key, filter.signature), passed);
+            outcomes.push(zerodds_rtps::content_filter_info::FilterOutcome {
+                signature: filter.signature,
+                passed,
+                // §8.7.3.4: a DATA "unless the previous sample for that
+                // Instance also did not pass the content filter".
+                announce: !passed && before != Some(false),
+            });
+        }
+        (!outcomes.is_empty()).then_some(outcomes)
+    }
+
     /// Whether every same-runtime reader this RELIABLE writer routes to has
     /// room for a sample ([`ReaderRoom`]). A reader without room is told
     /// that a writer waits and is asked once more, so room it frees in
@@ -6847,6 +7753,17 @@ pub enum UserSample {
     Lifecycle {
         /// Key hash of the affected instance (16 byte).
         key_hash: [u8; 16],
+        /// `key_hash` names no instance: the reader is keyed, the writer
+        /// sent no `PID_KEY_HASH` (DDSI-RTPS 2.5 §9.6.4.8), and the reader
+        /// could not compute the hash from the marker's `serializedKey`
+        /// either (DDSI-RTPS 2.5 §8.7.10) — no type is known for it, the
+        /// key does not decode as that type, or the DATA carried no key.
+        /// `key_hash` then holds the first 16 octets of the payload, which
+        /// match neither the instance's KeyHash nor the zero hash, and a
+        /// consumer that passes the instance identity on must not pass it
+        /// as one. `false` for a hash taken from the wire, a computed hash,
+        /// a keyless reader, and every marker this runtime made itself.
+        key_hash_unavailable: bool,
         /// `NotAliveDisposed` / `NotAliveUnregistered` /
         /// `NotAliveDisposedUnregistered`.
         kind: zerodds_rtps::history_cache::ChangeKind,
@@ -7512,8 +8429,9 @@ struct UserReaderSlot {
     tbf_hold: crate::presentation::TbfHold<[u8; 16], UserSampleWithEncap>,
     /// Lazily resolved and cached codec for computing this reader's
     /// own KeyHash from its type (XTypes 1.3 §7.6.8) when a writer's DATA
-    /// leaves `PID_KEY_HASH` out of the inline QoS (DDSI-RTPS 2.5 §9.6.3.3
-    /// makes it optional; Eclipse Cyclone never sends it). Built once from
+    /// leaves `PID_KEY_HASH` (DDSI-RTPS 2.5 §9.6.4.8) out of the inline QoS
+    /// (§8.7.10: the reader then computes it from the data; Eclipse Cyclone
+    /// never sends it). Built once from
     /// `type_identifier` through the runtime's TypeLookup registry — see
     /// [`Self::resolve_key_hash_support`] — and never retried once
     /// resolution fails, so an unresolvable type is not a per-sample cost.
@@ -7792,6 +8710,34 @@ fn build_key_hash_support(
 /// Helper struct for announcing a local publication/subscription
 /// as SEDP BuiltinTopicData. The caller creates it once per
 /// writer/reader registration and passes it to SedpStack.
+/// The `EquivalenceHashComplete` identifier of an endpoint's type: `id`
+/// when it is one, else the complete half of the endpoint's
+/// `PID_TYPE_INFORMATION` (XTypes 1.3 §7.6.3.2.2). The blob is in the
+/// byte order of the parameter list it came in, which the SEDP data does
+/// not keep; it begins with the DHEADER of its body, and read in the other
+/// order that length does not fit the blob, so the order that reads is the
+/// order it was written in.
+fn complete_type_identifier_of(
+    id: &zerodds_types::TypeIdentifier,
+    type_information: Option<&[u8]>,
+) -> Option<zerodds_types::TypeIdentifier> {
+    use zerodds_types::TypeIdentifier;
+    if matches!(id, TypeIdentifier::EquivalenceHashComplete(_)) {
+        return Some(id.clone());
+    }
+    let bytes = type_information?;
+    [
+        zerodds_wire::Endianness::Little,
+        zerodds_wire::Endianness::Big,
+    ]
+    .into_iter()
+    .find_map(|endianness| {
+        zerodds_types::type_information::TypeInformation::from_bytes(bytes, endianness).ok()
+    })
+    .map(|ti| ti.complete.typeid_with_size.type_id)
+    .filter(|complete| matches!(complete, TypeIdentifier::EquivalenceHashComplete(_)))
+}
+
 /// QoS config for registering a user writer with the runtime.
 /// Bundles all policies that go on the wire via SEDP plus the local
 /// Per-endpoint discovery info for ROS 2 endpoint-info-by-topic introspection
@@ -7826,6 +8772,14 @@ pub struct DiscoveredEndpointInfo {
     /// (see [`DcpsRuntime::type_lookup_server`]); every other variant means
     /// no such resolution is possible for this endpoint.
     pub type_identifier: zerodds_types::TypeIdentifier,
+    /// The `EquivalenceHashComplete` identifier of the endpoint's type: the
+    /// complete half of a remote endpoint's `PID_TYPE_INFORMATION`
+    /// (XTypes 1.3 §7.6.3.2.2), whose minimal half [`Self::type_identifier`]
+    /// prefers, or the local endpoint's own identifier when it is a
+    /// complete one. `None` when the endpoint announced none. A minimal
+    /// type has no member names; what reads samples by their members asks
+    /// for this one ([`DcpsRuntime::send_type_lookup_request`]).
+    pub complete_type_identifier: Option<zerodds_types::TypeIdentifier>,
     /// USER_DATA (DDS 1.4 §2.2.3.1) as the endpoint announced it: SEDP's
     /// `PID_USER_DATA` for a remote endpoint, the announcement this
     /// runtime made for a local one. ROS 2 RMWs from Iron on put
@@ -8535,6 +9489,9 @@ pub struct DcpsRuntime {
     /// SPDP announcements that carry this participant's own GUID prefix and
     /// are not its own; see [`DcpsRuntime::prefix_collisions`].
     prefix_collisions: AtomicU64,
+    /// Metatraffic sends to a TCP locator that failed; see
+    /// [`DcpsRuntime::metatraffic_tcp_send_errors`].
+    metatraffic_tcp_send_errors: AtomicU64,
     /// Dispose and unregister markers of NO_KEY writers not sent, see
     /// [`DcpsRuntime::keyless_lifecycle_not_sent`].
     keyless_lifecycle_not_sent: AtomicU64,
@@ -9223,9 +10180,6 @@ impl DcpsRuntime {
             zerodds_rtps::submessages::set_accept_empty_acknack_base_zero(true);
         }
         install_rejection_events(&config.observability);
-        if config.tcp_locator_kinds_fast_dds {
-            zerodds_rtps::wire_types::set_tcp_kinds_fast_dds(true);
-        }
         // `transport.same_host_shm` asks for the shared-memory channel, and a
         // build without the `same-host-shm` feature has none. Started anyway,
         // every same-host sample went over UDP under a setting that said
@@ -9301,7 +10255,21 @@ impl DcpsRuntime {
             config.initial_peer_max_participants,
             &config.port_mapping,
         );
-        config.initial_peers.extend(expanded_peers);
+        // A TCP peer is named with the locator kinds of this runtime's
+        // dialect (`zerodds-tcp-transport-1.0` §1.1). In the dialect
+        // `fastdds` a TCP peer without a logical port is asked at the
+        // metatraffic unicast ports of the first participant ids, as Fast
+        // DDS asks an initial peer without one (§6.1).
+        let tcp_kinds = config.tcp_kind_set();
+        let peers = fastdds_initial_peers(
+            expanded_peers,
+            tcp_kinds,
+            config.tcp_dialect == zerodds_transport_tcp::TcpDialect::FastDds,
+            domain_id as u32,
+            config.initial_peer_max_participants,
+            &config.port_mapping,
+        );
+        config.initial_peers.extend(peers);
         // SPDP multicast receiver on the spec port.
         // u32 → u16 enforcing, the spec port is always < 65536.
         let spdp_port = u16::try_from(config.port_mapping.spdp_multicast_port(domain_id as u32))
@@ -9439,15 +10407,29 @@ impl DcpsRuntime {
                 // Every TCP leg's listener: keeping only the last one left
                 // a TCPv4 leg beside a TCPv6 one without an accept thread.
                 let mut tcp_handles = alloc::vec::Vec::new();
+                // zerodds-tcp-transport-1.0 §4.3: both TCP listeners on one
+                // port, also one of the system's choosing.
+                let tcp_pair = if config.tcp_port == 0
+                    && config.user_transports.contains(&UserTransportKind::TcpV4)
+                    && config.user_transports.contains(&UserTransportKind::TcpV6)
+                {
+                    Some(select_tcp_pair(pinned, &config)?)
+                } else {
+                    None
+                };
                 for kind in &config.user_transports {
-                    let (leg, tcp) = select_user_transport(
-                        *kind,
-                        guid_prefix,
-                        domain_id,
-                        pinned,
-                        user_port,
-                        &config,
-                    )?;
+                    let (leg, tcp) = match (kind, &tcp_pair) {
+                        (UserTransportKind::TcpV4, Some((v4, _))) => v4.clone(),
+                        (UserTransportKind::TcpV6, Some((_, v6))) => v6.clone(),
+                        _ => select_user_transport(
+                            *kind,
+                            guid_prefix,
+                            domain_id,
+                            pinned,
+                            user_port,
+                            &config,
+                        )?,
+                    };
                     legs.push(leg);
                     tcp_handles.extend(tcp);
                 }
@@ -9465,6 +10447,21 @@ impl DcpsRuntime {
                 )?;
                 (leg, tcp.into_iter().collect())
             };
+
+        // zerodds-tcp-transport-1.0 §6.1: the logical ports of the TCP
+        // listeners in the dialect `fastdds` are the metatraffic and the
+        // user unicast port of this participant, the ports a Fast DDS
+        // participant over TCP has open; the locator names the first, the
+        // one Fast DDS asks an initial peer at. Without a well-known port
+        // the metatraffic socket's own port stands in.
+        let metatraffic_port: u16 = match spdp_participant_id {
+            u32::MAX => u16::try_from(spdp_uc.local_locator().port).unwrap_or(0),
+            pid => u16::try_from(config.port_mapping.spdp_unicast_port(domain_id as u32, pid))
+                .unwrap_or(0),
+        };
+        for tcp in &tcp_listeners {
+            tcp.set_logical_ports(&[metatraffic_port, user_port]);
+        }
 
         // Spec `zerodds-zero-copy-1.0` §6: the user unicast transport sends
         // to a same-host ZeroDDS participant through its channel.
@@ -9647,7 +10644,31 @@ impl DcpsRuntime {
         // peer on any shared segment finds a reachable locator. An explicit
         // `transport.interface` collapses these to the single pinned address.
         let user_locators = announce_locators(&*user_uc, config.multicast_interface);
-        let spdp_uc_locators = announce_locators(&spdp_uc, config.multicast_interface);
+        // `zerodds-tcp-transport-1.0` §4.3: the metatraffic unicast locators
+        // are those of the UDP metatraffic socket and of each TCP listener,
+        // as `discovery.unicast_transports` names them. A participant that
+        // has TCP only (Cyclone DDS with `General/Transport` = `tcp`, a
+        // peer behind a network that carries no UDP) sends its SEDP, WLP
+        // and TypeLookup traffic to the TCP locator.
+        let mut spdp_uc_locators = if config.metatraffic_over_udp {
+            announce_locators(&spdp_uc, config.multicast_interface)
+        } else {
+            Vec::new()
+        };
+        if config.metatraffic_over_tcp {
+            for tcp in &tcp_listeners {
+                for locator in announce_locators(&**tcp, config.multicast_interface) {
+                    if !spdp_uc_locators.contains(&locator) {
+                        spdp_uc_locators.push(locator);
+                    }
+                }
+            }
+        }
+        if spdp_uc_locators.is_empty() {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "discovery.unicast_transports names tcp alone and the runtime has no TCP transport",
+            });
+        }
         // Primary (first) locator for the single-locator API surface
         // (`user_locator()`, endpoint-locator fallback). The full list drives
         // the announced participant/endpoint locator sets.
@@ -9759,7 +10780,7 @@ impl DcpsRuntime {
                 .with_attr("known", known.join(",").as_str()),
             );
         }
-        #[cfg(all(feature = "same-host-shm", unix))]
+        #[cfg(all(feature = "same-host-shm", any(unix, windows)))]
         if config.same_host_shm {
             crate::same_host_shm::sweep_orphaned_segments_once(
                 &config.observability,
@@ -9826,6 +10847,7 @@ impl DcpsRuntime {
             volatile_secure_deferred: AtomicU64::new(0),
             volatile_secure_failed: AtomicU64::new(0),
             prefix_collisions: AtomicU64::new(0),
+            metatraffic_tcp_send_errors: AtomicU64::new(0),
             keyless_lifecycle_not_sent: AtomicU64::new(0),
             foreign_domain_senders: Mutex::new(Vec::new()),
             refused_sedp_datagrams: AtomicU64::new(0),
@@ -12453,7 +13475,13 @@ impl DcpsRuntime {
         }
         let discovered = wlp_unicast_targets(&self.discovered_participants());
         for peer in uncovered_initial_peers(&self.config.initial_peers, &discovered) {
-            let _ = self.spdp_mc_tx.send(peer, bytes);
+            // A TCP peer (`tcp://ip:port`) is reached over the TCP leg
+            // (`zerodds-tcp-transport-1.0` §4.3).
+            if peer.kind.is_tcp_v4() || peer.kind.is_tcp_v6() {
+                let _ = self.send_metatraffic(peer, bytes);
+            } else {
+                let _ = self.spdp_mc_tx.send(peer, bytes);
+            }
         }
         for loc in &discovered {
             let _ = self.send_metatraffic(loc, bytes);
@@ -13485,6 +14513,9 @@ impl DcpsRuntime {
                     retained: alloc::collections::VecDeque::new(),
                     intra_replayed_readers: alloc::collections::BTreeSet::new(),
                     key_hash_support: KeyHashSupport::default(),
+                    filter_evaluator: None,
+                    remote_filters: Vec::new(),
+                    filter_last_passed: alloc::collections::BTreeMap::new(),
                     lifecycle_fallback_reported: false,
                     instance_key_holders: alloc::collections::BTreeMap::new(),
                     instance_key_unreadable_reported: false,
@@ -14594,6 +15625,16 @@ impl DcpsRuntime {
         USER_PORT_FALLBACKS.load(Ordering::Relaxed)
     }
 
+    /// How many datagrams the user-traffic transport reported as larger
+    /// than its limit and did not hand on (`RecvError::BufferTooSmall`, a
+    /// UDS peer with a larger `max_datagram`, `zerodds-uds-transport-1.0`
+    /// §3.3). Each is also reported as the observability event
+    /// `transport.user_recv.datagram_above_limit`. Counted per process.
+    #[must_use]
+    pub fn user_datagrams_above_limit(&self) -> u64 {
+        USER_DATAGRAMS_ABOVE_LIMIT.load(Ordering::Relaxed)
+    }
+
     /// How many reader proxies took the reply-locator list of the receiver
     /// state (an InfoReply of the message) as their locators because they
     /// had none of their own (DDSI-RTPS 2.5 §8.3.4). Counted per process.
@@ -15364,6 +16405,7 @@ impl DcpsRuntime {
         for (_writer_eid, w_arc) in self.writer_slots_snapshot() {
             let Ok(mut slot) = w_arc.lock() else { continue };
             slot.incompatible_remotes.retain(|(g, _)| *g != key);
+            slot.set_reader_content_filter(guid, None);
             slot.writer.remove_reader_proxy(guid);
             // What only this reader had left to acknowledge is done with.
             slot.release_acknowledged();
@@ -15815,6 +16857,7 @@ impl DcpsRuntime {
                         // recorded it with, if any.
                         let _ = r.sample_tx.send(UserSample::Lifecycle {
                             key_hash: s.key_hash,
+                            key_hash_unavailable: false,
                             kind: reader_lifecycle_kind(&self.config, kind),
                             key_holder: None,
                             source_timestamp: s.source_timestamp,
@@ -15949,6 +16992,7 @@ impl DcpsRuntime {
             let writer_guid = original.map_or(own_guid, |(guid, _)| guid.to_bytes());
             let _ = sender.send(UserSample::Lifecycle {
                 key_hash,
+                key_hash_unavailable: false,
                 kind: reader_lifecycle_kind(&self.config, kind),
                 key_holder: None,
                 source_timestamp,
@@ -16494,6 +17538,7 @@ impl DcpsRuntime {
 
     /// Drops the proxy of remote reader `remote` from a matched writer.
     fn unmatch_reader_proxy(&self, slot: &mut UserWriterSlot, remote: Guid) {
+        slot.set_reader_content_filter(remote, None);
         slot.writer.remove_reader_proxy(remote);
         // What only this reader had left to acknowledge is done with.
         slot.release_acknowledged();
@@ -16904,6 +17949,18 @@ impl DcpsRuntime {
                     // ever REMOVES; it never calls `add_reader_proxy`,
                     // so the invariant the gate protects holds.
                     self.revisit_wired_writer_match(slot, sub);
+                    // The content filter is not part of the proxy's
+                    // sequence state either: an announcement with changed
+                    // expression parameters (DDSI-RTPS 2.5 §8.7.3.1) is a
+                    // new filter for the reader the writer still serves.
+                    if slot
+                        .writer
+                        .reader_proxies()
+                        .iter()
+                        .any(|p| p.remote_reader_guid == sub.key)
+                    {
+                        slot.set_reader_content_filter(sub.key, sub.content_filter.as_ref());
+                    }
                     return;
                 }
                 // --- QoS-Compatibility ---
@@ -17290,6 +18347,10 @@ impl DcpsRuntime {
                 proxy
                     .set_message_limit(same_host_message_limit(same_host, &proxy.unicast_locators));
                 slot.writer.add_reader_proxy(proxy);
+                // DDSI-RTPS 2.5 §8.7.3: the reader's content filter, applied
+                // on this side from the next sample on; an announcement with
+                // changed parameters comes through here again (§8.7.3.1).
+                slot.set_reader_content_filter(sub.key, sub.content_filter.as_ref());
                 let matched = sub.key.to_bytes();
                 slot.incompatible_remotes.retain(|(g, _)| *g != matched);
                 self.status_changed();
@@ -17890,6 +18951,29 @@ impl DcpsRuntime {
         }
         check_emittable_offer(offer.as_deref())?;
         slot.data_rep_offer_override = offer;
+        Ok(())
+    }
+
+    /// Gives a user writer the evaluator of content filters for its type
+    /// ([`WriterFilterEvaluator`]); with it the writer applies the DDSSQL
+    /// filters its matched remote readers announce (DDSI-RTPS 2.5 §8.7.3).
+    /// The typed `DataWriter` sets it at registration.
+    ///
+    /// # Errors
+    /// `BadParameter` for an unknown writer entity id; `PreconditionNotMet` on a
+    /// poisoned slot lock.
+    pub fn set_user_writer_filter_evaluator(
+        &self,
+        eid: EntityId,
+        evaluator: Option<WriterFilterEvaluator>,
+    ) -> Result<()> {
+        let slot_arc = self.writer_slot(eid).ok_or(DdsError::BadParameter {
+            what: "unknown writer entity id",
+        })?;
+        let mut slot = slot_arc.lock().map_err(|_| DdsError::PreconditionNotMet {
+            reason: "user_writer slot poisoned",
+        })?;
+        slot.filter_evaluator = evaluator;
         Ok(())
     }
 
@@ -18667,6 +19751,18 @@ impl DcpsRuntime {
             // stages it.
             slot.writer
                 .set_next_destination_readers(readers.map(<[Guid]>::to_vec));
+            // DDSI-RTPS 2.5 §8.7.3: what the remote readers' content filters
+            // make of the sample. A CryptoContent and an XML body are not
+            // evaluated; their readers filter.
+            if !slot.remote_filters.is_empty() && !crypto_content && !is_xml_encap(&encap) {
+                let outcomes = slot.filter_outcomes(
+                    payload,
+                    intra_representation,
+                    encap[1] & 1 == 0,
+                    key_hash,
+                );
+                slot.writer.set_next_filter_outcomes(outcomes);
+            }
             let (dgs, resolved_source_ts) = if let Some(content) = protected {
                 let source_ts = source_ts_override.unwrap_or_else(|| {
                     crate::time::time_to_he_timestamp(self.config.time_source.now())
@@ -18738,6 +19834,7 @@ impl DcpsRuntime {
             // Nothing stays addressed: a write that failed before it staged
             // the sample has not used the setting up.
             slot.writer.set_next_destination_readers(None);
+            slot.writer.set_next_filter_outcomes(None);
             written_sn = slot.writer.cache().max_sn().map_or(-1, |sn| sn.0);
             intra_group = slot
                 .writer
@@ -19031,11 +20128,14 @@ impl DcpsRuntime {
     }
 
     /// Sends a metatraffic unicast datagram: through the same-host channel
-    /// to the participant behind `dest` when there is one, else on the
-    /// metatraffic UDP socket.
+    /// to the participant behind `dest` when there is one, over the TCP
+    /// leg of the user transport to a TCP locator
+    /// (`zerodds-tcp-transport-1.0` §4.3), else on the metatraffic UDP
+    /// socket.
     ///
     /// # Errors
-    /// The UDP socket's.
+    /// The transport's; `UnsupportedLocator` for a TCP locator when the
+    /// runtime has no TCP transport.
     fn send_metatraffic(
         &self,
         dest: &Locator,
@@ -19048,7 +20148,24 @@ impl DcpsRuntime {
         {
             return Ok(());
         }
+        if dest.kind.is_tcp_v4() || dest.kind.is_tcp_v6() {
+            let sent = self.user_unicast.send(dest, bytes);
+            if sent.is_err() {
+                self.metatraffic_tcp_send_errors
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            return sent;
+        }
         self.spdp_unicast.send(dest, bytes)
+    }
+
+    /// Metatraffic sends to a TCP locator that failed
+    /// (`zerodds-tcp-transport-1.0` §4.3): the peer's listener is not up
+    /// yet, the connection is in its backoff, the runtime has no TCP
+    /// transport. The next announcement or resend goes again.
+    #[must_use]
+    pub fn metatraffic_tcp_send_errors(&self) -> u64 {
+        self.metatraffic_tcp_send_errors.load(Ordering::Relaxed)
     }
 
     /// Inspect-endpoint tap dispatch for DCPS publish.
@@ -19250,6 +20367,42 @@ impl DcpsRuntime {
         // type they are read again.
         slot.instance_key_holders
             .retain(|_, holder| !holder.is_empty());
+        Ok(())
+    }
+
+    /// Gives the reader `eid` the type its instance keys are read with,
+    /// without announcing a TypeIdentifier for it: the reader counterpart of
+    /// [`Self::set_user_writer_key_support`], for a bridge that knows the
+    /// type from its own configuration and registers the reader with
+    /// `TypeIdentifier::None`, so that peers keep matching it by type name.
+    /// With it the reader computes the KeyHash of a sample whose writer
+    /// leaves `PID_KEY_HASH` (DDSI-RTPS 2.5 §9.6.4.8) out, as DDSI-RTPS 2.5
+    /// §8.7.10 asks of a reader that receives none (Eclipse Cyclone 11.0.1
+    /// does not send it), and reads the key of a
+    /// dispose or unregister from its `serializedKey`, as a reader
+    /// registered with a TypeIdentifier does once its type resolves.
+    ///
+    /// # Errors
+    /// `BadParameter` for an unknown reader or a keyless `support`;
+    /// `PreconditionNotMet` on a poisoned slot lock.
+    pub fn set_user_reader_key_support(
+        &self,
+        eid: EntityId,
+        support: Arc<crate::serialized_type::SerializedTypeSupport>,
+    ) -> Result<()> {
+        if !support.is_keyed() {
+            return Err(DdsError::BadParameter {
+                what: "set_user_reader_key_support: the type has no key",
+            });
+        }
+        let slot_arc = self.reader_slot(eid).ok_or(DdsError::BadParameter {
+            what: "unknown reader entity id",
+        })?;
+        let mut slot = slot_arc.lock().map_err(|_| DdsError::PreconditionNotMet {
+            reason: "user_reader slot poisoned",
+        })?;
+        slot.key_hash_support =
+            KeyHashSupport::Available(support.in_dialect(self.config.codec_dialect));
         Ok(())
     }
 
@@ -20145,6 +21298,10 @@ impl DcpsRuntime {
                         lifespan_nanos: s.lifespan_nanos,
                         liveliness_lease_nanos: s.liveliness_lease_nanos,
                         type_identifier: s.type_identifier.clone(),
+                        complete_type_identifier: complete_type_identifier_of(
+                            &s.type_identifier,
+                            None,
+                        ),
                         user_data: announced
                             .get(&guid_to_16(s.writer.guid()))
                             .cloned()
@@ -20171,6 +21328,10 @@ impl DcpsRuntime {
                     lifespan_nanos: qos_duration_to_nanos(p.data.lifespan.duration),
                     liveliness_lease_nanos: qos_duration_to_nanos(p.data.liveliness.lease_duration),
                     type_identifier: p.data.type_identifier.clone(),
+                    complete_type_identifier: complete_type_identifier_of(
+                        &p.data.type_identifier,
+                        p.data.type_information.as_deref(),
+                    ),
                     user_data: p.data.user_data.clone(),
                 });
             }
@@ -20208,6 +21369,10 @@ impl DcpsRuntime {
                         lifespan_nanos: 0,
                         liveliness_lease_nanos: s.liveliness_lease_nanos,
                         type_identifier: s.type_identifier.clone(),
+                        complete_type_identifier: complete_type_identifier_of(
+                            &s.type_identifier,
+                            None,
+                        ),
                         user_data: announced
                             .get(&guid_to_16(s.reader.guid()))
                             .cloned()
@@ -20236,6 +21401,10 @@ impl DcpsRuntime {
                         sub.data.liveliness.lease_duration,
                     ),
                     type_identifier: sub.data.type_identifier.clone(),
+                    complete_type_identifier: complete_type_identifier_of(
+                        &sub.data.type_identifier,
+                        sub.data.type_information.as_deref(),
+                    ),
                     user_data: sub.data.user_data.clone(),
                 });
             }
@@ -22012,7 +23181,8 @@ impl DcpsRuntime {
         // per-peer threads and a layered transport's leg threads stop, and
         // a UDP socket's waiting receive returns (see above).
         self.user_unicast.close();
-        // The same-host receive thread parks on its doorbell.
+        // The same-host receive thread parks on its doorbell, or waits for
+        // the first one while there is no channel.
         #[cfg(feature = "same-host-shm")]
         self.same_host_channels.wake_receiver();
         // D.5e Phase 3 — wake the scheduler tick worker so it observes `stop`
@@ -22592,6 +23762,23 @@ fn send_secure_spdp_datagram(rt: &DcpsRuntime, datagram: &[u8], only: Option<Gui
     }
 }
 
+/// Sends a message [`secure_spdp_reader_acks`] built (an ACKNACK of the
+/// secure SPDP reader, or the DATA and HEARTBEAT of the secure SPDP writer)
+/// to the discovered participants. DDS-Security 1.2 §7.5.7 and §9.4.2.4
+/// Table 33 (`is_rtps_axk_protected`): the secure SPDP endpoints are none
+/// of the RTPS Bootstrapping Messages, so under the RTPS protection the
+/// message is protected
+/// as a whole; one that cannot be protected is not sent.
+#[cfg(feature = "security")]
+fn send_secure_spdp_reply(rt: &DcpsRuntime, message: &[u8]) {
+    let Some(wire) = secure_outbound_bytes(rt, message) else {
+        return;
+    };
+    for loc in wlp_unicast_targets(&rt.discovered_participants()) {
+        let _ = rt.send_metatraffic(&loc, &wire);
+    }
+}
+
 /// FastDDS interop (phase 2): acknowledges FastDDS' reliable secure SPDP writer
 /// (0xff0101c2). FastDDS heartbeats its secure SPDP reliably and sends the
 /// `participant_crypto_tokens` only once our 0xff0101c7 reader has acked its writer
@@ -22856,9 +24043,7 @@ fn recv_spdp_multicast_loop(
             // reliably, otherwise FastDDS sends no crypto_tokens.
             #[cfg(feature = "security")]
             for ack in secure_spdp_reader_acks(&rt, &clear, Some(&dg.source)) {
-                for loc in wlp_unicast_targets(&rt.discovered_participants()) {
-                    let _ = rt.send_metatraffic(&loc, &ack);
-                }
+                send_secure_spdp_reply(&rt, &ack);
             }
             // SEDP and WLP arrive on this socket too, and they arrive here
             // because we asked for them: the SPDP beacon announces this group
@@ -22997,9 +24182,7 @@ fn dispatch_metatraffic_datagram(
         // reliably (they arrive unicast over the metatraffic socket).
         #[cfg(feature = "security")]
         for ack in secure_spdp_reader_acks(rt, &clear, Some(source)) {
-            for loc in wlp_unicast_targets(&rt.discovered_participants()) {
-                let _ = rt.send_metatraffic(&loc, &ack);
-            }
+            send_secure_spdp_reply(rt, &ack);
         }
         // Protected discovery: secure-SEDP DATA is SEC_* submessage-
         // protected (the sender's participant data key). Before the SEDP parse
@@ -23075,14 +24258,19 @@ fn recv_same_host_loop(
     use crate::same_host_channel::Port;
     use zerodds_transport_shm::PosixShmTransport;
 
-    let Some(progress) = runtime.upgrade().and_then(|rt| {
+    let Some((progress, channels)) = runtime.upgrade().and_then(|rt| {
         tune_and_report(
             "zdds-recv-shm",
             sched,
             rt.config.recv_thread_cpus.as_deref(),
             &tuned,
         )
-        .then(|| rt.register_recv_progress())
+        .then(|| {
+            (
+                rt.register_recv_progress(),
+                Arc::clone(&rt.same_host_channels),
+            )
+        })
     }) else {
         return;
     };
@@ -23091,7 +24279,19 @@ fn recv_same_host_loop(
     // (peer, its ring to this participant, the sources a frame names).
     let mut rings: Vec<(GuidPrefix, Arc<PosixShmTransport>, Locator, Locator)> = Vec::new();
     let mut generation = u64::MAX;
-    while !stop.load(Ordering::Relaxed) {
+    loop {
+        // What the waits at the end of the pass wait on, read before the
+        // stop flag: `shutdown` sets the flag and then wakes this thread
+        // (`SameHostChannels::wake_receiver`), so a wake that follows this
+        // read ends the wait at once. Read after the flag, as it was, a
+        // wake between the two was lost, and the thread parked for its
+        // 250 ms on a doorbell that had already rung.
+        let woken = channels.receiver_wakes();
+        let bell = channels.receive_bell();
+        let seen = bell.as_ref().map(|bell| bell.sequence());
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
         // Held for one pass over the rings, not while the thread parks.
         let Some(rt) = runtime.upgrade() else {
             break;
@@ -23099,14 +24299,15 @@ fn recv_same_host_loop(
         // A pass that finds every ring empty has handed on what they held
         // when this mark was read ([`RecvProgress`]).
         let mark = rt.removal_mark.load(Ordering::Acquire);
-        let Some(bell) = rt.same_host_channels.receive_bell() else {
+        let (Some(bell), Some(seen)) = (bell, seen) else {
             // No channel yet: nothing to receive, and no bell to park on.
+            // The first channel's doorbell or the shutdown ends the wait;
+            // its timeout bounds how late a new removal mark is reached.
             progress.reach(mark);
             drop(rt);
-            thread::sleep(Duration::from_millis(100));
+            channels.wait_for_receive_bell(woken, Duration::from_millis(100));
             continue;
         };
-        let seen = bell.sequence();
         if rt.same_host_channels.generation() != generation {
             generation = rt.same_host_channels.generation();
             rings = rt
@@ -23130,7 +24331,7 @@ fn recv_same_host_loop(
         for (peer, inbound, metatraffic_source, user_source) in &rings {
             let mut emptied = false;
             for _ in 0..PER_RING {
-                match inbound.try_recv() {
+                match rt.same_host_channels.receive(*peer, inbound) {
                     Ok(Some(dg)) => {
                         busy = true;
                         let elapsed = rt.start_instant.elapsed();
@@ -23237,6 +24438,29 @@ fn recv_user_data_loop(
                 progress.reach(mark);
                 continue;
             }
+            // A datagram above the transport's limit (a UDS peer with a
+            // larger `max_datagram`, `zerodds-uds-transport-1.0` §3.3): the
+            // transport consumed it and reports it rather than handing on a
+            // cut message; it is counted and reported here, not dropped
+            // without a trace.
+            Err(zerodds_transport::RecvError::BufferTooSmall {
+                datagram_size,
+                buffer_size,
+            }) => {
+                USER_DATAGRAMS_ABOVE_LIMIT.fetch_add(1, Ordering::Relaxed);
+                if let Some(rt) = runtime.upgrade() {
+                    rt.config.observability.record(
+                        &zerodds_foundation::observability::Event::new(
+                            zerodds_foundation::observability::Level::Warn,
+                            zerodds_foundation::observability::Component::Dcps,
+                            "transport.user_recv.datagram_above_limit",
+                        )
+                        .with_attr("size", alloc::format!("{datagram_size}").as_str())
+                        .with_attr("limit", alloc::format!("{buffer_size}").as_str()),
+                    );
+                }
+                continue;
+            }
             Err(_) => continue,
         };
         if n == 0 {
@@ -23256,6 +24480,18 @@ fn recv_user_data_loop(
                 reached = reached.max(poked);
                 continue;
             }
+            // `zerodds-tcp-transport-1.0` §4.3: a TCP connection carries the
+            // metatraffic of its peer as well as its user traffic. A
+            // message that addresses a builtin entity, or whose
+            // submessages are protected, takes the way of the metatraffic
+            // socket, which serves the user entities too.
+            if (dg.source.kind.is_tcp_v4() || dg.source.kind.is_tcp_v6())
+                && may_address_builtin_entity(&dg.data[..])
+            {
+                dispatch_metatraffic_datagram(&rt, &dg.data[..], &dg.source, sedp_now);
+                needs_tick = true;
+                continue;
+            }
             needs_tick |= dispatch_user_datagram(&rt, dg, sedp_now);
         }
         progress.reach(reached);
@@ -23267,6 +24503,57 @@ fn recv_user_data_loop(
             rt.raise_tick_wake();
         }
     }
+}
+
+/// Whether the RTPS message `bytes` may address a builtin entity: one of
+/// its submessages names a reader or writer whose EntityId has the
+/// builtin bits set (DDSI-RTPS 2.5 §9.3.1.2: the two most significant bits
+/// of the entityKind are `11`), or it carries a submessage this walk
+/// cannot look into (the security submessages `0x30` to `0x34`, whose
+/// content is protected). A message that is no well-formed sequence of
+/// submessages counts as one that may; the handlers decide. Messages that
+/// carry user traffic alone answer `false` and keep the user path.
+fn may_address_builtin_entity(bytes: &[u8]) -> bool {
+    const HEADER: usize = 20;
+    let mut at = HEADER;
+    if bytes.len() < HEADER {
+        return true;
+    }
+    while at < bytes.len() {
+        let Some(&[id, flags, l0, l1]) = bytes.get(at..at + 4).and_then(|h| h.first_chunk()) else {
+            return true;
+        };
+        let length = usize::from(if flags & 0x01 != 0 {
+            u16::from_le_bytes([l0, l1])
+        } else {
+            u16::from_be_bytes([l0, l1])
+        });
+        let body = at + 4;
+        // The EntityIds of reader and writer, eight octets: behind
+        // extraFlags and octetsToInlineQos in DATA and DATA_FRAG, at the
+        // start of the body in the other entity submessages.
+        let ids = match id {
+            0x15 | 0x16 => Some(body + 4),
+            0x06 | 0x07 | 0x08 | 0x12 | 0x13 => Some(body),
+            0x30..=0x34 => return true,
+            _ => None,
+        };
+        if let Some(ids) = ids {
+            let Some(ids) = bytes.get(ids..ids + 8) else {
+                return true;
+            };
+            if ids[3] & 0xC0 == 0xC0 || ids[7] & 0xC0 == 0xC0 {
+                return true;
+            }
+        }
+        // octetsToNextHeader 0 reaches to the end of the message for every
+        // submessage but PAD and INFO_TS (§9.4.5.1.3).
+        if length == 0 && !matches!(id, 0x01 | 0x09) {
+            return false;
+        }
+        at = body + length;
+    }
+    false
 }
 
 /// Dispatches an already-decrypted datagram through TypeLookup first, and —
@@ -23763,8 +25050,14 @@ fn run_tick_iteration(rt: Arc<DcpsRuntime>, st: &mut TickState) {
                 else {
                     continue;
                 };
+                // DDS-Security 1.2 §7.5.7 and §9.4.2.4 Table 33
+                // (`is_rtps_axk_protected`): the secure SPDP endpoints are
+                // none of the RTPS Bootstrapping Messages, so under the RTPS
+                // protection their HEARTBEAT is
+                // protected as a whole like their DATA.
                 if let Some(hb) =
                     build_secure_spdp_heartbeat(rt.guid_prefix, peer_prefix, st.secure_hb_count, sn)
+                        .and_then(|hb| secure_outbound_bytes(&rt, &hb).map(|c| c.to_vec()))
                 {
                     for loc in wlp_unicast_targets(core::slice::from_ref(&p)) {
                         let _ = rt.send_metatraffic(&loc, &hb);
@@ -26145,8 +27438,9 @@ type KeyMaterialResult = core::result::Result<([u8; 16], Vec<u8>), &'static str>
 
 /// Outcome of computing a keyed sample's real KeyHash from its type (XTypes
 /// 1.3 §7.6.8) when the writer's DATA carried none in its inline QoS
-/// (DDSI-RTPS 2.5 §9.6.3.3 leaves `PID_KEY_HASH` optional; Eclipse Cyclone
-/// never sends it).
+/// (DDSI-RTPS 2.5 §8.7.10: a reader that receives no `PID_KEY_HASH`,
+/// §9.6.4.8, computes the hash from the data; Eclipse Cyclone never sends
+/// it).
 enum KeyHashComputation {
     /// Nothing to compute: the reader is keyless, the writer already sent
     /// `PID_KEY_HASH`, or the delivery carries no instance identity (ECS).
@@ -26515,9 +27809,13 @@ fn delivered_to_user_sample(
             if let Some(holder) = &key_holder {
                 instance_key_holders.record(kh, holder.clone());
             }
+            // Only the arms that fall back on a keyed reader are
+            // `Unavailable`; a keyless reader's fallback is `NotNeeded`.
+            let key_hash_unavailable = matches!(outcome, KeyHashComputation::Unavailable(_));
             (
                 Some(UserSample::Lifecycle {
                     key_hash: kh,
+                    key_hash_unavailable,
                     kind: sample.kind,
                     key_holder,
                     source_timestamp: sample.source_timestamp,
@@ -27520,6 +28818,11 @@ fn reply_targets_of(state: &zerodds_rtps::receiver_state::ReceiverState) -> Vec<
 /// port of §9.6.2.3 was taken or no participantId was found.
 static USER_PORT_FALLBACKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// Datagrams the user transport reported as larger than its limit
+/// (`RecvError::BufferTooSmall`).
+static USER_DATAGRAMS_ABOVE_LIMIT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// Reader proxies that took the reply-locator list of the receiver state as
 /// their locators because they had none of their own.
 static REPLY_LOCATOR_FALLBACKS: core::sync::atomic::AtomicU64 =
@@ -28368,7 +29671,8 @@ fn handle_spdp_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], reply_to: Option<&L
     for (channel, sample) in samples {
         match sample {
             SpdpSample::Departed(prefix) => spdp_departed(rt, prefix, channel),
-            SpdpSample::Announced(parsed) => {
+            SpdpSample::Announced(mut parsed) => {
+                adopt_connection_source(&mut parsed.data, reply_to);
                 // DDS-Security 1.2 §7.5.1.6: after the authentication
                 // "a DomainParticipant shall ignore any changes to the
                 // ParticipantBuiltinTopicData [...] received on the
@@ -28609,6 +29913,31 @@ fn name_foreign_domain_sender(
             locators(&parsed.data.metatraffic_multicast_locators).as_str(),
         ),
     );
+}
+
+/// `zerodds-tcp-transport-1.0` §4.3: a participant that announces no
+/// unicast locator and whose announcement came over a TCP connection is
+/// reached at the source of that connection. Cyclone DDS with
+/// `General/Transport` = `tcp` and no `TCP/Port` has no listener, announces
+/// no unicast locator and expects its answers on the connection it opened
+/// (`ddsi_discovery_spdp.c`, `get_locators`: an empty list takes the
+/// source address). Each of the two lists, default and metatraffic, takes
+/// the source when it is empty. A source that is no TCP locator changes
+/// nothing: the port a UDP datagram came from need not be one its sender
+/// receives at.
+fn adopt_connection_source(
+    data: &mut zerodds_rtps::participant_data::ParticipantBuiltinTopicData,
+    source: Option<&Locator>,
+) {
+    let Some(source) = source.filter(|s| s.kind.is_tcp_v4() || s.kind.is_tcp_v6()) else {
+        return;
+    };
+    if data.default_unicast_locators.is_empty() {
+        data.default_unicast_locators.push(*source);
+    }
+    if data.metatraffic_unicast_locators.is_empty() {
+        data.metatraffic_unicast_locators.push(*source);
+    }
 }
 
 /// A participant's announcement. `None` when the announcement is not
@@ -33526,7 +34855,7 @@ mod tests {
     }
 
     /// An ALIVE sample delivered without `PID_KEY_HASH` (as Eclipse
-    /// Cyclone always sends it, DDSI-RTPS 2.5 §9.6.3.3) on a keyed reader
+    /// Cyclone always sends it, DDSI-RTPS 2.5 §8.7.10) on a keyed reader
     /// gets the same hash [`SerializedTypeSupport`] computes for that body
     /// directly — and a second sample of the same key with a different
     /// non-key field gets the identical hash, because only `@key long id`
@@ -35080,11 +36409,113 @@ mod tests {
         );
         assert!(matches!(outcome, KeyHashComputation::NotNeeded));
         match item {
-            Some(UserSample::Lifecycle { key_hash, .. }) => {
+            Some(UserSample::Lifecycle {
+                key_hash,
+                key_hash_unavailable,
+                ..
+            }) => {
                 assert_eq!(key_hash, fallback_lifecycle_key_hash(&key_only));
+                assert!(
+                    !key_hash_unavailable,
+                    "a keyless reader has no instance identity to miss"
+                );
             }
             other => panic!("expected Lifecycle, got {other:?}"),
         }
+    }
+
+    /// `UserSample::Lifecycle::key_hash_unavailable`: a dispose on a keyed
+    /// reader whose writer sent no `PID_KEY_HASH` (DDSI-RTPS 2.5 §9.6.4.8;
+    /// Cyclone 11.0.1's `KeyInPayload` form) says that its `key_hash` is
+    /// the payload fallback when the reader could not compute the hash
+    /// from the data (§8.7.10): no type, a key that does not decode, no
+    /// key at all. A hash from the wire and a computed hash do not.
+    #[test]
+    fn rtps_8_7_10_a_lifecycle_marker_without_a_computable_key_hash_says_so() {
+        let support = keyed_final_support();
+        let (alive_hash, holder) = {
+            let body = keyed_final_wire(7, 42);
+            let decoded = support.read_body(&body[4..], 2, false).expect("decode");
+            support.key_material(&decoded).expect("keyed")
+        };
+        let mut key_only = alloc::vec![0x00u8, 0x06, 0x00, 0x00];
+        key_only.extend_from_slice(&holder);
+        let marker = |payload: &[u8], key_hash: Option<[u8; 16]>| {
+            zerodds_rtps::reliable_reader::DeliveredSample {
+                writer_guid: Guid::new(GuidPrefix::from_bytes([9; 12]), EntityId::PARTICIPANT),
+                sequence_number: zerodds_rtps::wire_types::SequenceNumber(4),
+                payload: zerodds_rtps::payload::Payload::from(payload.to_vec().into_boxed_slice()),
+                kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
+                key_hash,
+                source_timestamp: None,
+                coherent_set_sn: None,
+                coherent_set_end: false,
+                related_sample_identity: None,
+                eprosima_related_sample_identity: None,
+                group: None,
+                coherent_set_complete: None,
+                original_writer: None,
+                forwarded_by: None,
+                non_standard_payload: false,
+                inline_qos_override: Default::default(),
+            }
+        };
+        let deliver =
+            |sample: &zerodds_rtps::reliable_reader::DeliveredSample,
+             support: Option<&crate::serialized_type::SerializedTypeSupport>| {
+                match delivered_to_user_sample(
+                    sample,
+                    &Default::default(),
+                    &Default::default(),
+                    &|_| false,
+                    true,
+                    support,
+                    &mut InstanceKeyHolders {
+                        map: &mut alloc::collections::BTreeMap::new(),
+                        max: usize::MAX,
+                    },
+                ) {
+                    (
+                        Some(UserSample::Lifecycle {
+                            key_hash,
+                            key_hash_unavailable,
+                            ..
+                        }),
+                        _,
+                    ) => (key_hash, key_hash_unavailable),
+                    (other, _) => panic!("expected Lifecycle, got {other:?}"),
+                }
+            };
+        // No type for the reader: the fallback, flagged.
+        assert_eq!(
+            deliver(&marker(&key_only, None), None),
+            (fallback_lifecycle_key_hash(&key_only), true),
+            "no type known"
+        );
+        // A key that does not decode as the reader's type: flagged.
+        assert_eq!(
+            deliver(&marker(&[0x00], None), Some(&support)),
+            (fallback_lifecycle_key_hash(&[0x00]), true),
+            "the key does not decode"
+        );
+        // Neither PID_KEY_HASH nor a serializedKey: flagged.
+        assert_eq!(
+            deliver(&marker(&[], None), Some(&support)),
+            ([0; 16], true),
+            "no key at all"
+        );
+        // Computed from the serializedKey: the instance's hash, not flagged.
+        assert_eq!(
+            deliver(&marker(&key_only, None), Some(&support)),
+            (alive_hash, false),
+            "computed"
+        );
+        // From the wire: taken as sent, not flagged, with or without a type.
+        assert_eq!(
+            deliver(&marker(&key_only, Some([5; 16])), None),
+            ([5; 16], false),
+            "from the wire"
+        );
     }
 
     /// A keyed reader whose `type_identifier` never resolves (the
@@ -35273,6 +36704,107 @@ mod tests {
         );
     }
 
+    /// `set_user_reader_key_support`: a keyed reader registered without a
+    /// TypeIdentifier has no KeyHash for a sample whose writer left
+    /// `PID_KEY_HASH` out; given the type, it computes the KeyHash of such a
+    /// sample and reads the key of a dispose from its `serializedKey`
+    /// (DDSI-RTPS 2.5 §9.4.2.11, XTypes 1.3 §7.6.8). A keyless type and an
+    /// unknown reader are refused.
+    #[test]
+    fn set_user_reader_key_support_reads_the_keys_of_an_unannounced_type() {
+        let support = keyed_final_support();
+        let expected_hash = {
+            let body = keyed_final_wire(7, 42);
+            let sample = support.read_body(&body[4..], 2, false).expect("decode");
+            support.key_material(&sample).expect("keyed").0
+        };
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xD9; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start runtime");
+        let (eid, _rx) = rt
+            .register_user_reader_kind(
+                UserReaderConfig {
+                    topic_name: "UnannouncedKeyed".into(),
+                    type_name: "KeyedFinal".into(),
+                    reliable: true,
+                    ..Default::default()
+                },
+                true,
+            )
+            .expect("reader");
+        let arc = rt.reader_slot(eid).expect("slot");
+        let deliver = |sample: zerodds_rtps::reliable_reader::DeliveredSample| {
+            let mut slot = arc.lock().expect("slot lock");
+            let (keyed, support) = reader_key_hash_context(&rt, &mut slot);
+            assert!(keyed);
+            deliver_sample_with_key_hash(&rt, &mut slot, keyed, support.as_deref(), &sample)
+        };
+        match deliver(keyed_delivered_alive(keyed_final_wire(7, 42))) {
+            Some(UserSample::Alive { key_hash, .. }) => {
+                assert_eq!(key_hash, None, "no type, no KeyHash");
+            }
+            other => panic!("expected Alive, got {other:?}"),
+        }
+
+        rt.set_user_reader_key_support(eid, Arc::clone(&support))
+            .expect("type for the reader");
+        let mut alive = keyed_delivered_alive(keyed_final_wire(7, 42));
+        alive.sequence_number = zerodds_rtps::wire_types::SequenceNumber(2);
+        match deliver(alive) {
+            Some(UserSample::Alive { key_hash, .. }) => {
+                assert_eq!(key_hash, Some(expected_hash), "computed from the type");
+            }
+            other => panic!("expected Alive, got {other:?}"),
+        }
+        // A dispose with the serializedKey of instance 7 (PLAIN_CDR2-LE, the
+        // key member alone) and no PID_KEY_HASH.
+        let mut dispose = keyed_delivered_alive(alloc::vec![0x00, 0x07, 0x00, 0x00, 7, 0, 0, 0]);
+        dispose.kind = zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed;
+        dispose.sequence_number = zerodds_rtps::wire_types::SequenceNumber(3);
+        match deliver(dispose) {
+            Some(UserSample::Lifecycle {
+                key_hash,
+                key_holder,
+                ..
+            }) => {
+                assert_eq!(key_hash, expected_hash, "the key of the serializedKey");
+                assert_eq!(key_holder, Some(alloc::vec![0, 0, 0, 7]), "the key holder");
+            }
+            other => panic!("expected Lifecycle, got {other:?}"),
+        }
+
+        let keyless = {
+            let ast = alloc::sync::Arc::new(
+                zerodds_wire_probe::encode::model_from_idl(
+                    "@final struct Unkeyed { long value; };",
+                    "unkeyed.idl",
+                )
+                .expect("model"),
+            );
+            let type_ = zerodds_types::dynamic::DynamicType::find(&ast, "Unkeyed").expect("type");
+            let object = zerodds_types::TypeObject::Complete(
+                zerodds_types::from_ast::complete_type_object(&ast, type_.id()).expect("object"),
+            );
+            crate::serialized_type::SerializedTypeSupport::from_type_object(
+                "Unkeyed",
+                &object.to_bytes_le().expect("encode object"),
+                false,
+                0,
+            )
+            .expect("support")
+        };
+        assert!(rt.set_user_reader_key_support(eid, keyless).is_err());
+        assert!(
+            rt.set_user_reader_key_support(EntityId::user_reader_with_key([0xEE; 3]), support)
+                .is_err()
+        );
+        rt.shutdown();
+    }
+
     /// The Fast DDS 3.6 SPDP capture below, with its `PID_DOMAIN_ID`
     /// (205, the domain it was recorded on) set to `to`; every other
     /// octet stays as captured. A participant of another domain is not
@@ -35455,6 +36987,1162 @@ mod tests {
         assert!(accept.is_some(), "TCP needs an accept handle");
     }
 
+    /// `zerodds-tcp-transport-1.0` §1.1: the kind of the announced TCP
+    /// locator is the runtime's, not the process's. Two runtimes of one
+    /// process, one per setting of `transport.tcp_locator_kinds`, run at
+    /// the same time; the SPDP message of each carries its TCP locator
+    /// with the kind of its own setting, and a reader of the message gets
+    /// that kind back.
+    #[test]
+    fn tcp_1_1_the_announced_tcp_kind_follows_the_runtime_setting() {
+        use zerodds_discovery::spdp::SpdpReader;
+        use zerodds_rtps::wire_types::TcpKindSet;
+
+        let start = |fast_dds: bool, prefix: u8| {
+            let lease = zerodds_test_domains::lease_domain();
+            let config = RuntimeConfig {
+                user_transport: Some(UserTransportKind::TcpV4),
+                tcp_locator_kinds_fast_dds: fast_dds,
+                ..RuntimeConfig::default()
+            };
+            let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([prefix; 12]), config)
+                .expect("start");
+            (lease, rt)
+        };
+        let (_own_lease, own) = start(false, 0x51);
+        let (_other_lease, other) = start(true, 0x52);
+        assert_eq!(own.config.tcp_kind_set(), TcpKindSet::ZeroDds);
+        assert_eq!(other.config.tcp_kind_set(), TcpKindSet::Kinds4And8);
+
+        for (rt, kind, wire) in [
+            (&own, LocatorKind::Tcpv4, 0x01F0_0004),
+            (&other, LocatorKind::Tcpv4Kind4, 4),
+        ] {
+            assert_eq!(rt.user_locator().kind, kind);
+            let (datagram, announced) = {
+                let mut beacon = rt.spdp_beacon.lock().unwrap();
+                let datagram = beacon.serialize().expect("SPDP message");
+                (datagram, beacon.data.default_unicast_locators.clone())
+            };
+            assert!(!announced.is_empty(), "a TCP runtime announces its locator");
+            for locator in &announced {
+                assert_eq!(locator.kind, kind);
+                assert_eq!(locator.port, rt.user_locator().port);
+                // The listener is bound to the wildcard address; what is
+                // announced is an address a peer can connect to, under
+                // either kind set.
+                assert_ne!(
+                    locator.address[12..16],
+                    [0u8; 4],
+                    "the wildcard address is not announced with kind {wire:#x}"
+                );
+                assert!(is_routable_user_locator(locator));
+                let octets = locator.to_bytes_le();
+                assert_eq!(octets[..4], i32::to_le_bytes(wire));
+                assert!(
+                    datagram.windows(octets.len()).any(|w| w == octets),
+                    "the SPDP message carries the locator with kind {wire:#x}"
+                );
+            }
+            let read = SpdpReader::new()
+                .parse_datagram(&datagram)
+                .expect("the SPDP message decodes");
+            assert_eq!(read.data.default_unicast_locators, announced);
+        }
+        own.shutdown();
+        other.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §3.3 and §3.6: the TCP transport of a
+    /// runtime, of either address family, has the vendor list and the
+    /// logical-port claim of the runtime's settings; by default it takes
+    /// every vendor and claims the port of its listener.
+    #[test]
+    fn tcp_3_3_the_tcp_transport_of_a_runtime_has_its_vendor_list_and_claim() {
+        let set = RuntimeConfig {
+            tcp_accepted_vendors: Some(vec![[0x01, 0xF0], [0x01, 0x10]]),
+            tcp_logical_port_claim: false,
+            ..RuntimeConfig::default()
+        };
+        let handle_of = |kind, config: &RuntimeConfig, prefix: u8| {
+            select_user_transport(
+                kind,
+                GuidPrefix::from_bytes([prefix; 12]),
+                0,
+                Ipv4Addr::LOCALHOST,
+                0,
+                config,
+            )
+            .expect("TCP transport")
+            .1
+            .expect("a TCP transport has an accept handle")
+        };
+        for (kind, prefix) in [
+            (UserTransportKind::TcpV4, 0x61),
+            (UserTransportKind::TcpV6, 0x63),
+        ] {
+            let default = handle_of(kind, &RuntimeConfig::default(), prefix);
+            assert_eq!(default.accepted_vendors(), None);
+            assert!(default.claims_logical_port());
+            let limited = handle_of(kind, &set, prefix + 1);
+            assert_eq!(
+                limited.accepted_vendors(),
+                Some(&[[0x01, 0xF0], [0x01, 0x10]][..])
+            );
+            assert!(!limited.claims_logical_port());
+        }
+    }
+
+    // ---- zerodds-tcp-transport-1.0 §4: Cyclone DDS, metatraffic over TCP ----
+
+    /// The first message a Cyclone DDS 0.10.5 participant (`ddsperf pub`,
+    /// `General/Transport` = `tcp`, no `TCP/Port`) wrote on its TCP
+    /// connection, captured on the Linux test host: an SPDP announcement
+    /// of domain 0 without a unicast locator, in the stream framing of
+    /// §4.1. `domain` replaces the value of its `PID_DOMAIN_ID`.
+    fn cyclone_tcp_spdp(domain: u32) -> Vec<u8> {
+        let hex: String =
+            include_str!("../../transport-tcp/tests/data/cyclone_0_10_5_spdp_tcp.hex")
+                .split_whitespace()
+                .collect();
+        let mut wire: Vec<u8> = (0..hex.len() / 2)
+            .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap())
+            .collect();
+        // PID_DOMAIN_ID (0x000f), length 4, little-endian.
+        let at = wire
+            .windows(8)
+            .position(|w| w == [0x0f, 0x00, 0x04, 0x00, 0, 0, 0, 0])
+            .expect("PID_DOMAIN_ID of domain 0");
+        wire[at + 4..at + 8].copy_from_slice(&domain.to_le_bytes());
+        wire
+    }
+
+    /// A runtime whose user transport is TCPv4, without SPDP multicast and
+    /// in an in-process bucket of its own (`group`), so that nothing but
+    /// its sockets connects it to another participant.
+    fn tcp_only_config(group: u8) -> RuntimeConfig {
+        RuntimeConfig {
+            tick_period: Duration::from_millis(10),
+            spdp_period: Duration::from_millis(40),
+            spdp_multicast_group: Ipv4Addr::new(239, 255, 9, group),
+            spdp_multicast_send: false,
+            user_multicast: false,
+            same_host_shm: false,
+            user_transport: Some(UserTransportKind::TcpV4),
+            multicast_interface: Ipv4Addr::LOCALHOST,
+            ..RuntimeConfig::default()
+        }
+    }
+
+    fn is_tcp(locator: &Locator) -> bool {
+        locator.kind.is_tcp_v4() || locator.kind.is_tcp_v6()
+    }
+
+    /// Whether the RTPS message carries a DATA submessage of the SPDP
+    /// writer (`ENTITYID_SPDP_BUILTIN_PARTICIPANT_WRITER`, `00 01 00 c2`).
+    fn carries_spdp_data(message: &[u8]) -> bool {
+        let mut at = 20;
+        while let Some(&[id, flags, l0, l1]) = message.get(at..at + 4).and_then(|h| h.first_chunk())
+        {
+            let length = usize::from(if flags & 0x01 != 0 {
+                u16::from_le_bytes([l0, l1])
+            } else {
+                u16::from_be_bytes([l0, l1])
+            });
+            if id == 0x15 && message.get(at + 12..at + 16) == Some(&[0x00, 0x01, 0x00, 0xc2]) {
+                return true;
+            }
+            if length == 0 {
+                break;
+            }
+            at += 4 + length;
+        }
+        false
+    }
+
+    /// Reads one message of the stream of §4.1 from `stream` and returns
+    /// it without the length submessage.
+    fn read_cyclone_message(stream: &mut std::net::TcpStream) -> Vec<u8> {
+        zerodds_transport_tcp::cyclone_stream::read_message(stream).expect("a stream message")
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3: two runtimes that announce no UDP
+    /// metatraffic locator and send no SPDP multicast discover each other
+    /// over TCP alone. One knows the other's TCP listener as its initial
+    /// peer (`tcp://ip:port`); its SPDP goes there over the TCP leg, and
+    /// each then knows the other by TCP locators only, metatraffic and
+    /// default, so SEDP, WLP and user traffic have no other way.
+    #[test]
+    fn tcp_4_3_two_runtimes_discover_each_other_over_tcp_alone() {
+        let lease = zerodds_test_domains::lease_domain();
+        let listening = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xC1; 12]),
+            RuntimeConfig {
+                metatraffic_over_udp: false,
+                ..tcp_only_config(1)
+            },
+        )
+        .expect("the listening runtime");
+        let listener = listening.user_locator();
+        assert!(is_tcp(&listener), "{listener:?}");
+        let connecting = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xC2; 12]),
+            RuntimeConfig {
+                metatraffic_over_udp: false,
+                initial_peer_specs: vec![alloc::format!("tcp://127.0.0.1:{}", listener.port)],
+                ..tcp_only_config(2)
+            },
+        )
+        .expect("the connecting runtime");
+        assert_eq!(
+            connecting.config.initial_peers,
+            vec![Locator::tcp_v4([127, 0, 0, 1], listener.port)]
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while listening.discovered_participants().is_empty()
+            || connecting.discovered_participants().is_empty()
+        {
+            assert!(Instant::now() < deadline, "no discovery over TCP");
+            thread::sleep(Duration::from_millis(20));
+        }
+        for (runtime, peer) in [(&listening, &connecting), (&connecting, &listening)] {
+            let known = runtime.discovered_participants();
+            assert_eq!(known.len(), 1);
+            assert_eq!(known[0].data.guid.prefix, peer.guid_prefix);
+            let data = &known[0].data;
+            assert!(!data.metatraffic_unicast_locators.is_empty());
+            assert!(
+                data.metatraffic_unicast_locators.iter().all(is_tcp),
+                "{:?}",
+                data.metatraffic_unicast_locators
+            );
+            assert!(data.default_unicast_locators.iter().all(is_tcp));
+            assert_eq!(
+                data.metatraffic_unicast_locators[0].port,
+                peer.user_locator().port
+            );
+        }
+        // The SEDP writers of each found the detectors of the other: their
+        // HEARTBEATs and the ACKNACKs back went over TCP.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        for runtime in [&listening, &connecting] {
+            loop {
+                let proxies = runtime
+                    .sedp
+                    .lock()
+                    .unwrap()
+                    .pub_writer()
+                    .inner()
+                    .reader_proxies()
+                    .len();
+                if proxies == 1 {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "SEDP reader proxies: {proxies}");
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+        connecting.shutdown();
+        listening.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3 and §4.1 against what Cyclone DDS
+    /// wrote: a TCP peer writes the SPDP announcement of a Cyclone DDS
+    /// participant without a listener on a connection to the runtime's TCP
+    /// listener. The runtime, with the default settings of its TCP
+    /// transport, discovers the participant, takes the source of the
+    /// connection for its unicast locators, and answers on that
+    /// connection in the stream framing of Cyclone DDS: its own SPDP
+    /// announcement, which names its TCP listener as a metatraffic
+    /// unicast locator.
+    #[test]
+    fn tcp_4_3_a_cyclone_participant_without_a_listener_is_answered_on_its_connection() {
+        use std::io::Write as _;
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xC3; 12]),
+            tcp_only_config(3),
+        )
+        .expect("start");
+        let listener = rt.user_locator();
+        let port = u16::try_from(listener.port).unwrap();
+
+        let mut cyclone = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        cyclone
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let from = cyclone.local_addr().unwrap().port();
+        let spdp = cyclone_tcp_spdp(lease.id() as u32);
+        cyclone.write_all(&spdp).unwrap();
+
+        // The answers on the connection the peer opened, until the SPDP
+        // announcement of the runtime is among them.
+        let own_spdp = loop {
+            let message = read_cyclone_message(&mut cyclone);
+            assert_eq!(&message[..4], b"RTPS");
+            assert_eq!(&message[8..20], &[0xC3; 12], "from the runtime");
+            if carries_spdp_data(&message) {
+                break message;
+            }
+        };
+        let announced = rt
+            .spdp_reader
+            .samples_with_channel_in(&own_spdp, &receive_context(&rt, None))
+            .expect("the runtime's SPDP");
+        let SpdpSample::Announced(own) = &announced[0].1 else {
+            panic!("an announcement");
+        };
+        assert!(
+            own.data
+                .metatraffic_unicast_locators
+                .iter()
+                .any(|l| is_tcp(l) && l.port == listener.port),
+            "{:?}",
+            own.data.metatraffic_unicast_locators
+        );
+
+        let known = rt.discovered_participants();
+        assert_eq!(known.len(), 1);
+        assert_eq!(known[0].sender_vendor, VendorId([0x01, 0x10]));
+        assert_eq!(&known[0].data.guid.prefix.to_bytes()[..], &spdp[8..20]);
+        let source = Locator::tcp_v4([127, 0, 0, 1], u32::from(from));
+        assert_eq!(known[0].data.metatraffic_unicast_locators, vec![source]);
+        assert_eq!(known[0].data.default_unicast_locators, vec![source]);
+        assert_eq!(rt.metatraffic_tcp_send_errors(), 0);
+        rt.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.1, §4.2 and §2.5: the runtime answers
+    /// a peer without a listener on the connection the peer opened, in the
+    /// dialect of that connection, whatever its own dialect. A peer of the
+    /// dialect `rtps` writes the SPDP announcement of the recording with
+    /// the protocol version 2.5 and a HeaderExtension with its length; the
+    /// runtime's answers on that connection state their length in a
+    /// HeaderExtension, also when the runtime's own dialect is `zerodds`
+    /// or `cyclone`. A peer of the dialect `cyclone` gets messages without
+    /// a HeaderExtension, also from a runtime of the dialect `rtps`. No
+    /// metatraffic send fails.
+    #[test]
+    fn tcp_4_1_the_runtime_answers_an_accepted_connection_in_its_dialect() {
+        use std::io::Write as _;
+        use zerodds_transport_tcp::TcpDialect;
+        let cyclone_wire = |domain: u32| cyclone_tcp_spdp(domain);
+        let rtps_wire = |domain: u32| {
+            let mut plain = zerodds_transport_tcp::cyclone_stream::read_message(
+                &mut &cyclone_tcp_spdp(domain)[..],
+            )
+            .unwrap();
+            plain[4..6].copy_from_slice(&[2, 5]);
+            zerodds_rtps::header_extension::HeaderExtension::with_message_length(&plain).unwrap()
+        };
+        let mut group = 40u8;
+        for own in TcpDialect::ALL {
+            for peer in [TcpDialect::Rtps, TcpDialect::Cyclone] {
+                group += 1;
+                let lease = zerodds_test_domains::lease_domain();
+                let rt = DcpsRuntime::start(
+                    lease.id(),
+                    GuidPrefix::from_bytes([group; 12]),
+                    RuntimeConfig {
+                        tcp_dialect: own,
+                        ..tcp_only_config(group)
+                    },
+                )
+                .expect("start");
+                // The listener's port: in the dialect `fastdds` the upper
+                // 16 bits are the logical port (§6.1).
+                let port = u16::try_from(rt.user_locator().port & 0xFFFF).unwrap();
+                let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+                let from = stream.local_addr().unwrap().port();
+                let hello = match peer {
+                    TcpDialect::Rtps => rtps_wire(lease.id() as u32),
+                    _ => cyclone_wire(lease.id() as u32),
+                };
+                stream.write_all(&hello).unwrap();
+                let case = alloc::format!("runtime {}, peer {}", own.name(), peer.name());
+                loop {
+                    let message = match peer {
+                        TcpDialect::Rtps => {
+                            zerodds_transport_tcp::rtps_stream::read_message(&mut stream)
+                        }
+                        _ => zerodds_transport_tcp::cyclone_stream::read_message(&mut stream),
+                    }
+                    .unwrap_or_else(|e| panic!("{case}: no message of the peer's dialect: {e:?}"));
+                    assert_eq!(&message[8..20], &[group; 12], "{case}: from the runtime");
+                    match peer {
+                        TcpDialect::Rtps => assert_eq!(
+                            message[20], 0x00,
+                            "{case}: the HeaderExtension leads the message"
+                        ),
+                        _ => assert_ne!(
+                            message[20], 0x00,
+                            "{case}: a HeaderExtension in a message to a peer of the dialect \
+                             cyclone"
+                        ),
+                    }
+                    if carries_spdp_data(&message) {
+                        break;
+                    }
+                }
+                let known = rt.discovered_participants();
+                assert_eq!(known.len(), 1, "{case}");
+                // The source of the connection, with the locator kind of
+                // the runtime's dialect.
+                let locators = &known[0].data.metatraffic_unicast_locators;
+                assert!(
+                    locators.len() == 1
+                        && is_tcp(&locators[0])
+                        && locators[0].port == u32::from(from)
+                        && locators[0].ipv4() == [127, 0, 0, 1],
+                    "{case}: {locators:?}"
+                );
+                assert_eq!(rt.metatraffic_tcp_send_errors(), 0, "{case}");
+                rt.shutdown();
+            }
+        }
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3 and §4.1 on the connecting side:
+    /// with `transport.tcp_dialect: cyclone`, a port of its own
+    /// (`transport.tcp_port`) and a TCP initial peer, the runtime connects
+    /// to the peer and writes its SPDP announcement in the stream framing
+    /// of Cyclone DDS. The announcement names the listener with the
+    /// locator kind 4 and the port of the setting, as default and as
+    /// metatraffic unicast locator.
+    #[test]
+    fn tcp_4_3_the_spdp_announcement_goes_to_a_tcp_initial_peer() {
+        let lease = zerodds_test_domains::lease_domain();
+        let peer = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let peer_port = peer.local_addr().unwrap().port();
+        // A free port for the runtime's listener.
+        let own_port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xC4; 12]),
+            RuntimeConfig {
+                tcp_dialect: zerodds_transport_tcp::TcpDialect::Cyclone,
+                tcp_port: own_port,
+                initial_peer_specs: vec![alloc::format!("tcp://127.0.0.1:{peer_port}")],
+                ..tcp_only_config(4)
+            },
+        )
+        .expect("start");
+        assert_eq!(rt.user_locator().port, u32::from(own_port));
+        assert_eq!(rt.user_locator().kind, LocatorKind::Tcpv4Kind4);
+
+        let (mut stream, _) = peer.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let message = read_cyclone_message(&mut stream);
+        assert_eq!(&message[8..20], &[0xC4; 12]);
+        assert!(carries_spdp_data(&message));
+        // The locator as it stands in the parameter list: kind 4, the
+        // port, 127.0.0.1 in the last four of sixteen octets.
+        let mut locator = alloc::vec![4u8, 0, 0, 0];
+        locator.extend_from_slice(&u32::from(own_port).to_le_bytes());
+        locator.extend_from_slice(&[0u8; 12]);
+        locator.extend_from_slice(&[127, 0, 0, 1]);
+        for pid in [0x31u8, 0x32] {
+            let mut parameter = alloc::vec![pid, 0x00, 24, 0x00];
+            parameter.extend_from_slice(&locator);
+            assert!(
+                message.windows(parameter.len()).any(|w| w == parameter),
+                "PID {pid:#04x} with the TCP listener"
+            );
+        }
+        rt.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3: `discovery.unicast_transports`
+    /// names what is announced as a metatraffic unicast locator. By
+    /// default the UDP metatraffic socket and the TCP listener; with `udp`
+    /// alone the UDP socket, with `tcp` alone the TCP listener. A runtime
+    /// without a TCP transport cannot be asked for `tcp` alone.
+    #[test]
+    fn tcp_4_3_the_metatraffic_locators_follow_the_unicast_transports() {
+        let lease = zerodds_test_domains::lease_domain();
+        let announced = |config: RuntimeConfig, prefix: u8| {
+            let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([prefix; 12]), config)
+                .expect("start");
+            let locators = rt
+                .self_as_discovered_participant()
+                .data
+                .metatraffic_unicast_locators;
+            let tcp = rt.user_locator();
+            rt.shutdown();
+            (locators, tcp)
+        };
+        let (both, tcp) = announced(tcp_only_config(5), 0xC5);
+        assert!(
+            both.iter().any(|l| l.kind == LocatorKind::UdpV4),
+            "{both:?}"
+        );
+        assert!(both.iter().any(|l| is_tcp(l) && l.port == tcp.port));
+
+        let (udp, _) = announced(
+            RuntimeConfig {
+                metatraffic_over_tcp: false,
+                ..tcp_only_config(6)
+            },
+            0xC6,
+        );
+        assert!(!udp.is_empty() && udp.iter().all(|l| l.kind == LocatorKind::UdpV4));
+
+        let (tcp_alone, tcp) = announced(
+            RuntimeConfig {
+                metatraffic_over_udp: false,
+                ..tcp_only_config(7)
+            },
+            0xC7,
+        );
+        assert!(!tcp_alone.is_empty() && tcp_alone.iter().all(|l| is_tcp(l) && l.port == tcp.port));
+
+        let no_tcp = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xC8; 12]),
+            RuntimeConfig {
+                metatraffic_over_udp: false,
+                user_transport: Some(UserTransportKind::UdpV4),
+                ..tcp_only_config(8)
+            },
+        );
+        assert!(matches!(
+            no_tcp.err(),
+            Some(DdsError::PreconditionNotMet { .. })
+        ));
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3: what tells a message with
+    /// metatraffic from one with user traffic alone on a TCP connection.
+    #[test]
+    fn tcp_4_3_a_message_for_a_builtin_entity_is_told_from_user_traffic() {
+        let header = |body: &[u8]| {
+            let mut m = alloc::vec![b'R', b'T', b'P', b'S', 2, 5, 0x01, 0xF0];
+            m.extend_from_slice(&[7u8; 12]);
+            m.extend_from_slice(body);
+            m
+        };
+        // A submessage with `reader` and `writer` EntityIds; DATA has
+        // extraFlags and octetsToInlineQos in front of them.
+        let entity = |id: u8, reader: [u8; 4], writer: [u8; 4]| {
+            let mut body = alloc::vec![id, 0x01];
+            let mut content = Vec::new();
+            if matches!(id, 0x15 | 0x16) {
+                content.extend_from_slice(&[0, 0, 16, 0]);
+            }
+            content.extend_from_slice(&reader);
+            content.extend_from_slice(&writer);
+            content.extend_from_slice(&[0u8; 8]);
+            body.extend_from_slice(&u16::try_from(content.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(&content);
+            body
+        };
+        let info_ts = [0x09u8, 0x01, 8, 0, 1, 0, 0, 0, 2, 0, 0, 0];
+        let user_reader = [0, 0, 1, 0x07];
+        let user_writer = [0, 0, 1, 0x02];
+        let spdp_writer = [0, 1, 0, 0xc2];
+        let sedp_reader = [0, 0, 3, 0xc7];
+        for id in [0x15u8, 0x16, 0x06, 0x07, 0x08, 0x12, 0x13] {
+            let user = header(&[&info_ts[..], &entity(id, user_reader, user_writer)].concat());
+            assert!(!may_address_builtin_entity(&user), "submessage {id:#04x}");
+            let builtin_writer = header(&entity(id, [0; 4], spdp_writer));
+            assert!(may_address_builtin_entity(&builtin_writer), "{id:#04x}");
+            let builtin_reader = header(&entity(id, sedp_reader, user_writer));
+            assert!(may_address_builtin_entity(&builtin_reader), "{id:#04x}");
+            // Behind a user submessage in the same message.
+            let mixed = header(
+                &[
+                    entity(id, user_reader, user_writer),
+                    entity(0x07, sedp_reader, [0, 0, 3, 0xc2]),
+                ]
+                .concat(),
+            );
+            assert!(may_address_builtin_entity(&mixed), "{id:#04x}");
+        }
+        // A protected message: SRTPS_PREFIX, SEC_PREFIX.
+        for id in [0x33u8, 0x31] {
+            assert!(may_address_builtin_entity(&header(&[
+                id, 0x01, 4, 0, 0, 0, 0, 0
+            ])));
+        }
+        // No message, and one cut inside a submessage header.
+        assert!(may_address_builtin_entity(b"RTPS"));
+        assert!(may_address_builtin_entity(&header(&[0x15, 0x01])));
+        // Only INFO_TS.
+        assert!(!may_address_builtin_entity(&header(&info_ts)));
+        // The capture of Cyclone DDS without its length submessage: SPDP.
+        let spdp = cyclone_tcp_spdp(0);
+        let message = zerodds_transport_tcp::cyclone_stream::read_message(&mut &spdp[..]).unwrap();
+        assert!(may_address_builtin_entity(&message));
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3: only an empty list takes the source
+    /// of the connection, each list for itself, and only a TCP source.
+    #[test]
+    fn tcp_4_3_an_empty_locator_list_takes_the_source_of_the_connection() {
+        let source = Locator::tcp_v4([192, 0, 2, 7], 40_000);
+        let announced = Locator::tcp_v4([192, 0, 2, 7], 7400);
+        let empty = || zerodds_rtps::participant_data::ParticipantBuiltinTopicData {
+            guid: Guid::new(GuidPrefix::from_bytes([0x10; 12]), EntityId::PARTICIPANT),
+            protocol_version: zerodds_rtps::wire_types::ProtocolVersion::V2_5,
+            vendor_id: VendorId([0x01, 0x10]),
+            default_unicast_locators: Vec::new(),
+            default_multicast_locators: Vec::new(),
+            metatraffic_unicast_locators: Vec::new(),
+            metatraffic_multicast_locators: Vec::new(),
+            domain_id: None,
+            domain_tag: Default::default(),
+            builtin_endpoint_set: 0,
+            lease_duration: QosDuration::from_secs(100),
+            user_data: alloc::vec::Vec::new(),
+            properties: Default::default(),
+            identity_token: None,
+            permissions_token: None,
+            identity_status_token: None,
+            sig_algo_info: None,
+            kx_algo_info: None,
+            sym_cipher_algo_info: None,
+            available_builtin_endpoints_ext: 0,
+            participant_security_info: None,
+            expects_inline_qos: false,
+            manual_liveliness_count: None,
+            builtin_endpoint_qos: None,
+            entity_name: None,
+        };
+
+        let mut data = empty();
+        adopt_connection_source(&mut data, Some(&source));
+        assert_eq!(data.default_unicast_locators, vec![source]);
+        assert_eq!(data.metatraffic_unicast_locators, vec![source]);
+
+        let mut data = empty();
+        data.metatraffic_unicast_locators = vec![announced];
+        adopt_connection_source(&mut data, Some(&source));
+        assert_eq!(data.default_unicast_locators, vec![source]);
+        assert_eq!(data.metatraffic_unicast_locators, vec![announced]);
+
+        let mut data = empty();
+        adopt_connection_source(&mut data, Some(&Locator::udp_v4([192, 0, 2, 7], 40_000)));
+        adopt_connection_source(&mut data, None);
+        assert!(data.default_unicast_locators.is_empty());
+        assert!(data.metatraffic_unicast_locators.is_empty());
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3: an entry `tcp://ip:port` of
+    /// `discovery.peers` is the TCP listener of a peer, IPv4 or IPv6;
+    /// the other forms stay UDP.
+    #[test]
+    fn tcp_4_3_a_tcp_peer_entry_expands_to_a_tcp_locator() {
+        let specs = [
+            String::from("tcp://192.0.2.7:7400"),
+            String::from("tcp://[2001:db8::7]:7401"),
+            String::from("192.0.2.8:7410"),
+        ];
+        let out = super::expand_initial_peer_specs(&specs, 0, 2, &Default::default());
+        let v6: std::net::Ipv6Addr = "2001:db8::7".parse().unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Locator::tcp_v4([192, 0, 2, 7], 7400),
+                Locator::tcp_v6(v6.octets(), 7401),
+                Locator::udp_v4([192, 0, 2, 8], 7410),
+            ]
+        );
+        for bad in [
+            "tcp://192.0.2.7",
+            "tcp://192.0.2.7:0",
+            "tcp://host:7400",
+            "tcp://",
+        ] {
+            assert!(super::parse_tcp_peer(bad).is_none(), "{bad}");
+            assert!(
+                super::expand_initial_peer_specs(&[String::from(bad)], 0, 2, &Default::default())
+                    .is_empty(),
+                "{bad}"
+            );
+        }
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.1, §4.2, §4.3: the settings reach the
+    /// transport. The dialect `cyclone` brings the locator kinds 4 and 8
+    /// and the message limit of Cyclone DDS; the accepted dialects and the
+    /// port are the transport's; a TCPv4 and a TCPv6 listener of one
+    /// runtime hold the same port.
+    #[test]
+    fn tcp_4_1_the_cyclone_dialect_and_the_listener_settings_reach_the_transport() {
+        use zerodds_rtps::wire_types::TcpKindSet;
+        use zerodds_transport_tcp::TcpDialect;
+        let cyclone = RuntimeConfig {
+            tcp_dialect: TcpDialect::Cyclone,
+            ..RuntimeConfig::default()
+        };
+        assert_eq!(RuntimeConfig::default().tcp_kind_set(), TcpKindSet::ZeroDds);
+        assert_eq!(cyclone.tcp_kind_set(), TcpKindSet::Kinds4And8);
+        let leg = |kind: UserTransportKind, config: &RuntimeConfig| {
+            select_user_transport(
+                kind,
+                GuidPrefix::from_bytes([0x74; 12]),
+                0,
+                Ipv4Addr::LOCALHOST,
+                0,
+                config,
+            )
+        };
+        let (transport, handle) = leg(UserTransportKind::TcpV4, &cyclone).expect("TCP transport");
+        let handle = handle.expect("handle");
+        assert_eq!(handle.dialect(), TcpDialect::Cyclone);
+        assert_eq!(handle.accepted_dialects(), &TcpDialect::ALL);
+        assert_eq!(transport.local_locator().kind, LocatorKind::Tcpv4Kind4);
+        assert_eq!(transport.max_message_size(), 65_528);
+
+        let restricted = RuntimeConfig {
+            tcp_accept_dialects: Some(vec![TcpDialect::Cyclone, TcpDialect::ZeroDds]),
+            ..RuntimeConfig::default()
+        };
+        let (_, handle) = leg(UserTransportKind::TcpV4, &restricted).expect("TCP transport");
+        assert_eq!(
+            handle.expect("handle").accepted_dialects(),
+            &[TcpDialect::Cyclone, TcpDialect::ZeroDds]
+        );
+
+        // One port for both address families.
+        let port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let fixed = RuntimeConfig {
+            tcp_port: port,
+            user_transports: vec![UserTransportKind::TcpV4, UserTransportKind::TcpV6],
+            ..RuntimeConfig::default()
+        };
+        let (v4, _) = leg(UserTransportKind::TcpV4, &fixed).expect("TCPv4 on the port");
+        let (v6, _) = leg(UserTransportKind::TcpV6, &fixed).expect("TCPv6 on the same port");
+        assert_eq!(v4.local_locator().port, u32::from(port));
+        assert_eq!(v6.local_locator().port, u32::from(port));
+        // The port is taken now: a second runtime with it does not start.
+        assert!(leg(UserTransportKind::TcpV4, &fixed).is_err());
+    }
+
+    /// zerodds-tcp-transport-1.0 §6.1: with `transport.tcp_dialect =
+    /// fastdds` the TCP locator of a runtime is of kind 4 and holds the
+    /// metatraffic unicast port of the participant as its logical port,
+    /// above the port of the listener; the listener grants that port and
+    /// the user unicast port to a Fast DDS peer.
+    #[test]
+    fn tcp_6_1_the_fastdds_dialect_reaches_the_transport_with_the_logical_ports() {
+        use zerodds_rtps::wire_types::TcpKindSet;
+        use zerodds_transport_tcp::TcpDialect;
+        let lease = zerodds_test_domains::lease_domain();
+        let config = RuntimeConfig {
+            user_transport: Some(UserTransportKind::TcpV4),
+            tcp_dialect: TcpDialect::FastDds,
+            ..RuntimeConfig::default()
+        };
+        assert_eq!(config.tcp_kind_set(), TcpKindSet::Kinds4And8);
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0x61; 12]), config)
+            .expect("start");
+        let tcp = rt.user_locator();
+        assert_eq!(tcp.kind, LocatorKind::Tcpv4Kind4);
+        let logical = tcp.port >> 16;
+        assert_ne!(logical, 0, "the locator holds a logical port: {tcp:?}");
+        let metatraffic = rt
+            .spdp_beacon
+            .lock()
+            .unwrap()
+            .data
+            .metatraffic_unicast_locators
+            .clone();
+        // The logical port is the port of the UDP metatraffic socket, the
+        // metatraffic unicast port of the participant.
+        assert!(
+            metatraffic
+                .iter()
+                .any(|l| l.kind == LocatorKind::UdpV4 && l.port == logical),
+            "{metatraffic:?}"
+        );
+        assert!(metatraffic.iter().any(|l| l.port == tcp.port));
+        rt.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §6.1: in the dialect `fastdds` a TCP
+    /// peer without a logical port is asked at the metatraffic unicast
+    /// ports of the first participant ids, as Fast DDS asks an initial
+    /// peer; `tcp://ip:port/logical` names the port; the other dialects
+    /// keep the peer as it is.
+    #[test]
+    fn tcp_6_1_a_tcp_peer_of_the_fastdds_dialect_is_asked_at_the_metatraffic_ports() {
+        use zerodds_rtps::wire_types::{PortMapping, TcpKindSet};
+        let ports = PortMapping::default();
+        let specs = [
+            String::from("tcp://192.0.2.7:5100"),
+            String::from("tcp://192.0.2.7:5101/9000"),
+            String::from("192.0.2.8:7410"),
+        ];
+        assert_eq!(
+            super::parse_tcp_peer("tcp://192.0.2.7:5101/9000"),
+            Some(("192.0.2.7:5101".parse().unwrap(), Some(9000)))
+        );
+        for bad in [
+            "tcp://192.0.2.7:5101/0",
+            "tcp://192.0.2.7:5101/x",
+            "tcp://192.0.2.7:5101/",
+        ] {
+            assert!(super::parse_tcp_peer(bad).is_none(), "{bad}");
+        }
+        let expanded = super::expand_initial_peer_specs(&specs, 3, 2, &ports);
+        let named = expanded[1];
+        assert_eq!(named.kind, LocatorKind::Tcpv4Kind4);
+        assert_eq!(named.port, (9000 << 16) | 5101);
+        let peers = super::fastdds_initial_peers(
+            expanded.clone(),
+            TcpKindSet::Kinds4And8,
+            true,
+            3,
+            2,
+            &ports,
+        );
+        let mut asked =
+            Locator::tcp_v4([192, 0, 2, 7], 5100).with_tcp_kind_set(TcpKindSet::Kinds4And8);
+        let mut second = asked;
+        asked.port |= ports.spdp_unicast_port(3, 0) << 16;
+        second.port |= ports.spdp_unicast_port(3, 1) << 16;
+        assert_eq!(
+            peers,
+            vec![asked, second, named, Locator::udp_v4([192, 0, 2, 8], 7410)]
+        );
+        // Another dialect: the peer with the runtime's kinds, no logical port.
+        let plain =
+            super::fastdds_initial_peers(expanded, TcpKindSet::ZeroDds, false, 3, 2, &ports);
+        assert_eq!(plain[0], Locator::tcp_v4([192, 0, 2, 7], 5100));
+        assert_eq!(plain[1], named, "a named logical port stays");
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3, 1: the TCPv4 and the TCPv6 listener
+    /// of a runtime hold one port also with `transport.tcp_port` 0, the
+    /// default, in either order of `transport.user_transports`. Each
+    /// listener takes connections of its own address family on that port.
+    #[test]
+    fn tcp_4_3_both_tcp_listeners_hold_one_port_of_the_systems_choosing() {
+        for (n, order) in [
+            [UserTransportKind::TcpV4, UserTransportKind::TcpV6],
+            [UserTransportKind::TcpV6, UserTransportKind::TcpV4],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let lease = zerodds_test_domains::lease_domain();
+            let rt = DcpsRuntime::start(
+                lease.id(),
+                GuidPrefix::from_bytes([0xD0 + n as u8; 12]),
+                RuntimeConfig {
+                    user_transports: order.to_vec(),
+                    ..tcp_only_config(50 + n as u8)
+                },
+            )
+            .expect("start");
+            assert_eq!(RuntimeConfig::default().tcp_port, 0);
+            let locators = rt.user_unicast.local_locators();
+            let v4 = locators
+                .iter()
+                .find(|l| l.kind.is_tcp_v4())
+                .unwrap_or_else(|| panic!("{order:?}: no TCPv4 listener in {locators:?}"));
+            let v6 = locators
+                .iter()
+                .find(|l| l.kind.is_tcp_v6())
+                .unwrap_or_else(|| panic!("{order:?}: no TCPv6 listener in {locators:?}"));
+            assert_ne!(v4.port, 0, "{order:?}");
+            assert_eq!(v4.port, v6.port, "{order:?}: {locators:?}");
+            let port = u16::try_from(v4.port).unwrap();
+            std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .unwrap_or_else(|e| panic!("{order:?}: TCPv4 connect: {e}"));
+            std::net::TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, port))
+                .unwrap_or_else(|e| panic!("{order:?}: TCPv6 connect: {e}"));
+            rt.shutdown();
+        }
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.3 with §6.1: in the dialect `fastdds`
+    /// the TCPv4 and the TCPv6 listener hold one port of the system's
+    /// choosing as well. The port of their locators holds the logical
+    /// port above it, so the second listener takes the port of the first
+    /// listener, not that of its locator.
+    #[test]
+    fn tcp_6_1_both_tcp_listeners_of_the_fastdds_dialect_hold_one_port() {
+        use zerodds_transport_tcp::TcpDialect;
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0xD8; 12]),
+            RuntimeConfig {
+                user_transports: vec![UserTransportKind::TcpV4, UserTransportKind::TcpV6],
+                tcp_dialect: TcpDialect::FastDds,
+                ..tcp_only_config(58)
+            },
+        )
+        .expect("start");
+        assert_eq!(RuntimeConfig::default().tcp_port, 0);
+        let locators = rt.user_unicast.local_locators();
+        let v4 = locators
+            .iter()
+            .find(|l| l.kind.is_tcp_v4())
+            .unwrap_or_else(|| panic!("no TCPv4 listener in {locators:?}"));
+        let v6 = locators
+            .iter()
+            .find(|l| l.kind.is_tcp_v6())
+            .unwrap_or_else(|| panic!("no TCPv6 listener in {locators:?}"));
+        assert_eq!(v4.kind, LocatorKind::Tcpv4Kind4);
+        let physical = v4.port & 0xFFFF;
+        let logical = v4.port >> 16;
+        assert_ne!(physical, 0, "{locators:?}");
+        assert_ne!(logical, 0, "the locator holds a logical port: {locators:?}");
+        assert_eq!(v6.port, v4.port, "{locators:?}");
+        let metatraffic = rt
+            .spdp_beacon
+            .lock()
+            .unwrap()
+            .data
+            .metatraffic_unicast_locators
+            .clone();
+        assert!(
+            metatraffic
+                .iter()
+                .any(|l| l.kind == LocatorKind::UdpV4 && l.port == logical),
+            "{metatraffic:?}"
+        );
+        let port = u16::try_from(physical).unwrap();
+        std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .unwrap_or_else(|e| panic!("TCPv4 connect: {e}"));
+        std::net::TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, port))
+            .unwrap_or_else(|e| panic!("TCPv6 connect: {e}"));
+        rt.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §2.5: with `transport.tcp_dialect: rtps`
+    /// the TCP leg of a runtime sends RTPS messages back to back, each
+    /// with its length in a HeaderExtension, and no handshake; a second
+    /// runtime's leg of the same dialect reads them as they were sent,
+    /// and the datagram decoder takes them. With the default dialect the
+    /// same message goes out behind the handshake as a frame, unchanged.
+    #[test]
+    fn tcp_2_5_the_tcp_leg_of_the_rtps_dialect_states_the_length_of_each_message() {
+        use std::io::Read as _;
+        use zerodds_transport_tcp::TcpDialect;
+
+        assert_eq!(RuntimeConfig::default().tcp_dialect, TcpDialect::ZeroDds);
+        let rtps = RuntimeConfig {
+            tcp_dialect: TcpDialect::Rtps,
+            ..RuntimeConfig::default()
+        };
+        let leg_of = |config: &RuntimeConfig, prefix: u8| {
+            select_user_transport(
+                UserTransportKind::TcpV4,
+                GuidPrefix::from_bytes([prefix; 12]),
+                0,
+                Ipv4Addr::LOCALHOST,
+                0,
+                config,
+            )
+            .expect("TCP transport")
+        };
+        // header (20) and an INFO_TS (12).
+        let mut plain = alloc::vec![b'R', b'T', b'P', b'S', 2, 5, 0x01, 0xF0];
+        plain.extend_from_slice(&[7u8; 12]);
+        plain.extend_from_slice(&[0x09, 0x01, 8, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
+
+        // The octets on the wire, read by a plain listener.
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        let on_the_wire = thread::spawn(move || {
+            let (mut s, _) = listener.accept().expect("accept");
+            s.set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("timeout");
+            let mut wire = [0u8; 80];
+            s.read_exact(&mut wire).expect("two messages of 40 octets");
+            wire
+        });
+        let (sender, sender_handle) = leg_of(&rtps, 0x71);
+        assert_eq!(
+            sender_handle.expect("handle").dialect(),
+            TcpDialect::Rtps,
+            "the dialect of the setting is the transport's"
+        );
+        let dest = Locator::tcp_v4([127, 0, 0, 1], u32::from(port));
+        sender.send(&dest, &plain).expect("send");
+        sender.send(&dest, &plain).expect("send");
+        let wire = on_the_wire.join().expect("listener thread");
+        for message in [&wire[..40], &wire[40..]] {
+            assert_eq!(message[..20], plain[..20]);
+            assert_eq!(message[20..28], [0x00, 0x03, 4, 0, 40, 0, 0, 0]);
+            assert_eq!(message[28..], plain[20..]);
+        }
+
+        // Between two runtimes' legs.
+        let (receiver, receiver_handle) = leg_of(&rtps, 0x72);
+        let accept = receiver_handle.expect("handle");
+        let serving = {
+            let accept = Arc::clone(&accept);
+            thread::spawn(move || accept.serve())
+        };
+        sender
+            .send(&receiver.local_locator(), &plain)
+            .expect("send");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let received = loop {
+            match receiver.recv() {
+                Ok(dg) => break dg,
+                Err(_) => assert!(Instant::now() < deadline, "no message arrived"),
+            }
+        };
+        assert_eq!(&received.data[..], &wire[..40]);
+        let parsed = zerodds_rtps::datagram::decode_datagram(&received.data[..]).expect("decodes");
+        assert!(parsed.invalid_rest.is_none());
+
+        // The default dialect: handshake, then the message as a frame.
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        let on_the_wire = thread::spawn(move || {
+            let (mut s, _) = listener.accept().expect("accept");
+            s.set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("timeout");
+            zerodds_transport_tcp::handshake::server_handshake(&mut s).expect("handshake");
+            zerodds_transport_tcp::framing::read_frame(&mut s).expect("frame")
+        });
+        let (default_leg, _handle) = leg_of(&RuntimeConfig::default(), 0x73);
+        default_leg
+            .send(&Locator::tcp_v4([127, 0, 0, 1], u32::from(port)), &plain)
+            .expect("send");
+        assert_eq!(on_the_wire.join().expect("listener thread"), plain);
+
+        sender.close();
+        receiver.close();
+        default_leg.close();
+        serving.join().expect("serve returns after close");
+    }
+
+    /// §1.1 for TCPv6 and for the leg lookup: a transport of either kind
+    /// set is the TCP leg of its address family, and a destination of
+    /// either set is sent over it.
+    #[test]
+    fn tcp_1_1_both_kind_sets_are_one_transport_per_address_family() {
+        use zerodds_rtps::wire_types::TcpKindSet;
+
+        let other_config = RuntimeConfig {
+            tcp_locator_kinds_fast_dds: true,
+            ..RuntimeConfig::default()
+        };
+        let transport_of = |kind, config: &RuntimeConfig, prefix: u8| {
+            select_user_transport(
+                kind,
+                GuidPrefix::from_bytes([prefix; 12]),
+                0,
+                Ipv4Addr::LOCALHOST,
+                0,
+                config,
+            )
+            .expect("TCP transport")
+            .0
+        };
+        let own6 = transport_of(UserTransportKind::TcpV6, &RuntimeConfig::default(), 0x53);
+        let other6 = transport_of(UserTransportKind::TcpV6, &other_config, 0x54);
+        let pin = Ipv4Addr::LOCALHOST;
+        let announced6 = announce_locator(&*own6, pin);
+        let announced_other6 = announce_locator(&*other6, pin);
+        assert_eq!(announced6.kind, LocatorKind::Tcpv6);
+        assert_eq!(announced_other6.kind, LocatorKind::Tcpv6Kind8);
+        // `::` is announced as `::1` under either set.
+        assert_eq!(announced6.address, std::net::Ipv6Addr::LOCALHOST.octets());
+        assert_eq!(
+            announced_other6.address,
+            std::net::Ipv6Addr::LOCALHOST.octets()
+        );
+        // The same for TCPv4: a listener on `0.0.0.0` is announced with an
+        // address of this host under either set, the pinned interface if
+        // there is one, and keeps its kind and port.
+        for (config, kind, prefix) in [
+            (&RuntimeConfig::default(), LocatorKind::Tcpv4, 0x57),
+            (&other_config, LocatorKind::Tcpv4Kind4, 0x58),
+        ] {
+            let wildcard4 = select_user_transport(
+                UserTransportKind::TcpV4,
+                GuidPrefix::from_bytes([prefix; 12]),
+                0,
+                Ipv4Addr::UNSPECIFIED,
+                0,
+                config,
+            )
+            .expect("TCP transport")
+            .0;
+            let raw = wildcard4.local_locator();
+            assert_eq!(raw.kind, kind);
+            assert_eq!(raw.address[12..16], [0u8; 4]);
+            let probed = announce_locator(&*wildcard4, Ipv4Addr::UNSPECIFIED);
+            assert_eq!(probed.kind, kind);
+            assert_eq!(probed.port, raw.port);
+            assert_ne!(probed.address[12..16], [0u8; 4]);
+            let pinned = announce_locator(&*wildcard4, Ipv4Addr::new(192, 0, 2, 7));
+            assert_eq!(pinned.kind, kind);
+            assert_eq!(pinned.port, raw.port);
+            assert_eq!(pinned.address[12..16], [192, 0, 2, 7]);
+            wildcard4.close();
+        }
+
+        let (other4, accept) = select_user_transport(
+            UserTransportKind::TcpV4,
+            GuidPrefix::from_bytes([0x55; 12]),
+            0,
+            Ipv4Addr::LOCALHOST,
+            0,
+            &other_config,
+        )
+        .expect("TCP transport");
+        let accept = accept.expect("TCP has an accept handle");
+        let serving = std::thread::spawn(move || accept.serve());
+        let udp = transport_of(UserTransportKind::UdpV4, &other_config, 0x56);
+        let port = other4.local_locator().port;
+        let layered = crate::layered_transport::LayeredUserTransport::new(alloc::vec![udp, other4]);
+        assert!(layered.serves_kind(LocatorKind::Tcpv4));
+        assert!(layered.serves_kind(LocatorKind::Tcpv4Kind4));
+        assert!(!layered.serves_kind(LocatorKind::Tcpv6Kind8));
+        // The TCP leg sends to its own listener, by a destination of
+        // either set.
+        for (set, payload) in [
+            (TcpKindSet::ZeroDds, &b"by-own-kind"[..]),
+            (TcpKindSet::Kinds4And8, &b"by-kind-4"[..]),
+        ] {
+            let dest = Locator::tcp_v4([127, 0, 0, 1], port).with_tcp_kind_set(set);
+            layered.send(&dest, payload).expect("send over the TCP leg");
+        }
+        let mut got: Vec<Vec<u8>> = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while got.len() < 2 && std::time::Instant::now() < deadline {
+            if let Ok(dg) = layered.recv() {
+                assert_eq!(dg.source.kind, LocatorKind::Tcpv4Kind4);
+                got.push(dg.data.to_vec());
+            }
+        }
+        assert_eq!(got, [b"by-own-kind".to_vec(), b"by-kind-4".to_vec()]);
+        let six = Locator::tcp_v6(std::net::Ipv6Addr::LOCALHOST.octets(), port)
+            .with_tcp_kind_set(TcpKindSet::Kinds4And8);
+        assert!(matches!(
+            layered.send(&six, &[0u8; 4]),
+            Err(zerodds_transport::SendError::UnsupportedLocator)
+        ));
+        layered.close();
+        serving.join().expect("serve returns after close");
+    }
+
     #[test]
     fn select_user_transport_udpv4_default_kind() {
         let prefix = GuidPrefix::from_bytes([2u8; 12]);
@@ -35471,7 +38159,7 @@ mod tests {
         assert!(accept.is_none(), "UDP needs no accept handle");
     }
 
-    #[cfg(all(feature = "same-host-uds", unix))]
+    #[cfg(all(feature = "same-host-uds", any(unix, windows)))]
     #[test]
     fn select_user_transport_uds_yields_uds_locator() {
         let prefix = GuidPrefix::from_bytes([3u8; 12]);
@@ -36213,6 +38901,55 @@ mod tests {
     /// `discovery.peers`: two tests in one binary cannot hold a process-global
     /// env var at once, so before this field the expansion had no unit test
     /// at all.
+    /// XTypes 1.3 §7.6.3.2.2: the complete identifier of a remote endpoint
+    /// is the complete half of its `PID_TYPE_INFORMATION`, in whichever
+    /// byte order the blob was written; an identifier that is complete
+    /// already is its own, a minimal one without the blob has none.
+    #[test]
+    fn xtypes_7_6_3_2_2_the_complete_identifier_comes_from_the_type_information() {
+        use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+        use zerodds_types::type_identifier::PrimitiveKind;
+        let b = TypeObjectBuilder::struct_type("::chat::Chatter")
+            .extensibility(Extensibility::Appendable)
+            .member(
+                "id",
+                zerodds_types::TypeIdentifier::Primitive(PrimitiveKind::Int64),
+                |m| m.key(),
+            );
+        let minimal = zerodds_types::MinimalTypeObject::Struct(b.build_minimal());
+        let complete = zerodds_types::CompleteTypeObject::Struct(b.build_complete());
+        let ti =
+            zerodds_types::TypeInformation::from_minimal_and_complete(&minimal, &complete).unwrap();
+        let complete_id = ti.complete.typeid_with_size.type_id.clone();
+        let minimal_id = ti.minimal.typeid_with_size.type_id.clone();
+        assert!(matches!(
+            complete_id,
+            zerodds_types::TypeIdentifier::EquivalenceHashComplete(_)
+        ));
+        let le = ti.to_bytes_le().unwrap();
+        let mut writer = zerodds_wire::Writer::with_max_align(zerodds_wire::Endianness::Big, 4);
+        ti.encode_into(&mut writer).unwrap();
+        let be = writer.finish();
+        assert_ne!(le, be);
+        assert_eq!(
+            super::complete_type_identifier_of(&minimal_id, Some(&le)),
+            Some(complete_id.clone())
+        );
+        assert_eq!(
+            super::complete_type_identifier_of(&minimal_id, Some(&be)),
+            Some(complete_id.clone())
+        );
+        assert_eq!(
+            super::complete_type_identifier_of(&complete_id, None),
+            Some(complete_id.clone())
+        );
+        assert_eq!(super::complete_type_identifier_of(&minimal_id, None), None);
+        assert_eq!(
+            super::complete_type_identifier_of(&minimal_id, Some(&[0, 1, 2])),
+            None
+        );
+    }
+
     /// A reader on a ContentFilteredTopic announces the filter in its SEDP
     /// subscription (`PID_CONTENT_FILTER_PROPERTY`, DDSI-RTPS 2.5 §9.6.3.4),
     /// and announces it again with new parameters.
@@ -38439,6 +41176,95 @@ mod tests {
         assert_eq!(got[0].address[12..], [239, 255, 0, 1]);
     }
 
+    /// zerodds-uds-transport-1.0 §3.3: a datagram the user transport reports
+    /// as above its limit is counted by the user receive loop and reported
+    /// as the event `transport.user_recv.datagram_above_limit` with both
+    /// sizes; the loop then goes on receiving, instead of the datagram
+    /// vanishing in the loop's error arm.
+    #[test]
+    fn uds_3_3_a_datagram_above_the_transport_limit_is_counted_by_the_user_receive_loop() {
+        use zerodds_foundation::observability::VecSink;
+        struct AboveLimitOnce(AtomicUsize);
+        impl Transport for AboveLimitOnce {
+            fn send(
+                &self,
+                _dest: &Locator,
+                _data: &[u8],
+            ) -> core::result::Result<(), zerodds_transport::SendError> {
+                Ok(())
+            }
+            fn recv(
+                &self,
+            ) -> core::result::Result<
+                zerodds_transport::ReceivedDatagram,
+                zerodds_transport::RecvError,
+            > {
+                if self.0.fetch_add(1, Ordering::Relaxed) == 0 {
+                    return Err(zerodds_transport::RecvError::BufferTooSmall {
+                        datagram_size: 4000,
+                        buffer_size: 1024,
+                    });
+                }
+                thread::sleep(Duration::from_millis(5));
+                Err(zerodds_transport::RecvError::Timeout)
+            }
+            fn local_locator(&self) -> Locator {
+                Locator::INVALID
+            }
+        }
+        let lease = zerodds_test_domains::lease_domain();
+        let sink = Arc::new(VecSink::new());
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0x64; 12]),
+            RuntimeConfig {
+                observability: sink.clone(),
+                ..RuntimeConfig::default()
+            },
+        )
+        .expect("start");
+        let before = rt.user_datagrams_above_limit();
+        let transport = Arc::new(AboveLimitOnce(AtomicUsize::new(0)));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tuned, _reports) = mpsc::channel();
+        let worker = {
+            let (weak, socket, stop) = (
+                Arc::downgrade(&rt),
+                Arc::clone(&transport) as Arc<dyn Transport + Send + Sync>,
+                Arc::clone(&stop),
+            );
+            thread::spawn(move || recv_user_data_loop(weak, socket, stop, None, tuned))
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while transport.0.load(Ordering::Relaxed) < 3 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let counted = rt.user_datagrams_above_limit();
+        let calls = transport.0.load(Ordering::Relaxed);
+        stop.store(true, Ordering::Relaxed);
+        worker.join().expect("the loop ends on stop");
+        rt.shutdown();
+        assert!(counted > before, "the datagram above the limit is counted");
+        assert!(
+            calls >= 3,
+            "the loop goes on receiving after it ({calls} calls)"
+        );
+        let reported: Vec<Vec<(&str, String)>> = sink
+            .snapshot()
+            .iter()
+            .filter(|e| e.name == "transport.user_recv.datagram_above_limit")
+            .map(|e| e.attrs.iter().map(|a| (a.key, a.value.clone())).collect())
+            .collect();
+        assert_eq!(
+            reported,
+            vec![vec![
+                ("size", "4000".to_string()),
+                ("limit", "1024".to_string())
+            ]],
+            "one event with the datagram's size and the transport's limit"
+        );
+    }
+
     /// A port that is taken is counted and the socket takes an ephemeral
     /// port: with `d3 == d1` the user port of the participant is the port
     /// its SPDP unicast socket holds.
@@ -39050,14 +41876,21 @@ mod tests {
     }
 
     /// A participant that drops its channel to a same-host peer on its
-    /// side only (a lease that expired there, say) and opens it again makes
-    /// its ring anew. The peer, which never lost it, sees its receive
-    /// thread end on the old ring's shutdown flag and attaches to the new
-    /// one; samples keep going through the channel. Before, the peer stayed
-    /// on the dead ring and the sender's frames reached nobody.
+    /// side only (a lease that expired there, say) and opens it again: the
+    /// peer, which never lost it, keeps receiving through the channel. Two
+    /// outcomes are right (`zerodds-shm-transport-1.0` §5.3), and which one
+    /// a run takes depends on the runtime's own threads: the old owner's
+    /// drop ends the ring and the peer's receive thread follows the new one
+    /// on the old ring's shutdown flag, or a thread of the participant
+    /// still held the old channel when the new one opened, and the new
+    /// owner carries the ring on. Before, the peer stayed on a dead ring and
+    /// the sender's frames reached nobody; later the test waited for the
+    /// first outcome alone and failed when a run took the second (27 of
+    /// 4 400 runs, 8 in parallel, on the Linux test host). Each outcome is
+    /// pinned down in a test of its own in `same_host_channel`.
     #[cfg(all(target_os = "linux", feature = "same-host-shm"))]
     #[test]
-    fn a_same_host_peer_follows_a_channel_its_peer_makes_anew() {
+    fn a_same_host_peer_keeps_receiving_when_its_peer_opens_the_channel_again() {
         use crate::same_host_channel::Port;
         let lease = zerodds_test_domains::lease_domain();
         let cfg = RuntimeConfig {
@@ -39121,6 +41954,7 @@ mod tests {
             b"first ring"
         );
         let old_inbound = Arc::downgrade(&channel(&b, pa).expect("b's channel").inbound);
+        let old_outbound = Arc::downgrade(&channel(&a, pb).expect("a's channel").outbound);
 
         // a alone drops the channel and opens it again.
         let peer = a
@@ -39134,9 +41968,26 @@ mod tests {
             &peer.data.metatraffic_unicast_locators,
             &peer.data.default_unicast_locators,
         );
-        until("b on a's new ring", 5, &|| {
-            old_inbound.upgrade().is_none() && channel(&a, pb).is_some()
-        });
+        // a's new owner has a reader: b on a ring made anew, or b still on
+        // the ring the new owner took over.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while channel(&a, pb).is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "b reads a's new owner within 5 s: b's old inbound {}, a's old owner {}",
+                if old_inbound.upgrade().is_some() {
+                    "kept"
+                } else {
+                    "replaced"
+                },
+                match old_outbound.upgrade() {
+                    Some(o) if o.is_superseded() => "alive, superseded",
+                    Some(_) => "alive, not superseded",
+                    None => "dropped",
+                }
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
         let sent = a.same_host_channels.frames_sent(Port::User);
         a.write_user_sample(wid, b"second ring".to_vec()).unwrap();
         assert_eq!(
@@ -40131,6 +42982,31 @@ mod tests {
         logger: std::sync::Arc<CapturingLogger>,
         observability: zerodds_foundation::observability::SharedSink,
     ) -> LeasedRuntime {
+        build_runtime_in_dialect(gov_xml, logger, observability, TcpDialect::ZeroDds)
+    }
+
+    /// [`build_runtime_with_sink`] with the TCP dialect `tcp_dialect`.
+    #[cfg(feature = "security")]
+    fn build_runtime_in_dialect(
+        gov_xml: &str,
+        logger: std::sync::Arc<CapturingLogger>,
+        observability: zerodds_foundation::observability::SharedSink,
+        tcp_dialect: TcpDialect,
+    ) -> LeasedRuntime {
+        build_runtime_adjusted(gov_xml, logger, observability, |cfg| {
+            cfg.tcp_dialect = tcp_dialect;
+        })
+    }
+
+    /// [`build_runtime_with_sink`] with the configuration as `adjust`
+    /// leaves it.
+    #[cfg(feature = "security")]
+    fn build_runtime_adjusted(
+        gov_xml: &str,
+        logger: std::sync::Arc<CapturingLogger>,
+        observability: zerodds_foundation::observability::SharedSink,
+        adjust: impl FnOnce(&mut RuntimeConfig),
+    ) -> LeasedRuntime {
         use zerodds_security_crypto::AesGcmCryptoPlugin;
         use zerodds_security_permissions::parse_governance_xml;
         use zerodds_security_runtime::{LoggingPlugin, SharedSecurityGate};
@@ -40147,7 +43023,7 @@ mod tests {
         // the counts were off by one under parallel runs. Its own domain and
         // no multicast of its own keep the network out of the count. The
         // gate stays on domain 0, the domain the governance rules name.
-        let cfg = RuntimeConfig {
+        let mut cfg = RuntimeConfig {
             security: Some(std::sync::Arc::new(gate)),
             security_logger: Some(logger_dyn),
             security_guid_prefix: Some(GuidPrefix::from_bytes([0xE7; 12])),
@@ -40155,6 +43031,7 @@ mod tests {
             observability,
             ..RuntimeConfig::default()
         };
+        adjust(&mut cfg);
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xE7; 12]), cfg)
             .expect("start rt");
@@ -40909,6 +43786,268 @@ mod tests {
         assert_eq!(&out[..], &beacon[..]);
         plain_rt.shutdown();
         rt.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §2.5 with DDS-Security 1.2 §10.9.3.3.1
+    /// Table 89: the pre-shared key authenticates the RTPS Header and the
+    /// HeaderExtension (flag A). A runtime of the TCP dialect `rtps` puts
+    /// the HeaderExtension with the message length in before that
+    /// protection: the protected message is `RTPS Header | HeaderExtension
+    /// | SRTPS_PREFIX` with the flags A and P, its messageLength is the
+    /// length of the protected message, the leg that states the length
+    /// finds nothing to change, and the receiver reads back the message
+    /// with its HeaderExtension. A HeaderExtension put in behind the
+    /// protection is not the one under the tag: such a message is
+    /// refused, and the leg does not make one.
+    #[cfg(feature = "security")]
+    #[test]
+    fn tcp_2_5_a_message_under_a_pre_shared_key_states_its_length_before_the_protection() {
+        use zerodds_rtps::header_extension::HeaderExtension;
+        use zerodds_security_crypto::psk_rtps::{Passphrase, PskConfig, PskProtection};
+        use zerodds_security_runtime::SharedSecurityGate;
+        const GOV_ENCRYPT: &str = r#"
+<dds><domain_access_rules>
+  <domain_rule>
+    <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
+    <rtps_protection_kind>ENCRYPT</rtps_protection_kind>
+    <topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules>
+  </domain_rule>
+</domain_access_rules></dds>
+"#;
+        let psk = || PskConfig {
+            domain_id: 0,
+            domain_tag: String::new(),
+            passphrase: Passphrase::parse("5612:Open Sesame").unwrap(),
+            alternatives: Vec::new(),
+            key_bits: 256,
+            protection: PskProtection::Encrypt,
+        };
+        let runtime = |dialect: TcpDialect| {
+            let sink = std::sync::Arc::new(zerodds_foundation::observability::VecSink::new());
+            let logger = std::sync::Arc::new(CapturingLogger::default());
+            let rt = build_runtime_in_dialect(GOV_ENCRYPT, logger, sink, dialect);
+            rt.config
+                .security
+                .as_ref()
+                .expect("a gate")
+                .set_rtps_psk(psk())
+                .unwrap();
+            rt
+        };
+        let rt = runtime(TcpDialect::Rtps);
+        let beacon = make_remote_spdp_beacon(GuidPrefix::from_bytes([0x99; 12]));
+        let stated = HeaderExtension::with_message_length(&beacon).unwrap();
+        assert_eq!(stated.len(), beacon.len() + 8);
+
+        let wire = secure_outbound_bytes(&rt, &beacon)
+            .expect("protected")
+            .into_owned();
+        assert_eq!(wire[..20], beacon[..20]);
+        // HeaderExtension: id 0x00, flags E | L, four octets, the length.
+        assert_eq!(wire[20..24], [0x00, 0x03, 4, 0]);
+        assert_eq!(
+            u32::from_le_bytes([wire[24], wire[25], wire[26], wire[27]]) as usize,
+            wire.len()
+        );
+        // SRTPS_PREFIX with the flags A (0x02) and P (0x04).
+        assert_eq!(wire[28], 0x33);
+        assert_eq!(wire[29] & 0x06, 0x06);
+        assert!(SharedSecurityGate::is_psk_protected(&wire));
+        // The leg: nothing to change, and the stream framing takes it.
+        assert_eq!(HeaderExtension::with_message_length(&wire).unwrap(), wire);
+        let head = <&[u8; 28]>::try_from(&wire[..28]).unwrap();
+        assert_eq!(
+            zerodds_transport_tcp::rtps_stream::message_length(head).unwrap() as usize,
+            wire.len()
+        );
+        let back = secure_inbound_bytes(&rt, &wire, &NetInterface::Wan).expect("accepted");
+        assert_eq!(&back[..], &stated[..]);
+
+        // The default dialect protects the message as it is. A
+        // HeaderExtension added to that is not under the tag.
+        let other = runtime(TcpDialect::ZeroDds);
+        let bare = secure_outbound_bytes(&other, &beacon)
+            .expect("protected")
+            .into_owned();
+        assert_eq!(bare[20], 0x33);
+        assert!(SharedSecurityGate::authenticates_header_without_extension(
+            &bare
+        ));
+        let back = secure_inbound_bytes(&rt, &bare, &NetInterface::Wan).expect("accepted");
+        assert_eq!(&back[..], &beacon[..]);
+        let late = HeaderExtension::with_message_length(&bare).unwrap();
+        assert!(secure_inbound_bytes(&rt, &late, &NetInterface::Wan).is_none());
+        other.shutdown();
+        rt.shutdown();
+    }
+
+    /// zerodds-tcp-transport-1.0 §4.1 with §2.5: a runtime of another
+    /// dialect whose TCP listener takes connections of the dialect `rtps`
+    /// answers such a connection on it, and the leg cannot add the
+    /// HeaderExtension behind a protection that authenticates the header.
+    /// So the runtime puts it in before the protection, as a runtime of
+    /// the dialect `rtps` does: under a pre-shared key the message is
+    /// `RTPS Header | HeaderExtension | SRTPS_PREFIX` with the flags A and
+    /// P. A runtime whose listener does not take the dialect `rtps`, and
+    /// one without a TCP leg, protects the message as it is.
+    #[cfg(feature = "security")]
+    #[test]
+    fn tcp_4_1_a_runtime_taking_the_rtps_dialect_states_the_length_before_a_pre_shared_key() {
+        use zerodds_rtps::header_extension::HeaderExtension;
+        use zerodds_security_crypto::psk_rtps::{Passphrase, PskConfig, PskProtection};
+        use zerodds_security_runtime::SharedSecurityGate;
+        const GOV_ENCRYPT: &str = r#"
+<dds><domain_access_rules>
+  <domain_rule>
+    <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
+    <rtps_protection_kind>ENCRYPT</rtps_protection_kind>
+    <topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules>
+  </domain_rule>
+</domain_access_rules></dds>
+"#;
+        let runtime = |accept: Option<Vec<TcpDialect>>| {
+            let sink = std::sync::Arc::new(zerodds_foundation::observability::VecSink::new());
+            let logger = std::sync::Arc::new(CapturingLogger::default());
+            let rt = build_runtime_adjusted(GOV_ENCRYPT, logger, sink, |cfg| {
+                cfg.tcp_dialect = TcpDialect::ZeroDds;
+                cfg.user_transport = Some(UserTransportKind::TcpV4);
+                cfg.tcp_accept_dialects = accept;
+            });
+            rt.config
+                .security
+                .as_ref()
+                .expect("a gate")
+                .set_rtps_psk(PskConfig {
+                    domain_id: 0,
+                    domain_tag: String::new(),
+                    passphrase: Passphrase::parse("5612:Open Sesame").unwrap(),
+                    alternatives: Vec::new(),
+                    key_bits: 256,
+                    protection: PskProtection::Encrypt,
+                })
+                .unwrap();
+            rt
+        };
+        let beacon = make_remote_spdp_beacon(GuidPrefix::from_bytes([0x99; 12]));
+
+        // Every dialect accepted, the default: the HeaderExtension leads.
+        let rt = runtime(None);
+        assert!(rt.config.may_write_tcp_dialect_rtps());
+        let wire = secure_outbound_bytes(&rt, &beacon)
+            .expect("protected")
+            .into_owned();
+        assert_eq!(wire[..20], beacon[..20]);
+        assert_eq!(wire[20..24], [0x00, 0x03, 4, 0]);
+        assert_eq!(
+            u32::from_le_bytes([wire[24], wire[25], wire[26], wire[27]]) as usize,
+            wire.len()
+        );
+        assert_eq!(wire[28], 0x33);
+        assert_eq!(wire[29] & 0x06, 0x06);
+        assert!(SharedSecurityGate::is_psk_protected(&wire));
+        // What the leg does towards an accepted connection of the dialect
+        // `rtps`: the length is in place, nothing changes.
+        assert_eq!(HeaderExtension::with_message_length(&wire).unwrap(), wire);
+        let back = secure_inbound_bytes(&rt, &wire, &NetInterface::Wan).expect("accepted");
+        assert_eq!(
+            &back[..],
+            &HeaderExtension::with_message_length(&beacon).unwrap()[..]
+        );
+
+        // A listener that does not take the dialect `rtps`: as it is.
+        let other = runtime(Some(vec![TcpDialect::ZeroDds, TcpDialect::Cyclone]));
+        assert!(!other.config.may_write_tcp_dialect_rtps());
+        let bare = secure_outbound_bytes(&other, &beacon)
+            .expect("protected")
+            .into_owned();
+        assert_eq!(bare[20], 0x33);
+        assert!(SharedSecurityGate::authenticates_header_without_extension(
+            &bare
+        ));
+        other.shutdown();
+        rt.shutdown();
+
+        // The configurations alone.
+        let with = |f: &dyn Fn(&mut RuntimeConfig)| {
+            let mut cfg = RuntimeConfig::default();
+            f(&mut cfg);
+            cfg.may_write_tcp_dialect_rtps()
+        };
+        assert!(!with(&|_| {}), "no TCP leg");
+        assert!(with(&|c| c.tcp_dialect = TcpDialect::Rtps));
+        assert!(with(&|c| c.user_transport = Some(UserTransportKind::TcpV6)));
+        assert!(with(&|c| {
+            c.user_transports = vec![UserTransportKind::UdpV4, UserTransportKind::TcpV6];
+        }));
+        assert!(
+            !with(&|c| {
+                c.user_transport = Some(UserTransportKind::TcpV4);
+                c.user_transports = vec![UserTransportKind::UdpV4];
+            }),
+            "the list wins over the single transport"
+        );
+        assert!(with(&|c| {
+            c.user_transport = Some(UserTransportKind::TcpV4);
+            c.tcp_accept_dialects = Some(vec![TcpDialect::Rtps]);
+        }));
+        assert!(with(&|c| {
+            c.tcp_dialect = TcpDialect::Rtps;
+            c.tcp_accept_dialects = Some(vec![TcpDialect::ZeroDds]);
+        }));
+    }
+
+    /// zerodds-tcp-transport-1.0 §2.5 with DDS-Security 1.2 §10.5.3.3.1
+    /// Table 80: with the exchanged key the form of the protection is the
+    /// plugin's, and its output shows it. A protection that leaves the
+    /// header unauthenticated (no flag A) is applied once, to the message
+    /// as it is. One that authenticates it (flag A) is applied again to
+    /// the message with its HeaderExtension, and that output is the one
+    /// sent. A protection that fails yields nothing.
+    #[cfg(feature = "security")]
+    #[test]
+    fn tcp_2_5_a_protection_that_authenticates_the_header_gets_the_header_extension() {
+        use zerodds_rtps::header_extension::HeaderExtension;
+        let mut plain = std::vec![b'R', b'T', b'P', b'S', 2, 5, 0x01, 0xF0];
+        plain.extend_from_slice(&[7; 12]);
+        plain.extend_from_slice(&[0x09, 0x01, 8, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
+        // What a protection makes of a message: the RTPS Header, the
+        // HeaderExtension if the message has one, an SRTPS_PREFIX with
+        // `flags` and the rest behind it.
+        let shaped = |flags: u8, message: &[u8]| {
+            let rest = if message.get(20) == Some(&0x00) {
+                28
+            } else {
+                20
+            };
+            let mut out = message[..rest].to_vec();
+            out.extend_from_slice(&[0x33, flags, 20, 0]);
+            out.extend_from_slice(&[0xC5; 20]);
+            out.extend_from_slice(&message[rest..]);
+            out
+        };
+
+        let mut inputs: Vec<Vec<u8>> = Vec::new();
+        let out = protect_for_stream(&plain, |message| {
+            inputs.push(message.to_vec());
+            Some(shaped(0x01, message))
+        })
+        .unwrap();
+        assert_eq!(inputs, std::vec![plain.clone()]);
+        assert_eq!(out, shaped(0x01, &plain));
+
+        let stated = HeaderExtension::with_message_length(&plain).unwrap();
+        let mut inputs: Vec<Vec<u8>> = Vec::new();
+        let out = protect_for_stream(&plain, |message| {
+            inputs.push(message.to_vec());
+            Some(shaped(0x03, message))
+        })
+        .unwrap();
+        assert_eq!(inputs, std::vec![plain.clone(), stated.clone()]);
+        assert_eq!(out, shaped(0x03, &stated));
+        assert_eq!(out[20], 0x00, "the HeaderExtension leads");
+        assert_eq!(out[28], 0x33);
+
+        assert_eq!(protect_for_stream(&plain, |_| None), None);
     }
 
     /// An encrypted SerializedPayload (N flag) that decodes with no key

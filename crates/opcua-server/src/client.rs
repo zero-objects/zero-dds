@@ -1830,6 +1830,61 @@ mod tests {
         assert_eq!(vals[1].value, Some(Variant::scalar(VariantValue::Int32(9))));
     }
 
+    /// A Write the commit does not take is answered with the commit's
+    /// status, and the AddressSpace has the value it had; one it takes is
+    /// `Good` and stays.
+    #[test]
+    fn opcuabridge_6_2_a_write_the_commit_refuses_is_answered_bad_and_taken_back() {
+        let mut server = demo_server();
+        let seen = alloc::sync::Arc::new(std::sync::Mutex::new(alloc::vec::Vec::new()));
+        let seen_by_commit = alloc::sync::Arc::clone(&seen);
+        server.set_write_commit(Box::new(move |node, space| {
+            let value = space.value(node).and_then(|dv| dv.value.clone());
+            seen_by_commit.lock().unwrap().push(value.clone());
+            if value == Some(Variant::scalar(VariantValue::Int32(7))) {
+                crate::status::BAD_COMMUNICATION_ERROR
+            } else {
+                crate::status::GOOD
+            }
+        }));
+        let mut client = Client::new();
+        let mut t = LoopbackTransport::new(&mut server);
+        client.connect(&mut t, "opc.tcp://x").expect("connect");
+        let mut write = |value: i32| {
+            client
+                .write_values(
+                    &mut t,
+                    &[(
+                        NodeId::numeric(1, 1),
+                        DataValue::new_value(Variant::scalar(VariantValue::Int32(value)), 0, 0),
+                    )],
+                )
+                .expect("write service")
+        };
+        assert_eq!(
+            write(7),
+            alloc::vec![crate::status::BAD_COMMUNICATION_ERROR]
+        );
+        assert_eq!(write(8), alloc::vec![crate::status::GOOD]);
+        assert_eq!(
+            write(7),
+            alloc::vec![crate::status::BAD_COMMUNICATION_ERROR]
+        );
+        let vals = client
+            .read_values(&mut t, &[NodeId::numeric(1, 1)])
+            .expect("read");
+        assert_eq!(
+            vals[0].value,
+            Some(Variant::scalar(VariantValue::Int32(8))),
+            "the refused 7 is taken back to the 8 before it"
+        );
+        // The commit saw each new value in the AddressSpace.
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [7, 8, 7].map(|v| Some(Variant::scalar(VariantValue::Int32(v))))
+        );
+    }
+
     #[test]
     fn opcuabridge_4_2_write_hook_can_refuse_a_write_before_it_reaches_the_address_space() {
         let mut server = demo_server();

@@ -107,10 +107,73 @@ runs a fixed tick loop. Default true.
 .TP
 .B transport.tcp_locator_kinds
 .BR vendor " or " fast-dds :
-the LocatorKind values of TCP locators. vendor sends ZeroDDS's own kinds in the
-vendor range of DDSI-RTPS 2.5 \(sc9.3.2.4 (0x01F0_0004, 0x01F0_0005); fast-dds sends 4 and 8, the
-values of Fast DDS, for TCP interoperation with it. Reading accepts both. Default vendor.
+the LocatorKind values this runtime announces its TCP locators with. vendor is the kinds of the vendor whose
+dialect the runtime speaks: ZeroDDS's own in the vendor range of DDSI-RTPS 2.5 \(sc9.3.2.4 (0x01F0_0004,
+0x01F0_0005) for the dialects zerodds and rtps, 4 and 8 for the dialect cyclone. fast-dds is 4 and 8, the
+values of Cyclone DDS and Fast DDS, in every dialect. The setting is the runtime's, not the process's.
+Reading accepts both and keeps the kind a peer wrote. Default vendor.
 .RB [ ZERODDS_TCP_LOCATOR_KINDS ]
+.TP
+.B transport.tcp_dialect
+.BR zerodds ", " rtps ", " cyclone " or " fastdds :
+how the TCP connections this runtime opens are opened and their messages delimited. zerodds is the 16-octet
+handshake and a four-octet length in front of each message (ZeroDDS TCP Transport 1.0 \(sc3, \(sc2.1). rtps
+has no handshake and no length in front: a connection carries RTPS messages back to back and each states its
+length in the messageLength of its HeaderExtension (DDSI-RTPS 2.5 \(sc8.3.3; ZeroDDS TCP Transport 1.0
+\(sc2.5), which the runtime then puts into every message it sends over TCP. cyclone is the stream of Cyclone
+DDS (ZeroDDS TCP Transport 1.0 \(sc4.1): no handshake, and behind the RTPS header of each message the length
+submessage 0x81, which the transport puts in and takes out; a message is 65528 octets at most, and the TCP
+locators carry the kinds 4 and 8. fastdds is the TCP protocol of Fast DDS, RTCP (ZeroDDS TCP Transport 1.0
+\(sc6.1): a 14-octet header in front of each message, the bind of each connection and the logical ports
+opened on it; the TCP locators carry the kinds 4 and 8 and the metatraffic unicast port of the participant
+as their logical port in the upper 16 bits of the port, and a message is 65500 octets at most. A destination
+whose locator names a logical port is reached in the dialect fastdds whatever the setting is. The dialect of
+a connection the runtime accepts is found at its first octets (see
+.BR transport.tcp_accept_dialects ).
+A protected message (DDS-Security) carries the HeaderExtension in front of
+its SRTPS_PREFIX; where the protection authenticates the RTPS header (a pre-shared key), a runtime of the
+dialect rtps, and one whose TCP listener takes connections of that dialect (see
+.BR transport.tcp_accept_dialects ),
+puts the HeaderExtension in before the protection, into every message it protects so, whichever transport
+carries it.
+Default zerodds.
+.RB [ ZERODDS_TCP_DIALECT ]
+.TP
+.B transport.tcp_accept_dialects
+List of
+.BR zerodds ", " rtps ", " cyclone ", " fastdds :
+the dialects a TCP connection to this runtime's listener may begin in (ZeroDDS TCP Transport 1.0 \(sc4.2).
+The listener reads the first four octets of a connection: ZDDS is the handshake of the dialect zerodds, RTCP
+the bind of the dialect fastdds, RTPS a stream of RTPS messages whose first submessage tells cyclone from
+rtps. A connection in a dialect that is
+not listed is closed and counted. Default unset: every dialect. The list has at least one dialect; an empty
+list is refused.
+.RB [ ZERODDS_TCP_ACCEPT_DIALECTS ]
+.TP
+.B transport.tcp_port
+The port of this runtime's TCP listeners, 0 to 65535 (ZeroDDS TCP Transport 1.0 \(sc4.3): the port a peer
+names in its
+.BR discovery.peers .
+A TCPv4 and a TCPv6 listener of one runtime hold the same port. A port that is taken fails the start. Default
+0: the system chooses.
+.RB [ ZERODDS_TCP_PORT ]
+.TP
+.B transport.tcp_accepted_vendors
+List of vendor ids, four hex digits each (01f0 is ZeroDDS): the vendors whose TCP connections the listener
+of this runtime takes. The request of another vendor is answered with Reject, reason VendorNotAccepted
+(ZeroDDS TCP Transport 1.0 \(sc3.3); in the dialects rtps and cyclone, which have no request, a connection
+is closed on the first message whose RTPS header carries another vendor id. Default unset: every vendor. The list has
+at least one id; an empty list is refused.
+.RB [ ZERODDS_TCP_ACCEPTED_VENDORS ]
+.TP
+.B transport.tcp_logical_port_claim
+.BR listener " or " none :
+whether an outgoing TCP connection claims the port of this runtime's TCP listener as its logical port
+(ZeroDDS TCP Transport 1.0 \(sc3.6). With listener the peer names the frames of the connection by that port
+and refuses a second connection from the same address that claims it. none claims no port; it is the
+setting for hosts behind one translated address; the peer then answers on the connection (ZeroDDS TCP
+Transport 1.0 \(sc4.1). The dialects rtps and cyclone have no request and no claim. Default listener.
+.RB [ ZERODDS_TCP_LOGICAL_PORT_CLAIM ]
 .TP
 .B transport.max_message_size
 Largest RTPS message sent, bytes, at least the MTU. Default 14720.
@@ -204,6 +267,55 @@ Largest RTPS message the UDP transport sends in one datagram, bytes, 20 to
 transports (DDSI-RTPS 2.5 \(sc8.4.14.1): size less 128 octets, so 1344 at
 the default. Default 1472, a UDP datagram that fits an Ethernet frame.
 .RB [ ZERODDS_UDP_MAX_MESSAGE_SIZE ]
+.TP
+.B transport.uds.base_dir
+Directory of the socket files of the UDS user transport, an absolute path
+(on Windows a path from the root of a drive; /tmp/zerodds/uds is then
+\\tmp\\zerodds\\uds on the current drive); the mount point of a volume
+containers share. On Windows a directory the runtime creates is private to
+the user (an access control list of the user and SYSTEM), and a reparse
+point is refused. Default /tmp/zerodds/uds.
+.RB [ ZERODDS_UDS_BASE_DIR ]
+.TP
+.B transport.uds.socket_mode
+Mode of each socket file, octal, at most 0777, set right after the bind;
+.B umask
+keeps the mode the process umask gives. A peer under another UID sends to
+a socket only with write permission on its file: 0660 with a shared group.
+On Windows, which has no mode bits, only umask; another value fails the
+start. Default umask.
+.RB [ ZERODDS_UDS_SOCKET_MODE ]
+.TP
+.B transport.uds.base_dir_mode
+Mode of the directory when the runtime creates it, octal, at most 07777;
+an existing directory keeps its mode. Peers under different UIDs need a
+directory of a shared group with group write and search permission:
+3770, where the set-group-ID bit gives each socket file the directory's
+group and the sticky bit keeps one UID from removing or replacing the
+socket file of another. A mode the kernel does not set as asked (it
+drops the set-group-ID bit when the directory's group is none of the
+process's groups) fails the start. On Windows only 0700; another value
+fails the start. Default 0700.
+.RB [ ZERODDS_UDS_BASE_DIR_MODE ]
+.TP
+.B transport.uds.max_datagram
+Largest datagram the UDS user transport sends or receives, bytes, > 0. The
+start fails when the kernel does not grant socket buffers that carry it
+(Linux: up to 2 \(mu net.core.wmem_max \- 32). In stream mode the limit
+of a frame; a larger frame from a peer is reported and skipped. Default
+65536.
+.RB [ ZERODDS_UDS_MAX_DATAGRAM ]
+.TP
+.B transport.uds.mode
+How the UDS user transport carries messages:
+.B datagram
+(one SOCK_DGRAM datagram per message; Unix only) or
+.B stream
+(one SOCK_STREAM connection per peer, each message a frame of a four-octet
+little-endian length and its octets, after a hello of ZUDS and the
+sender's 16-octet id). Windows has no SOCK_DGRAM for AF_UNIX: there
+datagram fails the start. Default datagram, on Windows stream.
+.RB [ ZERODDS_UDS_MODE ]
 .TP
 .B transport.interface_bindings
 File only, a list of maps with
@@ -311,10 +423,11 @@ A NACK for a change sent less than this long ago is ignored, ms, >= 0
 .TP
 .B writer.unacked_window_bytes
 Flow control of a writer with reliable readers: how many bytes of
-payload may be written and not yet acknowledged by all of them, >= 0.
+payload may be in its history and not yet acknowledged by all of them,
+>= 0; a sample KEEP_LAST replaced no longer counts.
 Beyond it a write waits for acknowledgements up to the RELIABILITY
 max_blocking_time, then goes out past it; TIMEOUT comes only from the
-RESOURCE_LIMITS. 0 sets no window. Default 524288.
+RESOURCE_LIMITS. 0 sets no window. Default 8388608.
 .RB [ ZERODDS_WRITER_UNACKED_WINDOW ]
 .TP
 .B writer.unregister_on_delete
@@ -410,8 +523,27 @@ does the same. Default false.
 .B discovery.peers
 List of unicast peers,
 .IR ipv4 " or " ipv4:port ;
-without a port the ports of the domain are expanded. Default empty.
+without a port the ports of the domain are expanded. An entry
+.IR tcp://ipv4:port " or " tcp://[ipv6]:port
+names the TCP listener of a peer (its
+.BR transport.tcp_port );
+the SPDP announcement goes there over the TCP transport of this runtime (ZeroDDS TCP Transport 1.0 \(sc4.3).
+In the dialect fastdds such an entry is asked at the metatraffic unicast ports of the first participant ids,
+as Fast DDS asks an initial peer; the form
+.I tcp://ipv4:port/logical
+names the logical port of a Fast DDS listener (\(sc6.1).
+Default empty.
 .RB [ ZERODDS_PEERS ]
+.TP
+.B discovery.unicast_transports
+List of
+.BR udp " and " tcp :
+what this runtime announces as its metatraffic unicast locators (ZeroDDS TCP Transport 1.0 \(sc4.3). udp is
+the UDP metatraffic socket, tcp the TCP listeners of the runtime, where it has a TCP transport. With tcp
+alone a peer has only TCP to send SEDP, liveliness and TypeLookup traffic to: the setting for a network that
+carries no UDP; a runtime without a TCP transport does not start with it. Metatraffic that arrives over
+either is read whatever the setting. Default udp,tcp.
+.RB [ ZERODDS_DISCOVERY_UNICAST_TRANSPORTS ]
 .TP
 .B discovery.participant_name
 The name the participant announces as PID_ENTITY_NAME (EntityName_t,

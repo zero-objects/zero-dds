@@ -34,6 +34,8 @@ YAML-Konfiguration (Spec \(sc3). Siehe
 .BR \-\-bind =\fIADR\fR
 HTTP/2-Bind-Adresse. Standard:
 .IR 0.0.0.0:50051 .
+Ohne TLS startet nur eine Loopback-Adresse (127.0.0.0/8, ::1, localhost)
+(Cleartext-h2c, Spec \(sc4.1); eine andere ist Exit 1.
 .TP
 .BR \-\-domain =\fIID\fR
 DDS-Domain-ID. Standard: 0.
@@ -55,7 +57,12 @@ Topic-Zuordnung auf der Kommandozeile, überschreibt die Konfiguration.
 .TP
 .BR \-\-log\-level =\fISTUFE\fR
 Eine von
-.IR trace ", " debug ", " info ", " warn ", " error .
+.IR trace ", " debug ", " info ", " warn ", " error :
+die Schwelle des JSON-Logs auf stdout. Jeder beendete Aufruf ist eine Zeile
+mit
+.B \(dqevent\(dq:\(dqrpc\(dq
+und peer, service, method, dds_topic, bytes, grpc_status, latency_us und
+stream_id, auf info, wenn er mit OK endete, sonst auf warn.
 .TP
 .BR \-\-metrics =\fIADR\fR
 Listen-Adresse für Prometheus.
@@ -90,17 +97,39 @@ SIGHUP liest die Konfiguration neu: TLS-Zertifikat und -Schlüssel, die
 Authentifizierungs-Einstellungen und die Topic-ACL gelten ab dann (das
 Zertifikat für neue Verbindungen). Geänderte Binds, Domäne,
 Topic-Zuordnungen, Reflection oder TLS an oder aus brauchen einen Neustart
-und werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+und werden protokolliert. Die Authentifizierungs-Einstellungen werden gegen
+den Bind geprüft, auf dem der Daemon lauscht: eine Datei, die den Bind auf
+Loopback verlegt und
+.B auth.mode: none
+setzt, wird bei einem Daemon auf einer anderen Adresse abgelehnt. Eine
+Konfiguration, die nicht lädt oder so nicht bedient werden kann, ändert
+nichts.
 .SH UMGEBUNGSVARIABLEN
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+Optionaler OTLP-Endpunkt http://\fIHost\fR[:\fIPort\fR],
+etwa http://localhost:4318 (ohne Port 80): der Daemon sendet je
+Aufruf einen Server-Span
+.RI ( Service / Methode ,
+mit einem Kind dds.publish oder dds.subscribe) als OTLP/HTTP-JSON an dessen
+/v1/traces, alle 5 s und beim Beenden. Der Exporter spricht kein TLS und
+sendet an die Wurzel: https, ein Pfad, eine Query oder ein Port, der keine
+Zahl ist, beendet den Start mit Exit-Status 1. Ein fehlgeschlagener Export
+verliert seine Spans und schreibt
+.B otlp_export_failed
+mit warn, höchstens einmal pro Minute. Ein Aufruf mit einem W3C-Header
+.B traceparent
+setzt den Trace des Aufrufers fort; einer, den der Aufrufer nicht als
+sampled markiert, erzeugt keinen Span.
 .SH EXIT-STATUS
 0 normales Ende, 1 Konfiguration (auch ein Authentifizierungsmodus, der sich
 nicht bedienen lässt, etwa
 .B jwt
 ohne
-.BR auth.jwt.public_key ),
+.BR auth.jwt.public_key ,
+oder ein
+.BR OTEL_EXPORTER_OTLP_ENDPOINT ,
+den der Exporter nicht bedienen kann),
 2 Bind, 3 DDS, 4 TLS.
 .SH DATEIEN
 .I /etc/zerodds/grpc-bridged.yaml .

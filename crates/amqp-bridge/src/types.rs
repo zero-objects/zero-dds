@@ -169,6 +169,13 @@ pub enum TypeError {
     NonAsciiSymbol,
     /// Length prefix > u32::MAX (does not fit on the wire).
     LengthTooLarge,
+    /// A described value whose descriptor is neither a `ulong` nor a
+    /// `symbol` (Spec §1.5: such descriptors are reserved).
+    ReservedDescriptor,
+    /// A symbolic descriptor outside the AMQP 1.0 specification's own
+    /// table, where a type of the specification is expected (a frame
+    /// body, a message section).
+    UnknownDescriptor(String),
 }
 
 impl fmt::Display for TypeError {
@@ -179,6 +186,12 @@ impl fmt::Display for TypeError {
             Self::InvalidUtf8 => f.write_str("invalid UTF-8 in str8/str32"),
             Self::NonAsciiSymbol => f.write_str("non-ASCII byte in symbol"),
             Self::LengthTooLarge => f.write_str("length exceeds u32::MAX"),
+            Self::ReservedDescriptor => {
+                f.write_str("descriptor is neither a ulong nor a symbol (reserved)")
+            }
+            Self::UnknownDescriptor(symbol) => {
+                write!(f, "descriptor {symbol} names no type of AMQP 1.0")
+            }
         }
     }
 }

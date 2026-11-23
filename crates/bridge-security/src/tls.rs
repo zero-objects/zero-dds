@@ -117,6 +117,44 @@ pub fn load_server_config_with_client_auth(
     Ok(Arc::new(cfg))
 }
 
+/// Like [`load_server_config_with_client_auth`], but a client may go
+/// without a certificate: one it presents must validate against
+/// `client_ca_pem_path`, and a handshake without one completes too (a
+/// target that supports trust in the client and does not require it).
+///
+/// # Errors
+/// [`TlsConfigError`] on IO, PEM, or build error.
+pub fn load_server_config_with_optional_client_auth(
+    cert_pem_path: &Path,
+    key_pem_path: &Path,
+    client_ca_pem_path: &Path,
+) -> Result<Arc<ServerConfig>, TlsConfigError> {
+    let certs = read_certs(cert_pem_path)?;
+    let key = read_private_key(key_pem_path)?;
+    let client_cas = read_certs(client_ca_pem_path)?;
+    let mut roots = rustls::RootCertStore::empty();
+    for c in client_cas {
+        roots
+            .add(c)
+            .map_err(|e| TlsConfigError::Rustls(format!("client CA add: {e}")))?;
+    }
+    let provider = Arc::new(crate::tls_provider());
+    let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+        Arc::new(roots),
+        provider.clone(),
+    )
+    .allow_unauthenticated()
+    .build()
+    .map_err(|e| TlsConfigError::Rustls(format!("client verifier: {e}")))?;
+    let cfg = ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| TlsConfigError::Rustls(format!("{e}")))?
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(certs, key)
+        .map_err(|e| TlsConfigError::Rustls(format!("{e}")))?;
+    Ok(Arc::new(cfg))
+}
+
 pub(crate) fn read_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, TlsConfigError> {
     let f = File::open(path)
         .map_err(|e| TlsConfigError::CertFileRead(format!("{}: {e}", path.display())))?;

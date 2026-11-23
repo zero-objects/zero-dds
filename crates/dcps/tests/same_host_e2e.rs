@@ -198,6 +198,48 @@ fn wait_for_channel(
     None
 }
 
+/// What `rt`'s channel to `peer` and the channels as a whole counted, for
+/// the message of a failed assertion.
+#[cfg(feature = "same-host-shm")]
+fn channel_report(rt: &DcpsRuntime, peer: GuidPrefix) -> String {
+    use std::sync::atomic::Ordering;
+    use zerodds_dcps::same_host_channel::Port;
+    let channels = &rt.same_host_channels;
+    let to_peer = channels
+        .snapshot()
+        .into_iter()
+        .find(|(p, _)| *p == peer)
+        .map(|(_, c)| {
+            format!(
+                "sent {} refused {} unattached {} attached-now {}",
+                c.counts.sent.load(Ordering::Relaxed),
+                c.counts.refused.load(Ordering::Relaxed),
+                c.counts.unattached.load(Ordering::Relaxed),
+                c.outbound.peer_attached()
+            )
+        })
+        .unwrap_or_else(|| "no channel".into());
+    let announced = rt
+        .discovered_participants()
+        .into_iter()
+        .find(|p| p.data.guid.prefix == peer)
+        .map(|p| {
+            format!(
+                "meta {:?} user {:?}",
+                p.data.metatraffic_unicast_locators, p.data.default_unicast_locators
+            )
+        })
+        .unwrap_or_else(|| "not discovered".into());
+    format!(
+        "{to_peer}; frames user {} metatraffic {}, fallbacks {}, unrouted loopback {}; routes {:?}; discovered {announced}",
+        channels.frames_sent(Port::User),
+        channels.frames_sent(Port::Metatraffic),
+        channels.fallbacks(),
+        channels.unrouted_loopback(),
+        channels.routes_of(peer)
+    )
+}
+
 #[cfg(feature = "same-host-shm")]
 fn alive_payload(sample: zerodds_dcps::runtime::UserSample) -> Vec<u8> {
     match sample {
@@ -255,12 +297,15 @@ fn flatdata_10_3_e2e_two_runtimes_shm_roundtrip() {
     assert_eq!(alive_payload(sample), payload);
     assert!(
         rt_a.same_host_channels.frames_sent(Port::User) > 0,
-        "the sample went through the channel"
+        "the sample went through the channel: a: {}; b: {}",
+        channel_report(&rt_a, prefix_b),
+        channel_report(&rt_b, prefix_a)
     );
-    for rt in [&rt_a, &rt_b] {
+    for (rt, peer) in [(&rt_a, prefix_b), (&rt_b, prefix_a)] {
         assert!(
             rt.same_host_channels.frames_sent(Port::Metatraffic) > 0,
-            "SEDP went through the channel"
+            "SEDP went through the channel: {}",
+            channel_report(rt, peer)
         );
         assert_eq!(rt.same_host_channels.unknown_ports(), 0);
     }
@@ -425,6 +470,41 @@ fn e2e_shutdown_with_idle_sockets_returns_quickly() {
     assert!(
         took < Duration::from_millis(300),
         "shutdown took {took:?} with idle sockets"
+    );
+}
+
+/// A participant without a same-host peer has no doorbell, and its
+/// same-host receive thread slept 100 ms at a time; a shutdown waited out
+/// the rest of that sleep in the join of the thread (92 to 119 ms on the
+/// Linux test host). Right after `start` the thread has just begun its
+/// first wait. The shutdown wakes it now. Five participants one after the
+/// other, and the middle one decides, so one late wake-up on a loaded
+/// host does not.
+#[cfg(feature = "same-host-shm")]
+#[test]
+fn e2e_shutdown_without_a_channel_returns_quickly() {
+    let domain = common::unique_domain();
+    let mut took: Vec<Duration> = (0u8..5)
+        .map(|n| {
+            let rt = DcpsRuntime::start(
+                domain,
+                GuidPrefix::from_bytes([0xEA + n; 12]),
+                RuntimeConfig::default(),
+            )
+            .expect("start");
+            assert!(
+                rt.same_host_channels.receive_bell().is_none(),
+                "no channel, no doorbell"
+            );
+            let started = Instant::now();
+            rt.shutdown();
+            started.elapsed()
+        })
+        .collect();
+    took.sort();
+    assert!(
+        took[2] < Duration::from_millis(50),
+        "shutdowns without a channel took {took:?}"
     );
 }
 

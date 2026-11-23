@@ -1,0 +1,27 @@
+# A tonic client of zerodds-grpc-bridged for crates/grpc-bridge/tests/
+# cross_vendor.rs (zerodds-grpc-bridge-1.0 §10, §12.3). A project of its own
+# with its own lock file, not a member of the workspace: tonic, prost and
+# their HTTP/2 stack (hyper, h2) are no dependency of ZeroDDS.
+# crates/grpc-bridge/tests/interop/build_peers.sh builds it.
+[package]
+name = "zerodds-grpc-tonic-client"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[[bin]]
+name = "tonic-client"
+path = "src/main.rs"
+
+[dependencies]
+tonic = { version = "0.14", default-features = false, features = ["transport", "codegen"] }
+tonic-prost = "0.14"
+prost = "0.14"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tokio-stream = "0.1"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+
+[workspace]

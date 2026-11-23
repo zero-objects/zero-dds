@@ -39,6 +39,9 @@ use zerodds_wire_codec::{Emit, ProbeRequest};
 pub struct TopicType {
     ty: DynamicType,
     keyed: bool,
+    /// The IDL the type was read from, its `#include`s in place (Spec
+    /// §5.2: the body of `/schema/<slug>`).
+    idl: String,
 }
 
 impl core::fmt::Debug for TopicType {
@@ -75,7 +78,9 @@ impl TopicType {
         let ast = Arc::new(composed.ast);
         let ty = DynamicType::find(&ast, type_name)
             .map_err(|_| format!("{idl_file}: declares no type {type_name}"))?;
-        Ok(Self::with(ty))
+        let idl = super::schema::expand_includes(std::path::Path::new(idl_file))
+            .map_err(|e| format!("{idl_file}: {e}"))?;
+        Ok(Self::with(ty, idl))
     }
 
     /// `type_name` in the IDL text `source`.
@@ -100,15 +105,28 @@ impl TopicType {
         let ast = Arc::new(composed.ast);
         let ty = DynamicType::find(&ast, type_name)
             .map_err(|_| format!("declares no type {type_name}"))?;
-        Ok(Self::with(ty))
+        Ok(Self::with(ty, source.to_string()))
     }
 
-    fn with(ty: DynamicType) -> Self {
+    fn with(ty: DynamicType, idl: String) -> Self {
         let keyed = ty
             .all_members_by_name()
             .values()
             .any(|m| m.descriptor().is_ok_and(|d| d.is_key));
-        Self { ty, keyed }
+        Self { ty, keyed, idl }
+    }
+
+    /// The IDL the type was read from, each `#include` replaced by the text
+    /// of the file it names (Spec §5.2).
+    #[must_use]
+    pub fn idl(&self) -> &str {
+        &self.idl
+    }
+
+    /// The type as the model holds it.
+    #[must_use]
+    pub fn dynamic_type(&self) -> &DynamicType {
+        &self.ty
     }
 
     /// Whether the type has a key member: its samples belong to instances.
@@ -149,11 +167,7 @@ impl TopicType {
     /// # Errors
     /// A value that is no sample of the type.
     pub fn encode(&self, data: &Value) -> Result<Encoded, String> {
-        let (encoding, identifier) = match self.ty.extensibility() {
-            Some(ExtensibilityKind::Mutable) => (Encoding::PlCdr2, [0x00, 0x0b]),
-            Some(ExtensibilityKind::Appendable) => (Encoding::DelimitedCdr, [0x00, 0x09]),
-            _ => (Encoding::PlainCdr2, [0x00, 0x07]),
-        };
+        let (encoding, identifier) = self.form();
         let request = self.request(encoding, Endianness::Little);
         let body =
             zerodds_wire_codec::encode(self.ty.ast(), &request, data).map_err(|e| e.to_string())?;
@@ -167,6 +181,22 @@ impl TopicType {
             identifier,
             key_hash,
         })
+    }
+
+    /// The XCDR2 little-endian format of the type's extensibility and its
+    /// representation identifier (DDS-XTypes 1.3 §7.4.2, Table 60).
+    fn form(&self) -> (Encoding, [u8; 2]) {
+        match self.ty.extensibility() {
+            Some(ExtensibilityKind::Mutable) => (Encoding::PlCdr2, [0x00, 0x0b]),
+            Some(ExtensibilityKind::Appendable) => (Encoding::DelimitedCdr, [0x00, 0x09]),
+            _ => (Encoding::PlainCdr2, [0x00, 0x07]),
+        }
+    }
+
+    /// The representation identifier [`Self::encode`] gives a sample.
+    #[must_use]
+    pub fn identifier(&self) -> [u8; 2] {
+        self.form().1
     }
 
     /// The KeyHash of the instance `data` names (DDSI-RTPS 2.5 §9.6.4.8).
@@ -370,10 +400,30 @@ pub fn error(code: u16, message: &str) -> String {
     serde_json::json!({ "op": "error", "code": code, "message": message }).to_string()
 }
 
+/// `{"op":"shutdown"}` (Spec §9.2): the daemon goes down; the Close frame
+/// with 1001 follows.
+#[must_use]
+pub fn shutdown() -> String {
+    serde_json::json!({ "op": "shutdown" }).to_string()
+}
+
 /// `{"op":"pong"}`.
 #[must_use]
 pub fn pong() -> String {
     serde_json::json!({ "op": "pong" }).to_string()
+}
+
+/// `{"op":"deadline_missed","topic":…}` (Spec §6), with the instance's
+/// `key_hash` for a topic with key.
+#[must_use]
+pub fn deadline_missed(topic: &str, key_hash: Option<&[u8; 16]>) -> String {
+    match key_hash {
+        Some(k) => {
+            serde_json::json!({ "op": "deadline_missed", "topic": topic, "key_hash": hex(k) })
+                .to_string()
+        }
+        None => serde_json::json!({ "op": "deadline_missed", "topic": topic }).to_string(),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {

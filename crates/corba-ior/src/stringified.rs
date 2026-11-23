@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Stringified-IOR — Spec §13.6.10.
+//! Stringified IOR — CORBA 3.3 Part 2 §7.6.9.
 //!
 //! `IOR:<hex-encoded-cdr-encapsulation>`
 //!
@@ -10,9 +10,10 @@
 //! IOR:000000000000002849444c3a6f6d672e6f72672f436f73...
 //! ```
 //!
-//! * The `IOR:` prefix is case-sensitive (normative per spec).
-//! * Hex bytes are lowercase per spec, but callers typically also
-//!   accept uppercase. We read both and write lowercase.
+//! * "The case for characters in a stringified IOR is not significant"
+//!   (§7.6.9, grammar rules (8) to (16)): the prefix `IOR:` and the hex
+//!   digits are read in either case.
+//! * Written with the prefix `IOR:` and lower-case hex digits.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -22,7 +23,7 @@ use zerodds_wire::Endianness;
 use crate::error::{IorError, IorResult};
 use crate::ior::Ior;
 
-/// `IOR:` prefix (case-sensitive).
+/// The `IOR:` prefix as it is written; it is read without regard to case.
 pub const STRINGIFIED_IOR_PREFIX: &str = "IOR:";
 
 /// Encodes an IOR into its stringified form.
@@ -43,16 +44,20 @@ pub fn to_stringified(ior: &Ior, endianness: Endianness) -> IorResult<String> {
     Ok(out)
 }
 
-/// Decodes a stringified IOR.
+/// Decodes a stringified IOR; the prefix and the hex digits are read
+/// without regard to case (§7.6.9).
 ///
 /// # Errors
 /// `MissingIorPrefix`, `OddHexLength`, `InvalidHexChar`, or
 /// CDR error.
 pub fn from_stringified(s: &str) -> IorResult<Ior> {
     let s = s.trim();
-    let payload = s
-        .strip_prefix(STRINGIFIED_IOR_PREFIX)
-        .ok_or(IorError::MissingIorPrefix)?;
+    let payload = match s.get(..STRINGIFIED_IOR_PREFIX.len()) {
+        Some(prefix) if prefix.eq_ignore_ascii_case(STRINGIFIED_IOR_PREFIX) => {
+            &s[STRINGIFIED_IOR_PREFIX.len()..]
+        }
+        _ => return Err(IorError::MissingIorPrefix),
+    };
     if payload.len() % 2 != 0 {
         return Err(IorError::OddHexLength);
     }
@@ -122,12 +127,34 @@ mod tests {
     fn upper_and_lower_hex_both_decoded() {
         let ior = sample_ior();
         let s = to_stringified(&ior, Endianness::Big).unwrap();
-        // Convert the hex part to upper-case; the prefix stays
-        // case-sensitive `IOR:`.
+        // The hex part in upper case behind the prefix as written.
         let mut canonical_prefix_then_upper = String::from("IOR:");
         canonical_prefix_then_upper.push_str(&s["IOR:".len()..].to_uppercase());
         let decoded = from_stringified(&canonical_prefix_then_upper).unwrap();
         assert_eq!(decoded, ior);
+    }
+
+    /// Part 2 §7.6.9: `<prefix> ::= <i><o><r>":"` with `<i> ::= "i" |
+    /// "I"` and so on; "The case for characters in a stringified IOR is
+    /// not significant."
+    #[test]
+    fn corba_p2_7_6_9_the_prefix_case_is_not_significant() {
+        let ior = sample_ior();
+        let s = to_stringified(&ior, Endianness::Big).unwrap();
+        let hex = &s["IOR:".len()..];
+        for prefix in ["ior:", "Ior:", "iOr:", "IoR:", "IOR:"] {
+            let text = alloc::format!("{prefix}{hex}");
+            assert_eq!(from_stringified(&text).unwrap(), ior, "{prefix}");
+            let upper = alloc::format!("{prefix}{}", hex.to_uppercase());
+            assert_eq!(from_stringified(&upper).unwrap(), ior, "{prefix} upper");
+        }
+        // Another scheme, or no colon, is no stringified IOR.
+        for bad in ["ioR", "io:00", "IORX:00", "corbaloc::h/k", ""] {
+            assert!(
+                matches!(from_stringified(bad), Err(IorError::MissingIorPrefix)),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

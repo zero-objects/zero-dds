@@ -34,6 +34,8 @@ YAML config (Spec \(sc3). See
 .BR \-\-bind =\fIADDR\fR
 HTTP/2 bind addr. Default:
 .IR 0.0.0.0:50051 .
+Without TLS only a loopback address (127.0.0.0/8, ::1, localhost) starts
+(cleartext h2c, Spec \(sc4.1); another one is exit 1.
 .TP
 .BR \-\-domain =\fIID\fR
 DDS Domain ID. Default: 0.
@@ -55,7 +57,12 @@ Inline topic mapping override.
 .TP
 .BR \-\-log\-level =\fILEVEL\fR
 One of
-.IR trace ", " debug ", " info ", " warn ", " error .
+.IR trace ", " debug ", " info ", " warn ", " error :
+the threshold of the JSON log on stdout. Every call that ended is one line
+with
+.B \(dqevent\(dq:\(dqrpc\(dq
+and peer, service, method, dds_topic, bytes, grpc_status, latency_us and
+stream_id, at info when it ended OK and at warn otherwise.
 .TP
 .BR \-\-metrics =\fIADDR\fR
 Prometheus listen addr.
@@ -82,26 +89,65 @@ appends to a list.
 .TP
 .B \-\-check\-config
 Validate and print the effective configuration with the origin of every
-value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
-file, syntax error or include cycle.
+value, then exit: 0 valid, 1 invalid value or unknown key (also an auth
+mode that cannot be served and tenants without TLS and a client CA, as at
+the start), 2 unreadable file, syntax error or include cycle. The TLS
+material is loaded at the start only.
 .SH SIGNALS
-SIGTERM and SIGINT stop the daemon.
+SIGTERM and SIGINT start the drain: the listening socket closes, every
+connection gets GOAWAY(NO_ERROR) with the last stream the client opened, the
+calls up to it run on, a new stream is refused with
+RST_STREAM(REFUSED_STREAM). Calls still open after
+.B grpc.drain_secs
+(default 30) end with UNAVAILABLE. Within the same time the daemon waits for
+the acknowledgements of its DDS writes, then deletes its DDS entities and
+exits 0.
 SIGHUP reads the configuration again: the TLS certificate and key, the
 auth settings and the topic ACL apply from then on (the certificate to new
 connections). Changed binds, domain, topic mappings, reflection or TLS on
-or off need a restart and are logged. A configuration that does not load
-changes nothing.
+or off need a restart and are logged; the auth settings are checked against
+the bind that is served, so
+.B auth.mode: none
+in a file that also moves the bind to loopback is refused on a daemon bound
+to another address. A configuration that does not load, or that cannot be
+served, changes nothing.
+.SH WINDOWS SERVICE
+Started by the service control manager, the daemon runs as the service
+.BR ZeroDDSGrpcBridge :
+start pending until it serves, then running; the stop and shutdown
+controls are SIGTERM (stop pending, the drain),
+.B sc.exe control ZeroDDSGrpcBridge paramchange
+is SIGHUP; when it ends, the service is stopped with the exit status below.
+Started from a console, Ctrl+C, Ctrl+Break and the closing of the console
+are SIGTERM.
 .SH ENVIRONMENT
 .TP
 .B OTEL_EXPORTER_OTLP_ENDPOINT
-Optional OTLP endpoint, such as http://localhost:4318.
+Optional OTLP endpoint http://\fIhost\fR[:\fIport\fR],
+such as http://localhost:4318 (port 80 when it is missing): the daemon
+sends a server span per call
+.RI ( service / method ,
+with a dds.publish or dds.subscribe child) as OTLP/HTTP JSON to its
+/v1/traces, every 5 s and at the stop. The exporter speaks no TLS and
+posts at the root: https, a path, a query or a port that is not a number
+stops the start with exit status 1. A failed export loses its spans and
+logs
+.B otlp_export_failed
+at warn, at most once a minute. A call with a W3C
+.B traceparent
+header continues the caller's trace; one whose caller did not sample it
+records nothing.
 .SH EXIT STATUS
 0 normal stop, 1 configuration (also an auth mode that cannot be served,
 such as
 .B jwt
 without
-.BR auth.jwt.public_key ),
-2 bind, 3 DDS, 4 TLS.
+.BR auth.jwt.public_key ,
+or an
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+the exporter cannot serve),
+2 bind (port in use), 3 a DDS participant that does not start (also a
+tenant's), 4 TLS material that does not load.
 .SH FILES
 .I /etc/zerodds/grpc-bridged.yaml .
 .SH SEE ALSO

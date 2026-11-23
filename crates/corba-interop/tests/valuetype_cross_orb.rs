@@ -13,6 +13,7 @@
 //! `integration-bridges-vendor-corba`.
 
 use std::rc::Rc;
+use zerodds_corba_rust::marshaled_body;
 
 use zerodds_corba_interop::runtime::{IiopCorbaConnection, object_reference_from_ior};
 use zerodds_corba_rust::value_wire::{ValueMarshal, ValueReader, ValueRegistry, ValueWriter};
@@ -78,7 +79,12 @@ fn corbarust_13_a_jacorb_server_echoes_a_valuetype_parameter() {
     ValueWriter::new().write(&mut w, Some(&p)).unwrap();
 
     let (reply, reply_e) = conn
-        .invoke(&oref, "echo", Endianness::Big, &w.finish())
+        .invoke(
+            &oref,
+            "echo",
+            Endianness::Big,
+            &marshaled_body(&w.finish(), 0),
+        )
         .expect("foreign echo invoke");
 
     // Reply: the Point re-marshalled back by the foreign ORB.

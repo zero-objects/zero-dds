@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//
+// The types of the IOP::Codec comparison (iop_cross_orb.rs): their
+// TypeCodes as JacORB writes them into an encapsulation.
+
+struct Point {
+    long x;
+    string label;
+};
+
+union U switch (long) {
+    case 1: long n;
+    case 2: string s;
+};

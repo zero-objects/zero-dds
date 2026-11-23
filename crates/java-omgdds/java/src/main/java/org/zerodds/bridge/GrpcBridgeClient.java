@@ -58,11 +58,13 @@ public final class GrpcBridgeClient {
     }
 
     /**
-     * gRPC {@code Publish(Sample{payload})} on the topic service. Returns the
-     * {@code PublishAck.accepted} count (1 when the DDS write succeeded).
+     * gRPC {@code Publish(Sample{cdr_payload})} on the topic service. Returns
+     * {@code PublishAck.sequence_number}, the RTPS sequence number the DDS
+     * write took (zerodds-grpc-bridge-1.0 §4.2; 1 or more when the write
+     * succeeded, 0 when no acknowledgement came).
      *
      * @param servicePath fully-qualified service, e.g.
-     *     {@code /zerodds.bridge.v1.DemoStream}
+     *     {@code /zerodds.demo.v1.DemoStream}
      * @param payload opaque DDS user-data bytes
      */
     public long publish(String servicePath, byte[] payload) throws IOException {
@@ -322,7 +324,8 @@ public final class GrpcBridgeClient {
     }
 
     // ------------------------------------------------------------------
-    // protobuf (hand-rolled — Sample{bytes payload=1}, PublishAck{uint64 accepted=1})
+    // protobuf (hand-rolled — Sample{bytes cdr_payload=1},
+    // PublishAck{uint64 sequence_number=1}; zerodds-grpc-bridge-1.0 §4.2)
     // ------------------------------------------------------------------
 
     static byte[] protoSample(byte[] payload) {

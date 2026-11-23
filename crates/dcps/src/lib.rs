@@ -157,6 +157,10 @@ pub mod serialized_type;
 #[cfg(all(feature = "std", feature = "same-host-shm"))]
 pub mod shm_user;
 pub mod status;
+/// A transport leg that states the length of each message it sends in the
+/// message's HeaderExtension (`zerodds-tcp-transport-1.0` §2.5).
+#[cfg(feature = "std")]
+pub mod stream_length_leg;
 pub mod subscriber;
 pub mod time;
 pub mod time_source;

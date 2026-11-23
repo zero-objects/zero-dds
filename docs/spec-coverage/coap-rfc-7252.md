@@ -80,18 +80,19 @@ NOT_FOUND/INTERNAL_SERVER_ERROR`.
 
 **Spec:** §2.3, S. 15 — Forward-Proxies, Caches.
 
-**Repo:** `crates/coap-bridge/src/caching_proxy.rs::{CoapCache,
-CacheLookup, ProxyConfig, ProxyMode}` — Cache-Layer mit
-Freshness-Tracking + Stale/Revalidate-Pfad; Proxy-Configuration
-mit Forward-/Reverse-Mode + Hop-Count-Cap (Spec §5.7.1 Loop-Schutz).
+**Repo:** `crates/coap-bridge/src/caching_proxy.rs::{CoapCache, CacheKey,
+CacheScope, CacheLookup}` — Cache mit Freshness, Max-Age-Anpassung,
+ETag-Validierung und Geltungsbereich; der Proxy des Daemons in
+`crates/coap-bridge/src/daemon/proxy.rs::Proxy` (Forward und Reverse,
+§5.7).
 
 **Tests:** `crates/coap-bridge/src/caching_proxy.rs::tests::{coap_2_3_empty_cache_returns_miss,
 coap_2_3_store_then_fresh_lookup, coap_2_3_stale_with_etag_yields_validation_path,
 coap_2_3_stale_without_etag_yields_miss, coap_2_3_cap_evicts_oldest,
-coap_2_3_evict_expired_without_etag_keeps_revalidatable,
-coap_2_3_proxy_config_default_is_forward_coap_to_coap}`.
+coap_2_3_evict_expired_without_etag_keeps_revalidatable}`,
+`crates/coap-bridge/tests/proxy_e2e.rs::coap_5_7_2_a_forward_proxy_carries_out_the_request_and_serves_the_cache`.
 
-**Status:** done — Caching + Forward-Proxy-Configuration live.
+**Status:** done
 
 ### §2.4 Resource Discovery
 
@@ -214,28 +215,36 @@ Targets.
 ### §4.2-§4.7 Reliability + Deduplication + Congestion
 
 **Spec:** §4.2-§4.7, S. 21-26 — CON-Retry mit exponentiellem Backoff bis
-`MAX_RETRANSMIT`; §4.5 „The recipient […] SHOULD acknowledge each
-duplicate copy of a Confirmable message […] but SHOULD process any
-request or response in the message only once" — Message-ID-Duplikate
-innerhalb `EXCHANGE_LIFETIME` (CON) bzw. `NON_LIFETIME` (NON); §4.7
-`NSTART` als Obergrenze gleichzeitig ausstehender Interaktionen
-gegenüber einem Server.
+`MAX_RETRANSMIT`; §4.2/§4.3 Reset für eine nicht verarbeitbare Nachricht
+und für eine leere Confirmable-Nachricht („CoAP ping“); §4.5 „The
+recipient […] SHOULD acknowledge each duplicate copy of a Confirmable
+message […] but SHOULD process any request or response in the message
+only once" — Message-ID-Duplikate innerhalb `EXCHANGE_LIFETIME` (CON) bzw.
+`NON_LIFETIME` (NON); §4.7 `NSTART` als Obergrenze gleichzeitig
+ausstehender Interaktionen gegenüber einem Server.
 
 **Repo:** `crates/coap-bridge/src/reliability.rs::{ReliabilityTracker,
-PendingConfirmable, TickOutput}` — `send_confirmable`/`receive_ack`/
-`receive_rst`/`tick` decken CON-Retry + ACK/RST-Pfad ab;
-`crates/coap-bridge/src/reliability.rs::{DuplicateDetector, DedupKind,
-Reception}` mit `receive`/`remember_ack`/`evict_expired` für die §4.5-
-Deduplikation (ACK aus dem Cache statt zweiter Verarbeitung);
-`crates/coap-bridge/src/reliability.rs::OutstandingInteractions` mit
-`try_begin`/`end` für die §4.7-`NSTART`-Schranke pro Server.
+PendingConfirmable, TickOutput, DuplicateDetector, DedupKind, Reception,
+OutstandingInteractions}`. Im Daemon (`crates/coap-bridge/src/daemon/server.rs`):
+`Dedup` über `DuplicateDetector` für UDP, DTLS und Multicast (ein
+Duplikat einer CON bekommt die erste Bestätigung, eines einer NON nichts);
+`message_layer`/`reject_undecodable` (Reset für Ping, für eine CON, die
+keine Anfrage ist, und für eine nicht dekodierbare CON; ACK und RST ohne
+Antwort). Der Proxy (`crates/coap-bridge/src/daemon/proxy.rs`) sendet
+CON mit Wiederholung nach ACK_TIMEOUT·[1, 1,5] und Verdopplung, eine
+getrennte Antwort als CON bis zur Bestätigung und führt eine wiederholte
+Anfrage einmal aus.
 
 **Tests:** `crates/coap-bridge/src/reliability.rs::tests::{coap_4_2_tick_before_timeout_does_nothing,
 coap_4_2_tick_after_timeout_retransmits, coap_4_2_exhausting_retransmits_times_out,
 coap_4_2_interval_doubles_per_retransmit, coap_4_2_send_then_ack_clears_pending,
 coap_4_2_rst_clears_pending, coap_4_2_duplicate_message_id_within_exchange_lifetime_is_detected,
 coap_4_2_duplicate_entry_expires_after_its_lifetime, coap_4_2_duplicate_detection_is_per_endpoint,
-coap_4_2_duplicate_table_cap_bounds_memory, coap_4_2_nstart_caps_outstanding_interactions_per_server}`.
+coap_4_2_duplicate_table_cap_bounds_memory, coap_4_2_nstart_caps_outstanding_interactions_per_server}`;
+der Daemon: `crates/coap-bridge/tests/daemon_e2e.rs::{coap_4_5_a_retransmitted_post_is_written_once,
+coap_4_3_a_ping_is_reset_and_an_acknowledgement_is_not_answered}`,
+`crates/coap-bridge/tests/proxy_e2e.rs::{coap_5_7_1_a_silent_destination_is_5_04_after_an_empty_ack,
+coap_5_7_2_a_forward_proxy_carries_out_the_request_and_serves_the_cache}`.
 
 **Status:** done
 
@@ -314,18 +323,23 @@ Lifetime-Eviction live.
 ### §5.4 Options
 
 **Spec:** §5.4, S. 39-43 — Option-Class-Properties: Critical/Elective,
-Unsafe/Safe, NoCacheKey, Repeatable.
+Unsafe/Safe, NoCacheKey, Repeatable; §5.4.1 „Unrecognized options of class
+"critical" that occur in a Confirmable request MUST cause the return of a
+4.02 (Bad Option) response […] in a Non-confirmable message MUST cause
+the message to be rejected"; §5.4.5 eine überzählige Wiederholung gilt als
+unbekannte Option.
 
-**Repo:** Option-Numbers in `crates/coap-bridge/src/option.rs::numbers`;
-Property-Bits aus der Option-Number in
-`crates/coap-bridge/src/option.rs::{is_critical, is_unsafe,
-is_nocachekey, is_repeatable}` nach der §5.4.6-Formel
-(`Critical = (onum & 1)`, `UnSafe = (onum & 2)`,
-`NoCacheKey = ((onum & 0x1e) == 0x1c)`) plus die gleichnamigen
-Methoden auf `CoapOption`.
+**Repo:** `crates/coap-bridge/src/option.rs::{is_critical, is_unsafe,
+is_nocachekey, is_repeatable}` nach der §5.4.6-Formel; im Daemon
+`crates/coap-bridge/src/daemon/server.rs::{unrecognized_critical,
+LOCAL_OPTIONS}` (4.02 für CON, Reset für NON), im Proxy
+`crates/coap-bridge/src/daemon/proxy.rs::Proxy::target` (Unsafe unbekannt
+4.02, Safe-to-Forward weitergeleitet).
 
 **Tests:** `crates/coap-bridge/src/option.rs::tests::{coap_5_4_critical_unsafe_nocachekey_bits_per_spec_5_4_6,
-coap_5_4_repeatable_options_match_spec_table_4, coap_5_4_observe_option_uses_number_6}`.
+coap_5_4_repeatable_options_match_spec_table_4, coap_5_4_observe_option_uses_number_6}`,
+`crates/coap-bridge/tests/daemon_e2e.rs::coap_5_10_the_daemon_checks_options_methods_and_preconditions`,
+`crates/coap-bridge/src/daemon/proxy.rs::tests::coap_5_7_1_an_unrecognized_unsafe_option_is_4_02_and_a_safe_one_is_forwarded`.
 
 **Status:** done
 
@@ -353,59 +367,103 @@ coap_3_payload_marker_separates_options_from_payload}`.
 **Spec:** §5.6, S. 44-46 — Freshness-Lifetime via Max-Age-Option;
 Validation via ETag-Option.
 
-**Repo:** Max-Age (Number 14) + ETag (Number 4) Option-Numbers
-definiert; Cache-State-Logik in
-`crates/coap-bridge/src/caching_proxy.rs::{CoapCache, CacheLookup,
-DEFAULT_MAX_AGE}` mit `store/lookup/evict_expired_without_etag`,
-DoS-Cap-FIFO-Eviction und Spec-§5.6.1-Default-Max-Age (60s).
+**Repo:** `crates/coap-bridge/src/caching_proxy.rs::{CoapCache, CacheKey,
+CacheScope, CacheLookup, DEFAULT_MAX_AGE, max_age_of}`: `store_response`
+(2.05 mit Max-Age, Default 60 s, oder ETag), `serve` (frisch mit um die
+Verweildauer verringertem Max-Age, sonst veraltet mit ETag),
+`revalidated` (2.03 setzt die Frische mit dem neuen Max-Age, §5.9.1.3),
+`invalidate` (2.01/2.02/2.04), Verdrängung des am längsten gespeicherten
+Eintrags. Der Proxy validiert einen veralteten Eintrag mit seiner ETag.
 
-**Tests:** `caching_proxy::tests::{coap_2_3_empty_cache_returns_miss,
+**Tests:** `crates/coap-bridge/src/caching_proxy.rs::tests::{coap_2_3_empty_cache_returns_miss,
 coap_2_3_store_then_fresh_lookup, coap_2_3_stale_with_etag_yields_validation_path,
 coap_2_3_stale_without_etag_yields_miss, coap_2_3_cap_evicts_oldest,
-coap_2_3_evict_expired_without_etag_keeps_revalidatable}`.
+coap_2_3_evict_expired_without_etag_keeps_revalidatable,
+coap_5_7_1_a_cached_response_never_extends_the_max_age,
+coap_5_9_1_3_a_valid_response_refreshes_the_entry,
+coap_5_9_1_a_change_marks_the_stored_responses_not_fresh}`,
+`crates/coap-bridge/tests/proxy_e2e.rs::coap_5_7_2_a_forward_proxy_carries_out_the_request_and_serves_the_cache`.
 
-**Status:** done — Cache-State + Freshness + ETag-Validation-Pfad
-live.
+**Status:** done
 
 ### §5.7 Proxying
 
-**Spec:** §5.7, S. 46-49 — Proxy-Uri-Option, Forward-/Reverse-Proxy,
-HTTP-Mapping.
+**Spec:** §5.7, S. 46-49 — Forward-Proxy (Proxy-Uri, Proxy-Scheme),
+Reverse-Proxy, Optionen, 5.02/5.04/5.05, Max-Age aus dem Cache; „When a
+client uses a proxy to make a request that will use a secure URI scheme
+[…], the request towards the proxy SHOULD be sent using DTLS".
 
-**Repo:** Proxy-Uri-Option (Number 35) definiert + Proxy-Logik in
-`crates/coap-bridge/src/caching_proxy.rs::{ProxyConfig, ProxyMode}`
-mit Forward/Reverse-Mode + max_hops-Cap (Spec §5.7.1 Loop-Schutz)
-+ http_translation-Flag für §10-Pfad.
+**Repo:** `crates/coap-bridge/src/daemon/proxy.rs::Proxy` mit der
+Konfiguration `proxy.*` (`crates/coap-bridge/src/daemon/config.rs::ProxySettings`);
+`crates/coap-bridge/src/caching_proxy.rs` für den Cache;
+`crates/coap-bridge/src/dtls_transport.rs::DtlsCoapClient::connect` (OpenSSL,
+`crates/dtls-openssl`) für `coaps`-Ziele;
+`proxy.require_dtls_for_coaps` (Default an) verlangt DTLS auf der Seite
+des Clients.
 
-**Tests:** `caching_proxy::tests::coap_2_3_proxy_config_default_is_forward_coap_to_coap`.
+**Tests:** `crates/coap-bridge/src/daemon/proxy.rs::tests::{coap_5_7_2_without_forwarding_a_proxy_request_is_5_05,
+coap_5_7_2_a_uri_naming_the_proxy_itself_is_a_local_request,
+coap_5_7_1_an_unrecognized_unsafe_option_is_4_02_and_a_safe_one_is_forwarded,
+rfc8768_3_the_hop_limit_is_decremented_inserted_and_reached,
+coap_5_7_3_a_reverse_route_maps_the_path_to_the_origin}`,
+`crates/coap-bridge/tests/proxy_e2e.rs::{coap_5_7_2_a_forward_proxy_carries_out_the_request_and_serves_the_cache,
+coap_5_7_1_a_silent_destination_is_5_04_after_an_empty_ack,
+coap_5_7_1_an_unsafe_option_in_the_response_is_5_02,
+coap_5_7_3_a_reverse_route_reaches_its_origin_and_maps_the_location,
+rfc7959_2_10_the_proxy_reassembles_and_cuts_blocks,
+coap_5_7_a_coaps_destination_is_reached_over_dtls}`.
 
-**Status:** partial — Proxy-Uri-Option, Forward-/Reverse-Modus und Hop-Grenze sind als Konfiguration gebaut; das Weiterleiten eines Requests fehlt (§5.7a).
+**Status:** done
 
 ### §5.7a Weiterleiten durch einen Proxy
 
 **Spec:** §5.7, S. 46-49 — ein Forward-Proxy führt den Request mit der Ziel-URI aus `Proxy-Uri` aus, ein Reverse-Proxy bildet ihn auf einen Ursprungs-Server ab, und beide liefern die Response zurück.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/proxy.rs` — `route` (Proxy-Uri,
+Proxy-Scheme mit Uri-Host/Uri-Port nach §6.5, die eigene Autorität als
+lokale Anfrage, `proxy.reverse`), `target` (Optionen nach §5.7.1,
+Hop-Limit nach RFC 8768), `exchange_all` mit `UdpUpstream`/`DtlsUpstream`
+(eigenes Token, CON mit Wiederholung, Block1/Block2), `fetch_multicast`
+(§8.2.2), `answer_from_destination` (5.02 für unbekannte Unsafe-Optionen
+der Antwort, Location-Path zurück, Cache), `deliver` (Huckepack, sonst
+leere ACK und getrennte CON). Gegenprobe mit libcoap 4.3.4: `coap-client
+-P` über den Daemon an `coap-server` (GET, `.well-known/core`, getrennte
+Antwort des Ursprungs, 4.04, Block2 mit 32-Octet-Blöcken, Reverse-Route,
+5.02 für einen geschlossenen Port) und an `coaps`-Ursprünge mit OpenSSL
+und GnuTLS, PSK und Zertifikat (eine fremde CA ergibt 5.02).
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/daemon/proxy.rs::tests::{coap_5_7_2_without_forwarding_a_proxy_request_is_5_05,
+coap_5_7_2_a_uri_naming_the_proxy_itself_is_a_local_request,
+coap_5_7_1_an_unrecognized_unsafe_option_is_4_02_and_a_safe_one_is_forwarded,
+rfc8768_3_the_hop_limit_is_decremented_inserted_and_reached,
+coap_5_7_3_a_reverse_route_maps_the_path_to_the_origin}`,
+`crates/coap-bridge/tests/proxy_e2e.rs::{coap_5_7_2_a_forward_proxy_carries_out_the_request_and_serves_the_cache,
+coap_5_7_1_a_silent_destination_is_5_04_after_an_empty_ack,
+coap_5_7_1_an_unsafe_option_in_the_response_is_5_02,
+coap_5_7_3_a_reverse_route_reaches_its_origin_and_maps_the_location,
+rfc7959_2_10_the_proxy_reassembles_and_cuts_blocks,
+coap_5_7_a_coaps_destination_is_reached_over_dtls}`.
 
-**Status:** open — `crates/coap-bridge/src/caching_proxy.rs` hält nur `ProxyConfig`/`ProxyMode`; kein Pfad sendet einen Request an das Ziel weiter.
+**Status:** done
 
 ### §5.8 Method Definitions
 
-**Spec:** §5.8, S. 49-51 — GET/POST/PUT/DELETE-Semantik, Idempotency.
+**Spec:** §5.8, S. 49-51 — GET/POST/PUT/DELETE-Semantik, Idempotency; „A
+request with an unrecognized or unsupported Method Code MUST generate a
+4.05 (Method Not Allowed) piggybacked response."
 
-**Repo:** Method-Codes definiert in `crates/coap-bridge/src/message.rs` + Method-Property-
-Helpers `crates/coap-bridge/src/method_props.rs::{is_safe,
-is_idempotent, is_method}` mit Spec-konformen Werten (GET = safe +
-idempotent; PUT/DELETE = idempotent; POST = weder).
+**Repo:** `crates/coap-bridge/src/method_props.rs::{is_safe,
+is_idempotent, is_method}`; im Daemon
+`crates/coap-bridge/src/daemon/server.rs::dispatch_core` (4.05 für eine
+andere Methode als die vier, für `/.well-known/core` alles außer GET);
+§5.8.1 GET liefert die aktuelle Repräsentation, das letzte Sample.
 
-**Tests:** `method_props::tests::{coap_5_8_get_is_safe, coap_5_8_post_put_delete_not_safe,
+**Tests:** `crates/coap-bridge/src/method_props.rs::tests::{coap_5_8_get_is_safe, coap_5_8_post_put_delete_not_safe,
 coap_5_8_get_put_delete_idempotent, coap_5_8_post_not_idempotent,
-coap_5_8_method_predicate_recognizes_all_four}`.
+coap_5_8_method_predicate_recognizes_all_four}`, `crates/coap-bridge/tests/daemon_e2e.rs::coap_5_10_the_daemon_checks_options_methods_and_preconditions`,
+`crates/coap-bridge/tests/daemon_e2e.rs::coap_5_8_1_a_get_returns_the_last_sample`.
 
-**Status:** done — Codes + Method-Properties (Safety + Idempotency)
-ausgewiesen.
+**Status:** done
 
 ### §5.9 Response Code Definitions
 
@@ -424,15 +482,23 @@ ausgewiesen.
 **Spec:** §5.10, S. 53-67 — Number-Registry: Uri-Host (3), ETag (4),
 If-None-Match (5), Uri-Port (7), Location-Path (8), Uri-Path (11),
 Content-Format (12), Max-Age (14), Uri-Query (15), Accept (17),
-Location-Query (20), Proxy-Uri (35), Proxy-Scheme (39), Size1 (60).
-Plus If-Match (1).
+Location-Query (20), Proxy-Uri (35), Proxy-Scheme (39), Size1 (60), If-Match
+(1); dazu die Regeln: §5.10.3 Content-Format, §5.10.4 Accept (4.06),
+§5.10.5 Max-Age (Default 60), §5.10.6 ETag (2.03), §5.10.8 If-Match und
+If-None-Match (4.12), §5.10.2 Proxy-Uri hat Vorrang vor den Uri-Optionen.
 
-**Repo:** `crates/coap-bridge/src/option.rs::numbers` mit allen
-Konstanten + Convenience-Konstruktoren `uri_path`/`content_format`.
+**Repo:** `crates/coap-bridge/src/option.rs::numbers`; im Daemon
+`crates/coap-bridge/src/daemon/server.rs::{dispatch_core, serve_get, serve_write,
+preconditions_hold, etag_of, content_response}` (4.06 für ein Accept einer Form,
+die die Ressource nicht gibt, 4.15 für ein Content-Format ohne Form, 4.12, ETag
+des Samples und 2.03; die Formen in `zerodds-coap-bridge-1.0` §4.5); Max-Age in
+`crates/coap-bridge/src/caching_proxy.rs::max_age_of`; Proxy-Uri und
+Proxy-Scheme in `crates/coap-bridge/src/daemon/proxy.rs::Proxy::route`.
 
-**Tests:** `option::tests::coap_5_10_option_uri_path_constructs_string_value`,
-`coap_5_10_content_format_uses_number_12`,
-`codec::tests::coap_5_10_an_observe_registration_is_the_octets_of_the_layout`.
+**Tests:** `crates/coap-bridge/src/option.rs::tests::{coap_5_10_option_uri_path_constructs_string_value,
+coap_5_10_content_format_uses_number_12}`,
+`crates/coap-bridge/src/codec.rs::tests::coap_5_10_an_observe_registration_is_the_octets_of_the_layout`,
+`crates/coap-bridge/tests/daemon_e2e.rs::coap_5_10_the_daemon_checks_options_methods_and_preconditions`, `crates/coap-bridge/src/daemon/proxy.rs::tests::coap_5_7_2_a_uri_naming_the_proxy_itself_is_a_local_request`.
 
 **Status:** done
 
@@ -442,21 +508,27 @@ Konstanten + Convenience-Konstruktoren `uri_path`/`content_format`.
 
 ### §6.1-§6.5 CoAP-URI-Scheme
 
-**Spec:** §6, S. 67-72 — `coap://` + `coaps://` URI-Schemen.
+**Spec:** §6, S. 67-72 — `coap://` + `coaps://` URI-Schemen; §6.3
+Normalisierung; §6.4 Zerlegung in Uri-Host, Uri-Port, Uri-Path (jedes
+Segment, auch ein leeres), Uri-Query, prozentdekodiert; §6.5
+Zusammensetzung.
 
 **Repo:** `crates/coap-bridge/src/uri.rs::{parse_coap_uri, CoapUri,
-default_port, UriError}`. Default-Ports 5683 / 5684; Path-Segmente
-+ Query-Parameter werden aufgeteilt (zur direkten Mapping in
-`Uri-Path`/`Uri-Query`-Options); Fragment-Identifier rejected (§6.1).
+CoapUri::to_uri, percent_decode, percent_encode, default_port, UriError}`
+(IPv6-Literal in Klammern, Schema und Host ohne Groß-/Kleinschreibung,
+Benutzerinformation abgewiesen, Fragment abgewiesen); der Ressourcenname
+nach §6.5 Schritt 6 in `crates/coap-bridge/src/daemon/server.rs::resource_name`.
 
 **Tests:** `crates/coap-bridge/src/uri.rs::tests::{coap_6_1_parses_basic_coap_uri,
 coap_6_1_parses_coaps_default_port, coap_6_1_parses_explicit_port, coap_6_1_parses_query_params,
 coap_6_1_parses_empty_path_when_no_slash, coap_6_1_rejects_unknown_scheme,
 coap_6_1_rejects_missing_host, coap_6_1_rejects_invalid_port, coap_6_1_rejects_fragment,
-coap_1_1_default_port_returns_5684_for_coaps,
-coap_6_1_round_trip_path_filtering_strips_empty_segments}` (11).
+coap_1_1_default_port_returns_5684_for_coaps, coap_6_4_an_empty_segment_is_a_uri_path_option,
+coap_6_4_the_segments_and_arguments_are_percent_decoded, coap_6_1_an_ipv6_literal_is_in_brackets,
+coap_6_3_scheme_and_host_ignore_case_and_the_default_port_is_implied}`,
+`crates/coap-bridge/src/daemon/server.rs::tests::coap_6_5_the_resource_name_joins_the_segments`.
 
-**Status:** done — coap/coaps URI-Scheme-Parser live.
+**Status:** done
 
 ---
 
@@ -464,20 +536,22 @@ coap_6_1_round_trip_path_filtering_strips_empty_segments}` (11).
 
 ### §7.1-§7.2 Service + Resource Discovery
 
-**Spec:** §7, S. 73-74 — Multicast-Discovery + `.well-known/core`.
+**Spec:** §7, S. 73-74 — Service-Discovery per Multicast an die
+All-CoAP-Nodes-Adressen; Resource-Discovery über `/.well-known/core` mit
+den Abfragefiltern aus RFC 6690 §4.1.
 
-**Repo:** Resource-Discovery via `crates/coap-bridge/src/core_link.rs`;
-Service-Discovery via Multicast in `multicast.rs::{ALL_NODES_LINK_LOCAL_V4,
-ALL_NODES_LINK_LOCAL_V6, ALL_NODES_SITE_LOCAL_V6,
-validate_multicast_request}` (siehe §8).
+**Repo:** `crates/coap-bridge/src/core_link.rs::{CoreLink, filter_links}`;
+der Daemon tritt mit `coap.multicast.enabled` den Gruppen bei
+(`crates/coap-bridge/src/daemon/multicast_io.rs::{groups_of, join}`,
+Default 224.0.1.187 bzw. ff02::fd, ff05::fd) und beantwortet
+`/.well-known/core` per Multicast (`crates/coap-bridge/src/daemon/server.rs::handle_multicast`).
 
-**Tests:** Resource-Discovery:
-`crates/coap-bridge/src/core_link.rs::tests::{coap_2_4_encode_simple_link_format,
-coap_2_4_a_link_with_attributes_is_the_rfc_6690_form}`; Service-Discovery:
-`crates/coap-bridge/src/multicast.rs::tests::{coap_1_1_well_known_addresses_match_spec,
-coap_7_1_valid_multicast_request_passes, coap_7_1_multicast_request_must_not_be_confirmable}`.
+**Tests:** `crates/coap-bridge/src/core_link.rs::tests::{coap_2_4_encode_simple_link_format,
+coap_2_4_a_link_with_attributes_is_the_rfc_6690_form, coap_7_2_rfc_6690_query_filtering}`,
+`crates/coap-bridge/src/multicast.rs::tests::{coap_1_1_well_known_addresses_match_spec, coap_7_1_valid_multicast_request_passes,
+coap_7_1_multicast_request_must_not_be_confirmable}`, `crates/coap-bridge/tests/daemon_e2e.rs::coap_8_a_multicast_request_is_answered_by_unicast_within_the_leisure` (nur Linux).
 
-**Status:** partial — Resource-Discovery über `/.well-known/core` und die Multicast-Adressen sind gebaut und geprüft; Service-Discovery per Multicast braucht den Multicast-Empfang aus §8a.
+**Status:** done
 
 ---
 
@@ -485,36 +559,42 @@ coap_7_1_valid_multicast_request_passes, coap_7_1_multicast_request_must_not_be_
 
 ### §8 Multicast Operation
 
-**Spec:** §8, S. 74-77 — IP-Multicast-Semantik.
+**Spec:** §8, S. 74-77 — §8.1 nur Non-confirmable, mit Token, keine
+Reset-Antwort; §8.2 Antworten per Unicast zu einem zufälligen Zeitpunkt
+der Leisure-Zeit, keine Fehlerantwort, keine leere Antwort; §8.2.1 Caching;
+§8.2.2 Proxying.
 
-**Repo:** `crates/coap-bridge/src/multicast.rs::{ALL_NODES_LINK_LOCAL_V4
-("224.0.1.187"), ALL_NODES_LINK_LOCAL_V6 ("FF02::FD"),
-ALL_NODES_SITE_LOCAL_V6 ("FF05::FD"), DEFAULT_LEISURE (5s),
-is_ipv4_multicast, is_ipv6_multicast, validate_multicast_request,
-leisure_delay, MulticastError}` mit Spec-§8.1-konformer NON-only-
-Validation + §8.2 Leisure-Time-Helper.
+**Repo:** `crates/coap-bridge/src/multicast.rs::{ALL_NODES_LINK_LOCAL_V4,
+ALL_NODES_LINK_LOCAL_V6, ALL_NODES_SITE_LOCAL_V6, DEFAULT_LEISURE,
+validate_multicast_request, leisure_delay}`; im Daemon
+`crates/coap-bridge/src/daemon/server.rs::handle_multicast` und
+`crates/coap-bridge/src/daemon/multicast_io.rs::Leisure` (Zeitpunkt in der
+Leisure-Zeit, eine weitere Antwort für dieselbe Gruppe in der nächsten);
+§8.2.2 in `crates/coap-bridge/src/daemon/proxy.rs::Proxy::fetch_multicast`
+(alle Antworten innerhalb `proxy.multicast_wait_ms`, nicht gecacht).
 
-**Tests:** `multicast::tests::*` (9 Tests):
-`coap_8_ipv4_multicast_recognizes_class_d_range`,
-`coap_8_ipv6_multicast_recognizes_ff_prefix`,
-`coap_7_1_multicast_request_must_not_be_confirmable`,
-`coap_8_multicast_request_must_have_token`,
-`coap_7_1_valid_multicast_request_passes`, `coap_8_leisure_delay_within_max`,
-`coap_8_leisure_delay_zero_when_leisure_is_zero`,
-`coap_1_1_well_known_addresses_match_spec`,
-`coap_8_default_leisure_is_5_seconds`.
+**Tests:** `crates/coap-bridge/src/multicast.rs::tests::{coap_8_ipv4_multicast_recognizes_class_d_range,
+coap_8_ipv6_multicast_recognizes_ff_prefix, coap_7_1_multicast_request_must_not_be_confirmable,
+coap_8_multicast_request_must_have_token, coap_7_1_valid_multicast_request_passes,
+coap_8_leisure_delay_within_max, coap_8_leisure_delay_zero_when_leisure_is_zero,
+coap_1_1_well_known_addresses_match_spec, coap_8_default_leisure_is_5_seconds}`, `crates/coap-bridge/tests/daemon_e2e.rs::coap_8_a_multicast_request_is_answered_by_unicast_within_the_leisure` (nur Linux).
 
-**Status:** partial — Multicast-Adressen, NON-only-Prüfung, Token-Pflicht und Leisure-Zeit sind gebaut und geprüft; Gruppenbeitritt, Senden und Empfangen im Daemon fehlen (§8a).
+**Status:** done
 
 ### §8a Multicast-Versand und -Empfang im Daemon
 
 **Spec:** §8, S. 74-77 — Requests an eine IP-Multicast-Gruppe senden und empfangen; ein Server antwortet nach der Leisure-Zeit.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/multicast_io.rs::{join,
+enable_destination_info, recv_with_destination, Leisure}` (Beitritt auf
+dem Socket des Daemons, eine IPv6-Gruppe bei IPv4-Bind auf einem zweiten,
+nur-IPv6-Socket; die Zieladresse jedes Datagramms); Konfiguration
+`coap.multicast.*` (`crates/coap-bridge/src/daemon/config.rs::MulticastSettings`);
+Senden an eine Gruppe als Proxy-Ziel (§8.2.2).
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coap_8_a_multicast_request_is_answered_by_unicast_within_the_leisure` (nur Linux).
 
-**Status:** open — `crates/coap-bridge/src/` tritt keiner Multicast-Gruppe bei (kein `join_multicast_v4`/`join_multicast_v6`); die Helfer aus `multicast.rs` werden von keinem Socket-Pfad benutzt.
+**Status:** done
 
 ---
 
@@ -523,35 +603,62 @@ Validation + §8.2 Leisure-Time-Helper.
 ### §9 DTLS Mode
 
 **Spec:** §9, S. 77-86 — NoSec/PreSharedKey/RawPublicKey/Certificate-
-Modi.
+Modi; §9.1.3.1 PSK mit TLS_PSK_WITH_AES_128_CCM_8; §9.1.3.2 RawPublicKey mit
+TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8, secp256r1; §9.1.3.3 X.509, das
+Zertifikat geprüft.
 
 **Repo:** `crates/coap-bridge/src/dtls.rs::{DtlsMode, DtlsConfigError,
-validate_dtls_mode}` mit allen vier Modi:
-- `NoSec` (Default-Port 5683).
-- `PreSharedKey { identity, key }` (Spec §9.1.1 — PSK ≥ 16 bytes
-  empfohlen, identity required).
-- `RawPublicKey { public_key, spki_der }` (Spec §9.1.2 — SubjectPublicKeyInfo
-  DER-encoded).
-- `Certificate { cert_chain, trust_anchors }` (Spec §9.1.3 —
-  X.509-Chain-Validation gegen Trust-Anchors).
+validate_dtls_mode, DtlsCredentials}`; der DTLS-1.2-Transport
+`crates/coap-bridge/src/dtls_transport.rs` (Feature `dtls`) über
+`crates/dtls-openssl` (OpenSSL ab 3.2, ADR 0014): PSK, Zertifikat mit Prüfung
+gegen Vertrauensanker und Namen, Rohschlüssel nach RFC 7250. Die beiden
+CCM-8-Suiten werden zuerst angeboten; OpenSSL 3 führt sie unter seiner
+Standard-Sicherheitsstufe, ein Security-Callback
+(`crates/dtls-openssl/src/ffi.rs::allow_ccm8`) lässt sie zu; P-256 steht in
+der Gruppenliste. Gegenprobe mit libcoap 4.3.4 (GnuTLS und OpenSSL).
 
-`is_secure()`-Predicate + `default_port()` (5683/5684) + `name()`
-für Logging. DTLS-1.2-Transport in `crates/coap-bridge/src/dtls_transport.rs`
-(Feature `dtls`, `webrtc-dtls`) mit PSK und Zertifikat.
+**Tests:** `crates/coap-bridge/src/dtls.rs::tests::{coap_9_nosec_is_not_secure, coap_1_1_psk_is_secure,
+coap_9_raw_public_key_is_secure, coap_9_certificate_is_secure,
+coap_9_validate_psk_short_key_rejected, coap_9_validate_psk_empty_identity_rejected,
+coap_9_validate_psk_valid, coap_9_validate_certificate_empty_chain_rejected,
+coap_9_validate_certificate_no_trust_anchors_rejected,
+coap_9_validate_raw_public_key_empty_rejected, coap_9_validate_nosec_passes}`;
+`crates/dtls-openssl/tests/handshake.rs::{coap_9_1_3_1_a_pre_shared_key_with_tls_psk_with_aes_128_ccm_8,
+coap_9_1_3_1_an_unknown_identity_or_another_key_fails,
+coap_9_1_3_2_raw_public_keys_named_after_rfc_6920,
+coap_9_1_3_3_a_certificate_is_checked_against_the_anchors_and_the_name}`;
+`crates/coap-bridge/tests/dtls_coap_e2e.rs::{coap_9_dtls_coap_get_content_roundtrip, coap_9_dtls_psk_handshake_carries_coap,
+coap_9_dtls_psk_unknown_identity_is_refused, coap_9_1_3_2_raw_public_keys_carry_coap,
+coap_9_dtls_certificate_files_and_rotation_keep_sessions_alive}`;
+`crates/coap-bridge/tests/daemon_dtls_e2e.rs::{coap_9_daemon_serves_coaps_over_dtls_request_response_and_observe,
+coap_9_1_3_2_the_daemon_takes_raw_public_keys_and_names_them_in_the_acl}`.
 
-**Tests:** `crates/coap-bridge/src/dtls.rs::tests::{coap_9_nosec_is_not_secure, coap_1_1_psk_is_secure, coap_9_raw_public_key_is_secure, coap_9_certificate_is_secure, coap_9_validate_psk_short_key_rejected, coap_9_validate_psk_empty_identity_rejected, coap_9_validate_psk_valid, coap_9_validate_certificate_empty_chain_rejected, coap_9_validate_certificate_no_trust_anchors_rejected, coap_9_validate_raw_public_key_empty_rejected, coap_9_validate_nosec_passes}`; `crates/coap-bridge/tests/dtls_coap_e2e.rs::{coap_9_dtls_coap_get_content_roundtrip, coap_9_dtls_psk_handshake_carries_coap, coap_9_dtls_psk_unknown_identity_is_refused, coap_9_dtls_certificate_files_and_rotation_keep_sessions_alive}`; `crates/coap-bridge/tests/daemon_dtls_e2e.rs::coap_9_daemon_serves_coaps_over_dtls_request_response_and_observe`.
-
-**Status:** partial — NoSec, PreSharedKey und Certificate laufen über den DTLS-Transport; RawPublicKey ist nur als Konfiguration vorhanden (§9a).
+**Status:** done
 
 ### §9a RawPublicKey-Modus im DTLS-Transport
 
-**Spec:** §9, S. 68 (Textfassung) — „The NoSec and RawPublicKey modes are mandatory to implement for this specification.“; §9.1.3.2 RawPublicKey (RFC 7250).
+**Spec:** §9, S. 68 (Textfassung) — „The NoSec and RawPublicKey modes are mandatory to implement for this specification.“; §9.1.3.2 RawPublicKey (RFC 7250); §9.1.3.2.1 Kennungen nach RFC 6920, mindestens `sha-256-120`, Binärform, Sprechform bei einer Benutzerschnittstelle, eine Zugriffsliste der Kennungen.
 
-**Repo:** —
+**Repo:** `crates/dtls-openssl/src/ffi.rs` (`set_cert_types`, `peer_rpk_spki`,
+`store_ctx_rpk_spki` über OpenSSLs `SSL_CTX_set1_client_cert_type`,
+`SSL_CTX_set1_server_cert_type`, `SSL_get0_peer_rpk`,
+`X509_STORE_CTX_get0_rpk`); `crates/dtls-openssl/src/config.rs`
+(`ServerConfig::raw_public_key`/`trusted_client_keys`,
+`ClientConfig::raw_public_key`/`trusted_server_keys`, der Verify-Callback
+gegen die Kennungen); `crates/dtls-openssl/src/ni.rs::KeyName` (RFC 6920:
+`ni:`, `nih:` mit Luhn-mod-16-Prüfziffer, Binärform; `sha-256` bis
+`sha-256-32`); im Daemon `coap.dtls.rpk_key_file`/`rpk_trusted` und
+`proxy.dtls.rpk_key_file`/`rpk_trusted`, das ACL-Subjekt `rpk:` mit der
+`ni`-URI. Gegenprobe: libcoap 4.3.4 mit GnuTLS als Client gegen den Daemon und
+als Ursprung hinter dem Proxy; ein nicht gelisteter Schlüssel erhält Alert 46.
 
-**Tests:** —
+**Tests:** `crates/dtls-openssl/src/ni.rs::tests::{rfc6920_8_2_the_names_of_the_example_key,
+rfc6920_2_the_encodings_of_one_name_are_equal, rfc6920_8_1_hello_world}`,
+`crates/dtls-openssl/tests/handshake.rs::coap_9_1_3_2_raw_public_keys_named_after_rfc_6920`,
+`crates/coap-bridge/tests/dtls_coap_e2e.rs::coap_9_1_3_2_raw_public_keys_carry_coap`,
+`crates/coap-bridge/tests/daemon_dtls_e2e.rs::coap_9_1_3_2_the_daemon_takes_raw_public_keys_and_names_them_in_the_acl`.
 
-**Status:** open — `crates/coap-bridge/src/dtls.rs` kennt `DtlsMode::RawPublicKey` als Konfiguration; `crates/coap-bridge/src/dtls_transport.rs` handelt nur PSK und Zertifikat aus (`DtlsPeerIdentity::{Psk, Certificate}`), ein Handshake mit Raw Public Key (RFC 7250) fehlt.
+**Status:** done
 
 ---
 
@@ -584,15 +691,19 @@ vulnerabilities through discrepancies between the code deriving access
 control decisions from a URI and the code finally serving up the
 resource addressed by the URI."
 
-**Repo:** `crates/coap-bridge/src/codec.rs` (`decode`),
-`crates/coap-bridge/src/uri.rs` (`parse_coap_uri`).
+**Repo:** `crates/coap-bridge/src/codec.rs::decode`;
+`crates/coap-bridge/src/daemon/server.rs::resource_name` bildet den einen
+Ressourcennamen (§6.5 Schritt 6, ein `/` in einem Segment
+prozentkodiert, `.`/`..` abgewiesen), den die Topic-Zuordnung und die ACL
+gleichermaßen verwenden; `crates/coap-bridge/src/uri.rs::parse_coap_uri`.
 
 **Tests:** `crates/coap-bridge/tests/fuzz_smoke.rs::coap_11_1_fuzz_coap_decode_no_panic`,
-`crates/coap-bridge/src/uri.rs::tests::coap_6_1_rejects_fragment`.
+`crates/coap-bridge/src/daemon/server.rs::tests::{coap_11_1_a_slash_in_a_segment_does_not_name_another_resource,
+coap_5_10_1_a_dot_segment_is_no_resource_name, coap_6_5_the_resource_name_joins_the_segments}`,
+`crates/coap-bridge/tests/daemon_e2e.rs::coap_5_9_2_5_an_unknown_resource_is_4_04_and_a_dot_segment_4_00`,
+`crates/coap-bridge/src/uri.rs::tests::{coap_6_1_rejects_fragment, coap_6_4_the_segments_and_arguments_are_percent_decoded}`.
 
-**Status:** partial — Robustheit des Decoders und die URI-Zerlegung
-sind getestet; kein Test prüft, dass Zugriffsentscheidung (Topic-ACL)
-und Auslieferung dieselbe Zerlegung der URI verwenden.
+**Status:** done
 
 ### §11.2 Cache: keine Auslieferung an Anfragen mit geringerer Transportsicherheit
 
@@ -601,13 +712,21 @@ values available to requests that have lesser transport-security
 properties than those the proxy would require to perform request
 forwarding in the first place."
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/caching_proxy.rs::{CacheKey, CacheScope}`:
+die Antwort auf eine `coaps`-Anfrage liegt unter `CacheScope::Private` der
+DTLS-Identität des Clients und wird nur einer Anfrage mit derselben
+Identität geliefert; ohne DTLS-Identität wird sie nicht gespeichert
+(`crates/coap-bridge/src/daemon/proxy.rs::Proxy::cache_key`). Der Proxy
+leitet eine `coaps`-Anfrage nur über DTLS auf der Seite des Clients weiter
+(`proxy.require_dtls_for_coaps`, sonst 4.01). Die geteilten Einträge für
+`coap` liefert er erst nach der Authentifizierung der Bridge (§7.2 der
+Bridge-Spezifikation), die auch für das Weiterleiten gilt.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/caching_proxy.rs::tests::coap_11_2_a_coaps_response_is_served_only_to_the_same_identity`,
+`crates/coap-bridge/src/daemon/proxy.rs::tests::coap_11_2_a_coaps_response_is_cached_only_under_the_dtls_identity`,
+`crates/coap-bridge/tests/proxy_e2e.rs::coap_5_7_a_coaps_destination_is_reached_over_dtls`.
 
-**Status:** open — `CoapCache` (`crates/coap-bridge/src/caching_proxy.rs`)
-speichert und liefert Einträge ohne Bezug auf die Transportsicherheit
-der Anfrage.
+**Status:** done
 
 ### §11.2 coaps-Antworten nicht im geteilten Cache
 
@@ -616,24 +735,32 @@ are never "public" and thus MUST NOT be reused for shared caching,
 unless the cache is able to make equivalent access control decisions to
 the ones that led to the cached entry."
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/caching_proxy.rs::CacheScope`
+(`Shared` für `coap`, `Private(identity)` für `coaps`), gesetzt in
+`crates/coap-bridge/src/daemon/proxy.rs::Proxy::cache_key`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/caching_proxy.rs::tests::coap_11_2_a_coaps_response_is_served_only_to_the_same_identity`,
+`crates/coap-bridge/src/daemon/proxy.rs::tests::coap_11_2_a_coaps_response_is_cached_only_under_the_dtls_identity`,
+`crates/coap-bridge/tests/proxy_e2e.rs::coap_5_7_a_coaps_destination_is_reached_over_dtls`.
 
-**Status:** open — `CoapCache` unterscheidet nicht zwischen Antworten auf
-`coap`- und `coaps`-Anfragen.
+**Status:** done
 
 ### §11.3 Keine große Verstärkung ohne Authentifizierung
 
 **Spec:** §11.3, S. 82 (RFC) — "large amplification factors SHOULD NOT
 be provided in the response if the request is not authenticated."
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/server.rs::{block_limit,
+representation, UNAUTHENTICATED_AMPLIFICATION}`: eine Anfrage ohne DTLS,
+OSCORE und Auth-Token bekommt höchstens das Achtfache ihrer Größe zurück,
+eine größere Repräsentation in Block2-Blöcken (RFC 7959) mit ETag und Size2;
+ebenso die Benachrichtigungen an einen so registrierten Beobachter und die
+Antworten des Proxys (`crates/coap-bridge/src/daemon/proxy.rs::Proxy::for_client`).
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/daemon/server.rs::tests::coap_11_3_an_unauthenticated_response_is_sliced_into_small_blocks`,
+`crates/coap-bridge/tests/proxy_e2e.rs::rfc7959_2_10_the_proxy_reassembles_and_cuts_blocks`.
 
-**Status:** open — kein Code gefunden, der die Antwortgröße für nicht
-authentifizierte Anfragen begrenzt.
+**Status:** done
 
 ### §11.3 Multicast-Anfragen nur authentifiziert und nur für bestimmte Ressourcen
 
@@ -642,13 +769,14 @@ requests that can not be authenticated in some way [...]. If possible, a
 CoAP server SHOULD limit the support for multicast requests to the
 specific resources where the feature is required."
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/server.rs::handle_multicast` mit
+`coap.multicast.resources` (die Ressourcen, die eine Multicast-Anfrage
+beantworten) und `coap.multicast.unauthenticated_resources` (die, die es
+ohne OSCORE tun); beide Default `.well-known/core`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coap_8_a_multicast_request_is_answered_by_unicast_within_the_leisure` (nur Linux).
 
-**Status:** open — der Daemon (`crates/coap-bridge/src/daemon/`)
-unterscheidet Multicast- und Unicast-Anfragen nicht und schränkt
-Multicast weder auf authentifizierte Anfragen noch auf Ressourcen ein.
+**Status:** done
 
 ### §11.3 Multicast-Ziel über IPV6_RECVPKTINFO erkennen
 
@@ -656,12 +784,15 @@ Multicast weder auf authentifizierte Anfragen noch auf Ressourcen ein.
 modern APIs such as IPV6_RECVPKTINFO [RFC3542], if available, to make
 this determination."
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/multicast_io.rs::{enable_destination_info,
+recv_with_destination}` (`IP_PKTINFO`/`IPV6_RECVPKTINFO` über `nix`,
+ohne `unsafe`); die Empfangsschleife
+(`crates/coap-bridge/src/daemon/server.rs::accept_loop`) gibt eine Anfrage
+an eine Multicast-Zieladresse an `handle_multicast`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coap_8_a_multicast_request_is_answered_by_unicast_within_the_leisure` (nur Linux).
 
-**Status:** open — kein Code in `crates/coap-bridge` liest die
-Zieladresse eines empfangenen Pakets.
+**Status:** done
 
 ### §11.4, §11.5 IP-Spoofing und Cross-Protocol-Angriffe
 
@@ -683,13 +814,19 @@ Token) ist §5.3.1.
 that require good entropy, such as key generation. [...] Special care
 must be taken in implementation of cryptographic primitives."
 
-**Repo:** —
+**Repo:** Zufall stammt vom Betriebssystem: die Tokens des Proxys über
+`getrandom` (`crates/coap-bridge/src/daemon/proxy.rs::random_token`), das
+selbstsignierte DTLS-Zertifikat mit dem Zufall von OpenSSL (`crates/dtls-openssl/src/config.rs`); OSCORE erzeugt
+keine Schlüssel, sondern leitet sie mit HKDF aus dem konfigurierten
+Master Secret ab. Die AEAD-Prüfung ist die von RustCrypto `ccm` 0.5.0 (der
+Tag-Vergleich mit `subtle::ConstantTimeEq`, `ccm-0.5.0/src/lib.rs`, Zeile
+281), AES die von `aes` 0.8.4. Die Laufzeitkonstanz ist dem Quelltext der
+Abhängigkeiten entnommen, nicht gemessen.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/daemon/proxy.rs::tests::coap_5_3_1_the_proxy_tokens_come_from_the_system_randomness`,
+`crates/coap-bridge/src/oscore/aead.rs::tests::rfc3610_packet_vector_1`.
 
-**Status:** open — die OSCORE-Kryptografie verwendet `aes`, `ccm`,
-`hmac` und `sha2` aus RustCrypto; kein Test prüft die Laufzeitkonstanz.
-Die Bridge erzeugt keine Schlüssel.
+**Status:** done
 
 ### §12.1, §12.2, §12.4–§12.7 IANA-Registrierungen
 
@@ -711,13 +848,15 @@ charset=utf-8` = 0, `application/link-format` = 40, `application/xml` =
 41, `application/octet-stream` = 42, `application/exi` = 47,
 `application/json` = 50.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/content_format.rs` mit den
+Anfangseinträgen, CBOR (60) und den Formaten der Bridge im
+experimentellen Bereich (65000–65002), `media_type`; der Daemon setzt 40
+für `/.well-known/core` und 65000 für ein Topic.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/content_format.rs::tests::{coap_12_3_the_initial_registry_entries,
+coap_12_3_the_bridges_formats_are_in_the_experimental_range}`.
 
-**Status:** open — `crates/coap-bridge/src/daemon/server.rs` setzt 40 für
-`application/link-format`, ohne Test; für die übrigen Einträge gibt es
-keine Konstanten.
+**Status:** done
 
 ### §12.8 Multicast Address Registration
 
@@ -786,13 +925,12 @@ coap_3_deregister_ends_the_observe_relationship_per_spec_3_6}`.
 
 ## Audit-Status
 
-27 done / 5 partial / 10 open / 0 blocked / 4 n/a (informative).
+42 done / 0 partial / 0 open / 0 blocked / 4 n/a (informative).
 
-Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document coap-rfc-7252.md`):
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9860 von `main` (`python3 ci/coverage_results.py --document coap-rfc-7252.md`):
 
-* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets` (Job `merge-rust-coap-bridge`) — 125 Tests grün.
-* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets --features dtls,oscore` (Job `merge-rust-coap-bridge-features-dtls-oscore`) — 5 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets` (Job `merge-rust-coap-bridge`) — 156 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-dtls-openssl --all-targets` (Job `merge-rust-dtls-openssl`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets --features dtls,oscore` (Job `merge-rust-coap-bridge-features-dtls-oscore`) — 9 Tests grün.
 
-130 zitierte Tests grün, 0 nicht grün.
-
-Offene Punkte: `coap-rfc-7252.open.md`.
+172 zitierte Tests grün, 0 nicht grün.

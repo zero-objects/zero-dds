@@ -65,11 +65,20 @@ separate, optional compliance point."
 **Tests:** —
 
 **Status:** open — adherence to the standard is the sum of the items in
-this document; evidence of an OMG language mapping is missing. ZeroDDS
-maps CORBA IDL to Rust (`zerodds-corba-rust-1.1`, own spec, no OMG
-mapping); `crates/corba-codegen` produces stub and skeleton nodes for
-C++ and Java, without a coverage document against the OMG mappings for
-C++ or Java.
+this document, plus an OMG language mapping whose generated client and
+servant run on an ORB. Coverage documents against OMG mappings exist:
+`idl4-cpp-1.0` with the CORBA platform of Annex A.1, where among others
+`ORB_init` and an implementation of `CORBA::ORB` (A.1.4), the factories
+on the ORB (A.1.8.9), `PortableServer`, servants and skeletons
+(A.1.1.11, A.1.8.8, A.1.10 to A.1.13) are open; `idl4-java-1.0` and
+`idl4-csharp-1.0` without open items, but without an ORB and object
+adapter in `runtime/java` and `runtime/csharp` (the CORBA platform of
+Java maps `TypeCode`, `Object`, `Any` and `UserException`). Missing: one
+of these mappings on the ORB of ZeroDDS (`crates/corba-interop`,
+`crates/corba-poa`), a test in which its generated client and servant
+talk to a foreign ORB, and the open and partial items of this document.
+The mapping to Rust (`zerodds-corba-rust-1.1`) is an own specification,
+not an OMG mapping.
 
 ### §3 Normative References
 
@@ -147,31 +156,143 @@ Repository identity (§7.15) is implemented via
 `string_to_object`/`object_to_string`, `resolve_initial_references`,
 policy management, TypeCodes, standard exceptions.
 
-**Repo:** `crates/corba-ior/src/stringified.rs` (string↔IOR),
-`crates/corba-ior/src/url.rs` (corbaloc/corbaname),
-`crates/corba-poa/src/policies.rs` (policy set for POA scope),
-`crates/corba-ir/src/type_code.rs` (TypeCode representation),
-`crates/corba-giop/src/error.rs` + `crates/corba-poa/src/error.rs`
-(standard exceptions as Rust Result).
+**Repo:** `crates/corba-ccm/src/orb_core.rs::{orb_init, OrbArguments, Orb,
+ObjectRef, ResolveError}` (`ORB_init` with the `-ORB<suffix>` arguments,
+ORB table by ORBid, `id`, `object_to_string`, `string_to_object` over
+`IOR:`, `corbaloc:` with `iiop` and `rir`, `corbaname:` with `resolve` through
+the installed `CorbaConnection`, `list_initial_services`,
+`resolve_initial_references`, `register_initial_reference`,
+`create_policy`, `policy_manager`, `policy_current`, `get_client_policy`,
+`ObjectRef::{set_policy_overrides, get_policy_overrides}`, `shutdown`,
+`destroy`); `crates/corba-ccm/src/policy_management.rs` (`PolicyManager`,
+`PolicyCurrent`, `SetOverrideType`, `OverrideError`, `check_overrides`,
+`set_object_overrides`, `get_object_overrides`, `client_policy`);
+`crates/corba-rt/src/object.rs::{ObjectReference::policy_overrides,
+PolicyOverride}` (the overrides of a reference, not part of the IOR);
+`crates/corba-rt/src/exception.rs::{SystemException, SystemExceptionKind,
+CompletionStatus, OMGVMCID}` (§8.12);
+`crates/corba-rust/src/runtime.rs::CorbaException::System`;
+`crates/corba-interop/src/runtime.rs::{orb_init, reply_status_and_body,
+decode_system_exception}` (system exception with its own repository id
+on the wire, ORB with the IIOP transport); `crates/corba-ior/src/{stringified.rs,
+url.rs}`.
 
-**Tests:** `crates/corba-ior/src/stringified.rs::tests`: `round_trip_be`,
+**Tests:** `crates/corba-ccm/src/orb_core.rs::tests`:
+`corba_p1_8_5_1_orb_init_takes_its_arguments_out_of_the_list`,
+`corba_p1_8_5_1_an_unrecognised_orb_parameter_or_a_missing_value_is_bad_param`,
+`corba_p1_8_5_1_the_same_orbid_gives_the_same_orb_until_destroy`,
+`corba_p1_8_5_1_orb_init_runs_the_initializers_without_holding_other_callers`,
+`corba_p1_8_5_3_2_an_init_ref_url_is_checked_and_corbaloc_rir_refused`,
+`corba_p1_8_5_3_4_resolution_order_register_init_ref_configured_default`,
+`corba_p1_8_5_2_an_unknown_or_nil_initial_reference_is_invalid_name`,
+`corba_p1_16_10_register_initial_reference_refuses_empty_duplicate_and_nil`,
+`corba_p1_8_5_2_a_local_initial_reference_narrows_to_its_type`,
+`corba_p1_8_2_2_string_to_object_of_object_to_string_is_the_same_reference`,
+`corba_p1_8_2_2_string_to_object_raises_the_bad_param_minor_codes`,
+`corba_p1_8_2_2_corbaloc_iiop_builds_an_iiop_profile`,
+`corba_p1_8_2_2_corbaloc_rir_resolves_an_initial_reference`,
+`corba_p1_8_2_2_corbaname_resolves_the_name_on_the_naming_context`,
+`corba_p1_8_2_5_after_shutdown_the_orb_operations_raise_bad_inv_order_4`,
+`corba_p1_8_2_5_5_a_destroyed_orb_raises_object_not_exist`,
+`corba_p1_8_5_3_3_a_rir_default_init_ref_is_refused_and_a_rir_cycle_ends`,
+`corba_p1_8_9_1_policy_manager_and_policy_current_are_initial_references`;
+`crates/corba-ccm/src/policy_management.rs::tests::{corba_p1_8_9_3_set_and_add_override_at_a_scope,
+corba_p1_8_9_3_2_refused_lists_change_nothing,
+corba_p1_8_9_1_policy_current_is_per_thread_and_starts_empty,
+corba_p1_8_3_9_object_overrides_make_a_new_reference,
+corba_p1_8_3_8_2_the_client_policy_is_the_reference_then_the_thread_then_the_orb}`;
+`crates/corba-interop/tests/ziop.rs::corba_p1_8_9_1_a_servant_runs_without_the_thread_overrides`;
+`crates/corba-rt/src/exception.rs::tests`:
+`corba_p1_8_12_3_every_standard_system_exception_has_its_repository_id`,
+`corba_p1_8_12_2_completion_status_values_follow_the_enum`,
+`corba_p1_8_12_2_a_standard_minor_code_carries_the_omg_vmcid`,
+`corba_p2_9_4_3_system_exception_body_round_trips_in_both_byte_orders`,
+`corba_p1_8_12_2_a_non_standard_system_exception_is_presented_as_unknown_minor_2`,
+`corba_p2_9_4_3_a_completion_status_outside_the_enum_is_refused`,
+`corba_p1_8_12_display_names_kind_minor_and_completion`;
+`crates/corba-interop/tests/system_exceptions.rs`:
+`corba_p1_8_12_a_system_exception_crosses_with_kind_minor_and_completion`,
+`corba_p2_9_4_3_the_system_exception_reply_body_names_the_exception`;
+`crates/corba-interop/tests/orb_init.rs`:
+`corba_p1_8_5_3_2_an_init_ref_corbaname_resolves_over_iiop`;
+`crates/corba-interop/tests/amh.rs::corbarust_6_amh_deferred_exception`;
+`crates/corba-interop/tests/generated_exceptions.rs`:
+`corba_p1_8_12_2_the_skeleton_raises_marshal_completed_no_for_bad_arguments`,
+`corba_p1_8_12_3_1_an_unlisted_user_exception_is_unknown_minor_1_completed_yes`,
+`corba_p1_8_12_2_the_stub_raises_marshal_completed_yes_for_a_bad_reply`;
+`crates/corba-rust/tests/codegen_mapping.rs`:
+`corbarust_3_1_an_undeclared_user_exception_is_unknown_minor_1_completed_yes`,
+`corbarust_4_1_a_factory_initialiser_raises_no_implement_minor_1`;
+`crates/corba-ior/src/stringified.rs::tests`: `round_trip_be`,
 `round_trip_le`, `upper_and_lower_hex_both_decoded`,
 `missing_prefix_is_diagnostic`, `odd_hex_length_is_diagnostic`,
 `non_hex_char_is_diagnostic`, `nil_ior_round_trip`;
 `crates/corba-ior/src/url.rs::tests`: `parse_simple_iiop_corbaloc`,
 `default_port_2809_when_missing`, `rir_endpoint`, `multi_endpoint_failover`,
-`corbaname_with_fragment`;
-`crates/corba-ir/src/type_code.rs::tests`:
-`well_known_tc_kind_values_match_spec`, `primitive_tc_has_no_body`,
-`struct_tc_carries_id_and_members`, `sequence_tc_holds_element`,
-`enum_tc_holds_member_names`.
+`corbaname_with_fragment`.
 
-**Status:** done — string-↔-IOR and URL schemes (§8.2.2, §8.5.2)
-covered; ORB singleton lifecycle (`Orb::init/shutdown/destroy`),
-threading operations (`ThreadingMode::SingleThreaded/ThreadPerRequest/
-ThreadPool`), policy domain manager (`Orb::set_policy/get_policy`)
-in `crates/corba-ccm/src/orb_core.rs`. Standard exceptions as a
-Rust Result layer.
+**Status:** partial — built and green on the Linux test host:
+§8.2.1 `id`; §8.2.2 `object_to_string`/`string_to_object` over `IOR:`,
+`corbaloc:` (`iiop`, `rir`; one IIOP profile per address) and
+`corbaname:` (resolution with `resolve` over IIOP), `file://`, `http://`
+and `ftp://` (Part 2 §7.6.10), every profile of an IOR kept, BAD_PARAM
+minor codes 7 to 10, MARSHAL minor 4 for a local object; §8.5.1 `ORB_init` with `-ORBid`, `-ORBInitRef`,
+`-ORBDefaultInitRef`, `-ORBServerId`, `-ORBListenEndpoints`,
+`-ORBNoProprietaryActivation` (removed from the argument list, an unknown
+`-ORB<suffix>` or a missing value is BAD_PARAM, the same ORBid gives the
+same ORB until `destroy`); §8.5.2 and §8.5.3 initial references in the
+order of §8.5.3.4, never nil, else `InvalidName`; §16.10
+`register_initial_reference`; a `rir` resolution that leads back to the
+id being resolved (`-ORBInitRef X=corbaname:rir:/X#n`) ends with
+`InvalidName` or BAD_PARAM minor 10, `-ORBDefaultInitRef corbaloc:rir:`
+is BAD_PARAM minor 8; §8.12 system exceptions with identity,
+minor code and completion status on the wire in both directions (before,
+the server wrote `UNKNOWN` for every system exception), a foreign system
+exception becomes UNKNOWN minor 2; the generated skeleton reports
+arguments that do not unmarshal as MARSHAL COMPLETED_NO and an undeclared
+user exception as UNKNOWN minor 1 COMPLETED_YES, the generated stub a reply
+that does not unmarshal as MARSHAL COMPLETED_YES, a `factory` initialiser
+of a valuetype NO_IMPLEMENT minor 1; BAD_INV_ORDER minor 4 after
+`shutdown`, OBJECT_NOT_EXIST after `destroy` (§8.2.5.5; `destroy` shuts a
+running ORB down first); `create_policy` over the policy factories of the
+ORB initializers; §8.9 policy management: the ORB's `PolicyManager`
+(initial reference `ORBPolicyManager`), `PolicyCurrent` (initial
+reference `PolicyCurrent`, per thread, a new thread without overrides; a
+servant runs without the overrides of its thread, and what it sets there
+ends with the request), `set_policy_overrides` with `SET_OVERRIDE` and
+`ADD_OVERRIDE` and `get_policy_overrides` at every level; §8.3.9
+`set_policy_overrides` on a reference gives a new reference, the
+overrides do not go on the wire; §8.3.8.3 `get_policy_overrides`;
+§8.3.8.2 `get_client_policy` (reference before thread before ORB);
+BAD_PARAM minor 30 for a type twice in the list, `NO_PERMISSION` for
+every type except the four ZIOP policies, because the ORB applies only
+these to an invocation, `InvalidPolicies` with the indices of invalid
+values; a refused call changes nothing; a local object NO_IMPLEMENT
+minor 8 (§8.3.14). `Orb::set_policy` and `get_policy`, an octet store
+nothing read, are removed. Open: §8.2.5 `work_pending`, `perform_work`, `run` and
+`shutdown(wait_for_completion)` as waiting for running requests, with it
+`destroy` waiting for the end of the shutdown and BAD_INV_ORDER minor 3 for
+`shutdown(TRUE)` and `destroy` in a thread that serves a request;
+`create_policy`, the policy overrides and the CCM extensions
+(`with_*`) do not check the state of the ORB (no BAD_INV_ORDER 4 after
+`shutdown`, no OBJECT_NOT_EXIST after `destroy`); MARSHAL COMPLETED_NO when
+the stub writes the request and COMPLETED_YES when the skeleton writes the
+reply are not tested, because the IDL of the tests has no type whose
+writing fails; §8.2.3
+`get_service_information`; §8.2.4 and §8.6 Context object; §8.3 object
+operations on `ObjectReference` (`is_a`, `non_existent`,
+`is_equivalent`, `hash`, `get_interface`, `get_component`, `get_policy`
+with the reconciliation against the policies of the IOR,
+`validate_connection`); §8.4 and the value factory registry on the ORB;
+§8.9 overrides of the policies of a policy factory (`NO_PERMISSION` until
+`ClientRequestInfo::get_request_policy`, §16.4.13.8, shows them to an
+interceptor); §8.10 domain managers;
+§8.11 TypeCode operations (`equal`, `equivalent`, `get_compact_typecode`,
+accessors) and the `create_*_tc` operations, which need the TypeCode
+kinds union, array, fixed, value, value_box, native, abstract and local
+interface, component, home and event (§9.3). Vendor proof (an
+omniORB client reads identity and minor code of a system exception a
+ZeroDDS servant raises) not run.
 
 ### §9 Value Type Semantics
 
@@ -225,14 +346,18 @@ dynamic method calls without a compiled stub.
 **Repo:** `crates/corba-ccm/src/dynamic_api.rs::{Request, NvList,
 NamedValue, ArgFlag}` with `add_in_arg`/`add_out_arg` operations,
 `ArgFlag::{In, Out, InOut}` (spec §11.1.2 wire values 1/2/3) and
-NVList `add_value`/`count` (spec §11.1.3).
+NVList `add_value`/`count` (spec §11.1.3). `Request::invoke` keeps the
+offset of the reply body in the reply message and the reply's byte
+order with the result (`result_offset`, `result_endianness`,
+`result_body`; Part 2 §9.4.3).
 
 **Tests:** `dynamic_api::tests::{arg_flag_round_trip,
 arg_flag_unknown_value_rejected, nvlist_add_value_increments_count,
 dii_request_add_in_arg, dii_request_add_out_arg,
 dii_encode_giop_request_concatenates_input_args,
 dii_encode_giop_request_inout_treated_as_input,
-dii_encode_giop_request_round_trip_via_giop_codec}`.
+dii_encode_giop_request_round_trip_via_giop_codec}`,
+`crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_3_a_dii_result_of_another_orb_on_four_modulo_eight_is_read_at_its_offset`.
 
 **Status:** done — data model + wire-up: `Request::encode_giop_request(request_id, object_key)`
 delivers a `corba_giop::Request` frame with concatenated In/InOut
@@ -249,7 +374,8 @@ generic server implementations.
 
 **Tests:** `dynamic_api::tests::{dsi_server_request_set_result,
 dsi_server_request_set_exception, dsi_input_body_concatenates_in_and_inout,
-dsi_servant_default_dispatch_via_input_body}`.
+dsi_servant_default_dispatch_via_input_body,
+corba_p2_9_4_2_1_a_dsi_servant_reads_its_arguments_at_their_offset}`.
 
 **Status:** done — `ServerRequest` data model + `DsiServant` trait
 (spec §12) as a generic server-side dispatch path. Because of layer
@@ -257,32 +383,63 @@ separation (corba-ccm Layer 8.3 / corba-poa Layer 8.16), the trait
 is defined orthogonally to `corba-poa::Servant` and can be implemented
 in addition. `ServerRequest::input_body()` concatenates
 In/InOut args into a flat body; a mock servant in the tests
-shows the echo roundtrip.
+shows the echo roundtrip. `dispatch_dsi` builds the `ServerRequest` with
+`ServerRequest::received`: the offset of the body in the message
+(`arguments_offset`) and its byte order (`endianness`);
+`ServerRequest::input()` reads the arguments there (CORBA 3.3 Part 2
+§9.4.2.1).
 
 ### §13 Dynamic Management of Any Values (DynAny)
 
-**Spec:** Part 1 §13, p. 195 — DynAny API to iterate over `any`
+**Spec:** Part 1 §13, p. 195 — DynAny API for iterating over `any`
 contents without TypeCode-specific codegen.
 
-**Repo:** `crates/corba-ccm/src/dynamic_api.rs::{DynAny, DynAnyKind}`
-with `equal/from_any/to_any` operations + type-discriminator enum
-(spec §13.1: Primitive/Struct/Union/Enum/Sequence/Array/Fixed/
-Value/ValueBox).
+**Repo:** `crates/corba-rt/src/dyn_any.rs::{DynAnyFactory, DynAny,
+DynAnyError, InconsistentTypeCode, equivalent}` (re-exported in
+`crates/corba-ccm/src/dynamic_api.rs`; the former data model of kind,
+repository id and raw octets is removed);
+`crates/corba-ccm/src/orb_core.rs::orb_init` (initial reference
+`DynAnyFactory`).
 
-**Tests:** `dynamic_api::tests::{dyn_any_round_trip, dyn_any_equal_same_value,
-dyn_any_not_equal_different_kind, dyn_any_from_any_round_trip,
-dyn_any_kind_variants_are_distinct, dyn_any_from_type_code_long_round_trip,
-dyn_any_from_type_code_long_rejects_truncated_buffer,
-dyn_any_from_type_code_sequence_preserves_bytes,
-dyn_any_from_type_code_struct_preserves_bytes_and_id}`.
+**Tests:** `crates/corba-rt/src/dyn_any.rs::tests`:
+`corba_p1_13_2_1_default_values_and_current_positions`,
+`corba_p1_13_2_1_kinds_without_an_any_value_are_inconsistent`,
+`corba_p1_13_2_2_8_insert_and_get_per_basic_type`,
+`corba_p1_13_2_2_9_iteration_over_the_members_of_a_struct`,
+`corba_p1_13_2_5_struct_members_get_and_set`,
+`corba_p1_13_2_4_enum_as_string_and_ulong`,
+`corba_p1_13_2_7_sequence_length_elements_and_bound`,
+`corba_p1_13_2_2_from_any_assign_equal_and_copy`,
+`corba_p1_13_2_7_a_recursive_sequence_member_builds_nested_values`,
+`corba_p1_13_2_2_8_a_current_component_with_components_is_type_mismatch`,
+`corba_p1_13_2_1_an_empty_struct_starts_at_0_an_empty_exception_has_no_components`;
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p1_8_5_1_orb_init_takes_its_arguments_out_of_the_list`
+(`DynAnyFactory` through resolve_initial_references).
 
-**Status:** done — DynAny data model + wire-up `from_type_code(tc, raw)`
-walks a `corba_ir::TypeCode` over CDR `any` bytes; primitive
-types (`Long`/`ULong`/`Short`/`Boolean`/`String`/...) are validated via
-`zerodds_wire::Reader` (decode errors are
-propagated), complex types (Struct/Sequence/Array) preserve the
-raw bytes plus repository ID. `to_cdr()` projects the DynAny
-back.
+**Status:** partial — built and green on the Linux test host:
+`DynAnyFactory` (`create_dyn_any`, `create_dyn_any_from_type_code` with
+the default values of §13.2.1, `create_dyn_any_without_truncation`,
+`create_multiple_dyn_anys`, `create_multiple_anys`, initial reference
+`DynAnyFactory`); `DynAny` with `type`, `assign`, `from_any`, `to_any`,
+`equal`, `copy`, `destroy`, `insert_*`/`get_*` for boolean, octet, char,
+short, unsigned short, long, unsigned long, long long, unsigned long
+long, float, double, wchar, string, wstring, any and `DynAny`,
+`seek`/`rewind`/`next`/`component_count`/`current_component` with the
+position rules of §13.2.1 and §13.2.2.9 (an empty struct starts at 0, an
+empty exception at -1, `current_component` on an empty exception is
+`TypeMismatch`), `insert_*`/`get_*` on a current component that itself
+has components is `TypeMismatch` (§13.2.2.8); `DynEnum`, `DynStruct` (exceptions too),
+`DynSequence` (length, bound, elements, recursive element types);
+`TypeMismatch`, `InvalidValue`, `InconsistentTypeCode`. Open, although
+`AnyValue` and `TypeCode` in `crates/corba-rt` now carry the kinds (§9.3;
+`create_dyn_any_from_type_code` returns `InconsistentTypeCode` for them):
+`DynFixed`, `DynUnion`, `DynArray`, `DynValueCommon`, `DynValue`,
+`DynValueBox`, `insert_/get_reference`, `_typecode`, `_longdouble`,
+`_val`, `_abstract` and the `insert_*_seq`/`get_*_seq` operations; an
+`any` carries no string bound and no alias, so `to_any` gives the
+TypeCode without them, and `tk_void` comes out as `tk_null` as in the
+rest of the `any` model. Vendor proof (an `any` built with DynAny sent to
+an omniORB servant and back) not run.
 
 ### §14 The Interface Repository
 
@@ -291,17 +448,20 @@ back.
 component-IR extensions (Part 3); IDL of the IR.
 
 **Repo:** `crates/corba-ir/src/repository.rs` (`Repository`,
-`Container` hierarchy), `crates/corba-ir/src/repository_id.rs`
+`Container` hierarchy, `find_id` across the whole hierarchy,
+`interface_is_a` as `InterfaceDef::is_a` after §14.5.24.1 over the base
+interfaces), `crates/corba-ir/src/repository_id.rs`
 (IDL/local-format repository IDs), `crates/corba-ir/src/type_code.rs`
 (TypeCode backend), `crates/corba-ir/src/definition_kind.rs` (DK_*).
 
-**Tests:** `crates/corba-ir/src/repository.rs::tests` (11 tests):
+**Tests:** `crates/corba-ir/src/repository.rs::tests` (12 tests):
 `scoped_lookup_descends_hierarchy`, `absolute_name_builds_scoped_path`,
 `operation_def_carries_typed_signature`, `interface_def_details`,
 `register_and_lookup_id`, `duplicate_id_yields_error`,
 `lookup_name_at_top_level`, `nested_module_lookup_name_recurses`,
 `describe_contents_filters_by_kind`, `definition_carries_type_code`,
-`remove_deletes_definition`;
+`remove_deletes_definition`,
+`corba_p1_14_5_24_1_is_a_follows_the_base_interfaces`;
 `crates/corba-ir/src/definition_kind.rs::tests::well_known_definition_kinds_match_spec`,
 `::at_least_26_kinds_modeled`;
 `crates/corba-ir/src/repository_id.rs::tests::round_trip_omg_namingcontext`,
@@ -340,6 +500,7 @@ adapter activator, POA hierarchy, IDL for PortableServer.
 `crates/corba-poa/src/poa_manager.rs::tests::full_state_cycle`,
 `crates/corba-poa/src/object_id.rs::tests::system_id_is_8_bytes_big_endian`,
 `crates/corba-poa/src/servant.rs::tests::is_a_checks_repository_ids`,
+`crates/corba-poa/src/poa.rs::tests::corba_p2_9_4_2_1_a_servant_reads_a_long_long_at_the_body_offset`,
 `crates/corba-poa/src/servant_manager.rs::tests::locator_preinvoke_returns_servant_and_cookie`.
 
 **Status:** done — all 7 standard policies + servant-manager path
@@ -353,29 +514,94 @@ separation is required, that would be a small refactor (≤0.5 PW).
 PolicyFactory registration, IORInterceptor (TaggedComponent inject),
 PI initial reference (`PICurrent`).
 
-**Repo:** `crates/corba-ccm/src/orb_extensions.rs::{ClientRequestInterceptor,
-ServerRequestInterceptor, IorInterceptor, InterceptorRegistry,
-PolicyFactory, PiCurrent, ClientInterceptionPoint,
-ServerInterceptionPoint}` with all 5 client points
-(send_request/send_poll/receive_reply/receive_exception/
-receive_other) + 5 server points (receive_request_service_contexts/
-receive_request/send_reply/send_exception/send_other) +
-registry + PiCurrent slot storage. Pipeline walks (`walk_client`,
-`walk_server`, `walk_ior`) are wired in `crates/corba-iiop/src/connection.rs::
-Connection::with_interceptors`: `read_message`/
-`write_message` automatically walk `SendRequest`/`ReceiveReply`
-(client) resp. `ReceiveRequest`/`SendReply` (server) when a
-registry is installed.
+**Repo:** `crates/corba-ccm/src/portable_interceptor.rs::{InterceptionPoint,
+ReplyStatus, InterceptorError, RequestException, RequestInfo,
+ClientRequestInterceptor, ServerRequestInterceptor, InterceptorRegistry,
+Outcome, PiCurrent, IorInfo, IorInterceptor, PolicyFactory, Policy,
+PolicyError, OrbInitializer, OrbInitInfo, InitializerError,
+RegistrationError, CurrentError, register_orb_initializer,
+ServiceContextInjector}` (re-exported in `orb_extensions.rs`);
+`crates/corba-ccm/src/orb_core.rs` (`orb_init` runs the ORB initializers,
+`PICurrent` as an initial reference, `create_policy`, `destroy` calls
+`Interceptor::destroy`); `crates/corba-interop/src/runtime.rs::{
+IiopCorbaConnection::with_orb, CorbaServer::set_orb, intercepted_reply,
+object_reference_for}` (request path over IIOP, IOR creation).
 
-**Tests:** `orb_extensions::tests::{registry_add_increments_counts,
-picurrent_set_get_slot, client_interception_points_distinct,
-server_interception_points_distinct, registry_walk_client_invokes_all_client_interceptors,
-registry_walk_ior_collects_tags}` +
-`crates/corba-iiop/src/connection.rs::{pipeline_walks_client_send_request,
-pipeline_walks_server_receive_request, ior_interceptor_fires_on_walk_ior}`.
+**Tests:** `crates/corba-ccm/tests/pi_service_contexts.rs`:
+`corba_p1_16_4_7_starting_points_in_order_ending_points_in_reverse`,
+`corba_p1_16_4_6_1_an_exception_in_send_request_pops_only_the_flow_stack`,
+`corba_p1_16_4_6_1_forward_request_in_send_request_runs_receive_other`,
+`corba_p1_16_4_6_3_an_exception_in_receive_reply_turns_the_rest_to_receive_exception`,
+`corba_p1_16_4_6_4_receive_exception_may_change_the_exception_or_forward`,
+`corba_p1_16_4_7_2_a_oneway_ends_in_receive_other_successful`,
+`corba_p1_16_4_10_server_flow_with_an_exception_in_receive_request`,
+`corba_p1_16_4_9_server_reply_and_forward_from_send_exception`,
+`corba_p1_16_4_13_request_info_validity_and_service_context_rules`,
+`corba_p1_16_9_2_a_duplicate_interceptor_name_is_refused`,
+`corba_p1_16_4_ots_and_csiv2_service_contexts_route_through_interceptors`,
+`corba_p1_16_4_12_exceptions_contexts_and_operation_context_follow_tables_16_1_and_16_2`,
+`corba_p1_16_6_5_ior_info_checks_the_profile_id_and_the_policy_type`;
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p1_16_9_orb_init_info_rules_and_an_abandoned_initialization`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p1_16_9_2_5_orb_init_info_offers_the_codec_factory_in_pre_init`;
+`crates/corba-interop/tests/portable_interceptors.rs::corba_p1_16_4_interceptors_run_in_the_iiop_request_path`;
+`crates/corba-interop/tests/iop_cross_orb.rs::corba_p2_7_7_2_a_jacorb_vendor_context_reaches_the_zerodds_interceptor`.
 
-**Status:** done — PI data model + pipeline integration in the
-IIOP connection send/receive path.
+**Status:** partial — built and green on the Linux test host: the ten
+interception points with the flow-stack rules of §16.4.2, §16.4.7 and
+§16.4.10 (starting points in registration order, ending points in
+reverse only for interceptors whose starting point completed, change of
+ending point after a system exception or ForwardRequest); `RequestInfo`
+with the validity of Tables 16.1 and 16.2 (BAD_INV_ORDER minor 14),
+`get_*_service_context` with BAD_PARAM minor 26, `add_*_service_context`
+with BAD_INV_ORDER minor 15; `arguments`, `exceptions`, `contexts`,
+`operation_context`, `result` as NO_RESOURCES minor 1 at the points
+Tables 16.1 and 16.2 admit them, else BAD_INV_ORDER minor 14, as
+§16.4.12.3 to §16.4.12.7 prescribe for environments without access to
+them (this binding passes encoded CDR); PICurrent with thread and request
+scope and the copies of §16.5.4.5: `receive_request_service_contexts`
+runs in a thread scope of its own, the request scope is copied after it
+and before `receive_request` into the thread scope of the servant,
+`receive_request` runs in that thread scope (a `set_slot` on the request
+scope does not reach the servant, one on PICurrent does), after the
+servant the thread scope is copied back into the request scope, and the
+thread scope of the connection thread applies again afterwards; IORInfo
+with BAD_PARAM minor 29 for a profile id the adapter's references do not
+carry, `get_effective_policy` with nil for a known policy type without a
+policy and INV_POLICY minor 3 for an unknown one (known are the types of
+the registered policy factories; the adapter of `CorbaServer` sets no
+policies); ORBInitializer and ORBInitInfo (interceptors with
+`DuplicateName`, `allocate_slot_id`, `register_policy_factory` with
+BAD_INV_ORDER minor 16, `register_initial_reference` with the semantics
+of `ORB::register_initial_reference`, so `InvalidName` for `PICurrent` and
+`DynAnyFactory` too, `resolve_initial_references` only in `post_init`; in
+`post_init` the `add_*_interceptor` operations and `allocate_slot_id`
+raise BAD_INV_ORDER minor 26; while the initializers run, `get_slot` and
+`set_slot` on PICurrent raise BAD_INV_ORDER minor 14 after §16.9.2.14 and
+Annex A.6, where §16.5.3 names minor 10, which Annex A.6 gives to a DII
+request sent twice; an error from `pre_init` or `post_init` abandons
+`ORB_init`, the interceptors registered so far get `destroy`, and
+`ORB_init` raises the system exception, or INITIALIZE for a user
+exception); the request path over
+IIOP in both directions: a service context from a client interceptor to a
+server interceptor and a reply context back, a slot from a server
+interceptor to the servant, a system exception from `receive_request`
+without a servant call, ForwardRequest on server and client side with
+the retry to the new target (LOCATION_FORWARD, at most 16 times); IOR
+interceptors when a reference is made with `object_reference_for`. The
+interceptor calls in `corba-iiop::Connection` are removed (they ran with
+the operation name only and without reply information). Open:
+`send_poll` and interceptors in `AmiClient`, `BiDirEndpoint` and
+`AmhEndpoint`; IOR interceptors in `stringify_object_ref*`;
+`IORInterceptor_3_0` and the ObjectReferenceTemplate (§16.6.3);
+ServerRequestInfo `adapter_id`, `adapter_name`,
+`target_most_derived_interface`, `target_is_a`, `get_server_policy`;
+ClientRequestInfo `effective_profile`, `get_effective_component(s)`,
+`get_request_policy`; ProcessingMode policy (§16.7).
+`ORBInitInfo::codec_factory` (§16.9.2.5) returns the `CodecFactory` of
+§7.8, already in `pre_init`. JacORB 3.9 on the Linux test host: a JacORB
+client interceptor sends a request context to a ZeroDDS server
+interceptor, whose reply context reaches the JacORB interceptor; the
+other direction (ZeroDDS client, JacORB server) was not run.
 
 ### §17 CORBA Messaging
 
@@ -406,26 +632,52 @@ policies.
 
 ### §18 Compression
 
-**Spec:** Part 1 §18, p. 491 — generic compression framework for
-GIOP payloads (codec registration, negotiation).
+**Spec:** Part 1 §18, p. 491 — module `Compression`: `Compressor`,
+`CompressorFactory`, `CompressionManager` (initial reference),
+`CompressorId` constants, exceptions.
 
-**Repo:** `crates/corba-ccm/src/orb_extensions.rs::{CompressionAlgorithm,
-ZiopConfig}` with None/Zlib/Gzip/Lzma/Deflate algorithms +
-ZiopConfig (algorithm/min_size_threshold/level).
+**Repo:** `crates/corba-ccm/src/compression.rs` — the ten
+`COMPRESSORID_*` constants, `CompressionLevel`, `CompressionRatio`,
+`CompressorIdLevel`(`List`), `Buffer`; `CompressionException`
+(`reason`, `description`), `FactoryAlreadyRegistered`,
+`UnknownCompressorId` with their repository ids; the traits `Compressor`
+(`compress`, `decompress`, `compressor_factory`, `compression_level`,
+`compressed_bytes`, `uncompressed_bytes`, `compression_ratio` =
+`compressed_bytes / uncompressed_bytes`) and `CompressorFactory`
+(`compressor_id`, `get_compressor`, the same instance per level,
+`BAD_PARAM` minor 44 above level 9); `CompressionManager`
+(`register_factory`, `unregister_factory`, `get_factory`,
+`get_compressor`, `get_factories`). Built in: zlib (RFC 1950, required by
+§18.1) and gzip (RFC 1952) on `flate2` (`FlateCompressorFactory`); level 0
+writes stored blocks; `decompress` stops at a limit (default 16 MiB, the
+largest GIOP message `corba-iiop` reads) with `Z_BUF_ERROR`. Every other
+id (PKZIP, BZIP2, LZMA, LZO, RZIP, 7X, XAR or a vendor id) is served by a
+registered factory of the user's; without one the manager raises
+`UnknownCompressorId`. ORB:
+`crates/corba-ccm/src/orb_core.rs::{Orb::compression_manager,
+Orb::with_compression, orb_init}` — `orb_init` enters the manager as the
+initial reference `CompressionManager`; `with_compression` takes a
+`CompressorIdLevel` and refuses an id without a factory and a level
+above 9. The former `CompressionAlgorithm` enumeration with its own
+values 0 to 4 is removed.
 
-**Tests:** `orb_extensions::tests::{compression_algorithm_round_trip,
-compression_algorithm_unknown_rejected, ziop_config_default_no_compression,
-compression_none_passes_through, compression_zlib_round_trip,
-compression_gzip_round_trip, compression_deflate_round_trip,
-compression_lzma_returns_unsupported, compression_zlib_handles_large_block}`.
+**Tests:** `crates/corba-ccm/src/compression.rs::{corba_p1_18_5_compressor_ids_match_the_idl,
+corba_p1_18_1_zlib_is_provided_by_default,
+corba_p1_18_1_streams_of_the_reference_zlib_decompress,
+corba_p1_18_2_every_level_of_the_built_in_compressors_round_trips,
+corba_p1_18_2_6_the_counters_and_the_ratio_follow_compress,
+corba_p1_18_3_2_the_same_level_gives_the_same_compressor_and_its_factory,
+corba_p1_18_3_2_a_level_above_9_is_bad_param_44,
+corba_p1_18_2_3_corrupt_input_is_a_compression_exception,
+corba_p1_18_2_3_decompression_stops_at_the_limit,
+corba_p1_18_4_register_get_and_unregister_a_custom_factory}`,
+`crates/corba-ccm/src/orb_core.rs::tests::{corba_p1_8_5_1_orb_init_takes_its_arguments_out_of_the_list,
+orb_vendor_config_compression_and_messaging_policies}`.
 
-**Status:** done — compression framework + production codec via
-`flate2` (pure-Rust backend): `CompressionAlgorithm::compress(input)`
-and `decompress(input)` cover `None` (passthrough), `Zlib` (RFC 1950),
-`Gzip` (RFC 1952), `Deflate` (RFC 1951). `Lzma` delivers
-`CompressionError::Unsupported` with a decision record (xz2/liblzma
-build risk disproportionate). A 10 kB block test demonstrates the
-roundtrip behavior.
+**Status:** done — every interface, constant and exception of §18.5
+built, tests green on the Linux test host. Streams of the C library
+zlib 1.3.1 decompress. An exchange with the compressors of a foreign ORB
+(TAO, omniORB) runs over ZIOP and belongs to Part 2 §12.
 
 ---
 
@@ -505,48 +757,177 @@ fulfillable statements of §7 are in §7.6–§7.10.
 
 **Spec:** Part 2 §7.6, pp. 25–37 — IOR structure, `TaggedProfile`,
 standard profiles, `TaggedComponent`, standard components, composition,
-stringified IOR (`IOR:` + hex of the CDR encapsulation), object URLs
-`corbaloc` (`iiop`, `rir`, default port 2809, default version 1.0, IPv6
-host in square brackets) and `corbaname`; failed conversion:
-`BAD_PARAM` with minor code 7 to 10.
+stringified IOR (`IOR:` + hex of the CDR encapsulation; §7.6.9: "The
+case for characters in a stringified IOR is not significant"), object
+URLs `corbaloc` (`iiop`, `rir`, default port 2809, default version 1.0, IPv6
+host in square brackets) and `corbaname`, the optional schemes
+`file://`, `ftp://` and `http://` (Table 7.1); failed conversion:
+`BAD_PARAM` with minor code 7 to 10. §7.6.3: Full IOR conformance (all
+profiles kept in their order); when an ORB cannot use any profile of an
+IOR, `TRANSIENT` minor 2 or `IMP_LIMIT` minor 1. §7.6.6.2: the addresses
+of `TAG_ALTERNATE_IIOP_ADDRESS` components beside the address of the
+profile.
 
 **Repo:** `crates/corba-ior/src/ior.rs`, `crates/corba-ior/src/tagged_profile.rs`,
 `crates/corba-ior/src/profile_tags.rs`, `crates/corba-ior/src/components.rs`,
 `crates/corba-ior/src/component_tags.rs`, `crates/corba-ior/src/stringified.rs`,
-`crates/corba-ior/src/url.rs`.
+`crates/corba-ior/src/url.rs`; `crates/corba-rt/src/object.rs`
+(`ObjectReference::profiles`, `RawProfile`, `from_profiles`);
+`crates/corba-ccm/src/orb_core.rs::Orb::{string_to_object, object_to_string}`,
+`crates/corba-ccm/src/object_url.rs` (`file`, `http`, `ftp`);
+`crates/corba-interop/src/runtime.rs`
+(`IiopCorbaConnection::connect_reference`, `AmiClient::connect`,
+`object_reference_from_ior`, `stringify_object_reference`);
+`crates/corba-dds-bridge/src/bridge_daemon/config.rs::resolve_target`.
 
 **Tests:** `crates/corba-ior/src/ior.rs::tests::round_trip_multi_profile_le`,
 `crates/corba-ior/src/ior.rs::tests::nil_ior_is_recognized`,
 `crates/corba-ior/src/tagged_profile.rs::tests::unknown_profile_tag_round_trips_as_other`,
 `crates/corba-ior/src/component_tags.rs::tests::well_known_component_tag_values_match_spec`,
 `crates/corba-ior/src/stringified.rs::tests::round_trip_be`,
+`crates/corba-ior/src/stringified.rs::tests::corba_p2_7_6_9_the_prefix_case_is_not_significant`,
 `crates/corba-ior/src/url.rs::tests::default_port_2809_when_missing`,
 `crates/corba-ior/src/url.rs::tests::rir_endpoint`,
-`crates/corba-ior/src/url.rs::tests::corbaname_with_fragment`.
+`crates/corba-ior/src/url.rs::tests::corbaname_with_fragment`,
+`crates/corba-rt/src/object.rs::tests::corba_p2_7_6_3_every_profile_is_kept_in_its_order`,
+`crates/corba-rt/src/object.rs::tests::corba_p2_7_6_3_a_reference_without_an_iiop_profile_keeps_its_profile`,
+`crates/corba-rt/src/any.rs::tests::corba_p2_9_3_6_object_references_in_an_any_keep_their_profiles_or_are_refused`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p1_8_2_2_string_to_object_of_object_to_string_is_the_same_reference`,
+`crates/corba-interop/tests/ior_profiles.rs::{corba_p2_7_6_9_object_reference_from_ior_ignores_the_prefix_case,
+corba_p2_7_6_6_2_client_falls_back_to_an_alternate_address,
+corba_p2_7_6_3_client_falls_back_to_the_next_profile,
+corba_p2_9_4_2_1_reference_addr_names_the_profile_the_request_used,
+corba_p2_7_6_3_no_usable_profile_is_transient_2,
+corba_p2_7_6_3_a_reference_without_an_iiop_profile_is_imp_limit_1}`,
+`crates/corba-dds-bridge/src/bridge_daemon/ior.rs::tests::corbabridge_4_4_corbaloc_and_ior_targets_resolve`;
+the object URLs in item §7.6.10.
 
-**Status:** partial — IOR, profiles, components, stringified IOR and
-`corbaloc`/`corbaname` are encoded and tested. Missing: an IPv6 host
-without a port, `rir` together with another protocol and the minor
-codes 7–10; own item.
+**Status:** partial — built and green on the Linux test host: IOR,
+profiles, components and stringified IOR; the prefix and the hex digits
+of a stringified IOR are read in any case (`ior:`, `Ior:`;
+`from_stringified`, `object_reference_from_ior`, `string_to_object` and
+the bridge's `targets`), text without the `IOR:` scheme is BAD_PARAM
+minor 7, hex that does not decode minor 9; a reference keeps every
+profile of its IOR in its order and writes it back unchanged, also a
+single IIOP profile with empty `profile_data` and also in an `any` (Full
+IOR conformance); nil is only a reference without a type id and without
+a profile (§7.6.2); the client (`IiopCorbaConnection` for
+requests and `locate`, `AmiClient`) tries the IIOP profiles in the order
+of the IOR and in each first the address of the profile, then the
+addresses of `TAG_ALTERNATE_IIOP_ADDRESS`; when none is reachable,
+TRANSIENT minor 2, when the reference has no readable IIOP profile,
+IMP_LIMIT minor 1, both `COMPLETED_NO`; `ReferenceAddr` carries the
+whole IOR and the index of the profile used. An SSLIOP profile is
+reached at its host and SSL port, a UIOP profile at its socket path,
+without alternate addresses. Object URLs: item §7.6.10 (done). Open: the
+optional component `TAG_ORB_TYPE` in the IORs of ZeroDDS, item §7.6.6.1
+(blocked).
 
-### §7.6.10 Object URLs — IPv6 without port, `rir` exclusion, minor codes
+### §7.6.6.1 TAG_ORB_TYPE
 
-**Spec:** Part 2 §7.6.10, pp. 33–35 — `<host> = DNS_style_host_name |
-IPv4_address | "[" IPv6_address "]"`, port optional with default 2809;
-"The rir protocol cannot be used with any other protocol in a URL";
-"If conversion fails, string_to_object raises a BAD_PARAM exception"
-with minor code 7 (bad scheme name), 8 (bad address), 9 (bad schema
-specific part), 10 (non-specific reason).
+**Spec:** Part 2 §7.6.6.1, p. 30 — `TAG_ORB_TYPE` carries, as the CDR
+encapsulation of an `unsigned long`, "an ORB type ID allocated by the OMG
+for the ORB type of the originating ORB"; at most once per profile,
+optional in profiles of IIOP 1.1 and later.
 
-**Repo:** —
+**Repo:** `crates/corba-ior/src/components.rs::OrbType` (reads and
+writes the component).
 
 **Tests:** —
 
-**Status:** open — `parse_endpoint` in `crates/corba-ior/src/url.rs`
-splits the port off at the last colon; an IPv6 host without a port
-(`corbaloc::[::1]/key`) is cut apart and refused. A list with `rir` and
-`iiop` is accepted. Errors come as `IorError`, not as `BAD_PARAM` with a
-minor code.
+**Status:** blocked — assignment of an ORB type by the OMG (requested,
+as in `zerodds-corba-bridge-1.0` §4.1a); without the assigned value
+ZeroDDS does not write the component, any other value would be the
+identity of another ORB. Lifted once the OMG assigns the value: then a
+constant in `crates/corba-ior/src/components.rs` and the component once
+per IIOP profile of 1.1 and later in the IORs of
+`crates/corba-interop/src/runtime.rs` and
+`crates/corba-dds-bridge/src/bridge_daemon/ior.rs`.
+
+### §7.6.10 Object URLs — IPv6 without port, `rir` exclusion, minor codes
+
+**Spec:** Part 2 §7.6.10, pp. 33–37 — `corbaloc` after §7.6.10.1:
+`<obj_addr_list>["/"<key_string>]`, `<key_string>` with the escapes of
+RFC 2396; `<host> = DNS_style_host_name | IPv4_address | "[" IPv6_address
+"]"`, without a host the local host, port optional with default 2809,
+without a version 1.0; `rir` without an address, "The rir protocol
+cannot be used with any other protocol in a URL", an empty key is
+`NameService` (§7.6.10.2); `corbaname` with the default key
+`NameService` (§7.6.10.5); a further protocol (`<future_prot_addr>`,
+§7.6.10.6); `file://`, `ftp://`, `http://` (Table 7.1, optional); "If
+conversion fails, string_to_object raises a BAD_PARAM exception" with
+minor code 7 (bad scheme name), 8 (bad address), 9 (bad schema specific
+part), 10 (non-specific reason).
+
+**Repo:** `crates/corba-ior/src/url.rs` (`parse_corbaloc`,
+`parse_corbaname`, `parse_iiop_address`, `CorbalocEndpoint`,
+`escape_key_string`), `crates/corba-ior/src/error.rs::IorError::bad_param_minor`;
+`crates/corba-ccm/src/orb_core.rs::Orb::string_to_object`
+(`corbaloc_to_object`, `corbaname_to_object`, `validate_init_ref_url`),
+`crates/corba-ccm/src/object_url.rs` (`fetch`, `FetchUrl`);
+`crates/corba-interop/competitors/omniorb/url_minor.cc`.
+
+**Tests:** `crates/corba-ior/src/url.rs::tests::{corba_p2_7_6_10_every_example_url_of_the_clause_parses,
+corba_p2_7_6_10_corbaloc_without_key_string_has_an_empty_key,
+corba_p2_7_6_10_6_a_future_protocol_address_is_kept,
+corba_p2_7_6_10_2_rir_with_an_empty_key_is_nameservice,
+corba_p2_7_6_10_3_an_empty_iiop_address_is_the_local_host,
+corba_p2_7_6_10_ipv6_host_without_port_takes_2809,
+corba_p2_7_6_10_ipv6_host_with_port,
+corba_p2_7_6_10_rir_with_another_protocol_is_refused,
+corba_p2_7_6_10_failures_carry_bad_param_minor_7_to_10,
+corba_p2_7_6_10_5_the_stringified_name_is_unescaped,
+corba_p2_7_6_10_1_only_the_listed_characters_stay_unescaped}`;
+`crates/corba-ccm/src/orb_core.rs::tests::{corba_p1_8_2_2_string_to_object_raises_the_bad_param_minor_codes,
+corba_p1_8_5_3_2_an_init_ref_url_is_checked_and_corbaloc_rir_refused,
+corba_p2_7_6_10_corbaloc_addresses_become_profiles_in_their_order,
+corba_p2_7_6_10_2_an_empty_rir_key_resolves_the_nameservice,
+corba_p2_7_6_10_7_a_file_url_yields_the_reference_in_the_file}`;
+`crates/corba-ccm/src/object_url.rs::tests::{corba_p2_7_6_10_7_the_three_url_forms_parse,
+corba_p2_7_6_10_7_bad_urls_carry_their_minor_code,
+corba_p2_7_6_10_7_a_missing_file_is_minor_10,
+corba_p2_7_6_10_7_a_redirect_is_resolved_against_the_request_url,
+corba_p2_7_6_10_7_a_chunked_body_is_read_within_its_limit}`;
+`crates/corba-interop/tests/ior_profiles.rs::{corba_p2_7_6_10_corbaloc_with_two_iiop_1_0_addresses_reaches_the_second,
+corba_p2_7_6_10_an_ipv6_corbaloc_reaches_the_object,
+corba_p2_7_6_10_7_an_http_url_yields_the_ior,
+corba_p2_7_6_10_7_an_ftp_url_yields_the_ior}`;
+`crates/corba-interop/tests/omniorb_cross_orb.rs::{corba_p2_7_6_10_4_an_omniorb_client_reaches_a_zerodds_server_by_corbaloc,
+corba_p2_7_6_10_5_zerodds_resolves_corbaname_urls_through_omninames,
+corba_p2_7_6_10_minor_codes_agree_with_omniorb}`.
+
+**Status:** done — built and green on the Linux test host: the grammar
+of §7.6.10.1 to §7.6.10.3 with every example URL of the clause (key
+optional, IPv6 host with and without port, without a host the local
+host, port 1 to 65535 in digits only, `rir` alone and without an
+address, an empty `rir` key and a `corbaname` without a key are
+`NameService`, the name of a `corbaname` is unescaped, a further
+protocol such as `atm:` is kept with its address and skipped on
+conversion); a key is written with `%XX` except for alphanumerics and
+the characters the list of §7.6.10.1 names (`.` is not in it and is
+escaped); `corbaloc` gives one IIOP profile per address in the order of
+the URL; `file://` (own host only), `http://` (HTTP/1.1 `GET`,
+`Content-Length`, chunked; path and query only of the characters of RFC
+3986, otherwise minor 9; a redirect resolves `Location` against the
+request URL, RFC 3986 §5.2, and leads only to an `http` URL, otherwise
+minor 10) and `ftp://` (login, `TYPE I`, with `;type=a` `TYPE A`,
+`;type=d` and other type codes minor 9, `CWD` per directory, `EPSV` or
+`PASV`, `RETR`) yield text that is converted again, at most 8 levels;
+when that text is empty, not UTF-8 or has no scheme the ORB converts,
+minor 9; BAD_PARAM minor 7 (scheme), 8 (address, also
+`rir` beside another address, `file` of another host, no address of a
+protocol of this ORB), 9 (IOR, key or name not readable), 10 (`rir` or
+`corbaname` finds nothing, file or server not readable). Against
+omniORB 4.3.3 (weekly job `integration-bridges-vendor-corba`, run on the
+Linux test host): an omniORB client reaches a ZeroDDS server over
+`corbaloc` (IIOP 1.0, 1.2, a dead address ahead of the live one);
+ZeroDDS resolves `corbaname` URLs through omniNames; for ten URLs both
+report the same. omniORB deviates from the clause on other URLs (no
+`corbaloc` without `/`, `atm:` as a bad scheme, minor 10 for escapes in
+the key and for `rir` beside an address, port 0 and a non-IPv6 host in
+brackets accepted); the test does not compare those URLs. The `http`
+and `ftp` tests run against servers inside the test, not against a
+third-party HTTP or FTP server.
 
 ### §7.7 Service Context
 
@@ -558,16 +939,46 @@ bridge and must be made available to interceptors. No exception shall
 be raised."
 
 **Repo:** `crates/corba-giop/src/service_context.rs` (`ServiceContext`,
-`ServiceContextList`, `ServiceContextTag`).
+`ServiceContextList` with `get` and `processable`, `ServiceContextTag`
+with the 22 IDs of §7.7.1 and `support`, `is_omg_range`, `is_valid_for`);
+`crates/corba-interop/src/runtime.rs` (`CorbaServer` hands every received
+context to the server interceptors and to `on_request_contexts`,
+`IiopCorbaConnection::service_contexts` after Table 7.2,
+`merge_contexts`, `IiopCorbaConnection::invoke_passing_contexts`);
+`crates/corba-interop/src/miop.rs` (`MiopGateway::forward`).
 
-**Tests:** `crates/corba-giop/src/service_context.rs::tests::standard_tag_values_match_spec`,
+**Tests:** `crates/corba-giop/src/service_context.rs::tests::corba_p2_7_7_1_all_standard_service_ids_match_the_idl`,
+`crates/corba-giop/src/service_context.rs::tests::corba_p2_7_7_omg_range_is_vscid_0_to_15`,
+`crates/corba-giop/src/service_context.rs::tests::corba_p2_7_7_2_contexts_follow_table_7_2_per_version`,
+`crates/corba-giop/src/service_context.rs::tests::corba_p2_7_7_2_processable_keeps_the_valid_contexts_and_the_list_whole`,
+`crates/corba-giop/src/service_context.rs::tests::standard_tag_values_match_spec`,
 `crates/corba-giop/src/service_context.rs::tests::round_trip_with_two_entries_be`,
-`crates/corba-giop/src/service_context.rs::tests::round_trip_le_byte_order`.
+`crates/corba-giop/src/service_context.rs::tests::round_trip_le_byte_order`,
+`crates/corba-interop/tests/service_contexts.rs::corba_p2_7_7_2_foreign_contexts_reach_the_server_interceptor_without_exception`,
+`crates/corba-interop/tests/service_contexts.rs::corba_p2_7_10_2_6_codesets_context_precedes_the_sas_context`,
+`crates/corba-interop/tests/miop.rs::corba_p2_7_7_2_the_gateway_passes_service_contexts_on_and_back`,
+`crates/corba-interop/tests/miop.rs::corba_p2_7_7_2_the_gateway_passes_two_contexts_of_one_id`,
+`crates/corba-interop/tests/iop_cross_orb.rs::corba_p2_7_7_2_a_jacorb_vendor_context_reaches_the_zerodds_interceptor`.
 
-**Status:** partial — encoding of the list and the standard IDs are
-tested; no test checks the processing rules of §7.7.2 (pass unknown or
-foreign-version contexts on without an exception and make them
-available to interceptors).
+**Status:** partial — built and green on the Linux test host: every ID
+of §7.7.1 (0 to 21), the OMG range (VSCID 0 to 15, IDs 0 to 4095) and
+the validity of a context per GIOP version after Table 7.2; a context
+outside the OMG range, the CodeSets context in a GIOP 1.0 request,
+`RMICustomMaxStreamFormat` (GIOP 1.4 only) and `FIREWALL_PATH_RESP` (no
+row in Table 7.2) reach the server interceptor with their data in GIOP
+1.0, 1.1 and 1.2, without an exception, and the reply comes; a context a
+client interceptor puts in place of one of the ORB's keeps its position,
+the CodeSets context stays ahead of the SAS context (§7.10.2.6); the
+MIOP gateway passes the contexts of an object operation on to the object
+behind the group's IIOP profile and its reply contexts back to the
+client, two contexts with one id both and in their order. JacORB 3.9 on
+the Linux test host: a JacORB client interceptor
+sends the vendor ID 0x4A430001, the ZeroDDS server interceptor sees it,
+the call succeeds, the reply context of the ZeroDDS interceptor reaches
+the JacORB interceptor. Open: the CORBA/DDS bridge daemon
+(`zerodds-corba-bridge-1.0` §4.3) does not pass the contexts of a request
+on to the DDS side, and the notify path (§4.4) sends none; the DDS sample
+format of §4.3 has no place for them.
 
 ### §7.8 Coder/Decoder Interfaces
 
@@ -575,41 +986,191 @@ available to interceptors).
 `encode_value`, `decode_value`) and `IOP::CodecFactory::create_codec`,
 reachable via `resolve_initial_references("CodecFactory")`;
 "The encodings which shall be supported are: ENCODING_CDR_ENCAPS,
-version 1.0; [...] 1.1; [...] 1.2".
+version 1.0; [...] 1.1; [...] 1.2; [...] for all future versions of
+GIOP as they arise".
 
-**Repo:** —
+**Repo:** `crates/corba-ccm/src/iop_codec.rs` (`Codec`, `CodecFactory`,
+`Encoding`, `ENCODING_CDR_ENCAPS`, `CodecError`, `UnknownEncoding`);
+`crates/corba-rt/src/any.rs` (`CorbaAny::encode_value`,
+`CorbaAny::decode_value`); `crates/corba-ccm/src/orb_core.rs` (initial
+reference `CodecFactory`); `crates/corba-ccm/src/portable_interceptor.rs`
+(`OrbInitInfo::codec_factory`).
 
-**Tests:** —
+**Tests:** `crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_encode_carries_typecode_and_value`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_encode_value_carries_the_value_only`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_decode_reads_both_byte_orders`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_wstring_under_cdr_encaps_1_0_is_invalid_type_for_encoding`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_value_types_need_cdr_encaps_1_2`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_component_typecodes_need_cdr_encaps_1_3`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_decode_of_garbage_is_format_mismatch`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_decode_value_with_a_foreign_typecode_is_type_mismatch`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_1_union_and_sequence_round_trip`,
+`crates/corba-ccm/src/iop_codec.rs::tests::corba_p2_7_8_2_factory_supports_cdr_encaps_1_0_to_1_4_and_refuses_others`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p2_7_8_codec_factory_is_an_initial_reference`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p1_16_9_2_5_orb_init_info_offers_the_codec_factory_in_pre_init`,
+`crates/corba-interop/tests/iop_cross_orb.rs::corba_p2_7_8_codec_octets_agree_with_jacorb`.
 
-**Status:** open — no `Codec` and no `CodecFactory` in the tree.
+**Status:** partial — built and green on the Linux test host: the four
+operations with `InvalidTypeForEncoding`, `FormatMismatch` and
+`TypeMismatch`, `create_codec` with `UnknownEncoding`,
+`ENCODING_CDR_ENCAPS` 1.0 to 1.4; a type Table 7.2 ties to a later GIOP
+version (`wstring`, `wchar`, `long long`, `fixed` before 1.1, value types
+before 1.2, `tk_component`/`tk_home`/`tk_event` before 1.3) is invalid
+for the encoding, also in a sequence, a struct, a nested `any` and as a
+TypeCode value; `wchar` and `wstring` in their GIOP 1.2 form (§9.3.1.6,
+§9.3.2.7: encapsulations assume GIOP 1.2 CDR); the encapsulation is
+big-endian and read in both byte orders; the initial reference
+`CodecFactory` and `ORBInitInfo::codec_factory` already in `pre_init`.
+JacORB 3.9 on the Linux test host: `encode` and `encode_value` under 1.2
+agree octet for octet for a struct, a sequence, a union, a `wstring` and a
+`long long`, ZeroDDS decodes JacORB's octets; both raise
+`UnknownEncoding` for another format; JacORB's 1.0 codec encodes a
+`wstring` where §7.8.1.1 asks for `InvalidTypeForEncoding`, which ZeroDDS
+raises (measured). TAO is not on the test host, omniORB not checked.
+Open: an `any` with `tk_alias` keeps only the content type when decoded
+(`AnyValue` has no alias variant), so `decode` returns an `any` with
+another TypeCode than the octets carry.
 
 ### §7.9 Feature Support and GIOP Versions
 
 **Spec:** Part 2 §7.9, pp. 43–44, Table 7.2 — which service contexts,
 IOR components and features apply from which GIOP version 1.0 to 1.4.
 
-**Repo:** `crates/corba-giop/src/version.rs` (`Version::V1_0`, `V1_1`,
-`V1_2`, `supports_fragments`, `uses_flags_octet`,
-`uses_v1_2_request_layout`, `supports_bidirectional`),
-`crates/corba-iiop/src/profile_body.rs` (components from IIOP 1.1).
+**Repo:** `crates/corba-giop/src/feature.rs` (`Feature`, `Support`,
+`support`, `Feature::of_tckind`, `Feature::of_operation`);
+`crates/corba-giop/src/service_context.rs` (`ServiceContextTag::support`,
+`is_valid_for`); `crates/corba-ior/src/component_tags.rs`
+(`ComponentId::feature`, `ComponentId::support`);
+`crates/corba-interop/src/runtime.rs` (`IiopCorbaConnection::service_contexts`,
+reply contexts of `CorbaServer`); `crates/corba-ccm/src/iop_codec.rs`
+(types per encoding); `crates/corba-giop/src/version.rs` (`Version::V1_0`,
+`V1_1`, `V1_2`, `supports_fragments`, `uses_flags_octet`,
+`uses_v1_2_request_layout`, `supports_bidirectional`);
+`crates/corba-iiop/src/profile_body.rs` (components from IIOP 1.1; an
+IIOP 1.0 profile with components is refused with
+`CdrError::ComponentsNotInVersion`).
 
-**Tests:** `crates/corba-giop/src/version.rs::tests::flags_octet_replaces_byte_order_at_1_1`,
+**Tests:** `crates/corba-giop/src/feature.rs::tests::corba_p2_7_9_table_7_2_every_row_and_column`,
+`crates/corba-giop/src/feature.rs::tests::corba_p2_7_9_codesets_context_is_not_valid_in_giop_1_0`,
+`crates/corba-giop/src/feature.rs::tests::corba_p2_7_9_alternate_iiop_address_needs_iiop_1_2`,
+`crates/corba-giop/src/feature.rs::tests::corba_p2_7_9_versions_after_1_4_take_the_1_4_column`,
+`crates/corba-giop/src/feature.rs::tests::corba_p2_7_9_tckinds_and_operations_map_to_their_rows`,
+`crates/corba-ior/src/component_tags.rs::tests::corba_p2_7_9_component_tags_follow_table_7_2`,
+`crates/corba-interop/tests/service_contexts.rs::corba_p2_7_9_a_1_0_request_carries_no_codesets_context`,
+`crates/corba-interop/tests/service_contexts.rs::corba_p2_7_9_credentials_are_not_dropped_below_giop_1_2`,
+`crates/corba-interop/tests/ziop.rs::corba_p2_7_9_the_client_sends_invocation_policies_from_giop_1_2_only`,
+`crates/corba-interop/tests/ziop.rs::corba_p2_7_9_the_server_sends_invocation_policies_in_giop_1_2_replies_only`,
+`crates/corba-giop/src/version.rs::tests::flags_octet_replaces_byte_order_at_1_1`,
 `crates/corba-giop/src/version.rs::tests::v1_2_request_layout_only_in_1_2_plus`,
-`crates/corba-iiop/src/profile_body.rs::tests::components_only_from_iiop_1_1`.
+`crates/corba-iiop/src/profile_body.rs::tests::components_only_from_iiop_1_1`,
+`crates/corba-iiop/src/profile_body.rs::tests::corba_p2_7_9_iiop_1_0_profile_with_components_is_refused`.
 
-**Status:** partial — the dependencies of GIOP 1.0 to 1.2 are
-implemented and tested; GIOP 1.3 and 1.4 are missing, own item.
+**Status:** done — built and green on the Linux test host: Table 7.2 as
+data, every row and every column V1.0 to V1.4 checked against the text
+("optional$"/"optional$$" as optional, the Realtime rows optional,
+versions after 1.4 with the 1.4 column); the client sends its own
+contexts only in the versions Table 7.2 names for them (CodeSets from
+1.1, INVOCATION_POLICIES from 1.2), and refuses a request with CSIv2
+credentials under GIOP 1.0/1.1 with NO_PERMISSION instead of sending it
+without them; the server sends INVOCATION_POLICIES only in GIOP 1.2
+replies; the codec checks the types per encoding (§7.8). Received
+contexts, components and implicit operations of other versions are not
+refused (§7.7.2); the client also sends `_component` and
+`_repository_id` over an IIOP 1.2 profile, because the MIOP object
+operations (§11.2.6.10, §11.3.2; Table 7.2: GIOP 1.4 optional) use them
+there, tested in the MIOP and MGM tests of `zerodds-corba-interop`.
 
 ### §7.9 GIOP 1.3 and 1.4
 
-**Spec:** Part 2 §7.9, pp. 43–44, Table 7.2 — columns V1.3 and V1.4.
+**Spec:** Part 2 §7.9, pp. 43–44, Table 7.2 — columns V1.3 and V1.4;
+§9.4 (the 1.3 headers as typedefs of the 1.2 forms), §9.4.1
+(MessageError in the highest version, then close), §9.3.5.1.6
+(indirection between top-level TypeCodes from 1.3), §9.3.1.6 (UCS-2/UCS-4
+under 1.4), §9.7, §9.7.2 (IIOP 1.4, profile version).
 
-**Repo:** —
+**Repo:** `crates/corba-giop/src/version.rs` (`Version::V1_3`, `V1_4`,
+`MAX`, `is_supported`, `supports_component_operation`,
+`supports_repository_id_operation`,
+`allows_indirection_between_top_level_typecodes`, `allows_ipv6_in_ior`,
+`ucs_uses_utf16_byte_order`); `crates/corba-giop/src/header.rs`
+(header 1.0 to 1.4); `crates/corba-iiop/src/profile_body.rs`
+(`IiopVersion::V1_4`, `MAX`, `allows_ipv6_host`, `IiopVersion::for_host`,
+`IiopProfileBody::for_endpoint`, `unbracketed_host`);
+`crates/corba-iiop/src/connector.rs` (IPv6 host with and without brackets);
+`crates/corba-cosnaming/src/graph.rs` (`ior_for_object_key`),
+`crates/corba-cosnaming/src/servant.rs`
+(`NamingServant::with_highest_version`),
+`crates/corba-cosnaming/src/naming_daemon.rs` (reply in the version of
+the request up to 1.4);
+`crates/corba-rt/src/type_code.rs` (`TopLevelTypeCodes`,
+`TypeCode::decode_top_level`); `crates/corba-rt/src/any.rs`
+(`CorbaAny::decode_in_message`); `crates/corba-interop/src/runtime.rs`
+(reply in the version of the request up to 1.4, `refuse_message`,
+`DEFAULT_PROFILE_VERSION`, `CorbaServer::set_profile_version`,
+`CorbaServer::set_component_reference`, `reference_with_components`).
 
-**Tests:** —
+**Tests:** `crates/corba-giop/src/version.rs::tests::corba_p2_7_9_giop_1_3_and_1_4_take_the_1_2_formats`,
+`crates/corba-giop/src/version.rs::tests::corba_p2_7_9_features_of_1_3_and_1_4`,
+`crates/corba-giop/src/header.rs::tests::corba_p2_7_9_giop_1_3_and_1_4_headers_are_the_1_2_headers`,
+`crates/corba-giop/src/codec.rs::tests::corba_p2_7_9_every_message_round_trips_under_giop_1_3_and_1_4`,
+`crates/corba-iiop/src/profile_body.rs::tests::corba_p2_7_9_ipv6_host_in_a_1_4_profile`,
+`crates/corba-iiop/src/profile_body.rs::tests::corba_p2_7_9_an_endpoint_profile_for_an_ipv6_host_is_1_4_without_brackets`,
+`crates/corba-iiop/src/connector.rs::tests::corba_p2_7_9_an_ipv6_profile_host_is_dialed_with_and_without_brackets`,
+`crates/corba-cosnaming/src/graph.rs::tests::corba_p2_7_9_a_naming_reference_for_an_ipv6_host_is_iiop_1_4`,
+`crates/corba-cosnaming/src/servant.rs::tests::corba_p2_7_9_a_servant_names_no_profile_version_above_its_server`,
+`crates/corba-cosnaming/tests/naming_svc_e2e.rs::corba_p2_7_9_an_ipv6_daemon_publishes_1_4_profiles_and_replies_in_1_4`,
+`crates/corba-rt/src/type_code.rs::tests::corba_p2_9_3_5_indirection_between_top_level_typecodes_under_1_3`,
+`crates/corba-rt/src/any.rs::tests::corba_p2_9_3_5_a_second_any_indirects_to_the_first_typecode_under_1_3`,
+`crates/corba-rt/src/type_code.rs::tests::corba_p2_9_3_5_every_tckind_round_trips`,
+`crates/corba-interop/tests/giop_version.rs::server_replies_in_giop_1_3`,
+`crates/corba-interop/tests/giop_version.rs::server_replies_in_giop_1_4`,
+`crates/corba-interop/tests/giop_version.rs::corba_p2_9_4_1_higher_minor_gets_message_error_in_1_4_then_close`,
+`crates/corba-interop/tests/giop_version.rs::corba_p2_9_7_the_client_sends_giop_1_4_to_a_1_4_profile`,
+`crates/corba-interop/tests/giop_version.rs::corba_p2_9_7_2_the_profile_version_is_1_2_unless_set`,
+`crates/corba-interop/tests/giop_version.rs::corba_p2_7_9_component_operation_answers_the_component_reference`,
+`crates/corba-interop/tests/giop_version.rs::corba_p2_7_9_ipv6_host_in_a_1_4_profile_is_dialed`,
+`crates/corba-interop/tests/omniorb_cross_orb.rs::corba_p2_9_7_2_an_omniorb_client_calls_through_a_1_4_profile_and_refuses_one_in_a_reply`,
+`crates/corba-interop/tests/jacorb_cross_orb.rs::corba_p2_9_7_2_a_jacorb_client_takes_a_1_2_profile_and_refuses_a_1_4_profile`.
 
-**Status:** open — `crates/corba-giop/src/version.rs` knows only 1.0,
-1.1 and 1.2.
+**Status:** partial — built and green on the Linux test host: GIOP 1.3
+and 1.4 with the 1.2 formats in both directions, every message type; the
+server answers in the version of the request, a higher minor version
+with MessageError 1.4, and closes the connection; profiles IIOP 1.1 to
+1.4 can be set, a ZeroDDS client speaks GIOP 1.4 through a 1.4 profile;
+`_component` answers with the component reference of a facet or
+component, else nil; `_repository_id` (1.4) is answered by `object_ops`;
+tk_component, tk_home, tk_event; the server of `corba-interop`
+(`CorbaServer` and the reference builders in `runtime.rs`) and the
+naming daemon write an IPv6 host into a 1.4 profile only, as the address
+without the brackets of the URL form (`[::1]` becomes `::1`); the naming
+daemon replies in the version of the request up to 1.4; the client dials
+the host with and without brackets; an indirection from a top-level
+TypeCode to an earlier one of the same message from 1.3 through
+`TypeCode::decode_top_level` and `CorbaAny::decode_in_message`, refused
+below 1.3. The profiles carry 1.2 by default: measured, JacORB 3.9 does
+not call through an IIOP 1.4 profile (`MARSHAL` "Unknown GIOP minor:
+4"), omniORB 4.3.3 calls through one and raises `INV_OBJREF` when a
+reply carries a reference with a 1.4 profile; §9.7.2 asks both to accept
+any minor version. Missing: (1) the generated stubs and skeletons and
+the MIOP group management (`crates/corba-interop/src/mgm.rs`,
+`read_properties` and the exceptions `InvalidProperty`,
+`InvalidCriteria`, `CannotMeetCriteria`) read the TypeCode of each `any`
+on its own (`CorbaAny::decode`); an indirection between top-level
+TypeCodes in a message to them is MARSHAL; `TypeCode::decode_top_level`
+and `CorbaAny::decode_in_message` have no caller outside the tests,
+since skeleton and stub are not told the GIOP version of the message
+(`AlignedBody`, `CorbaConnection::invoke`); (2) UCS-2/UCS-4 with the
+byte order of UTF-16 under 1.4 and IANA code set ids in the CodeSets
+context under 1.4 (§7.10.2.5): no TCS-W other than UTF-16 is negotiated,
+item "§7.10 Conversion into a negotiated code set other than
+UTF-8/UTF-16"; (3) the CORBA/DDS bridge daemon
+(zerodds-corba-bridge-1.0) reads GIOP 1.0 to 1.2 and writes an IPv6 host
+into a profile of the configured version `corba.iiop.giop_version` (1.0
+to 1.2), the references of the naming service it hosts
+(`corba.naming.serve`) into a 1.2 profile; a 1.4 profile needs it to
+serve messages in 1.4 (read from the code, not run). No vendor ORB with
+GIOP 1.3 or 1.4 is known; the 1.3/1.4 formats are checked against the
+own codec only.
 
 ### §7.10 Code Set Conversion
 
@@ -618,17 +1179,47 @@ implemented and tested; GIOP 1.3 and 1.4 are missing, own item.
 and `wchar`, `CodeSets` service context, OSF registry IDs, conversion of
 character data into the negotiated code set.
 
-**Repo:** `crates/corba-ior/src/components.rs` (`CodeSetComponentInfo::negotiate`),
-`crates/corba-giop/src/code_set.rs` (`CodeSetContext`).
+**Repo:** `crates/corba-ior/src/components.rs` (`CodeSetComponent::negotiate`,
+`CodeSetComponentInfo::negotiate`, `CodeSetComponentInfo::transmission_code_sets`,
+`TransmissionCodeSets`), `crates/corba-giop/src/code_set_registry.rs`
+(`ENTRIES`, `compatible`, `is_iana`), `crates/corba-giop/src/code_set.rs`
+(`CodeSetContext`), `crates/corba-interop/src/runtime.rs`
+(`code_sets_component`, `IiopCorbaConnection::service_contexts`).
 
 **Tests:** `crates/corba-ior/src/components.rs::tests::negotiate_client_converts_to_server_native`,
 `crates/corba-ior/src/components.rs::tests::negotiate_universal_fallback`,
+`crates/corba-ior/src/components.rs::tests::corba_p2_7_10_2_6_intermediate_set_is_the_servers_most_preferred`,
+`crates/corba-ior/src/components.rs::tests::corba_p2_7_10_2_6_the_fallback_needs_compatible_natives`,
+`crates/corba-ior/src/components.rs::tests::corba_p2_7_10_2_6_incompatible_character_sets_raise_codeset_incompatible_1`,
+`crates/corba-ior/src/components.rs::tests::corba_p2_7_10_2_4_defaults_without_the_component_or_a_wchar_set`,
+`crates/corba-giop/src/code_set_registry.rs::tests::corba_p2_7_10_2_6_unicode_code_sets_are_compatible_latin_1_is_not`,
+`crates/corba-giop/src/code_set_registry.rs::tests::corba_p2_7_10_2_6_iana_ids_are_always_compatible`,
 `crates/corba-giop/src/code_set.rs::tests::well_known_ids_match_osf_registry`,
 `crates/corba-giop/src/code_set.rs::tests::service_context_roundtrip_via_list`.
 
-**Status:** partial — negotiation, service context and registry IDs are
-tested; conversion of character data into a negotiated code set other
-than UTF-8/UTF-16 is missing, own item.
+**Status:** partial — built and green on the Linux test host: the
+algorithm of §7.10.2.6 as a function — step 4 takes the common
+conversion code set most preferable to the server (first in its list),
+step 5 the fallback UTF-8/UTF-16 when `compatible(CNCS, SNCS)` holds (a
+shared character set after the OSF registry rows as ACE carries them
+from `code_set_registry1.2g.txt`; IANA ids always compatible; the
+boundary IANA < 0x10000 is inferred from the values of both registries),
+else CODESET_INCOMPATIBLE minor 1; without a code set component ISO
+8859-1 and no TCS-W (INV_OBJREF minor 2 for wide data), a null char code
+set counts as ISO 8859-1, also with conversion code sets (§7.10.2.4); a
+null native wchar code set gives no TCS-W, also with wchar conversion
+code sets (INV_OBJREF minor 1: §7.10.2.6 requires the native wchar code
+set of a server with wide character data). Missing: (1) the client does
+not negotiate per connection against the profile's `TAG_CODE_SETS` but
+sends `CodeSetContext::default_pair()` (UTF-8, UTF-16) with every
+request; the server does not read the client's context
+(CODESET_INCOMPATIBLE minor 2, MARSHAL minor 9, BAD_PARAM minors 23 and
+42, INV_OBJREF 1 and 2 at run time, MARSHAL 5/6 for `wchar` under GIOP
+1.0); (2) the IOR names ISO 8859-1 and UCS-2 as conversion code sets
+without a converter; (3) the native code set does not come from the
+locale or a configuration (§7.10.2.2). All three depend on the
+conversion of character data in the marshalling, item "§7.10 Conversion
+into a negotiated code set other than UTF-8/UTF-16".
 
 ### §7.10 Conversion into a negotiated code set other than UTF-8/UTF-16
 
@@ -681,20 +1272,110 @@ flags_octet_replaces_byte_order_at_1_1, v1_2_request_layout_only_in_1_2_plus}`.
 #### §9.3 CDR Transfer Syntax
 
 **Spec:** §9.3, p. 71 — CDR encoding, endianness marking,
-primitive/construct layout, GIOP 1.2 alignment.
+primitive/construct layout, GIOP 1.2 alignment, value types, pseudo
+objects (TypeCode, Any, Principal), object references, abstract
+interfaces.
 
 **Repo:** `crates/wire/src/writer.rs` + `crates/wire/src/reader.rs`
 (primitives + alignment + encapsulation), re-used by the GIOP codec in
 `crates/corba-giop/src/codec.rs`.
+`crates/corba-rt/src/type_code.rs` — all 37 `TCKind`s of Table 9.2 with
+their parameter lists (empty, simple: `tk_string`, `tk_wstring`,
+`tk_fixed`; complex in an encapsulation: also `tk_union` with
+discriminant type, default index and typed labels `UnionLabel`,
+`tk_array`, `tk_value`/`tk_event` with `ValueModifier`, concrete base
+and `ValueMember` visibility, `tk_value_box`, `tk_native`,
+`tk_abstract_interface`, `tk_local_interface`, `tk_component`,
+`tk_home`); an indirection (§9.3.5.1.6) is read and written:
+`TypeCode::Recursive` goes out as `0xffffffff` and a negative offset to
+the `TCKind` of the enclosing type, counted across encapsulation
+boundaries. `crates/corba-rt/src/any.rs` — `AnyValue` for every kind with
+a value encoding: `LongDouble`, `Fixed` (BCD, read to the sign nibble),
+`Principal`, `TypeCodeValue`, `Array`, `Union` (the selected case, else
+the default, else no value), `Except` (repository id before the members,
+§9.3.5.5), `ObjRef` (also `tk_component`/`tk_home`; nil as the empty
+type id with no profile, the empty type id with an IIOP profile as a
+reference to `Object`, §9.3.5.1.3; every profile of the IOR is kept
+in its order and written back unchanged, Part 2 §7.6.3; a type id
+without a profile is refused), `Abstract` (§9.3.7: boolean
+discriminator, reference or value), `Value` (§9.3.4: null tag, value tag
+with repository id or id list, codebase URL read into
+`ValueInstance::codebase` and written with bit `0x01`, indirections to
+values, repository ids and id lists, chunked state with continuation
+chunks and shared end tags, truncation to a known base type; a value in
+skipped state is recorded at its value tag and read at the first
+indirection to it with the formal type of that slot, §9.3.4.6;
+`ValueRef::Shared` for shared and cyclic graphs;
+truncatable types are written chunked with an id list, the others
+unchunked with one repository id); `CorbaAny::decode_with` takes known
+value types for values in abstract interfaces and derived types.
+`tk_native` and `tk_local_interface` have no value encoding and are
+refused. The parts of a value (members, elements, union branch, alias,
+recursive member, value state, an `any` inside an `any`) are read at most
+`MAX_VALUE_DEPTH` (128) levels deep; a deeper value is a `WireError`, not
+a stack overflow. A decode reads at most one part without octets (a
+value of `tk_null` or `tk_void`, of an empty struct, of an array of
+length 0, or one made of such values only) per octet it has read since
+it started, and one more; nested sequences and arrays of such values are
+refused before they allocate. A repeated `TypeCode` (an indirection to a
+`TypeCode` read before that does not enclose it) is decoded by reading
+its encapsulation again at the place of the indirection; these re-reads
+of one `TypeCode` together take at most `MAX_TYPECODE_REREAD_FACTOR` (32)
+times its octets, and the copies that top-level indirections make
+(§9.3.5.1.6) at most 32 times the octets of the message read up to them.
 
-**Tests:** `crates/corba-giop/src/codec.rs::{giop_1_2_body_is_eight_aligned_from_the_message_start,
+**Tests:** `crates/corba-rt/src/type_code.rs::{corba_p2_9_3_5_every_tckind_round_trips,
+corba_p2_9_3_5_1_simple_parameters_are_inline,
+corba_p2_9_3_5_1_union_parameters_follow_table_9_2,
+corba_p2_9_3_5_1_a_union_label_of_another_type_is_refused,
+corba_p2_9_3_5_1_a_recursive_typecode_is_written_with_an_indirection,
+indirection_recursive_struct, indirection_repeated_typecode,
+recursive_marker_refuses_to_encode}`,
+`crates/corba-rt/src/any.rs::{corba_p2_9_3_5_2_any_with_every_constructed_type_round_trips,
+corba_p2_9_3_5_5_an_exception_in_an_any_starts_with_its_repository_id,
+corba_p2_9_3_7_a_nil_reference_and_the_two_abstract_branches_on_the_wire,
+corba_p2_9_3_union_member_must_be_the_selected_case,
+corba_p2_9_3_local_and_native_values_are_refused,
+corba_p2_9_3_4_a_value_is_tag_repository_id_and_state,
+corba_p2_9_3_4_3_a_shared_and_a_cyclic_value_are_indirections,
+corba_p2_9_3_4_6_a_truncatable_value_is_chunked_with_its_id_list,
+corba_p2_9_3_4_6_chunks_continuations_and_a_shared_end_tag_are_read,
+corba_p2_9_3_4_1_a_value_of_an_unknown_derived_type_is_truncated,
+corba_p2_9_3_4_6_an_indirection_into_truncated_state_reads_the_skipped_value,
+corba_p2_9_3_4_1_a_codebase_url_is_kept_and_written_back,
+corba_p2_9_3_6_object_references_in_an_any_keep_their_profiles_or_are_refused,
+corba_p2_9_3_4_a_value_box_and_an_abstract_value_round_trip,
+corba_p2_9_3_a_value_nested_beyond_max_value_depth_is_refused_not_a_stack_overflow}`,
+`crates/corba-rt/tests/decode_budget.rs::{corba_p2_9_3_nested_arrays_of_null_are_refused_without_a_large_allocation,
+corba_p2_9_3_nested_sequences_of_null_are_refused_without_a_large_allocation,
+corba_p2_9_3_parts_without_octets_up_to_the_octets_read_still_decode,
+corba_p2_9_3_5_1_a_doubling_chain_of_repeated_typecodes_is_refused_quickly,
+corba_p2_9_3_5_1_6_top_level_copies_stay_within_the_octets_read}`,
+`crates/corba-giop/src/codec.rs::{giop_1_2_body_is_eight_aligned_from_the_message_start,
 giop_1_2_reply_body_is_eight_aligned_from_the_message_start,
 giop_1_0_body_is_not_padded}`,
 `crates/corba-giop/src/request.rs::tests::giop_1_2_request_body_is_8_aligned`,
 `crates/corba-giop/src/service_context.rs::{round_trip_with_two_entries_be,
 round_trip_le_byte_order}`.
 
-**Status:** done
+**Status:** partial — the TypeCodes of every kind, indirection in both
+directions and the `any` values of every kind green on the Linux test
+host. `array<array<null, 1000>, 1000>` and `sequence<sequence<null>>`
+with 10 times 100000 elements are refused, a doubling chain of 24
+repeated structs (1.4 KB) is refused, each while the decoding thread
+holds less than 1 MiB; a chain of 3 decodes to its copies (Linux test
+host). Open: a decoded value carries a copy of the type information of
+its kind (the element `TypeCode` of each sequence and array, the
+`TypeCode` of each union, value and reference, the enumerators of each
+enum, the member names of each struct); many small values of a large
+type copy it once per value, and the memory then grows with the product
+of the two sizes, which neither bound limits (an `AnyValue` that shares
+the type information is not built). Open also: custom-marshalled values (`VM_CUSTOM`) have no state a
+TypeCode describes and are refused; an object reference with more than
+one profile or without an IIOP profile is refused in an `any`, because
+`ObjectReference` carries only the IIOP profile; the proof against
+omniORB and JacORB (an `any` with union, array, fixed and valuetype in
+both directions) is not written and not run.
 
 #### §9.4 GIOP Message Formats
 
@@ -709,7 +1390,29 @@ CloseConnection/MessageError/Fragment).
 `crates/corba-giop/src/locate_reply.rs`,
 `crates/corba-giop/src/close_connection.rs`,
 `crates/corba-giop/src/message_error.rs`,
-`crates/corba-giop/src/fragment.rs`.
+`crates/corba-giop/src/fragment.rs`. The server
+(`crates/corba-interop/src/runtime.rs::server_other_message`, used by
+`CorbaServer` and `MiopGateway`) takes every message type explicitly:
+`CancelRequest` keeps the connection open (each request is answered
+before the next message is read), `CloseConnection` and `MessageError`
+end it, `Reply`, `LocateReply` and a `Fragment` without a fragmented
+message before it get `MessageError`, then the connection ends. The
+body at its offset in the message (§9.4.2.1, §9.4.3.1: under GIOP 1.0
+and 1.1 it follows the header without padding, and CDR aligns it from
+the first octet of the message): `crates/corba-giop/src/body.rs`
+(`AlignedBody`, `body_writer`, `finish_body`),
+`crates/corba-giop/src/request.rs` and `crates/corba-giop/src/reply.rs`
+(`body_offset`), `crates/corba-giop/src/object_ops.rs` (reads at the
+offset); `crates/corba-rust/src/runtime.rs` (`MarshalArgs`,
+`no_arguments`, `marshaled_body`, `CorbaConnection`,
+`AsyncCorbaChannel`), `crates/corba-rust/src/interface_emit.rs` and
+`crates/corba-rust/src/ami_emit.rs` (the stub writes the arguments once
+the connection knows the header; the skeleton reads them from the
+`AlignedBody`); `crates/corba-interop/src/runtime.rs` (`request_body`,
+`received_body`, `IiopCorbaConnection`, `AmiClient`, `CorbaServer`,
+`BiDirEndpoint`, `AmhEndpoint`), `crates/corba-interop/src/miop.rs`
+(`MiopClient::request_message`, `Goa`, `MiopGateway`),
+`crates/corba-interop/src/mgm.rs`.
 
 **Tests:** one octet round trip per message type —
 `crates/corba-giop/src/request.rs::{round_trip_giop_1_0_request,
@@ -721,7 +1424,11 @@ round_trip_giop_1_2_user_exception, round_trip_location_forward_perm_in_1_2}`,
 `crates/corba-giop/src/locate_request.rs::{round_trip_giop_1_0,
 round_trip_giop_1_2_with_profile_addr}`,
 `crates/corba-giop/src/locate_reply.rs::{round_trip_giop_1_0_object_here,
-round_trip_giop_1_2_object_forward_perm}`,
+round_trip_giop_1_2_object_forward_perm,
+corba_p2_9_4_6_2_the_locate_reply_body_follows_the_header_without_padding}`,
+`crates/corba-giop/src/target_address.rs::{corba_p2_9_4_2_1_profile_addr_is_the_tagged_profile_struct,
+corba_p2_9_4_2_1_reference_addr_is_the_ior_addressing_info_struct}`
+(the layout of the IDL structs, not only a round trip),
 `crates/corba-giop/src/fragment.rs::{round_trip_giop_1_2_with_header,
 round_trip_giop_1_1_without_header}`. All eight through the
 whole-message codec, CloseConnection and MessageError (no body) only there: `crates/corba-giop/src/codec.rs::{round_trip_request_giop_1_0_be,
@@ -730,8 +1437,97 @@ round_trip_fragment_with_more_bit, round_trip_cancel_request,
 round_trip_locate_request_giop_1_2, round_trip_locate_reply_object_here}`.
 The type discriminators themselves:
 `crates/corba-giop/src/message_type.rs::tests::message_type_values_match_spec_table_15_1`.
+The server: `crates/corba-interop/tests/giop_version.rs::corba_p2_9_4_the_server_takes_every_message_type_explicitly`.
+The body at its offset:
+`crates/corba-giop/src/codec.rs::tests::corba_p2_9_4_2_a_long_long_under_giop_1_0_and_1_1_is_read_at_its_body_offset`,
+`crates/corba-giop/src/object_ops.rs::tests::corba_p2_9_4_2_is_a_reads_its_argument_at_the_body_offset`,
+`crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_2_an_8_octet_argument_after_an_octet_is_aligned_from_the_message_start`,
+`crates/corba-poa/src/poa.rs::tests::corba_p2_9_4_2_1_a_servant_reads_a_long_long_at_the_body_offset`,
+`crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_2_1_a_poa_servant_reads_an_8_octet_argument_at_the_body_offset`,
+`crates/corba-cosnaming/src/servant.rs::tests::corba_p2_9_4_2_1_a_request_body_is_read_at_its_offset_in_the_message`,
+`crates/corba-ccm/src/dynamic_api.rs::tests::corba_p2_9_4_2_1_a_dsi_servant_reads_its_arguments_at_their_offset`,
+`crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_2_1_a_dsi_servant_reads_an_8_octet_argument_at_the_body_offset`,
+`crates/corba-giop/src/reply.rs::tests::corba_p2_9_4_3_a_giop_1_0_reply_body_is_placed_on_eight`,
+`crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_3_a_giop_1_0_reply_body_with_reply_contexts_is_aligned_from_the_message_start`,
+`crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_3_a_reply_body_of_another_orb_on_four_modulo_eight_is_read_at_its_offset`,
+`crates/corba-giop/src/reply.rs::tests::corba_p2_9_4_3_a_body_written_for_four_modulo_eight_is_placed_there`,
+`crates/corba-interop/tests/giop_body_offset.rs::{corba_p2_9_4_3_a_user_exception_of_another_orb_on_four_modulo_eight_is_read_at_its_offset,
+corba_p2_9_4_3_a_relayed_user_exception_keeps_its_offset_modulo_eight,
+corba_p2_9_4_3_a_relayed_user_exception_goes_out_in_its_own_byte_order,
+corba_p2_9_4_3_an_ami_reply_of_another_orb_on_four_modulo_eight_is_read_at_its_offset,
+corba_p2_9_4_3_a_dii_result_of_another_orb_on_four_modulo_eight_is_read_at_its_offset}`,
+`crates/corba-interop/tests/amh.rs::corba_p2_9_4_3_an_amh_user_exception_goes_out_in_its_own_byte_order`,
+`crates/corba-interop/tests/bidir_giop.rs::corba_p2_9_4_3_a_bidir_user_exception_goes_out_in_its_own_byte_order`,
+`crates/corba-interop/tests/miop.rs::corba_p2_9_4_3_the_gateway_relays_a_reply_body_on_its_offset_modulo_eight`.
 
-**Status:** done
+**Status:** partial — the eight message types with their layout and
+their handling in the server green on the Linux test host. The body of
+a request stands at its offset: the client writes the arguments once
+the request header is fixed (again after a forward), the server hands
+the body over with its offset, the generated skeleton and the object
+operations read there; over IIOP 1.0, 1.1 and 1.2 profiles, in both byte
+orders, an 8-octet argument after an octet stands on a multiple of 8
+from the message start and reaches the servant, at body offsets of 0
+and 4 modulo 8 (Linux test host). The reply body of `CorbaServer` under
+GIOP 1.0/1.1 stands on a multiple of 8: when the service contexts (those
+of the interceptors included) put it on 4 modulo 8, a padding context
+(`PADDING_CONTEXT_ID`, four octets) moves it by 12; over IIOP 1.0 and 1.1
+profiles with reply contexts of 1 to 8 octets the `double` of the reply
+stands on a multiple of 8 and the generated stub reads it (Linux test
+host). The generated stub reads a reply body at its offset
+(`CorbaConnection::invoke_aligned`; `IiopCorbaConnection` takes it from
+the version and the header of the reply): the GIOP 1.0/1.1 reply of
+another ORB whose body starts on 4 modulo 8 is read right, and read from
+offset 0 the same octets give another `double` (Linux test host). The
+body of a user exception keeps its offset (`CorbaException::UserException`
+and `RequestException::User` carry an `AlignedBody`; `AmiClient` and
+`BiDirEndpoint` take it from the version and the header of the reply):
+the generated stub reads the `long long` and the `double` after the
+repository id right from another ORB's GIOP 1.0/1.1 reply whose body
+starts on 4 modulo 8, and read from offset 0 the same body gives another
+`long long` (Linux test host); the MGM proxy reads its exceptions there
+too. When a servant passes on a user exception received that way,
+`CorbaServer` (and AMH and `BiDirEndpoint`, `Reply::place_body_at`)
+writes its body under GIOP 1.0/1.1 on the same offset modulo 8, and the
+stub reads the members; a GIOP 1.2 reply, whose body is on 8, cannot
+carry it and becomes `MARSHAL`, `COMPLETED_YES` (Linux test host).
+`invoke_passing_contexts` returns the reply body with its offset, and the
+MIOP gateway writes it on the same offset modulo 8: the body of a GIOP 1.2
+object reaches the client's GIOP 1.1 reply on 8, that of a GIOP 1.1
+object the GIOP 1.0 reply on 4 modulo 8, both times with the `double` on
+a multiple of 8; to a GIOP 1.2 client this body becomes `MARSHAL`,
+`COMPLETED_YES` (Linux test host). A user exception that a servant
+passes on in the other byte order than the request's goes out in a
+reply of its own byte order (`CorbaServer` with and without server
+interceptors, AMH, `BiDirEndpoint`, as the MIOP gateway does), and the
+client reads its members, under GIOP 1.0, 1.1 and 1.2 (Linux test
+host). The body of a `NO_EXCEPTION` reply keeps its offset on the AMI
+path (`AsyncReply` carries an `AlignedBody`; the generated `sendc_`
+callback and `sendp_` poller read through `AlignedBody::reader`), in
+`BiDirEndpoint::collect_reply` and `invoke`, and in the DII
+(`Request::invoke` keeps `result_offset` and `result_endianness`,
+`Request::result_body`): from another ORB's GIOP 1.0/1.1 reply whose
+body starts on 4 modulo 8, in both byte orders, the poller, the callback
+and the DII read the `double` right, and read from offset 0 the same
+octets give another value (Linux test host). The POA (`Poa::dispatch`, `Servant::invoke` with the body
+at its offset and the byte order of the message; the server
+`zerodds_corba_interop::serve` replies in the version and byte order of
+the request), `NamingServant::dispatch` (naming daemon and CORBA/DDS
+bridge daemon; the request decoders of `wire` read from a `Reader` at
+the offset) and the DSI servant (`ServerRequest::received` and
+`input()` with `arguments_offset` and `endianness`) read the body at its
+offset: over IIOP 1.0, 1.1 and 1.2 profiles, in both byte orders, a
+`double` (from GIOP 1.0) and a `long long` (from GIOP 1.1, Table 7.2)
+after an octet reach the POA servant and the DSI servant right at body
+offsets of 0 and 4 modulo 8; the naming servant resolves a name at
+offsets 13, 14, 15 and 17 (Linux test host). Open: the CORBA/DDS bridge
+daemon puts the body into the DDS sample without its offset. `BiDirEndpoint` sends a body written from offset 0 (GIOP
+1.2) and refuses to forward it to a target whose body starts on 4
+modulo 8 with `MARSHAL`. Also open: §9.4.6.3 — a `ForwardRequest` of a POA
+`ServantLocator` as a `LocateReply` with `OBJECT_FORWARD`:
+`crates/corba-poa/src/servant_manager.rs::ServantLocator::preinvoke`
+has no `ForwardRequest`; only the location agent of
+`CorbaServer::forward` sends `OBJECT_FORWARD` (§9.6).
 
 #### §9.5 GIOP Message Transport
 
@@ -759,16 +1555,65 @@ SCTP) not offered.
 **Spec:** §9.6, p. 110 — LocateRequest/LocateReply semantics, forward-
 ing.
 
-**Repo:** `crates/corba-giop/src/locate_request.rs`,
-`crates/corba-giop/src/locate_reply.rs`.
+**Repo:** Client: `crates/corba-interop/src/runtime.rs::{IiopCorbaConnection::send,
+IiopCorbaConnection::locate, IiopCorbaConnection::forwarded_reference,
+Route, LocateOutcome, classify_reply, target_address}` — an invocation
+follows `LOCATION_FORWARD` and `LOCATION_FORWARD_PERM` (at most 16 times,
+then `TRANSIENT`), and an interceptor's `ForwardRequest`;
+`LOCATION_FORWARD_PERM` and `OBJECT_FORWARD_PERM` are recorded per target
+reference and used first by later invocations; when the recorded target
+cannot be reached or answers `TRANSIENT`, `COMM_FAILURE` or
+`OBJECT_NOT_EXIST` with `COMPLETED_NO`, the record is dropped and the
+invocation starts at the original reference. `NEEDS_ADDRESSING_MODE`
+resends the request in the requested disposition (`ProfileAddr`,
+`ReferenceAddr`); the interceptors see `receive_other` with
+`TRANSPORT_RETRY` (`crates/corba-ccm/src/portable_interceptor.rs::Outcome::Retry`).
+`locate` sends `LocateRequest` and handles all six `LocateStatusType`
+values. `AmiClient::perform_work` and `BiDirEndpoint::collect_reply`
+follow forwards over a connection of their own and readdress after
+`NEEDS_ADDRESSING_MODE`. Server:
+`crates/corba-interop/src/runtime.rs::{CorbaServer::forward,
+CorbaServer::stop_forwarding, locate_reply, forward_reply,
+target_object_key, needs_key_addr_reply}` — a server is a location agent
+for forwarded object keys (`LOCATION_FORWARD(_PERM)`,
+`OBJECT_FORWARD(_PERM)`, `_PERM` from GIOP 1.2 on), serves all three
+dispositions and asks for `KeyAddr` when a target names no readable key
+(`crates/corba-interop/src/lib.rs::serve` as well). Wire:
+`crates/corba-giop/src/target_address.rs::{TargetProfile,
+IorAddressingInfo, AddressingDisposition}` (`ProfileAddr` and
+`ReferenceAddr` as the IDL structs; before, with an extra length field),
+`crates/corba-giop/src/locate_reply.rs` (the body right after the
+header, without 8-octet alignment, §9.4.6.2).
 
-**Tests:** `crates/corba-giop/src/locate_reply.rs::{locate_status_values_match_spec,
-round_trip_giop_1_0_object_here, round_trip_giop_1_2_object_forward_perm,
-forward_perm_in_1_0_is_rejected}`,
-`crates/corba-giop/src/locate_request.rs::{round_trip_giop_1_0,
-round_trip_giop_1_2_with_profile_addr, giop_1_0_rejects_profile_target}`.
+**Tests:** `crates/corba-interop/tests/location_forward.rs::{corba_p2_9_6_client_follows_a_location_forward,
+corba_p2_9_6_forward_perm_replaces_the_reference,
+corba_p2_9_6_an_unreachable_recorded_forward_restarts_at_the_original_address,
+corba_p2_9_6_a_recorded_forward_without_the_object_restarts_at_the_original_address,
+corba_p2_9_6_a_forward_cycle_ends_with_transient,
+corba_p2_9_6_the_forwarded_request_carries_the_service_contexts,
+corba_p2_9_4_needs_addressing_mode_is_resent_with_the_profile,
+corba_p2_9_4_needs_addressing_mode_is_resent_with_the_ior,
+corba_p2_9_4_an_agent_asking_again_for_the_disposition_it_got_is_transient,
+corba_p2_9_6_locate_follows_object_forward_and_reports_unknown_object,
+corba_p2_9_4_6_loc_needs_addressing_mode_resends_the_locate_request,
+corba_p2_9_4_6_loc_system_exception_is_raised,
+corba_p2_9_4_2_1_a_server_serves_every_addressing_disposition,
+corba_p2_9_6_a_location_agent_answers_locate_with_object_forward,
+corba_p2_9_6_an_ami_request_follows_a_location_forward,
+corba_p2_9_4_an_ami_request_is_readdressed_and_keeps_its_id,
+corba_p2_9_6_a_bidir_request_follows_a_location_forward}`,
+`crates/corba-giop/src/target_address.rs::{corba_p2_9_4_2_1_profile_addr_is_the_tagged_profile_struct,
+corba_p2_9_4_2_1_reference_addr_is_the_ior_addressing_info_struct,
+a_reference_addr_with_more_profiles_than_octets_is_refused}`,
+`crates/corba-giop/src/locate_reply.rs::{locate_status_values_match_spec,
+corba_p2_9_4_6_2_the_locate_reply_body_follows_the_header_without_padding,
+round_trip_giop_1_2_object_forward_perm, forward_perm_in_1_0_is_rejected}`,
+`crates/corba-interop/tests/portable_interceptors.rs::corba_p1_16_4_interceptors_run_in_the_iiop_request_path`.
 
-**Status:** done
+**Status:** partial — client and agent behaviour green against own
+servers and raw GIOP peers on the Linux test host. Open: the proof
+against a foreign location agent (an omniORB `ServantLocator` raising
+`ForwardRequest`, with a ZeroDDS client); not written, not run.
 
 #### §9.7 Internet Inter-ORB Protocol (IIOP)
 
@@ -945,17 +1790,82 @@ tls_sec_trans_with_addresses_round_trip, ssl_sec_trans_round_trip}`.
 
 #### §10.6 Conformance Levels (CSIv2)
 
-**Spec:** §10.6, p. 160 — four CSIv2 conformance levels (0-3).
+**Spec:** §10.6, p. 160 — conformance levels 0, 1 and 2 and stateful
+conformance.
 
-**Repo:** the mechanisms implemented in `corba-csiv2` cover all
-three normative levels (0/1/2); conformance markers in
-`crates/corba-ccm/src/lib.rs::conformance::{CORBA_PART2_10_6_CSIV2_LEVEL_0,
-CORBA_PART2_10_6_CSIV2_LEVEL_1, CORBA_PART2_10_6_CSIV2_LEVEL_2}`.
+**Repo:** Level 0: SAS in the service context protocol over TLS
+(SSLIOP, rustls) and over unprotected IIOP, stateless CSS/TSS
+(`crates/corba-csiv2/src/session.rs`), GSSUP
+(`crates/corba-csiv2/src/gssup.rs`, `authenticator.rs`), identity
+assertion: `crates/corba-csiv2/src/identity.rs::{ScopedUsername,
+exported_gssup_name, parse_exported_name, AssertedIdentity,
+AssertionTrust}` (GSS exported name per RFC 2743 with the GSSUP OID and
+a scoped-username, token directly or as a CDR encapsulation) and
+`authenticator.rs::authenticate_gssup_with` (backward trust evaluation
+per §10.3.1.1: a user may assert itself and the anonymous identity,
+others only under a trust rule; otherwise `ContextError` invalid
+evidence; an unsupported identity type, a principal name of another
+mechanism and an identity extension are invalid mechanism);
+`authenticator.rs::authenticate_with_verifier` the same with a check
+function in place of the password file. TSS of `CorbaServer`:
+`crates/corba-interop/src/runtime.rs::CorbaServer::{require_credentials,
+set_identity_assertion}` (GSSUP, supported identity types and trust
+rules through `authenticate_with_verifier`, reply with
+`CompleteEstablishContext`, or `NO_PERMISSION` and `ContextError`) and
+`crates/corba-interop/src/runtime.rs::received_principal` (the invocation principal of Table 10.4
+for the dispatcher). Client:
+`crates/corba-interop/src/runtime.rs::IiopCorbaConnection::{with_csiv2_credentials,
+with_csiv2_identity_assertion, with_csiv2_authorization_token}` —
+identity assertion and the push model of authorization tokens
+(§10.6.2.1, CSS side).
 
-**Tests:** `conformance_tests::csiv2_level_markers_match_spec`.
+**Tests:** `crates/corba-csiv2/src/identity.rs::{corba_p2_10_2_5_2_scoped_username_forms_and_quoting,
+corba_p2_10_2_5_1_the_gssup_exported_name_follows_rfc_2743,
+corba_p2_10_2_5_a_token_is_read_directly_or_from_an_encapsulation,
+corba_p2_10_3_1_1_backward_trust_evaluation}`,
+`crates/corba-csiv2/src/authenticator.rs::{corba_p2_10_3_1_1_an_identity_the_user_is_not_trusted_to_assert_is_invalid_evidence,
+corba_p2_10_2_5_a_principal_name_of_another_mechanism_is_invalid_mechanism,
+corba_p2_10_2_5_an_identity_type_the_target_does_not_support_is_invalid_mechanism,
+a_supported_identity_assertion_is_accepted_as_the_asserted_principal,
+valid_credentials_with_no_identity_assertion_are_accepted,
+wrong_password_is_rejected_with_invalid_evidence}`,
+`crates/corba-csiv2/src/session.rs::{a_stateless_target_retains_nothing_and_says_so,
+a_stateless_client_re_establishes_on_every_request}`,
+`crates/corba-interop/tests/csiv2.rs::{csiv2_gssup_authenticates_and_rejects,
+corba_p2_10_6_2_1_a_client_asserts_an_identity_and_pushes_an_authorization_token,
+corba_p2_10_3_1_1_a_corba_server_evaluates_the_asserted_identity,
+corba_p2_10_6_1_1_the_sas_context_is_evaluated_over_tls_1_2_and_1_3}`.
 
-**Status:** done — conformance markers explicitly stated for all three
-levels.
+**Status:** partial — built and green on the Linux test host: the Level 0
+parts SAS over TLS 1.2 and 1.3 (SSLIOP server of `CorbaServer`, with a
+server that offers only TLS 1.2 and with a TLS 1.3 server) and over
+IIOP, stateless mode, GSSUP, identity assertion with GSSUP exported
+names and backward trust evaluation, also in the TSS of `CorbaServer`;
+of Level 1 the CSS side (a client sends an authorization token). A TSS
+does not evaluate a received authorization token; Level 0 allows that
+(§10.6.1.2.4). Blocked: SSL 3.0 and TLS 1.0 with the mandatory ciphersuites of
+RFC 2246 (§10.6.1.1.1) — rustls offers only TLS 1.2 and 1.3, SSL 3.0 and
+TLS 1.0 are prohibited by RFC 7568 and RFC 8996. Open: of Level 1 the TSS
+evaluation of an authorization token (X.509 attribute certificates per
+the IETF AC profile, trusted privilege authorities, access identity
+against the client or asserted identity) and `privilege_authorities` in
+the IOR; Level 2 (Proxy Info extension, forward trust evaluation,
+`DelegationByClient` and the IOR flags of Table 10.17); stateful
+conformance (§10.6.4): only the stateless mode is built, no TSS retains
+and no CSS establishes reusable contexts (`MessageInContext`,
+§10.3.2.2); without a `client_authentication_token` no TSS derives the
+client authentication identity from the transport layer (§10.3.1.1,
+Table 10.3 row P2A/None/P1): `authenticate_gssup_with`,
+`authenticate_with_verifier` and with them `CorbaServer` require a GSSUP
+token and refuse an identity assertion with a TLS client certificate and
+an empty token as invalid evidence, `corba-iiop` does not pass on the
+client certificate of an SSLIOP connection; the daemons
+`zerodds-corba-bridged` and `zerodds-naming-svc` have no
+configuration key for trust rules — they call `authenticate_gssup` with
+`AssertionTrust::new()`, so a user can assert only itself and the
+anonymous identity there; the proof against JacORB 3.9 (identity
+assertion with `ITTPrincipalName` in both directions) is not written and
+not run.
 
 #### §10.7 Sample Message Flows and Scenarios
 
@@ -1002,43 +1912,227 @@ gssup_oid_starts_with_der_tag, encapsulation_is_wire_correct_octet_seq_len_at_of
 
 ### §11 Unreliable Multicast Inter-ORB Protocol (MIOP)
 
-**Spec:** Part 2 §11, p. 181 — UDP multicast variant of GIOP for
-unreliable group communication.
+**Spec:** Part 2 §11, p. 181 — GIOP requests over UDP multicast:
+`PacketHeader_1_0` and packet collections (§11.1), the UIPMC profile,
+`TAG_GROUP`, `TAG_GROUP_IIOP`, the group IOR (§11.2.2, §11.2.3),
+`PortableGroup::GOA` (§11.2.4), the gateway (§11.2.5), the Multicast
+Group Manager with its properties (§11.2.6), `corbaloc:miop` (§11.2.7),
+requests in GIOP 1.0 to 1.2 (§11.3).
 
-**Repo:** `crates/corba-ccm/src/orb_extensions.rs::{MiopConfig,
-MiopFrameHeader, MiopError, MulticastSink, MulticastSinkError,
-MiopSender, MIOP_MAGIC, MIOP_VERSION_1_0}` with IPv4 multicast group +
-port + TTL + loopback flag (default 239.255.0.1:5683 TTL=1) plus
-full MIOP frame codec (16-byte header incl. `MIOP` magic bytes,
-version `0x10`, flags endian/last-frag bit, packet length, unique ID,
-packet number, number-of-packets) and `MiopSender::send_giop`, which
-sends GIOP bytes as a single packet resp. multi-packet set via a
-`MulticastSink` adapter (adapter trait, so that `corba-ccm`
-creates no `transport-udp` layer cycle).
+**Repo:** `crates/corba-iiop/src/miop.rs` — `PacketHeader` (magic,
+version 1.0, endian and stop flag, reserved bits zero, `packet_length`,
+`packet_number`, `number_of_packets`, `UniqueId` up to 252 octets, the
+GIOP data from the next 8-octet boundary, field values in the byte order
+of the flag), `packetize` (packets of equal length, a shorter last one
+with the stop flag), `Reassembler` (by sender and `UniqueId`, any order;
+a stop packet with packets missing drops the collection, as do
+contradictions, a packet number at or beyond the `number_of_packets` of
+an earlier packet, a size over 16 MiB and the timeout, counted from the
+last packet of the collection; all pending collections together hold at
+most 64 MiB, each packet counted with 64 octets of overhead, and beyond
+that the collection with the oldest last packet goes; every collection
+not delivered is in `ReassemblyStats`), `MiopSender` (TTL or hops,
+`unique_id` of 16 octets), `join_group` and `MiopReceiver` (IPv4 and
+IPv6, `SO_REUSEADDR` and `SO_REUSEPORT`, a chosen interface).
+`crates/corba-ior/src/miop.rs` — `UipmcProfileBody`, `GroupInfo`,
+`group_iiop_component`, `group_profiles`, `is_group_reference`,
+`is_equivalent` and `hash` after §11.2.6.10, `parse_miop_corbaloc` (group
+id with domain, group and reference version, IPv6 in brackets, group IIOP
+after `;`, gateway addresses after `,`, multicast addresses only).
+`crates/corba-ccm/src/orb_core.rs` — `ObjectRef::Group`:
+`string_to_object` turns `corbaloc:miop:` and an IOR with a UIPMC group
+profile into a group reference, `object_to_string` keeps the profile.
+`crates/corba-interop/src/miop.rs` — `MiopClient` (oneway request to the
+group, GIOP 1.2 with the UIPMC profile in the target, GIOP 1.0/1.1 with
+`"MIOP"` and the profile in the object key; `is_a` over the IIOP profile
+of `TAG_GROUP_IIOP`, without that component through the interface
+repository of `with_interface_repository` with the base interfaces
+(`crates/corba-ir/src/repository.rs::Repository::interface_is_a`,
+`InterfaceDef::is_a` after Part 1 §14.5.24.1), `non_existent`,
+`validate_connection` of a group reference), `two_way_reference`
+(`TAG_GROUP_IIOP` or the gateway profile), `Goa` with
+`create_id_for_reference`, `reference_to_ids`,
+`associate_reference_with_id`, `disassociate_reference_with_id`,
+`activate_object_with_id`; the GOA joins the group and delivers every
+request to all servants of the group; requests expecting a reply,
+messages that are no request and groups without a member are counted in
+`GoaStats`. `MiopGateway` forwards the requests of IIOP clients to the
+group (`void` operations with an empty reply); the operations of
+`CORBA::Object` go to the IIOP profile of `TAG_GROUP_IIOP` in the UIPMC
+profile, without that component `_non_existent` is `true` and the others
+are `NO_IMPLEMENT`; a `LocateRequest` gets `OBJECT_HERE` for a target
+with a group profile, else `UNKNOWN_OBJECT`; a header it cannot read, a
+`Reply`, a `LocateReply` and a `Fragment` without a fragmented message
+before it get `MessageError`, then the connection ends; `CancelRequest`
+is counted (`GatewayStats`).
+`crates/corba-interop/src/mgm.rs` — `Mgm` with the PropertyManager,
+`get_object_group_id`, `get_object_group_ref` (the other
+ObjectGroupManager operations `NO_IMPLEMENT` after §11.2.6.5),
+`create_object` and `delete_object` with the exceptions of their
+`raises` clauses (criteria `create_object` does not understand are
+`InvalidCriteria`, properties with which no reference can be made are
+`InvalidProperty` in `set_properties_dynamically`), every property of
+§11.2.6.8 (`GroupCreationMode` at creation only, `GroupDomainId` once,
+endpoints and gateway at any time, a new reference version when the
+reference changes), an address pool for `CREATE_ADDRESS_GENERATED`.
+`Mgm::serve` makes the MGM a CORBA object on a `CorbaServer`: every
+operation of `MGM::ObjectGroupFactory` and `CORBA::Object` over IIOP,
+exceptions with their members; per group an object under
+`<key>/group/<id>` at the same address that answers `_is_a` for the type
+of the group and its base interfaces (interface repository) and
+`_non_existent` = `false`, after `delete_object` `_is_a` = `false` and
+`_non_existent` = `true` (§11.3.2). A nil `SupportImplicitOperations`
+puts that object into `TAG_GROUP_IIOP`; an MGM without `serve` has no
+reference and refuses it (`CannotMeetCriteria`, in
+`set_properties_dynamically` `InvalidProperty`). `MgmProxy` calls an MGM
+over IIOP. The 14-octet
+header, `MiopConfig` and `MiopSender` of
+`crates/corba-ccm/src/orb_extensions.rs` are removed.
 
-**Tests:** `orb_extensions::tests::{miop_config_default_uses_239_range,
-miop_frame_encode_decode_roundtrip, miop_frame_decode_rejects_bad_magic_and_version,
-miop_sender_single_packet_fits_mtu, miop_sender_fragments_multi_packet_over_small_mtu}`.
+**Tests:** `crates/corba-iiop/src/miop.rs::tests::{corba_p2_11_1_4_packet_header_layout_and_alignment,
+corba_p2_11_1_4_malformed_packets_are_refused,
+corba_p2_11_1_3_packetize_splits_into_equal_packets_and_a_short_last,
+corba_p2_11_1_3_collection_reassembles_in_any_order,
+corba_p2_11_1_6_2_a_stop_packet_with_packets_missing_drops_the_collection,
+corba_p2_11_1_6_2_duplicates_and_contradictions_are_reported,
+corba_p2_11_1_6_2_the_timeout_counts_from_the_last_packet_of_a_collection,
+corba_p2_11_1_4_a_packet_number_at_or_beyond_the_count_of_its_collection_is_refused,
+corba_p2_11_1_6_2_the_pending_collections_are_bounded_in_octets}`,
+`crates/corba-iiop/tests/miop.rs::{corba_p2_11_1_5_every_receiver_of_the_ipv4_group_gets_the_collection,
+corba_p2_11_1_5_a_receiver_of_another_group_on_the_same_port_gets_nothing,
+corba_p2_11_1_5_the_ipv6_group_gets_the_collection,
+corba_p2_11_1_5_joining_needs_a_multicast_address_and_a_matching_interface,
+corba_p2_11_1_6_2_a_foreign_datagram_on_the_group_port_is_counted}`,
+`crates/corba-ior/src/miop.rs::tests::{corba_p2_11_2_2_uipmc_profile_round_trips,
+corba_p2_11_2_2_4_group_info_layout,
+corba_p2_11_2_3_a_group_reference_and_its_profiles,
+corba_p2_11_2_6_10_is_equivalent_and_hash_of_group_references,
+corba_p2_11_2_7_corbaloc_miop_url_parses,
+corba_p2_11_2_7_malformed_miop_urls_are_refused,
+corba_p2_11_2_2_2_multicast_addresses}`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p2_11_2_7_string_to_object_makes_a_group_reference_of_corbaloc_miop`,
+`crates/corba-interop/tests/miop.rs::{corba_p2_11_3_a_oneway_request_reaches_every_servant_of_the_group,
+corba_p2_11_2_4_2_a_disassociated_id_gets_nothing_and_can_be_associated_again,
+corba_p2_11_2_4_1_a_reference_without_a_group_profile_is_not_a_group_object,
+corba_p2_11_3_1_2_giop_1_0_and_1_1_requests_carry_the_profile_in_the_object_key,
+corba_p2_11_2_6_one_endpoint_carries_two_groups,
+corba_p2_11_1_3_a_collection_that_is_no_oneway_request_is_counted_not_dispatched,
+corba_p2_11_2_5_the_gateway_forwards_the_requests_of_an_iiop_client,
+corba_p2_11_2_2_4_2_two_way_calls_use_the_group_iiop_profile,
+corba_p2_11_2_6_10_object_operations_on_a_group_reference,
+corba_p2_11_2_5_the_gateway_answers_locate_requests_and_refuses_what_it_cannot_take,
+corba_p2_11_2_6_10_the_gateway_forwards_object_operations_to_the_group_iiop_profile}`,
+`crates/corba-ir/src/repository.rs::tests::corba_p1_14_5_24_1_is_a_follows_the_base_interfaces`,
+`crates/corba-interop/tests/mgm.rs::{corba_p2_11_2_6_6_create_object_makes_a_group_reference,
+corba_p2_11_2_6_8_1_the_creation_mode_and_the_endpoints_must_agree,
+corba_p2_11_2_6_4_properties_come_from_the_most_specific_place,
+corba_p2_11_2_6_3_unknown_repeated_and_mistyped_properties_are_refused,
+corba_p2_11_2_6_8_3_implicit_operations_go_into_the_group_iiop_component,
+corba_p2_11_3_3_1_a_group_the_mgm_created_is_reached_over_multicast,
+corba_p2_11_3_3_1_1_the_mgm_is_called_over_iiop}`,
+`crates/corba-interop/tests/miop_cross_orb.rs::{corba_p2_11_a_jacorb_goa_member_receives_what_zerodds_multicasts,
+corba_p2_11_a_zerodds_goa_member_receives_what_jacorb_multicasts}`.
 
-**Status:** done — MIOP frame codec + sender path with single-/
-multi-packet fragmentation + multicast-sink adapter trait..
+**Status:** partial — §11.1 to §11.3 built, tests green on the Linux test
+host (multicast over 239.255.x.x and ff15::/16 in the network namespace
+of the test run), among them against JacORB 3.9 in both directions: a
+JacORB GOA member receives the oneway requests ZeroDDS sends to the
+group, a ZeroDDS GOA member those of JacORB, one request in one packet
+and one in a collection of several packets; ZeroDDS reads JacORB's group
+reference, JacORB the `corbaloc:miop` URL. Not run: TAO (not on the test
+host); omniORB has no MIOP. Open: §11.3.4.3 — the runtime has no initial
+reference `RootPOA` to narrow to `GOA`; the GOA is made with `Goa::new`.
 
 ### §12 ZIOP Protocol
 
-**Spec:** Part 2 §12, p. 219 — Zlib/compress-IOP messages,
-compression policies.
+**Spec:** Part 2 §12, p. 219 — the ZIOP message (magic `ZIOP`,
+`CompressionData` in place of the GIOP body, GIOP 1.2 and later,
+fragments included, §12.1), ZIOP only towards a peer that declared it
+(§12.2), the four compression policies (§12.3) and their propagation in
+`TAG_POLICIES` and `INVOCATION_POLICIES` (§12.4, Part 1 §17.4).
 
-**Repo:** `crates/corba-ccm/src/orb_extensions.rs::ZiopConfig` +
-`CompressionAlgorithm` (see §18 Compression).
+**Repo:** `crates/corba-giop/src/ziop.rs` (`CompressionData`,
+`compress_message`, `decompress_message`, `ZiopCodec`, `ZiopPolicies`,
+`PeerZiop`, `ZiopSend`, policy types 64 to 67 with their `pvalue`
+formats), `crates/corba-giop/src/messaging.rs` (`PolicyValue`,
+`TAG_POLICIES`, `INVOCATION_POLICIES`, Part 1 §17.4),
+`crates/corba-giop/src/header.rs::MessageHeader::decode_frame` (magic
+`ZIOP` from GIOP 1.2), `crates/corba-iiop/src/framing.rs::{read_giop_message_ziop,
+write_giop_message_ziop}`, `crates/corba-iiop/src/connection.rs::Connection::{set_ziop_codec,
+write_message_ziop}`, `crates/corba-ccm/src/compression.rs`
+(`CompressionManager` as `ZiopCodec`), `crates/corba-ccm/src/orb_core.rs::{ziop_policy,
+ziop_policies, apply_ziop_policies, client_ziop_policies}`
+(`Orb::create_policy` for the types 64 to 67, `Orb::{client_ziop_policies,
+server_ziop_policies}`), `crates/corba-ccm/src/policy_management.rs`
+(overrides at the ORB, thread and reference level, Part 1 §8.9),
+`crates/corba-interop/src/runtime.rs` (`IiopCorbaConnection::with_ziop`,
+`CorbaServer::{set_ziop, object_reference}`). The client policies of an
+invocation: per ZIOP policy type the override of the reference
+(`Object::set_policy_overrides`), else of the calling thread
+(`PolicyCurrent`), else of the ORB (`ORBPolicyManager`), over the own
+policies of `with_ziop` or the ORB defaults; the compressors of
+`with_ziop`, else the ORB's `CompressionManager`. A client that enabled
+compression once declares it disabled for an invocation without ZIOP
+policies, because the server keeps the last declaration for the
+connection. A `CorbaServer` without `set_ziop` that is bound to an ORB
+takes the ZIOP overrides at the ORB level with that ORB's
+`CompressionManager`. The client sends its
+client-exposed policies (64, 65) in every request as
+`INVOCATION_POLICIES`. A request goes out as a ZIOP message only when the
+reference enables ZIOP in `TAG_POLICIES` and names a compressor in
+common: the first entry of the own list that the other side lists, at the
+lower level (§12.3.2). The server reads ZIOP requests only when it
+enabled ZIOP; otherwise it answers with `MessageError` and closes the
+connection. The policies of a client hold for its connection until it
+sends others (omniORB sends them in the first request only). The
+sender's low value and minimum ratio keep a message GIOP; without a
+minimum ratio a message goes out compressed only when the ZIOP message is
+shorter. ORB defaults: compression off, zlib level 6, low value 1024
+octets. A `TAG_POLICIES` component that does not decode is `INV_OBJREF`,
+such an `INVOCATION_POLICIES` context `MARSHAL`.
 
-**Tests:** `crates/corba-ccm/src/orb_extensions.rs::tests::compression_algorithm_round_trip`,
-`::compression_zlib_round_trip`, `::compression_gzip_round_trip`,
-`::compression_deflate_round_trip`.
+**Tests:** `crates/corba-giop/src/ziop.rs::tests::{corba_p2_12_1_ziop_message_layout,
+corba_p2_12_1_the_header_accepts_ziop_from_giop_1_2_only,
+corba_p2_12_1_a_fragment_message_is_compressed_with_its_flags,
+corba_p2_12_3_low_value_and_min_ratio_keep_a_message_uncompressed,
+corba_p2_12_1_a_ziop_body_is_checked_before_and_after_decompression,
+corba_p2_12_2_no_ziop_to_a_peer_without_the_policies,
+corba_p2_12_3_2_the_first_common_compressor_at_the_lowest_level,
+corba_p2_12_4_client_exposed_policies_round_trip_as_policy_values}`,
+`crates/corba-giop/src/messaging.rs::tests::{corba_p1_17_4_policy_value_seq_layout,
+corba_p1_17_4_little_endian_policy_values_round_trip,
+corba_p1_17_4_a_count_beyond_the_octets_is_refused,
+corba_p1_17_4_invocation_policies_is_service_context_7}`,
+`crates/corba-iiop/src/framing.rs::tests::{corba_p2_12_1_a_ziop_request_is_read_back_as_its_giop_message,
+corba_p2_12_1_each_fragment_is_a_ziop_message_of_its_own,
+corba_p2_12_1_a_fragment_the_low_value_keeps_giop_is_mixed_with_ziop_ones,
+corba_p2_12_2_a_ziop_message_without_a_codec_is_refused}`,
+`crates/corba-ccm/src/compression.rs::tests::corba_p2_12_1_the_compression_manager_is_the_ziop_codec`,
+`crates/corba-ccm/src/orb_core.rs::tests::{corba_p2_12_3_create_policy_makes_the_four_ziop_policies,
+corba_p1_8_9_1_policy_manager_and_policy_current_are_initial_references}`,
+`crates/corba-interop/tests/ziop.rs::{corba_p2_12_2_a_request_and_its_reply_travel_as_ziop_messages,
+corba_p2_12_2_no_ziop_to_a_peer_without_the_policies,
+corba_p2_12_3_low_value_and_min_ratio_keep_a_message_uncompressed,
+corba_p2_12_1_a_oneway_request_is_compressed_too,
+corba_p2_12_2_a_ziop_request_to_a_server_without_ziop_is_a_message_error,
+corba_p2_12_2_invocation_policies_that_do_not_decode_are_marshal,
+corba_p2_12_2_a_broken_tag_policies_component_is_inv_objref,
+corba_p2_12_2_the_client_policies_hold_for_the_connection,
+corba_p2_12_2_client_ziop_policies_at_the_orb_level_through_create_policy,
+corba_p2_12_2_client_ziop_policies_at_the_thread_level,
+corba_p2_12_2_client_ziop_policies_at_the_reference_level}`,
+`crates/corba-interop/tests/omniorb_cross_orb.rs::{corba_p2_12_zerodds_sends_ziop_to_an_omniorb_server_and_reads_its_ziop_replies,
+corba_p2_12_an_omniorb_client_sends_ziop_to_a_zerodds_server_and_reads_its_ziop_replies}`.
 
-**Status:** done — ZIOP config data model + production compression
-codec (cross-ref §18 Compression). `ZiopConfig.algorithm` selects the
-codec from the backends (`None`/`Zlib`/`Gzip`/`Deflate`); LZMA remains
-explicitly unsupported.
+**Status:** done — tests green on the Linux test host, among them
+against omniORB 4.3.3 (omniZIOP, zlib) in both directions: requests and
+replies went over the wire as ZIOP messages (seen by a relay) and were
+read on the other side. The client policies at the ORB, thread and
+reference level (§12.2) through the overrides of Part 1 §8.9, set only
+through `create_policy`, each level checked with a relay, as is the
+precedence reference before thread before ORB; a server bound to an ORB
+declares and uses the ZIOP policies of the ORB level. Not run: TAO (not on the test host)
+and JacORB (no ZIOP peer written).
 
 ---
 
@@ -1069,9 +2163,19 @@ EJB-to-IDL), Extended Level, Lightweight CCM profile, EJB clients
 
 **Tests:** `crates/corba-ccm/src/container.rs::tests::install_and_full_lifecycle_round_trip`.
 
-**Status:** partial — container, component model, EJB integration and
-the Lightweight profile are items §6–§17; the Basic Level lacks the CIDL
-parser (item "§8 OMG CIDL — remaining constructs", open).
+**Status:** partial — the conformance points rest on the items of
+Part 3 and follow their status: point 1 (changes to the Life Cycle,
+Transaction and Security Services) on §6.13 (partial: the Security part
+is missing); points 2 and 4 (Basic level: IDL extensions, CIDL,
+container, XML descriptors) on §6, §8, §9, §10 and §15 — CIDL with its
+parser is built (§8, done), missing is the rest of §9 (partial); points 3 and 6 (Extended level) on §6 to §10 and
+§15; points 5 and 8 (Java Basic level, EJB clients) on §11 (done); point
+7 (Lightweight profile) on §14 (done, `crates/corba-ccm/src/lwccm.rs`);
+point 9 (Generic Interaction Support with the D&C extension) on §7
+(done). A test that ties each point to its evidence
+(`crates/corba-ccm/tests/conformance_points.rs`) is not built: the
+CIDL parser it needs exists (§8); points 2 to 4 also need the CIF of §9,
+which is partial.
 
 ### §6 Component Model
 
@@ -1091,7 +2195,7 @@ events, homes, home finders, configuration, inheritance, conformance.
 `flattening_takes_over_every_inherited_feature_bases_first`,
 `a_redefined_port_name_is_refused_rather_than_shadowed`,
 `a_second_primary_key_in_the_chain_is_refused`;
-`crates/corba-ccm/src/cidl.rs::tests::all_four_composition_categories_distinct`;
+`crates/ast/src/cidl.rs::tests::corba_p3_8_5_1_session_and_service_forbid_binding_primary_key_finders_and_segments`;
 the sub-items §6.5-§6.13 name one test per clause each.
 
 **Status:** done
@@ -1216,33 +2320,176 @@ a_keyed_base_makes_the_derived_component_keyed}`.
 
 #### §6.13 Conformance Requirements
 
-**Spec:** §6.13, p. 51 — conformance points for CCM compliance.
+**Spec:** §6.13, p. 51 — ten conformance points. Point 1 with §6.13.2:
+`CosLifeCycle::FactoryFinder::find_factory` (the key as an INS name to
+`HomeFinder::find_home_by_name`, the default factory of the home as a
+`GenericFactory`), `CosTransactions::Current` and the listed interfaces
+of `SecurityLevel1`, `SecurityLevel2` and `SecurityReplacable` as local
+interfaces. Points 2 to 9: the Basic and Extended levels, Lightweight
+CCM and EJB access. Point 10: every product parses any valid IDL.
 
-**Repo:** conformance marker in
-`crates/corba-ccm/src/lib.rs::conformance::CORBA_PART3_6_13_CCM_CONFORMANCE`
-+ cross-ref §14 Lightweight CCM profile marker.
+**Repo:** `crates/corba-ccm/src/cos_lifecycle.rs` (`FactoryFinder` with
+`find_factory` and `find_factories` over
+`ComponentHomeFinder::{find_home_by_name, homes_by_name}`,
+`GenericFactory`, `HomeFactory` as the default factory of a home without
+a primary key, `NoFactory`, `InvalidCriteria`, `Key` = `CosNaming::Name`
+in INS form); `crates/corba-cos-transactions/src/current.rs::TransactionCurrent`
+(local `CosTransactions::Current`, one `Current` per thread) as the
+ORB's initial reference `"TransactionCurrent"`
+(`crates/corba-ccm/src/orb_core.rs::orb_init`); a local object has no
+reference, `object_to_string` gives `MARSHAL` minor 4. Point 10:
+`zerodds-idl-parse` and `zerodds-idl-lower` read the grammar of Part 3
+(component, home with factory, finder and primary key, eventtype, every
+port kind, `porttype`, `port`, `mirrorport`, `connector`, template
+modules and their instances, `typeprefix`, `typeid`) in every dialect
+without an error, neither in parsing nor in lowering. Exception: a
+connector with an empty body. Part 3 rule (6) allows it
+(`<connector_export>*`), OMG IDL 4.2 rule (180), the newer text, asks
+for at least one export (`+`); lowering follows IDL 4.2 and refuses it in
+every dialect (`IDL0001`).
 
-**Tests:** `conformance_tests::corba_part3_6_13_marker_namespace`.
+**Tests:** `crates/corba-ccm/src/cos_lifecycle.rs::tests::{corba_p3_6_13_2_1_find_factory_goes_through_the_home_finder,
+corba_p3_6_13_2_1_no_factory_without_a_keyless_home_bound_to_the_key,
+corba_p3_6_13_2_1_find_factories_returns_every_keyless_home_of_the_name,
+corba_p3_6_13_2_1_the_default_factory_takes_no_criteria_and_no_other_key}`,
+`crates/corba-cos-transactions/src/current.rs::tests::{corba_p3_6_13_2_2_each_thread_has_its_own_transaction_context,
+corba_p3_6_13_2_2_two_transaction_currents_do_not_share_a_context,
+corba_p3_6_13_2_2_set_timeout_reaches_the_next_transaction}`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p3_6_13_2_2_transaction_current_is_a_local_initial_reference`,
+`crates/idl-lower/tests/dialects.rs::corba_p3_6_13_point_10_the_component_grammar_parses_in_every_dialect`.
 
-**Status:** done — conformance marker stated as a doc constant.
+**Status:** partial — point 1 (Life Cycle, Transaction) and point 10
+built, tests green on the Linux test host. Security Service: ZeroDDS
+ships no CORBA Security Service (`SecurityLevel1`, `SecurityLevel2`,
+`SecurityReplacable`); the security of the ORB layer is CSIv2 (Part 2
+§10). The change of §6.13.2.3 binds the vendor of that service. Open:
+points 2 to 9 are the conformance points of Part 3 §2 and are proven
+there (open there: CIF §9).
 
 ### §7 Generic Interaction Support (IDL3+)
 
-**Spec:** Part 3 §7, p. 55 — connector model, IDL3+ templates,
-generic interaction patterns.
+**Spec:** Part 3 §7, p. 55 — extended ports (`porttype`, `port`,
+`mirrorport`) and their translation into basic ports (§7.2.2.2),
+connectors with attributes, inheritance and composite implementations
+(§7.2.3), template modules (§7.3, §7.4), the programming model of
+fragments (§7.5: `CCMObject` with Navigation and Receptacles,
+`KeylessCCMHome`, `HomeConfiguration`, `configuration_complete`), the
+D&C extension (§7.6: `ConnectorPackageDescription`,
+`ConnectorImplementationDescription`, the port kinds `ExtendedPort` and
+`ExtendedMirrorPort` with `templateParam`, an assembly connection through
+a connector, flattening into fragment instances, the execution
+parameter "home factory", the configuration of fragments) and the
+metamodel classes `ExtendedPortType`, `ExtendedPortDef`, `ConnectorDef`
+(§7.6.5).
 
-**Repo:** simple connectors via `crates/corba-ccm/src/port.rs` +
-`crates/corba-ccm-lib/src/dds_bridge.rs`. IDL3+ templates as a
-codegen extension are caller-layer (a real IDL3+ template system
-is a separate spec layer; spec §7.3/§7.4 explicitly allows
-"basic Connectors only" as a minimal conformance path).
-Conformance marker `corba-ccm::conformance::
-CORBA_PART3_7_GENERIC_INTERACTION`.
+**Repo:** IDL3+: `crates/idl-parse/src/decl.rs` (`porttype`, `port`,
+`mirrorport`, `connector` with inheritance), `crates/idl-lower`
+(template modules, instances, `alias`; `src/lower.rs::{bind_actual,
+constraint_violation}` checks each actual parameter against the type
+constraint of its formal), `crates/ccm/src/transform.rs::{expand_extended_ports,
+transform_connector}` (equivalent IDL). Runtime model:
+`crates/corba-ccm/src/connector.rs` (`PortTypeDef`, `ConnectorDef`,
+`ConnectorTypeTable::basic_ports` per §7.2.2.2 and §7.2.3.3,
+`ConnectorTypeTable::port_types_match` per §7.6.5);
+`crates/corba-ccm/src/fragment.rs` (`ConnectorFragment` as
+`CCMObject`, `ConnectorHome` with `create_component`,
+`remove_component`, `set_configuration_values`, `FragmentExecutor`,
+`ConnectorHomeExecutor` as `HomeExecutorBase`, `HomeFactories`,
+`LocalFacet` for the type check of `connect`);
+`crates/corba-ccm/src/orb_core.rs::IfrCcmMetamodel::{add_port_type,
+add_extended_port, add_connector}`. D&C: `crates/corba-dnc/src/connector.rs`
+(data model of §7.6.2 with `Capability`, `SatisfierProperty`,
+`Requirement` and `ConnectorPackageDescription::select_implementation`,
+`flatten_assembly` per §7.6.3),
+`crates/corba-dnc/src/property.rs` (typed `configProperty`),
+`crates/corba-dnc/src/xml.rs` (reads and writes the plan, `.ccd`, the
+connector package with `<capability>` and the assembly with
+`<selectRequirement>`),
+`crates/corba-dnc/src/launch.rs::{PlanLauncher, launch_plan}` (entry
+point "home factory", `set_configuration_values`, provided references
+per node, basic connections across nodes, `configuration_complete`,
+teardown).
 
-**Tests:** inline + `conformance_tests::corba_part3_7_marker_namespace`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{idl_7_4_11_4_2_an_extended_port_is_the_basic_ports_of_its_port_type,
+idl_7_4_11_4_3_a_connector_maps_through_its_ports_as_a_component,
+corba_p3_7_2_3_3_a_derived_connector_inherits_the_ports_of_its_base}`,
+`crates/idl-lower/tests/dialects.rs::{an_instantiation_lowers_the_body_with_the_actual_substituted,
+two_instantiations_of_one_template_are_two_independent_modules,
+an_alias_hands_the_enclosing_templates_parameter_on,
+an_instantiation_with_the_wrong_number_of_actuals_is_reported,
+corba_p3_6_13_point_10_the_component_grammar_parses_in_every_dialect,
+corba_p3_7_3_2_1_each_constraint_accepts_the_kind_it_names,
+corba_p3_7_3_2_1_each_constraint_refuses_another_kind,
+corba_p3_7_3_2_1_an_alias_hands_on_only_what_the_inner_constraint_admits,
+corba_p3_7_3_2_1_an_interface_actual_is_bound_in_the_instance,
+corba_p3_7_3_2_1_an_exception_actual_is_raised_by_the_instance}`,
+`crates/corba-ccm/src/connector.rs::tests::{corba_p3_7_2_2_2_a_mirrorport_turns_provides_into_uses_and_names_the_basic_ports,
+corba_p3_7_2_2_2_a_port_keeps_the_direction_of_its_basic_ports,
+corba_p3_7_2_3_3_a_derived_connector_has_the_ports_and_attributes_of_its_base,
+corba_p3_7_2_3_3_a_redefined_name_an_unknown_base_and_a_cycle_are_refused,
+corba_p3_7_6_5_port_types_match_one_by_one}`,
+`crates/corba-ccm/src/fragment.rs::tests::{corba_p3_7_5_a_fragment_answers_navigation_and_receptacles,
+corba_p3_7_5_connect_checks_the_type_of_the_object,
+corba_p3_7_5_a_multiplex_receptacle_hands_out_cookies,
+corba_p3_7_5_4_configuration_values_reach_every_new_fragment,
+corba_p3_7_5_2_configuration_complete_and_remove,
+corba_p3_7_6_3_1_home_factories_by_entry_point_name,
+corba_p3_7_5_exceptions_carry_the_components_repository_ids}`,
+`crates/corba-ccm/src/orb_core.rs::tests::corba_p3_7_6_5_metamodel_has_extended_port_types_ports_and_connectors`,
+`crates/corba-dnc/src/connector.rs::tests::{corba_p3_7_6_3_an_assembly_with_a_connector_flattens_to_fragment_instances,
+corba_p3_7_6_3_flattening_refuses_what_has_no_plan,
+corba_p3_7_6_3_a_basic_connection_and_a_direct_extended_port_link,
+corba_p3_7_2_3_4_a_composite_connector_flattens_through_its_fragment_assemblies,
+corba_p3_7_2_3_4_a_component_part_of_a_connector_assembly_is_deployed_with_the_component_it_serves,
+corba_p3_7_6_2_3_selection_requirements_choose_among_implementations,
+corba_p3_7_6_2_3_each_satisfier_kind_meets_a_requirement_by_its_rule}`,
+`crates/corba-dnc/src/property.rs::tests::{corba_p3_7_6_4_typed_property_values_round_trip_through_text,
+corba_p3_7_6_4_a_value_out_of_range_or_of_an_unknown_type_is_refused}`,
+`crates/corba-dnc/src/xml.rs::tests::{corba_p3_7_6_4_plan_xml_carries_typed_config_properties_and_exec_parameters,
+corba_p3_7_6_4_an_instance_names_its_implementation_by_reference_or_by_label,
+corba_p3_7_6_2_4_extended_port_kinds_and_template_params_in_xml,
+corba_p3_7_6_2_connector_package_and_assembly_round_trip_through_xml,
+corba_p3_7_6_2_3_capabilities_and_selection_requirements_round_trip_through_xml}`,
+`crates/corba-dnc/src/launch.rs::tests::{corba_p3_7_6_3_1_home_factory_entry_point_creates_the_fragment,
+corba_p3_7_6_4_fragment_config_properties_reach_set_configuration_values,
+corba_p3_7_2_3_4_launchers_per_node_connect_the_fragments_of_a_composite_connector}`.
 
-**Status:** done — simple connectors as a spec-conformant minimum
-conformance live; IDL3+ templates remain optional.
+**Status:** done — all parts built, tests green on the Linux test host.
+Template modules: each actual parameter is checked against the type
+constraint of its formal (§7.3.2.1: `typename`, `interface`,
+`valuetype`, `eventtype`, `struct`, `union`, `sequence`, `enum`, `const`
+of a type, a sequence specification; `exception` per IDL 4.2
+§7.4.12.4.1); a `typedef` counts as the type it names. A violation is a
+diagnostic (`IDL0019`), also for what an `alias` hands on. An interface
+as the actual is an object reference and a base in the body, an
+exception stands in `raises`. A monolithic implementation gives one
+fragment per component it serves, on that component's node; an assembly
+implementation places each part with the component whose connector port
+is mapped to it, and nested parts with that part; a part no component
+reaches is refused. A part is a connector fragment or a component
+(§7.2.3.4); a component part is placed and configured like the
+fragments beside it and created by the container. Planning takes the
+first implementation of a package whose capabilities satisfy the
+selection requirements of the use or of the part (§7.6.2.3, §15.9.1);
+none satisfying them is an error. The six kinds of `SatisfierProperty`
+check the types of §15.4.5. The direction of `Minimum` (the requirement
+at least the value) and `Maximum` (the requirement at most the value) is
+taken from D&C 4.0 and not checked against its text, which is not in the
+house. Component implementations carry no capabilities in this data
+model; a component instance with selection requirements is refused. The
+launch follows the D&C split: `start_launch` returns per node the facet
+references of the connections provided there, `finish_launch` connects
+the node's receptacles to facets on other nodes too, and `launch_plan`
+thus makes each connection of the plan exactly once; a missing reference
+of another node is an error. The test runs the launchers of both nodes
+in one process. The XML is the descriptor form of `crates/corba-dnc`
+(elements after the class and field names of §7.6.2 and §16), not the
+XMI schema of §17 (an item of its own); the plan folds
+`ArtifactDeploymentDescription` into the implementation's artifact list.
+An instance names its implementation as text or by reference as the
+example of §7.6.4 does (`<implementation ref="fragment_impl_1"/>`, also
+`xmi:idref`). No proof against a foreign D&C tool (CIAO DAnCE is not in
+the house).
 
 ### §8 OMG CIDL Syntax and Semantics
 
@@ -1250,63 +2497,208 @@ conformance live; IDL3+ templates remain optional.
 Language (composition, home/segment executor, persistence,
 facet/feature delegation, proxy home).
 
-**Repo:** `crates/corba-ccm/src/cidl.rs::{Composition,
-CompositionCategory, HomeExecutor, StorageType, StorageHome}` — the
-data model of the CIDL constructs plus the category rule (`entity`
-requires a storage home, the other three do not).
+**Repo:** `crates/ast/src/cidl.rs::{CidlModel, Composition,
+CompositionCategory, HomeExecutorDef, ExecutorDef, SegmentDef,
+FeatureDelegation, Delegation, ProxyHomeDef, HomeFacts,
+StorageHomeFacts, StorageDecl, Composition::validate}` — one data model
+for the compiler and the runtime: the composition with its home
+executor (`implements`, `bindsTo`, `storedOn`, executor, delegations,
+`abstract`), segments with their segment id (the component segment is
+0), feature delegation, proxy home and the PSDL declarations;
+`validate` checks the rules that read names: Tables 8.3 to 8.5 against
+the primary key, explicit finders and segments, §8.11 (segment names
+and ids distinct, not 0), §8.13 (a facet of the component, in at most
+one segment), §8.14 (only with `bindsTo`, a stateful feature, the
+storage member exists, one delegation per feature), §8.15 (only with
+`bindsTo`, a home operation, a target on the storage home, one target
+per operation and one operation per target), §8.16 (factories only,
+explicit or `create`), §8.17 and §8.18 (home operations).
+`crates/corba-ccm/src/cidl.rs` re-exports the model and builds the
+facts from `HomeDef` and `ComponentDef` with `home_facts`;
+`crates/corba-ccm/src/lwccm.rs::composition_exclusion` reads it
+(persistence, segmentation, CIDL after LwCCM §13).
 
-**Tests:** `crates/corba-ccm/src/cidl.rs::{session_composition_does_not_require_storage,
-entity_composition_without_storage_invalid, entity_composition_with_storage_valid,
-storage_type_can_inherit, home_executor_optional_component_binding,
-all_four_composition_categories_distinct}`.
+**Tests:** `crates/ast/src/cidl.rs::tests::{corba_p3_8_5_1_session_and_service_forbid_binding_primary_key_finders_and_segments,
+corba_p3_8_5_1_process_forbids_a_primary_key,
+corba_p3_8_5_1_entity_requires_a_primary_key,
+corba_p3_8_13_a_facet_belongs_to_one_segment_and_the_rest_to_the_component_segment,
+corba_p3_8_11_segment_names_and_ids_are_distinct_and_not_zero,
+corba_p3_8_14_feature_delegation_names_a_bound_stateful_feature_and_a_member,
+corba_p3_8_15_storage_home_delegation_targets_one_operation_each_way,
+corba_p3_8_16_only_factories_delegate_to_the_executor,
+corba_p3_8_17_8_18_abstract_and_proxy_operations_are_home_operations,
+corba_p3_8_5_the_category_keywords_round_trip}`,
+`crates/corba-ccm/src/cidl.rs::tests::corba_p3_8_5_1_an_entity_composition_needs_a_keyed_home_at_run_time`,
+`crates/corba-ccm/src/lwccm.rs::tests::{an_entity_composition_is_excluded_as_persistence,
+a_session_composition_is_still_excluded_because_cidl_is_gone}`.
 
-**Status:** partial — composition, home executor and the persistence
-constructs (`storagetype`/`storagehome`) exist as an AST and are
-checked through the category rule. What is missing: a CIDL parser (the
-module says itself that the language is caller-layer), the segment
-definition (a `segment` executor per facet group), facet/feature
-delegation (`delegatesto`/`abstract storagehome`) and the proxy home.
-The remainder is carried as its own item in `corba-3.3.open.en.md`.
+**Status:** done — built and green on the Linux test host. The model
+lives in `zerodds-ast` because the compiler (`zerodds-idl-lower`)
+produces it and cannot depend on `zerodds-corba-ccm`;
+`zerodds-corba-ccm` re-exports it. The rules that read types (Table
+8.6, the signatures of §8.15) are the compiler's; they are under the
+item "§8 OMG CIDL — Remaining Constructs". The runtime's `HomeDef`
+knows no explicit operations; a caller that knows them adds them to the
+facts.
 
 #### §8 OMG CIDL — Remaining Constructs
 
-**Spec:** Part 3 §8, p. 81 — the CIDL grammar itself, the `segment`
-definition (one executor per facet group rather than one per
-component), facet/feature delegation (`delegatesto`,
-`abstract storagehome`) and the proxy home.
+**Spec:** Part 3 §8, p. 81 — the CIDL grammar itself (§8.2 to §8.18,
+productions (1) to (34)) with the PSDL declarations it contains
+(Persistent State Service 2.0 §3.2.3, productions (1) to (48)), the
+keywords of Table 8.2, `.cdl` files (§8.1) and the rules of the
+categories, segments, feature, storage home and executor delegation,
+`abstract` and the proxy home.
 
-**Repo:** —
+**Repo:** `crates/idl-cst/src/token.rs::{CIDL_KEYWORDS, cidl_keyword,
+cidl_keyword_collision}` and the CST kinds in `crates/idl-cst/src/tree.rs`;
+`crates/idl-parse/src/dialect.rs::Dialect::cidl`,
+`crates/idl-parse/src/parser.rs::Parser::mark_cidl_keywords`,
+`crates/idl-parse/src/cidl.rs` (the parser of CIDL and PSDL),
+`crates/idl-parse/src/diagnostic.rs` (`IDL0024`, `CompositionRule`);
+`crates/idl-lower/src/cidl.rs` and `crates/idl-lower/src/lower.rs::lower_cidl`
+(PSDL declarations as local interfaces of the model; name resolution;
+Table 8.6; the signature rules of §8.15 with the orthodox operations of
+§6.8.1; the name and member rules of PSS 2.0 §3.2.5 and §3.2.6; the
+keyword collision by case); `crates/idl-compose/src/lib.rs::Composed::cidl`;
+`tools/idlc` (`.cdl` is read as CIDL, `dump-cidl`).
 
-**Tests:** —
+**Tests:** `crates/idl-parse/tests/cidl.rs::{corba_p3_8_3_every_production_parses,
+corba_p3_8_2_1_keywords_are_identifiers_outside_cidl_and_escapable_inside,
+corba_p3_8_14_both_spellings_of_a_feature_delegation_parse,
+corba_p3_9_2_9_1_the_schematic_segment_form_parses_too,
+corba_p3_8_5_a_composition_needs_its_category_and_its_home_executor,
+pss_3_2_5_10_an_anonymous_sequence_is_no_state_type,
+pss_3_2_5_4_const_is_for_a_storage_type_operation,
+corba_p3_8_6_each_place_takes_only_its_kinds_of_delegation,
+corba_p3_8_6_the_home_executor_body_is_read_in_the_order_of_production_8,
+corba_p3_8_10_an_executor_body_a_segment_and_a_proxy_home_are_not_empty}`,
+`crates/idl-lower/tests/cidl.rs::{corba_p3_8_a_composition_with_every_part_lowers_without_a_diagnostic,
+corba_p3_8_11_segments_get_ids,
+corba_p3_8_13_a_facet_in_two_segments_is_refused,
+corba_p3_8_5_1_categories_are_checked_through_the_compiler,
+corba_p3_8_7_names_denote_a_home_and_abstract_storage_homes,
+corba_p3_8_14_feature_delegation_needs_a_binding_and_a_compatible_member,
+corba_p3_8_15_storage_home_delegation_signature_rules,
+corba_p3_8_16_only_factories_delegate_to_the_executor,
+corba_p3_8_17_abstract_operations_are_home_operations,
+corba_p3_8_18_proxy_home_delegates_to_home,
+corba_p3_9_2_5_the_toon_example_of_the_specification,
+corba_p3_8_5_a_composition_name_is_a_name_of_its_module,
+corba_p3_8_2_1_an_identifier_differing_from_a_cidl_keyword_in_case_collides,
+pss_3_2_5_psdl_names_and_members_are_checked,
+corba_p3_8_15_a_key_finder_raises_not_found_and_its_ref_finder_returns_a_ref,
+corba_p3_8_6_a_misplaced_member_that_reaches_the_lowering_is_reported,
+pss_3_2_5_4_a_const_operation_is_const_in_the_model}`,
+`tools/idlc/tests/cidl.rs::{corba_p3_8_1_a_cdl_file_is_checked_as_cidl,
+corba_p3_8_11_dump_cidl_shows_the_compositions_and_their_segment_ids,
+corba_p3_8_1_cidl_is_refused_where_idl_is_read_and_dump_cidl_reads_only_cidl,
+corba_p3_8_6_a_member_out_of_its_place_fails_the_check}`.
 
-**Status:** open — only the data model of §8 above exists in the tree.
-There is no lexer/parser for CIDL source (the module
-`crates/corba-ccm/src/cidl.rs` says itself that the language is
-caller-layer), no `Segment` type, no delegation clause and no proxy
-home. Plan: attach the CIDL productions to the existing IDL front end
-(`crates/idl-cst` + `crates/idl-parse`) and add the four constructs as
-AST nodes; the data model of §8 is the target of the lowering.
+**Status:** done — built and green on the Linux test host. Where the
+text and the grammar of §8 disagree, the parser reads both forms:
+`delegatesTo storage` (production (20)) and `delegatesTo abstract
+storagetype` (the text of §8.14); `provides facet a, b;` (production
+(19)) and `provides (a, b);` with a `;` after the segment (the schematic
+of §9.2.9.1). The catalogs of the §9.2.7 examples (`uses catalog`) come
+from PSS 1.0 and are in neither grammar; they are syntax errors. The
+parser keeps the order of production (8) (`implements`, `bindsTo`,
+`storedOn`, `manages`, `delegatesTo abstract storagehome`, `delegatesTo
+executor`, `abstract`, each at most once, `implements` and `manages`
+required) and reports a member out of that order, a second one of a
+kind, a missing `implements` or `manages`, a delegation at a place its
+production does not give it (home executor: `abstract storagehome` and
+`executor`; executor body: `storage`; proxy home: `home`), and an empty
+executor body, segment or proxy home (the `+` of productions (14), (16),
+(32)); the member stays in an error node. The lowering reports such a
+node that reaches it anyway, and a second `storedOn` of a segment
+(§8.12). `find_by_<key>` raises `CosPersistentState::NotFound`,
+`find_ref_by_<key>` returns `ref<S>` (PSS 2.0 §3.2.5.7); the exception
+rule of §8.15 applies to them. The `const` of a local operation is in
+the model (`StorageDecl::operations`, `LocalOperation::is_const`) and in
+`dump-cidl`. Readings the specification leaves open: the home
+operations a delegation may name are the explicit ones of the home and
+its bases and the orthodox ones of §6.8.1, not those of
+`Components::CCMHome`; a parameter of a value type follows the object
+reference rule in §8.15. The suppression of default delegations at the
+end of §8.15 concerns the generated implementation and belongs to the
+CIF (§9). Of PSS 2.0 the compiler checks the names (`of`, bases,
+`implements`, `as`, `scope`, `ref<…>`) and the state members of keys,
+factories, `ref(…)` and `stores`; not checked are the comparability of
+key types (§3.2.5.7), name clashes under multiple inheritance and the
+implicit base `CosPersistentState::StorageObject` (§3.2.5.5); PSS 2.0
+has no coverage document of its own in this repository. No proof
+against another CIDL compiler: none is in the house (OpenCCM, MicoCCM
+and CIAO were not checked); the proof rests on the grammar text and the
+fixtures.
 
 ### §9 CCM Implementation Framework (CIF)
 
-**Spec:** Part 3 §9, p. 93 — CIF architecture, language mapping to C++.
+**Spec:** Part 3 §9, p. 93 — CIF architecture: the composition as the
+unit of implementation (§9.2.5, §9.2.6), managed storage and the
+delegation of home operations to the abstract storage home or the
+executor (§9.2.7, §9.2.8), the executor definition with segments and the
+delegation of feature state (§9.2.9), proxy homes (§9.2.10), reference
+information with facet, segment and state identifiers (§9.2.11); the
+language mapping through equivalent local interfaces (§9.3).
 
-**Repo:** `crates/corba-ccm/src/cif.rs::{ComponentExecutor,
-SessionExecutor, KeyedExecutor, ExecutorLocator, CifError}`,
-`crates/corba-codegen/src/skeleton.rs`,
-`crates/corba-codegen/src/stub.rs`,
-`crates/corba-ccm-lib/src/persistence.rs`.
+**Repo:** `crates/ccm/src/executor.rs` (§9.3.3: `CCM_<I>` per
+interface, `CCM_<E>Consumer` per event type, `CCM_<C>_Executor`,
+`CCM_<C>`, `CCM_<C>_Context` per component with the port operations of
+§9.3.3.5, `CCM_<H>Explicit`, `CCM_<H>Implicit` keyless and keyed,
+`CCM_<H>` per home; `executor_idl` for a whole model);
+`crates/corba-ccm/src/cif.rs` (§9.3.2: `ExecutorLocator` with
+`obtain_executor`, `release_executor`, `configuration_complete`,
+`ComponentImplementation` monolithic or a locator with `invoke` per
+invocation; §9.2.9.1: `SegmentLayout` with facet and segment ids and the
+rules for segments, `SegmentedComponent` activates only the segment of
+the requested facet through `SegmentFactory::create_executor_segment`;
+§9.2.11: `ComponentReferenceInfo` monolithic and segmented with its
+encoding in the `object_key` and the component identity).
 
-**Tests:** `crates/corba-ccm/src/cif.rs::{lifecycle_calls_increment_counters,
-cif_error_carries_diagnostic}` (executor lifecycle
-`ccm_activate`/`ccm_passivate`/`ccm_remove`),
-`crates/corba-codegen/src/skeleton.rs::{cpp_compares_with_strcmp_and_ends_in_bad_operation,
-every_operation_reaches_the_dispatch_in_every_column}` and
-`crates/corba-codegen/src/stub.rs::{a_variable_length_struct_returns_a_pointer_and_a_fixed_one_a_value,
-an_object_reference_argument_is_a_ptr_and_its_out_is_an_out}`
-for the C++ language mapping.
+**Tests:** `crates/ccm/tests/executor_idl.rs::{corba_p3_9_3_3_4_the_hello_world_example,
+corba_p3_9_3_3_5_ports_become_operations_of_the_executor_and_the_context,
+corba_p3_9_3_3_3_a_derived_component_inherits_the_executors_of_its_base,
+corba_p3_9_3_3_5_an_extended_port_maps_through_its_basic_ports,
+corba_p3_9_3_3_6_9_the_bank_example,
+corba_p3_9_3_3_6_4_a_keyed_home_and_a_keyless_home_derived_from_it,
+corba_p3_9_3_the_executor_transformations_refuse_other_declarations}`,
+`crates/corba-ccm/src/cif.rs::tests::{corba_p3_9_3_2_a_locator_is_asked_before_and_released_after_each_invocation,
+corba_p3_9_3_2_a_monolithic_executor_serves_every_port,
+corba_p3_9_2_9_1_segments_get_ids_and_the_component_segment_keeps_the_rest,
+corba_p3_9_2_11_reference_information_round_trips_and_names_the_component,
+corba_p3_9_2_9_1_a_request_activates_only_the_segment_of_its_facet,
+lifecycle_calls_increment_counters}`.
 
-**Status:** done
+**Status:** partial — built and green on the Linux test host: the
+executor equivalent IDL of §9.3 with every rule of §9.3.3, the two
+strategies of §9.3.2 as building blocks (`ComponentImplementation`,
+`ExecutorLocator`), segments per §9.2.9.1 (`SegmentedComponent`) and the
+encoding of the reference information per §9.2.11
+(`ComponentReferenceInfo`). Missing is their integration into the
+container and the ORB: `Container` installs a `ComponentExecutor` and
+routes no invocations to facets, so it calls no `obtain_executor` and
+`release_executor` per invocation (§9.3.2: "the container will invoke
+its obtain_executor operation prior to each invocation"); `ExecutorLocator`
+is not tied to `SessionComponent` and `EntityComponent` as §9.3.2
+requires of a locator implementation; no object reference of a component
+carries `ComponentReferenceInfo` in its `object_key` (§9.2.11: "It is
+the responsibility of the container and the underlying ORB to encode
+this information for insertion into object references"). Missing as well
+is the generation from CIDL
+compositions: the complete implementation of the home executor and the
+executor skeletons per segment (§9.2.5, §9.2.6, §9.2.9), the implicit
+delegation of finders to the abstract storage home and the binding of
+the primary key to the matching key (§9.2.8.1, §9.2.8.2), the explicit
+delegation to the storage home and the executor with the factory facet
+and `abstract` (§9.2.8.3), the delegation of feature state to storage
+members (§9.2.9.2) and proxy homes (§9.2.10). What they are generated
+from exists: the CIDL parser, the composition model and the PSDL
+declarations of the abstract storage homes (§8, done; `lower_cidl`,
+`zerodds_ast::cidl`). The executor IDL
+is a transformation of the model; `idlc` and the language backends
+(`crates/lang-rules/src/emit/intermediate_idl.rs` holds only the client
+side) do not emit it yet.
 
 ### §10 The Container Programming Model
 
@@ -1500,7 +2892,7 @@ reference per Part 1 §8.5.2.
 **Spec:** no OMG spec item; ZeroDDS-specific migration layer
 for the incremental replacement of CORBA endpoints by DDS wire.
 
-**Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs` (the daemon
+**Repo:** `crates/corba-dds-bridge/src/bridge_daemon/mod.rs` (the daemon
 `zerodds-corba-bridged`).
 
 **Tests:** —
@@ -1513,7 +2905,7 @@ its tests.
 
 ## Audit status
 
-50 done / 6 partial / 6 open / 0 blocked / 13 n/a (informative).
+44 done / 16 partial / 2 open / 1 blocked / 13 n/a (informative).
 
 Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document corba-3.3.md`):
 

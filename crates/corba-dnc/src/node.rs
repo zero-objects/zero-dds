@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use crate::plan::InstanceDeploymentDescription;
 
 /// `NodeApplication` — D&C §9.2.3.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct NodeApplication {
     /// Node name.
     pub node: String,
@@ -25,7 +25,7 @@ pub struct NodeApplication {
 }
 
 /// `NodeApplicationManager` — D&C §9.2.2.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeApplicationManager {
     node: String,
     instances: Vec<InstanceDeploymentDescription>,
@@ -55,7 +55,7 @@ impl NodeApplicationManager {
 }
 
 /// `NodeManager` — D&C §9.2.1.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct NodeManager {
     /// Node name.
     pub name: String,

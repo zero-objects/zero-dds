@@ -65,6 +65,10 @@ The host named in every IOR this daemon hands out, when
 .B \-\-bind
 is a wildcard address. Default:
 .IR 127.0.0.1 .
+The IORs carry IIOP 1.2 profiles; an IPv6 host, such as the one of
+.IR [::1]:2809 ,
+goes into an IIOP 1.4 profile, written without the brackets
+(CORBA 3.3 Part 2 \(sc7.9).
 .TP
 .BR \-\-persist\-file =\fIFILE\fR
 Where the naming graph is saved. Without it, nothing is persisted.
@@ -116,6 +120,6 @@ the file named by
 .SH STANDARDS
 OMG Naming Service 1.3
 .RI ( formal/2004-10-03 ),
-CORBA 3.4, GIOP 1.2, SSLIOP, CSIv2.
+CORBA 3.4, GIOP 1.0 to 1.4, SSLIOP, CSIv2.
 .SH AUTHORS
 ZeroDDS Contributors.

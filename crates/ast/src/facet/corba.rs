@@ -4,6 +4,7 @@
 
 use crate::facet::applied::AppliedArgument;
 use crate::node::constant::ConstExprNode;
+use crate::node::exception::ExceptionNode;
 use crate::node::interface::InterfaceNode;
 use crate::node::type_::TypeNode;
 use alloc::string::String;
@@ -177,6 +178,10 @@ pub enum TemplateArg {
     Type(Ref<TypeNode>),
     /// A constant argument.
     Const(Id<ConstExprNode>),
+    /// An exception, the actual of an `exception` formal parameter
+    /// (IDL 4.2 §7.4.12.4.1). An exception is no type, so it is not a
+    /// [`TemplateArg::Type`].
+    Exception(Ref<ExceptionNode>),
 }
 
 /// CORBA information attached to a node. Spec §4.2.

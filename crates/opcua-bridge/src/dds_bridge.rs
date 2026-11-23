@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use zerodds_dcps::participant::bridge_guid_prefix;
 use zerodds_dcps::runtime::{
@@ -19,7 +20,7 @@ use zerodds_dcps::runtime::{
     UserWriterConfig,
 };
 use zerodds_dcps::serialized_type::SerializedTypeSupport;
-use zerodds_rtps::wire_types::EntityId;
+use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
 
 /// A DDS-side operation failed.
 #[derive(Debug, Clone)]
@@ -135,9 +136,14 @@ impl WriterHandle {
 pub struct DdsBridge {
     domain_id: i32,
     runtime: Arc<DcpsRuntime>,
-    readers: HashMap<String, ReaderHandle>,
-    writers: HashMap<String, (WriterHandle, Option<Arc<SerializedTypeSupport>>)>,
+    // Behind a lock: a topic whose type arrives through TypeLookup gets its
+    // reader or writer while the daemon runs, through the bridge it shares.
+    readers: Mutex<HashMap<String, ReaderHandle>>,
+    writers: Mutex<HashMap<String, WriterEntry>>,
 }
+
+/// A registered writer with the support its bodies are written with.
+type WriterEntry = (WriterHandle, Option<Arc<SerializedTypeSupport>>);
 
 impl DdsBridge {
     /// Starts a [`DcpsRuntime`] for `domain_id`.
@@ -155,8 +161,8 @@ impl DdsBridge {
         Ok(Self {
             domain_id,
             runtime,
-            readers: HashMap::new(),
-            writers: HashMap::new(),
+            readers: Mutex::new(HashMap::new()),
+            writers: Mutex::new(HashMap::new()),
         })
     }
 
@@ -188,13 +194,34 @@ impl DdsBridge {
         reliable: bool,
         type_support: Option<Arc<SerializedTypeSupport>>,
     ) -> Result<ReaderHandle, DdsBridgeError> {
-        if let Some(existing) = self.readers.get(topic_name) {
+        self.add_reader(topic_name, type_name, keyed, reliable, type_support)
+    }
+
+    /// [`Self::reader`] through a shared bridge, for a topic whose type
+    /// arrived while the daemon runs.
+    ///
+    /// # Errors
+    /// [`DdsBridgeError::Register`].
+    pub fn add_reader(
+        &self,
+        topic_name: &str,
+        type_name: &str,
+        keyed: bool,
+        reliable: bool,
+        type_support: Option<Arc<SerializedTypeSupport>>,
+    ) -> Result<ReaderHandle, DdsBridgeError> {
+        let mut readers = self
+            .readers
+            .lock()
+            .map_err(|_| DdsBridgeError::Register("reader table poisoned".to_string()))?;
+        if let Some(existing) = readers.get(topic_name) {
             return Ok(existing.clone());
         }
         let cfg = UserReaderConfig {
             topic_name: topic_name.to_string(),
             type_name: type_name.to_string(),
             reliable,
+            type_identifier: self.announce_type(type_support.as_deref())?,
             ..Default::default()
         };
         let (entity_id, rx) = self
@@ -210,8 +237,28 @@ impl DdsBridge {
             type_support,
             replaced,
         };
-        self.readers.insert(topic_name.to_string(), handle.clone());
+        readers.insert(topic_name.to_string(), handle.clone());
         Ok(handle)
+    }
+
+    /// The `TypeIdentifier` an endpoint of `type_support`'s type announces,
+    /// with the type's `TypeObject`s in the runtime's TypeLookup registry
+    /// before the announcement goes out, so that a peer that asks for the
+    /// type gets it (XTypes 1.3 §7.6.3.2, §7.6.3.3). Without a support the
+    /// endpoint announces no type.
+    fn announce_type(
+        &self,
+        type_support: Option<&SerializedTypeSupport>,
+    ) -> Result<zerodds_types::TypeIdentifier, DdsBridgeError> {
+        let Some(support) = type_support else {
+            return Ok(zerodds_types::TypeIdentifier::None);
+        };
+        for object in support.type_objects() {
+            self.runtime
+                .register_type_object(object.clone())
+                .map_err(|e| DdsBridgeError::Register(std::format!("type object: {e:?}")))?;
+        }
+        Ok(support.type_identifier().clone())
     }
 
     /// Registers a writer on `topic_name`/`type_name`. Idempotent like
@@ -227,7 +274,27 @@ impl DdsBridge {
         reliable: bool,
         type_support: Option<Arc<SerializedTypeSupport>>,
     ) -> Result<WriterHandle, DdsBridgeError> {
-        if let Some((existing, _)) = self.writers.get(topic_name) {
+        self.add_writer(topic_name, type_name, keyed, reliable, type_support)
+    }
+
+    /// [`Self::writer`] through a shared bridge, for a topic whose type
+    /// arrived while the daemon runs.
+    ///
+    /// # Errors
+    /// [`DdsBridgeError::Register`].
+    pub fn add_writer(
+        &self,
+        topic_name: &str,
+        type_name: &str,
+        keyed: bool,
+        reliable: bool,
+        type_support: Option<Arc<SerializedTypeSupport>>,
+    ) -> Result<WriterHandle, DdsBridgeError> {
+        let mut writers = self
+            .writers
+            .lock()
+            .map_err(|_| DdsBridgeError::Register("writer table poisoned".to_string()))?;
+        if let Some((existing, _)) = writers.get(topic_name) {
             return Ok(*existing);
         }
         let cfg = UserWriterConfig {
@@ -236,7 +303,7 @@ impl DdsBridge {
             reliable,
             durability: Default::default(),
             ownership: Default::default(),
-            type_identifier: Default::default(),
+            type_identifier: self.announce_type(type_support.as_deref())?,
             ..Default::default()
         };
         let entity_id = self
@@ -269,8 +336,7 @@ impl DdsBridge {
                 .map_err(map)?;
         }
         let handle = WriterHandle { entity_id };
-        self.writers
-            .insert(topic_name.to_string(), (handle, type_support));
+        writers.insert(topic_name.to_string(), (handle, type_support));
         Ok(handle)
     }
 
@@ -289,12 +355,15 @@ impl DdsBridge {
     pub fn write(&self, topic_name: &str, body: &[u8]) -> Result<(), DdsBridgeError> {
         let (handle, type_support) = self
             .writers
+            .lock()
+            .map_err(|_| DdsBridgeError::Register("writer table poisoned".to_string()))?
             .get(topic_name)
+            .cloned()
             .ok_or(DdsBridgeError::UnknownWriter)?;
         let key_hash = type_support
             .as_ref()
             .and_then(|ts| ts.read_body(body, 2, false).ok())
-            .and_then(|sample| ts_key(type_support, &sample));
+            .and_then(|sample| ts_key(&type_support, &sample));
         match key_hash {
             Some(hash) => self
                 .runtime
@@ -372,18 +441,13 @@ fn spawn_pump(
     });
 }
 
-/// Opportunistically resolves a [`SerializedTypeSupport`] for a discovered
-/// endpoint's `type_identifier` through the runtime's own TypeLookup
-/// registry (`DcpsRuntime::type_lookup_server`, filled by
-/// `DcpsRuntime::register_type_object` and by a `getTypes` reply this
-/// runtime already received for some other reason).
-///
-/// This is deliberately **not** a live cross-participant TypeLookup RPC
-/// this daemon drives itself — see `docs/specs/zerodds-opcua-bridge-1.0.md`
-/// §6.2 for why. It resolves a discovered topic's type only when the
-/// registry already has it; otherwise `None`, so the caller falls back to
-/// the configured-IDL path ([`crate::idl`]) or exposes the topic as a
-/// browsable container with no live value, never a wrong one.
+/// Resolves a [`SerializedTypeSupport`] for a discovered endpoint's
+/// complete `TypeIdentifier` ([`DiscoveredEndpointInfo::
+/// complete_type_identifier`]) through the runtime's own TypeLookup
+/// registry (`DcpsRuntime::type_lookup_server`), filled by
+/// `DcpsRuntime::register_type_object` and by the `getTypes` replies the
+/// runtime receives, among them the ones [`TypeQuery`] asks for. `None`
+/// until the registry holds the type and every type it depends on.
 #[must_use]
 pub fn resolve_discovered(
     bridge: &DdsBridge,
@@ -404,6 +468,100 @@ pub fn resolve_discovered(
     }
     drop(server);
     SerializedTypeSupport::from_complete_type_objects(type_name, root, dependencies).ok()
+}
+
+/// How long a [`TypeQuery`] waits for an answer before it asks the same
+/// peer for the same type again: a request or a reply may be lost
+/// (the TypeLookup endpoints are RELIABLE, the peer may have gone).
+pub const TYPE_QUERY_RETRY: Duration = Duration::from_secs(5);
+
+/// Learns the type of a topic from the remote endpoints of the topic
+/// (spec §5.1): each endpoint that announces a complete `TypeIdentifier`
+/// is asked for the type and its dependencies over TypeLookup (XTypes 1.3
+/// §7.6.3.3.4, `getTypes` and `getTypeDependencies`), and the type is
+/// there once the runtime's registry holds it all.
+#[derive(Debug)]
+pub struct TypeQuery {
+    topic: String,
+    /// The peers asked, with the type asked for and when.
+    asked: Vec<(GuidPrefix, zerodds_types::TypeIdentifier, Instant)>,
+}
+
+/// What [`TypeQuery::poll`] found.
+#[derive(Debug, Clone)]
+pub enum TypeQueryState {
+    /// The type: its support, named as the endpoint that had it names it.
+    Resolved(Arc<SerializedTypeSupport>),
+    /// Not yet: how many remote endpoints of the topic there are, and how
+    /// many of them announce no complete type to ask for.
+    Waiting {
+        /// Remote endpoints of the topic.
+        endpoints: usize,
+        /// Of those, the ones without a complete `TypeIdentifier`.
+        without_type: usize,
+    },
+}
+
+impl TypeQuery {
+    /// A query for the type of `topic`.
+    #[must_use]
+    pub fn new(topic: &str) -> Self {
+        Self {
+            topic: topic.to_string(),
+            asked: Vec::new(),
+        }
+    }
+
+    /// Looks at the remote endpoints of the topic: the first whose type the
+    /// registry holds gives it; the others are asked for theirs, each at
+    /// most once per [`TYPE_QUERY_RETRY`].
+    pub fn poll(&mut self, bridge: &DdsBridge, now: Instant) -> TypeQueryState {
+        let own = bridge.runtime().guid_prefix;
+        let mut endpoints = 0;
+        let mut without_type = 0;
+        for endpoint in bridge.discovered_topics() {
+            let mut prefix = [0u8; 12];
+            prefix.copy_from_slice(&endpoint.endpoint_guid[..12]);
+            let peer = GuidPrefix::from_bytes(prefix);
+            if endpoint.topic_name != self.topic || peer == own {
+                continue;
+            }
+            endpoints += 1;
+            let Some(id) = endpoint.complete_type_identifier.as_ref() else {
+                without_type += 1;
+                continue;
+            };
+            if let Some(support) = resolve_discovered(bridge, id, &endpoint.type_name) {
+                return TypeQueryState::Resolved(support);
+            }
+            let recent = self.asked.iter().any(|(asked_peer, asked_id, at)| {
+                *asked_peer == peer
+                    && asked_id == id
+                    && now.saturating_duration_since(*at) < TYPE_QUERY_RETRY
+            });
+            if recent {
+                continue;
+            }
+            // A request that does not go out (no locator for the peer yet)
+            // is asked again with the next poll.
+            let runtime = bridge.runtime();
+            let sent = runtime
+                .send_type_lookup_request(peer, core::slice::from_ref(id))
+                .ok()
+                .flatten()
+                .is_some();
+            let _ = runtime.send_type_dependencies_request(peer, core::slice::from_ref(id));
+            if sent {
+                self.asked
+                    .retain(|(asked_peer, asked_id, _)| !(*asked_peer == peer && asked_id == id));
+                self.asked.push((peer, id.clone(), now));
+            }
+        }
+        TypeQueryState::Waiting {
+            endpoints,
+            without_type,
+        }
+    }
 }
 
 #[cfg(test)]

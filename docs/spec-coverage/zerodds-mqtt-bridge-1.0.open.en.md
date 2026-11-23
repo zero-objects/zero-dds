@@ -5,26 +5,6 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
-## §8.1 Structured JSON logging
+## §11 Linux/macOS/Windows/Docker layout
 
-**Status:** `open` — `crates/mqtt-bridge/src/daemon/cli.rs::tests` covers the flag splitting, but nothing tests the JSON log form or the effect of `--log-level`.
-
-## §8.3 OTLP spans
-
-**Status:** `partial` — the configuration is covered, the span emit is not; the missing half is carried as §8.3a `open`.
-
-## §8.3a PUBLISH roundtrip span
-
-**Status:** `open` — the emit half of §8.3.
-
-## §10 RTPS peer + Mosquitto/EMQX/HiveMQ
-
-**Status:** `partial` — Mosquitto is measured, EMQX and HiveMQ are not; the missing part is carried as §10a `open`.
-
-## §10a Broker matrix EMQX/HiveMQ
-
-**Status:** `open` — the part of §10 and §12.3 beyond Mosquitto. The tests against a foreign broker know only Mosquitto.
-
-## §12.3 Multi-vendor cross_vendor.rs
-
-**Status:** `partial` — Mosquitto and the DDS side are covered, the rest of the broker matrix is not.
+**Status:** `partial` — the tests ran green on the Linux test host; the Windows code was compiled there with `cargo clippy --target x86_64-pc-windows-gnu -p zerodds-mqtt-bridge --all-targets -- -D warnings` and likewise for `zerodds-dcps` (`--lib --tests`), not run. Missing: the run of the service `ZeroDDSMQTTBridge` under `sc.exe` (start, `READY=1` as `SERVICE_RUNNING`, stop with the drain, `paramchange` as reload, the log in `%PROGRAMDATA%\ZeroDDS\logs\mqtt-bridged.log`); it needs a Windows host with the registered service, and the Linux test host is none. Missing: a CI job that compiles this package's Windows code (`install_signal_watcher` under `cfg(not(unix))`, the Windows path of `run_as_service`, `running_as_service`): the Windows jobs of the CI (`ci/platform_jobs.py`, `CORE` and `WINDOWS_EXTRA`) run only for the core crates and `zerodds-foundation`, `zerodds-qos`, `zerodds-transport-shm`, and the CI image (`ci/Dockerfile.rust`) does not have the target `x86_64-pc-windows-gnu`; such a job needs one of the two ways and a run that shows it green. The image of `packaging/docker/mqtt-bridged/Dockerfile` was built once by hand on the Linux test host (Docker 26.1.5, exit 0) and started: `--check-config` with the image's configuration exit 0; with `--network host` and `--broker` against Mosquitto 2.0.21 the lines `connect`, `subscribed`, `catalog_published`, the catalog on `$zerodds/zerodds-mqtt-bridge/catalog` read by `mosquitto_sub`, after `docker stop` `catalog_cleared`, `disconnect` with 0x00 and exit 0. No job but `release.yml` at a release builds the image.

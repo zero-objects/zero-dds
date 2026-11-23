@@ -143,6 +143,10 @@ pub struct Composed {
     /// nodes are in file offsets already: their `SourceFacet` names the
     /// file and the range in it. `None` for a bundle of units.
     pub expanded: Option<zerodds_idl_parse::Preprocessed>,
+    /// What a CIDL unit (`ComposeOptions::dialect` with `cidl` set)
+    /// declared beyond IDL: its compositions and PSDL declarations,
+    /// CORBA 3.3 Part 3 §8. Empty for IDL.
+    pub cidl: zerodds_ast::cidl::CidlModel,
 }
 
 impl Composed {
@@ -310,9 +314,17 @@ pub fn compose_source_with(
     let expanded_from = preprocessed.diagnostics.len();
     let tree_from = diagnostics.len();
 
-    let lowered = zerodds_idl_lower::lower_with(&parsed.syntax(), path, options.lowering());
-    diagnostics.extend(lowered.diagnostics);
-    let mut ast = lowered.ast;
+    // A CIDL unit lowers to the model and its compositions; the rules of
+    // CORBA 3.3 Part 3 §8 are among the lowering's diagnostics.
+    let (mut ast, cidl) = if options.dialect.cidl {
+        let lowered = zerodds_idl_lower::lower_cidl(&parsed.syntax(), path, options.lowering());
+        diagnostics.extend(lowered.diagnostics);
+        (lowered.ast, lowered.cidl)
+    } else {
+        let lowered = zerodds_idl_lower::lower_with(&parsed.syntax(), path, options.lowering());
+        diagnostics.extend(lowered.diagnostics);
+        (lowered.ast, zerodds_ast::cidl::CidlModel::default())
+    };
     diagnostics.extend(resolve(&mut ast, path));
     // After resolve, because a cycle is a property of the resolved type
     // graph: an unresolved reference has no edge to close one.
@@ -343,6 +355,7 @@ pub fn compose_source_with(
         diagnostics,
         without_type_objects,
         expanded: Some(preprocessed),
+        cidl,
     }
 }
 
@@ -763,6 +776,7 @@ pub fn compose_all_sources(
         diagnostics,
         without_type_objects,
         expanded: None,
+        cidl: zerodds_ast::cidl::CidlModel::default(),
     }
 }
 

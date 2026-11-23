@@ -1358,12 +1358,19 @@ the HeaderExtension. … a stream-oriented transport (like TCP) would need to
 include the length in the RTPS HeaderExtension".
 
 **Repo:** `crates/rtps/src/datagram.rs` (`decode_datagram`: length from the
-UDP datagram)
+UDP datagram); `crates/rtps/src/header_extension.rs`
+(`HeaderExtension::with_message_length`: puts the length into the
+HeaderExtension of a message, for a stream transport)
 
-**Tests:** `crates/rtps/src/datagram.rs::tests::decode_handles_last_submessage_zero_length`
+**Tests:** `crates/rtps/src/datagram.rs::tests::decode_handles_last_submessage_zero_length`,
+`crates/rtps/src/header_extension.rs::tests::rtps_8_3_3_with_message_length_puts_the_length_behind_the_header`,
+`crates/rtps/src/header_extension.rs::tests::rtps_8_3_3_with_message_length_keeps_the_fields_of_an_extension`,
+`crates/rtps/src/header_extension.rs::tests::rtps_8_3_3_with_message_length_refuses_what_is_no_rtps_2_5_message`
 
 **Status:** `done` — for UDP (§9) the transport carries the length; the TCP
-mapping is not part of the UDP/IP PSM.
+mapping is not part of the UDP/IP PSM. Over TCP the dialect `rtps` of the
+own transport delimits messages by the length in the HeaderExtension
+(`zerodds-tcp-transport-1.0` §2.5).
 
 ### §8.3.3.1 Header at the start of every message
 
@@ -3824,11 +3831,13 @@ Changes filtered due to the writer-side application of a content-filtered-topic
 delivery to the Reader. … The filteredCount shall not include changes that are
 no longer in the RTPS Writer HistoryCache".
 
-**Repo:** —
+**Repo:** `crates/rtps/src/reliable_writer.rs` (`gap_filtered_count`, `passes_dds_filter`, `is_relevant`); `crates/rtps/src/reader_proxy.rs` (`ChangeFilter`, `ReaderProxy::with_filter`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::a_change_that_fails_the_readers_filter_is_a_gap_with_filtered_count_one`,
+`crates/rtps/src/reliable_writer.rs::tests::a_best_effort_reader_behind_is_pushed_gaps_with_the_filtered_count`,
+`crates/rtps/src/reliable_writer.rs::tests::a_gap_for_a_number_the_cache_no_longer_holds_has_filtered_count_zero`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform. The Gap codec knows the field (`GAP_FLAG_FILTERED_COUNT`), `append_gap` sets `filtered_count: None`.
+**Status:** `done` — a GAP counts a change the cache holds and the reader is not sent (it does not pass the proxy's `DDS_FILTER`, or is addressed to another participant) with `filteredCount` 1, and a number the cache no longer holds with 0. Which filters a proxy carries is under §8.7.3: the DCPS layer sets none so far.
 
 ### §8.3.8.5 HeaderExtension
 
@@ -6164,7 +6173,7 @@ filteredCount 1; in-line QoS on expectsInlineQos; postcondition
 `crates/rtps/src/reliable_writer.rs::tests::a_gap_for_a_number_the_cache_no_longer_holds_has_filtered_count_zero`,
 `crates/rtps/src/reliable_writer.rs::tests::write_fans_out_to_all_reader_proxies`
 
-**Status:** `done` — a proxy in step gets every new change as DATA; one that is behind gets every change not yet sent as DATA in `tick`, a number the cache no longer holds as a GAP with `filteredCount` 0. If a change fails `DDS_FILTER(the_reader_proxy, a_change)` (`ReaderProxy::with_filter`), a GAP with `filteredCount` 1 goes out instead of the DATA. The runtime sets no filter (`DDS_FILTER` may be a no-op, §8.2.10.1); the behaviour against Cyclone DDS, Fast DDS and OpenDDS is not measured.
+**Status:** `done` — a proxy in step gets every new change as DATA; one that is behind gets every change not yet sent as DATA in `tick`, a number the cache no longer holds as a GAP with `filteredCount` 0. If a change fails `DDS_FILTER(the_reader_proxy, a_change)` (`ReaderProxy::with_filter`), a GAP with `filteredCount` 1 goes out instead of the DATA. The runtime sets no `DDS_FILTER` of this kind; it applies a remote reader's content filter through the filter signature (§8.7.3). The behaviour against Cyclone DDS, Fast DDS and OpenDDS is not measured.
 
 ### §8.4.9.1 Best-effort StatefulWriter: lagging proxy
 
@@ -9350,11 +9359,15 @@ the Endpoint discovery phase. Include filter results with each data sample."
 §8.7.3.4, p. 142: "Writer side filtering constitutes an optimization and is
 optional".
 
-**Repo:** —
+**Repo:** `crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`);
+`crates/dcps/src/runtime.rs` (`UserWriterSlot::set_reader_content_filter`, `UserWriterSlot::filter_outcomes`, `set_user_writer_filter_evaluator`); `crates/dcps/src/publisher.rs` (`create_datawriter`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`,
+`crates/dcps/tests/writer_side_content_filter.rs::rtps_8_7_3_3_a_writer_sends_a_filtered_reader_only_what_passes`,
+`crates/dcps/tests/writer_side_content_filter.rs::rtps_8_7_3_4_a_reader_without_a_filter_gets_every_sample`,
+`crates/dcps/tests/writer_side_content_filter.rs::rtps_8_7_3_1_changed_parameters_reach_the_writers_filter`
 
-**Status:** open — an optional function; ZeroDDS does not filter on the writer side. The filter information of the reader in SEDP is listed under §8.7.3.1.
+**Status:** `done` — a typed DataWriter applies the DDSSQL filter a matched reader announces in its subscription, also after its parameters changed. A writer that has only serialized samples (the runtime API, the C API) does not filter. The reader keeps applying its own filter. Not measured against other vendors' readers and writers.
 
 ### §8.7.3 Hints by the writer: ALIVE_FILTERED, ContentFilterInfo, omitted data
 
@@ -9365,11 +9378,13 @@ state is ALIVE_FILTERED." "Alternatively, the Writer may not send a Data
 message at all. This is only allowed if the previous sample for that Instance
 was already filtered for that Reader".
 
-**Repo:** —
+**Repo:** `crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`);
+`crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`,
+`crates/rtps/src/reliable_reader.rs::tests::a_sample_with_the_filtered_flag_is_known_but_not_delivered`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — a sample that does not pass the reader's filter goes out as a DATA without payload and with the FilteredFlag when the previous sample of the instance passed or there was none, otherwise as a GAP with `filteredCount` 1; a sample that passes carries `PID_CONTENT_FILTER_INFO`.
 
 ### §8.7.3.1 ContentFilterProperty_t in DiscoveredReaderData
 
@@ -9465,11 +9480,11 @@ must have been configured to handle filters of the specified filter class. If
 not, the Writer will simply ignore the filter information and not filter any
 data samples."
 
-**Repo:** —
+**Repo:** `crates/dcps/src/runtime.rs` (`UserWriterSlot::set_reader_content_filter`, `UserWriterSlot::filter_outcomes`, `set_user_writer_filter_evaluator`); `crates/dcps/src/publisher.rs` (`create_datawriter`)
 
-**Tests:** —
+**Tests:** `crates/dcps/tests/writer_side_content_filter.rs::rtps_8_7_3_1_a_filter_the_writer_cannot_apply_is_left_to_the_reader`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — a filter of a class other than `DDSSQL`, an expression that does not parse or names a field the writer's type does not have, and the 33rd filter of one writer are left to the reader; the writer sends it every sample. The limit of 32 filters per writer is not tested.
 
 ### §8.7.3.1 Changed filter parameters through endpoint discovery
 
@@ -9488,11 +9503,12 @@ updated information is exchanged using the Endpoint discovery protocol."
 submessage that does not contain a Data payload (DataFlag=0) and sets
 FilteredFlag=1, see 8.3.8.2.2."
 
-**Repo:** —
+**Repo:** `crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`,
+`crates/rtps/src/reliable_reader.rs::tests::a_sample_with_the_filtered_flag_is_known_but_not_delivered`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform. The Data submessage has no FilteredFlag; the FilteredFlag belongs to StatusInfo_t (§9.6.4.9).
+**Status:** `done` — the writer sends a DATA with DataFlag 0 and the FilteredFlag in `PID_STATUS_INFO` for it (§9.6.4.9; the Data submessage itself has no FilteredFlag). A ZeroDDS reader takes the number as known and delivers no sample.
 
 ### §8.7.3.3 GAP instead of DATA and filter results in the inline QoS
 
@@ -9502,11 +9518,13 @@ case, the sample must still be sent and the writer must include information
 with the Data submessage on what filters were applied and the according
 result."
 
-**Repo:** —
+**Repo:** `crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`);
+`crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`,
+`crates/dcps/tests/writer_side_content_filter.rs::rtps_8_7_3_3_a_writer_sends_a_filtered_reader_only_what_passes`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — ZeroDDS sends each reader a submessage of its own: a sample that does not pass its filter is a GAP (or the indication of §8.7.3.2), one that passes is a DATA with `PID_CONTENT_FILTER_INFO` over all filters applied.
 
 ### §8.7.3.3 Table 8.87 filterResult
 
@@ -9514,22 +9532,27 @@ result."
 each filter signature, the results indicate whether the sample passed the
 filter."
 
-**Repo:** —
+**Repo:** `crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`);
+`crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_wire_form_has_bit_zero_as_the_first_signature`,
+`crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; PID_CONTENT_FILTER_INFO is not sent.
+**Status:** `done` — one bit per filter signature applied, 1 for passed.
 
 ### §8.7.3.3 Table 8.87 filterSignatures
 
 **Spec:** §8.7.3.3, p. 142, Table 8.87 — "filterSignatures:
 FilterSignature_t[] — A list of filters that were applied to the sample."
 
-**Repo:** —
+**Repo:** `crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`);
+`crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_wire_form_has_bit_zero_as_the_first_signature`,
+`crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_signature_is_the_md5_of_the_strings_with_their_nul`,
+`crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; PID_CONTENT_FILTER_INFO is not sent.
+**Status:** `done` — the signatures of the filters the writer applied to the sample.
 
 ### §8.7.3.4 Readers filter when the writer does not
 
@@ -9579,11 +9602,13 @@ implementations must allow the user to register the same custom filter class."
 filtering, the Writer must provide enough information for the Reader to
 correctly transition the instance state to ALIVE_FILTERED."
 
-**Repo:** —
+**Repo:** `crates/dcps/src/runtime.rs` (`UserWriterSlot::set_reader_content_filter`, `UserWriterSlot::filter_outcomes`, `set_user_writer_filter_evaluator`); `crates/dcps/src/publisher.rs` (`create_datawriter`);
+`crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`,
+`crates/rtps/src/reliable_reader.rs::tests::a_sample_with_the_filtered_flag_is_known_but_not_delivered`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; every sample goes to every matched reader.
+**Status:** `done` — the writer keeps per instance and filter signature whether the last sample passed (readers with one signature share the state) and sends the first sample that does not pass as a DATA with the FilteredFlag. That a DataReader then holds the instance as ALIVE_FILTERED is not tested end to end.
 
 ### §8.7.4 Instance state changes through Data and inline QoS
 
@@ -9632,11 +9657,12 @@ data value, or else indicates the InstanceState is ALIVE_FILTERED." "If the
 previous update to the instance did not pass the filter, then the Writer may
 omit sending the Data Submessage to the Reader."
 
-**Repo:** —
+**Repo:** `crates/dcps/src/runtime.rs` (`UserWriterSlot::set_reader_content_filter`, `UserWriterSlot::filter_outcomes`, `set_user_writer_filter_evaluator`); `crates/dcps/src/publisher.rs` (`create_datawriter`);
+`crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; ZeroDDS sends every value.
+**Status:** `done` — when the previous sample of the instance passed the filter, the one that does not pass goes out as a DATA without payload and with the FilteredFlag; when that one did not pass either, as a GAP.
 
 ### §8.7.4 Dispose and unregister message
 
@@ -10796,11 +10822,12 @@ string<256> relatedTopicName; string<256> filterClassName;"
 long FilterSignature_t[4]; … struct ContentFilterInfo_t { FilterResult_t
 filterResult; FilterSignatureSequence filterSignatures; };"
 
-**Repo:** —
+**Repo:** `crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_wire_form_has_bit_zero_as_the_first_signature`,
+`crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_signature_is_the_md5_of_the_strings_with_their_nul`
 
-**Status:** open — the types are missing in the code; part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — `ContentFilterInfo` holds signatures and results, `FilterSignature` the 16 octets of the MD5.
 
 ### §9.3.2.1 Property_t and EntityName_t
 
@@ -10964,8 +10991,8 @@ reserved for future use by the RTPS specification … 0x03000000 and greater are
 reserved for Locator_t kinds that identify a transport developed by a
 third-party".
 
-**Repo:** `crates/rtps/src/wire_types.rs` (`LocatorKind`, `LocatorKind::from_i32`, `set_tcp_kinds_fast_dds`);
-`crates/dcps/src/runtime.rs` (`RuntimeConfig::tcp_locator_kinds_fast_dds`, key `transport.tcp_locator_kinds`)
+**Repo:** `crates/rtps/src/wire_types.rs` (`LocatorKind`, `LocatorKind::from_i32`, `TcpKindSet`, `Locator::with_tcp_kind_set`);
+`crates/dcps/src/runtime.rs` (`RuntimeConfig::tcp_locator_kinds_fast_dds`, `RuntimeConfig::tcp_kind_set`, key `transport.tcp_locator_kinds`)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::the_zerodds_locator_kinds_are_in_the_vendor_specific_range`,
 `crates/rtps/src/wire_types.rs::tests::the_tcp_kinds_are_vendor_range_by_default_and_fast_dds_by_setting`,
@@ -10976,7 +11003,7 @@ third-party".
 `crates/transport-uds/src/lib.rs::tests::rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_uds_value`,
 `crates/rtps/src/submessages.rs::tests::info_reply_leaves_out_a_locator_of_a_kind_it_does_not_know`
 
-**Status:** `done` — all kinds besides UDPv4 (1) and UDPv6 (2) lie in the vendor range 3 to 0x01ffffff: `Shm`, `Uds`, `Tsn` (0x01F0_0001 to 0x01F0_0003) and now `Tcpv4` (0x01F0_0004) and `Tcpv6` (0x01F0_0005). ZeroDDS sends the values 4 and 8 of Fast DDS (and of the DDS-TCP-PSM) only with the named setting `transport.tcp_locator_kinds: fast-dds` (environment `ZERODDS_TCP_LOCATOR_KINDS`, man page, example configuration); both values are read. A kind the receiver does not know does not invalidate an INFO_REPLY, the locator is left out. Expected Fast DDS behaviour: with `fast-dds` it recognises the TCP locators of ZeroDDS (kinds 4 and 8); without the setting it ignores kinds in the vendor range and opens no TCP connection to ZeroDDS. Not measured.
+**Status:** `done` — all kinds besides UDPv4 (1) and UDPv6 (2) lie in the vendor range 3 to 0x01ffffff: `Shm`, `Uds`, `Tsn` (0x01F0_0001 to 0x01F0_0003) and now `Tcpv4` (0x01F0_0004) and `Tcpv6` (0x01F0_0005). ZeroDDS sends the values 4 and 8, which Cyclone DDS writes (`ddsi_protocol.h`: `DDSI_LOCATOR_KIND_TCPv4 = 4`, `DDSI_LOCATOR_KIND_TCPv6 = 8`) and which are not checked against the source of Fast DDS, only with the named setting `transport.tcp_locator_kinds: fast-dds` (environment `ZERODDS_TCP_LOCATOR_KINDS`, man page, example configuration); both values are read. A kind the receiver does not know does not invalidate an INFO_REPLY, the locator is left out. Expected Fast DDS behaviour: with `fast-dds` it recognises the TCP locators of ZeroDDS (kinds 4 and 8); without the setting it ignores kinds in the vendor range and opens no TCP connection to ZeroDDS. Not measured.
 
 ### §9.3.2.5 GroupDigest_t
 
@@ -13764,11 +13791,14 @@ DestinationOrderQosPolicy".
 **Spec:** §9.6.4, p. 190, Table 9.20 — "PID_CONTENT_FILTER_INFO — 0x0055 —
 ContentFilterInfo_t".
 
-**Repo:** —
+**Repo:** `crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`);
+`crates/rtps/src/reliable_writer.rs` (`filter_outcome`, `is_relevant`, `is_filter_notice`, `sample_inline_qos_for`, `set_next_filter_outcomes`, `set_reader_filter_signature`);
+`crates/rtps/src/parameter_list.rs` (`pid::CONTENT_FILTER_INFO`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_wire_form_has_bit_zero_as_the_first_signature`,
+`crates/rtps/src/reliable_writer.rs::tests::rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap`
 
-**Status:** open — ZeroDDS does not know the PID; a received parameter is skipped as an unknown PID without the must-understand bit. Part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — the writer sends the parameter to readers whose filter it applies; `find_content_filter_info` reads it. The DataReader does not evaluate it and applies its own filter (§8.7.3.4).
 
 ### §9.6.4 Table 9.20 PID_COHERENT_SET (0x0056)
 
@@ -13903,11 +13933,14 @@ numBitmaps == ([numSignatures/32] + (numSignatures%32 ? 1 : 0))"; "A filter’s
 signature is calculated as the 128-bit MD5 checksum of all strings in the
 filter's ContentFilterProperty_t."
 
-**Repo:** —
+**Repo:** `crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_signature_is_the_md5_of_the_strings_with_their_nul`,
+`crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_wire_form_has_bit_zero_as_the_first_signature`,
+`crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_thirty_three_signatures_take_two_bitmaps`,
+`crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_counts_that_disagree_are_invalid`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — the signature is on the wire as the 16 octets of the MD5 in their order; the specification names `long[4]`, and the octet order is not checked against another implementation.
 
 ### §9.6.4.1 Table 9.21 filterResult
 
@@ -13915,11 +13948,11 @@ filter's ContentFilterProperty_t."
 corresponding filter and did not pass. 1 — Sample was filtered by the
 corresponding filter and passed."
 
-**Repo:** —
+**Repo:** `crates/rtps/src/content_filter_info.rs` (`ContentFilterInfo`, `FilterOutcome`, `filter_signature`)
 
-**Tests:** —
+**Tests:** `crates/rtps/src/content_filter_info.rs::tests::rtps_9_6_4_1_the_wire_form_has_bit_zero_as_the_first_signature`
 
-**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+**Status:** `done` — bit 1 for passed, 0 for not passed.
 
 ### §9.6.4.2 PID_COHERENT_SET: encoding and value
 
@@ -14959,25 +14992,25 @@ https://www.omg.org/spec/DDS-SECURITY".
 
 ## Audit-Status
 
-978 done / 3 partial / 15 open / 2 blocked / 127 n/a (informative).
+992 done / 3 partial / 1 open / 2 blocked / 127 n/a (informative).
 
-Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document ddsi-rtps-2.5.md`):
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 9695 to 9772 of `main` (`python3 ci/coverage_results.py --document ddsi-rtps-2.5.md`):
 
-* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 189 tests green.
-* `cargo nextest run --profile merge -p zerodds-discovery --all-targets` (job `merge-rust-discovery`) — 39 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 195 tests green.
 * `cargo nextest run --profile merge -p zerodds-durability-service --all-targets` (job `merge-rust-durability-service`) — 1 test green.
 * `cargo nextest run --profile merge -p zerodds-qos --all-targets` (job `merge-rust-qos`) — 10 tests green.
 * `cargo nextest run --profile merge -p zerodds-routing-service --all-targets` (job `merge-rust-routing-service`) — 1 test green.
-* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 617 tests green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 626 tests green.
 * `cargo nextest run --profile merge -p zerodds-security-rtps --all-targets` (job `merge-rust-security-rtps`) — 2 tests green.
 * `cargo nextest run --profile merge -p zerodds-security-runtime --all-targets` (job `merge-rust-security-runtime`) — 1 test green.
 * `cargo nextest run --profile merge -p zerodds-transport-shm --all-targets` (job `merge-rust-transport-shm`) — 1 test green.
 * `cargo nextest run --profile merge -p zerodds-transport-tcp --all-targets` (job `merge-rust-transport-tcp`) — 1 test green.
-* `cargo nextest run --profile merge -p zerodds-transport-udp --all-targets` (job `merge-rust-transport-udp`) — 7 tests green.
 * `cargo nextest run --profile merge -p zerodds-transport-uds --all-targets` (job `merge-rust-transport-uds`) — 1 test green.
-* `cargo nextest run --profile merge -p zerodds-types --all-targets` (job `merge-rust-types`) — 12 tests green.
 * job `vendor-live-dcps` — 1 test green.
+* job `platform-aarch64-discovery` — 39 tests green.
+* job `platform-aarch64-transport-udp` — 7 tests green.
+* job `platform-aarch64-types` — 12 tests green.
 
-883 cited tests green, 0 not green.
+898 cited tests green, 0 not green.
 
 Open items: `ddsi-rtps-2.5.open.en.md`.

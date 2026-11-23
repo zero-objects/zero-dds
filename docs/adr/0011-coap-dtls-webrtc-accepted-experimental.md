@@ -1,6 +1,8 @@
 # ADR 0011 — CoAP DTLS 1.2 via webrtc-dtls (opt-in, experimental)
 
-- **Status:** Accepted (2026-06-12)
+- **Status:** Superseded by ADR 0014 (2026-11-13: DTLS on OpenSSL, for the
+  raw public keys of RFC 7250 that webrtc-dtls does not have); accepted
+  2026-06-12
 - **Supersedes:** the "DTLS DEFER" recommendation of the internal
   pure-Rust DTLS dossier (§5.2)
 - **Related:** ADR 0010 (OSCORE accepted) — the object-security path

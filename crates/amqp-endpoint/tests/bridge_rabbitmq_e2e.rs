@@ -453,6 +453,72 @@ fn amqpbridge_9_3_after_the_broker_closes_the_connection_the_bridge_reconnects()
     );
 }
 
+/// §2 exit 6 against RabbitMQ: the open names a virtual host the node does
+/// not have (`amqp.hostname: vhost:<name>`, RabbitMQ 4 addresses its virtual
+/// hosts so); RabbitMQ 4.0.5 resets the connection after that open (measured,
+/// no close frame), and the daemon ends with 6 at the first connect, without
+/// `--once`.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_2_an_unknown_vhost_is_exit_6() {
+    let node = RabbitNode::start();
+    declare(&node, &["zd_bridge_vhost"]);
+    let yaml = bridge_yaml_with(
+        &node,
+        "Vhost",
+        "zd_bridge_vhost",
+        "out",
+        "  hostname: \"vhost:zd-no-such-vhost\"\n",
+    );
+    let stop = Arc::new(AtomicBool::new(false));
+    let started = Instant::now();
+    let res = bridge_daemon::run(
+        &config(&yaml),
+        RuntimeConfig::default(),
+        &stop,
+        &BridgeMetrics::register(&Registry::new()),
+        false,
+        Duration::from_secs(5),
+    );
+    let e = res.expect_err("the open to an unknown virtual host was accepted");
+    assert_eq!(e.code, 6, "{e}");
+    assert!(started.elapsed() < STEP, "ended at the first connect");
+}
+
+/// §4.1 against RabbitMQ: the node lists the bridge's AMQP 1.0 connection
+/// with the two bridge properties of the open as its client properties
+/// (`rabbitmqctl list_connections protocol client_properties`). RabbitMQ
+/// 4.0.5 has no info key for the container id; that field is checked in
+/// `bridge_scripted.rs`.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_4_1_rabbitmq_lists_the_bridge_properties_of_the_open() {
+    let node = RabbitNode::start();
+    declare(&node, &["zd_bridge_open"]);
+    let yaml = bridge_yaml(&node, "Open41", "zd_bridge_open", "out");
+    let (stop, join) = start_bridge(config(&yaml));
+    let deadline = Instant::now() + STEP;
+    let listed = loop {
+        let out = node.ctl(&[
+            "list_connections",
+            "--silent",
+            "protocol",
+            "client_properties",
+        ]);
+        if !out.trim().is_empty() {
+            break out;
+        }
+        assert!(Instant::now() < deadline, "no connection listed");
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    let line = listed.lines().next().unwrap();
+    assert!(line.starts_with("{1, 0}"), "AMQP 1.0: {line}");
+    assert!(line.contains(r#"{"zerodds_version","1.0"}"#), "{line}");
+    assert!(line.contains(r#"{"zerodds_role","bridge"}"#), "{line}");
+}
+
 /// §4.2, §5.2, §6: a topic whose address the broker refuses does not take
 /// the others down, the catalog goes to its address, and the writer's
 /// LIFESPAN is the message ttl.
@@ -626,6 +692,15 @@ fn amqpbridge_8_2_the_metrics_count_transfers_dispositions_and_samples() {
     );
 }
 
+/// The configuration a reload reads from the YAML text `yaml`.
+fn reload_config(yaml: &str) -> Result<DaemonConfig, String> {
+    let mut config = zerodds_config::Config::default();
+    zerodds_config::parse_str(yaml, "<reload>")
+        .map_err(|e| e.to_string())
+        .and_then(|p| config.push(p, "<reload>".into()).map_err(|e| e.to_string()))
+        .and_then(|()| DaemonConfig::from_config(Some(&config)).map_err(|e| e.to_string()))
+}
+
 /// §9.2 SIGHUP: a reload that withdraws the read right stops the topic's
 /// samples at once; a configuration that does not load changes nothing.
 #[test]
@@ -650,12 +725,7 @@ fn amqpbridge_9_2_a_reload_that_withdraws_the_read_right_stops_the_topic() {
             let registry = Registry::new();
             let metrics = BridgeMetrics::register(&registry);
             let load = move || -> Result<DaemonConfig, String> {
-                let yaml = c.lock().unwrap().clone();
-                let mut cc = zerodds_config::Config::default();
-                let parsed = zerodds_config::parse_str(&yaml, "<reload>")
-                    .map_err(|e| e.to_string())
-                    .and_then(|p| cc.push(p, "<reload>".into()).map_err(|e| e.to_string()))
-                    .and_then(|()| DaemonConfig::from_config(Some(&cc)).map_err(|e| e.to_string()));
+                let parsed = reload_config(&c.lock().unwrap());
                 let _ = loaded_tx.lock().unwrap().send(());
                 parsed
             };
@@ -670,6 +740,7 @@ fn amqpbridge_9_2_a_reload_that_withdraws_the_read_right_stops_the_topic() {
                     flag: f,
                     load: Box::new(load),
                 }),
+                bridge_daemon::Tracer::default(),
             );
             assert!(r.is_ok(), "bridge stopped: {r:?}");
         })
@@ -821,4 +892,662 @@ fn ddsamqp_7_7_2_an_amqp_dispose_reaches_a_cyclone_reader() {
 fn ddsamqp_7_7_2_an_amqp_dispose_reaches_a_foreign_reader() {
     let states = amqp_dispose_states("env");
     assert_amqp_dispose_states("foreign", &states);
+}
+
+/// The Cyclone DDS writer of
+/// [`amqpbridge_12_3_a_cyclone_writer_reaches_the_queue`], through
+/// Cyclone's Python binding: `KeyedPointA` as the readers of
+/// `zerodds-test-vendor-reader` declare it, RELIABLE, TRANSIENT_LOCAL,
+/// KEEP_ALL. Arguments: the domain and the topic. It prints `READY`, then
+/// takes one command per line on stdin (`write <id> <value>`,
+/// `dispose <id>`) and answers each with `DONE`; it ends with its stdin.
+const CYCLONE_WRITER_PY: &str = r#"
+import sys
+from dataclasses import dataclass
+from cyclonedds.domain import DomainParticipant
+from cyclonedds.topic import Topic
+from cyclonedds.pub import DataWriter
+from cyclonedds.core import Qos, Policy
+from cyclonedds.idl import IdlStruct
+from cyclonedds.idl.annotations import keylist, final
+from cyclonedds.idl.types import int32
+from cyclonedds.util import duration
+
+@final
+@keylist(["id"])
+@dataclass
+class KeyedPointA(IdlStruct, typename="KeyedPointA"):
+    id: int32 = 0
+    value: int32 = 0
+
+dp = DomainParticipant(int(sys.argv[1]))
+tp = Topic(dp, sys.argv[2], KeyedPointA)
+qos = Qos(
+    Policy.Reliability.Reliable(duration(seconds=1)),
+    Policy.Durability.TransientLocal,
+    Policy.History.KeepAll,
+)
+wr = DataWriter(dp, tp, qos=qos)
+print("READY", flush=True)
+for line in sys.stdin:
+    op, *args = line.split()
+    if op == "write":
+        wr.write(KeyedPointA(id=int(args[0]), value=int(args[1])))
+    elif op == "dispose":
+        wr.dispose(KeyedPointA(id=int(args[0]), value=0))
+    else:
+        print(f"UNKNOWN {op}", flush=True)
+        continue
+    print("DONE", flush=True)
+"#;
+
+/// A message qpid-proton took from a queue.
+#[derive(Debug)]
+struct ProtonMessage {
+    content_type: String,
+    durable: bool,
+    body: Vec<u8>,
+    /// `dds:operation`, `None` when the message has none (a write, §7.7.1).
+    operation: Option<String>,
+    /// `dds:instance-handle`.
+    instance_handle: Vec<u8>,
+    /// `group-id`, `None` when the message has none.
+    group_id: Option<String>,
+}
+
+/// qpid-proton takes up to `n` messages of `queue` within `within` and
+/// accepts each.
+fn proton_take(node: &RabbitNode, queue: &str, n: usize, within: Duration) -> Vec<ProtonMessage> {
+    let out = Command::new(rabbitmq::python())
+        .arg("-c")
+        .arg(format!(
+            "from proton.utils import BlockingConnection\n\
+             c = BlockingConnection('amqp://127.0.0.1:{port}', user='guest', password='guest', allowed_mechs='PLAIN')\n\
+             r = c.create_receiver('/queues/{queue}', credit={n})\n\
+             for _ in range({n}):\n\
+             \x20   try:\n\
+             \x20       m = r.receive(timeout={secs})\n\
+             \x20   except Exception:\n\
+             \x20       break\n\
+             \x20   p = m.properties or {{}}\n\
+             \x20   h = p.get('dds:instance-handle')\n\
+             \x20   print(m.content_type, m.durable, bytes(m.body).hex(), p.get('dds:operation', '-'), bytes(h).hex() if h is not None else '-', m.group_id or '-', flush=True)\n\
+             \x20   r.accept()\n\
+             c.close()\n",
+            port = node.port,
+            secs = within.as_secs_f64()
+        ))
+        .output()
+        .expect("python3");
+    assert!(
+        out.status.success(),
+        "qpid-proton failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let hex = |s: &str| -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| {
+            let f: Vec<&str> = l.split(' ').collect();
+            assert_eq!(f.len(), 6, "{l}");
+            ProtonMessage {
+                content_type: f[0].to_string(),
+                durable: f[1] == "True",
+                body: hex(f[2]),
+                operation: (f[3] != "-").then(|| f[3].to_string()),
+                instance_handle: if f[4] == "-" { Vec::new() } else { hex(f[4]) },
+                group_id: (f[5] != "-").then(|| f[5].to_string()),
+            }
+        })
+        .collect()
+}
+
+/// A Cyclone DDS writer (Cyclone's Python binding, RELIABLE,
+/// TRANSIENT_LOCAL) in front of a bridge with the keyed topic
+/// `CyclonePoint` of `KeyedPointA`, with or without its `type_file`,
+/// RabbitMQ behind it: the writer writes instances 7 and 8 and disposes 7,
+/// qpid-proton takes the two writes and then the dispose. Returns them
+/// with the bridge's `errors_total` after the dispose.
+fn cyclone_writer_in_front(
+    node: &RabbitNode,
+    with_type_file: bool,
+) -> (Vec<ProtonMessage>, Vec<ProtonMessage>, Option<u64>) {
+    use std::io::{BufRead as _, Write as _};
+    use zerodds_test_vendor_reader::keyed_point_a_type_object;
+    let queue = "zd_bridge_cyclone_writer";
+    declare(node, &[queue]);
+    let mut topic = "dds_type: KeyedPointA\n    keyed: true".to_string();
+    if with_type_file {
+        let type_path = node.dir().join("keyed-point-a.typeobject");
+        std::fs::write(&type_path, keyed_point_a_type_object()).unwrap();
+        topic.push_str(&format!("\n    type_file: \"{}\"", type_path.display()));
+    }
+    let yaml = format!(
+        "{}      durability: transient_local\n",
+        bridge_yaml(node, "CyclonePoint", queue, "out")
+            .replace("dds_type: CyclonePointType", &topic)
+    );
+    let (stop, join, registry) = start_bridge_with_metrics(config(&yaml));
+    let script = node.dir().join("cyclone_writer.py");
+    std::fs::write(&script, CYCLONE_WRITER_PY).unwrap();
+    let python = std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let mut writer = Command::new(python)
+        .arg(&script)
+        .arg(domain().to_string())
+        .arg("CyclonePoint")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("python3 with Cyclone's Python binding");
+    let mut stdin = writer.stdin.take().unwrap();
+    let (tx, lines) = mpsc::channel();
+    let stdout = writer.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for l in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
+            if tx.send(l).is_err() {
+                break;
+            }
+        }
+    });
+    // Owns the writer's stdin: dropping it ends the writer.
+    let mut command = move |line: &str, answer: &str| {
+        if !line.is_empty() {
+            writeln!(stdin, "{line}").unwrap();
+            stdin.flush().unwrap();
+        }
+        assert_eq!(
+            lines.recv_timeout(STEP).as_deref(),
+            Ok(answer),
+            "the Cyclone writer after {line:?}"
+        );
+    };
+    command("", "READY");
+    command("write 7 107", "DONE");
+    command("write 8 108", "DONE");
+    // TRANSIENT_LOCAL on both sides: the bridge's reader receives both
+    // samples also when it matched the writer after the writes.
+    let writes = proton_take(node, queue, 2, STEP);
+    command("dispose 7", "DONE");
+    let disposes = proton_take(node, queue, 1, STEP);
+    drop(command);
+    let _ = writer.wait();
+    let errors = metric(&registry, "zerodds_amqp_errors_total");
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    (writes, disposes, errors)
+}
+
+/// Spec §12.3 and §10 ("a normal RTPS peer") with a DDS writer of another
+/// vendor: a Cyclone DDS writer (Cyclone's Python binding) in front of the
+/// bridge, RabbitMQ behind it, qpid-proton reading the queue. The two
+/// samples of `KeyedPointA` arrive as pass-through messages in the order
+/// written: the content type names the encapsulation the body begins with,
+/// the payload is Cyclone's, the message is durable as TRANSIENT_LOCAL
+/// says (§6), `dds:operation` is absent (a write), `dds:instance-handle`
+/// is the instance's KeyHash and `group-id` the digest of it (§3, §4.3).
+/// Cyclone's dispose of instance 7 arrives as `dds:operation` `dispose`
+/// with the KeyHash of 7 and its `group-id`. Cyclone 11.0.1 sends no
+/// `PID_KEY_HASH`: the bridge's reader computes the KeyHash from the
+/// topic's `type_file` (§3), and reads the dispose's key from its
+/// `serializedKey`; nothing is counted as an error.
+#[test]
+#[ignore = "needs RabbitMQ, qpid-proton and Cyclone's Python binding; runs in vendor-live-dispose-bridges"]
+fn amqpbridge_12_3_a_cyclone_writer_reaches_the_queue() {
+    use zerodds_amqp_endpoint::keyhash::group_id;
+    use zerodds_test_vendor_reader::keyed_point_a_key_hash;
+    let node = RabbitNode::start();
+    let (writes, disposes, errors) = cyclone_writer_in_front(&node, true);
+    assert_eq!(errors, Some(0), "every KeyHash computed");
+    assert_eq!(writes.len(), 2, "{writes:?}");
+    for (m, id) in writes.iter().zip([7i32, 8]) {
+        assert!(m.body.len() >= 4, "{m:?}");
+        let (scheme, little_endian) = (m.body[1] & !1, m.body[1] & 1 == 1);
+        let xcdr2 = match scheme {
+            0x00 => false,
+            0x06 => true,
+            other => panic!("not a PLAIN_CDR or PLAIN_CDR2 header ({other:#04x}): {m:?}"),
+        };
+        assert_eq!(m.body[0], 0, "{m:?}");
+        assert_eq!(
+            m.content_type,
+            if xcdr2 {
+                "application/vnd.dds.xcdr2"
+            } else {
+                "application/vnd.dds.xcdr1"
+            },
+            "the content type of the body's encapsulation: {m:?}"
+        );
+        let field = |v: i32| {
+            if little_endian {
+                v.to_le_bytes()
+            } else {
+                v.to_be_bytes()
+            }
+        };
+        assert_eq!(
+            &m.body[4..],
+            [field(id), field(100 + id)].concat().as_slice(),
+            "Cyclone's payload of instance {id}: {m:?}"
+        );
+        assert!(m.durable, "TRANSIENT_LOCAL is a durable message: {m:?}");
+        assert_eq!(m.operation, None, "a write has no dds:operation: {m:?}");
+        assert_eq!(
+            m.instance_handle,
+            keyed_point_a_key_hash(id),
+            "the KeyHash of instance {id}: {m:?}"
+        );
+        assert_eq!(
+            m.group_id.as_deref(),
+            Some(group_id(&keyed_point_a_key_hash(id)).as_str()),
+            "the group-id of instance {id}'s KeyHash: {m:?}"
+        );
+    }
+    assert_eq!(disposes.len(), 1, "{disposes:?}");
+    assert_eq!(
+        disposes[0].operation.as_deref(),
+        Some("dispose"),
+        "{disposes:?}"
+    );
+    assert_eq!(
+        disposes[0].instance_handle,
+        keyed_point_a_key_hash(7),
+        "the dispose names instance 7: {disposes:?}"
+    );
+    assert_eq!(
+        disposes[0].group_id.as_deref(),
+        Some(group_id(&keyed_point_a_key_hash(7)).as_str()),
+        "the dispose has instance 7's group-id: {disposes:?}"
+    );
+}
+
+/// Spec §3 with the same Cyclone writer and no `type_file`: the bridge's
+/// reader has no type to compute the KeyHash Cyclone 11.0.1 leaves out
+/// from, so the two samples and the dispose of instance 7 (Cyclone's
+/// `serializedKey` without `PID_KEY_HASH`) go out with the nil instance
+/// handle, 16 zeros, and no `group-id`, not with octets of the key holder;
+/// `errors_total` counts the writer once.
+#[test]
+#[ignore = "needs RabbitMQ, qpid-proton and Cyclone's Python binding; runs in vendor-live-dispose-bridges"]
+fn amqpbridge_12_3_a_cyclone_writer_without_type_file_gets_the_nil_handle() {
+    let node = RabbitNode::start();
+    let (writes, disposes, errors) = cyclone_writer_in_front(&node, false);
+    assert_eq!(writes.len(), 2, "{writes:?}");
+    assert_eq!(disposes.len(), 1, "{disposes:?}");
+    assert_eq!(
+        disposes[0].operation.as_deref(),
+        Some("dispose"),
+        "{disposes:?}"
+    );
+    for m in writes.iter().chain(&disposes) {
+        assert_eq!(
+            m.instance_handle, [0u8; 16],
+            "the nil instance handle: {m:?}"
+        );
+        assert_eq!(m.group_id, None, "no group-id: {m:?}");
+    }
+    assert_eq!(errors, Some(1), "once for the one writer");
+}
+
+/// §4.5 `released` from RabbitMQ: a message to `amq.topic` under a routing
+/// key no queue is bound to is released by RabbitMQ 4 (it routed to no
+/// queue). The bridge sends it again and discards it after the fifth
+/// release: the counter stops at 5.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_4_5_rabbitmq_releases_an_unroutable_message() {
+    let node = RabbitNode::start();
+    let dds = participant();
+    let eid = dds
+        .register_user_writer_kind(writer_cfg("Unroutable"), false)
+        .unwrap();
+    let yaml = bridge_yaml(&node, "Unroutable", "unused", "out").replace(
+        "amqp_address: /queues/unused",
+        "amqp_address: /exchanges/amq.topic/zd.nobody.listens",
+    );
+    let (stop, join, registry) = start_bridge_with_metrics(config(&yaml));
+    wait_writer_matched(&dds, eid);
+    dds.write_user_sample(eid, vec![1, 1, 1, 1]).unwrap();
+    wait_metric(
+        &dds,
+        &registry,
+        "zerodds_amqp_bridge_dispositions_released_total",
+        5,
+    );
+    std::thread::sleep(Duration::from_millis(500));
+    let released = metric(&registry, "zerodds_amqp_bridge_dispositions_released_total");
+    let out = metric(
+        &registry,
+        "zerodds_amqp_bridge_transfers_out_total{dds_topic=\"Unroutable\"}",
+    );
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    assert_eq!(released, Some(5), "not sent a sixth time");
+    assert_eq!(out, Some(5), "one transfer and four again");
+    assert_eq!(
+        metric(&registry, "zerodds_amqp_bridge_dispositions_accepted_total"),
+        Some(0)
+    );
+}
+
+/// §4.5 `rejected` from RabbitMQ: a queue of length 1 with overflow
+/// `reject-publish` takes the first message and rejects the others (RabbitMQ
+/// 4.0.5: `rejected` without an error); a rejected delivery is counted under
+/// the reason `other` and not sent again, so the queue holds the first.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_4_5_rabbitmq_refuses_a_message_for_a_full_queue() {
+    let node = RabbitNode::start();
+    let queue = "zd_bridge_full";
+    let _ = node.pika(&format!(
+        "ch.queue_declare(queue='{queue}', durable=True, arguments={{'x-max-length': 1, 'x-overflow': 'reject-publish'}})"
+    ));
+    let dds = participant();
+    let eid = dds
+        .register_user_writer_kind(writer_cfg("Full"), false)
+        .unwrap();
+    let (stop, join, registry) =
+        start_bridge_with_metrics(config(&bridge_yaml(&node, "Full", queue, "out")));
+    wait_writer_matched(&dds, eid);
+    for n in 1u8..=3 {
+        dds.write_user_sample(eid, vec![n, n, n, n]).unwrap();
+    }
+    wait_metric(
+        &dds,
+        &registry,
+        "zerodds_amqp_bridge_transfers_out_total{dds_topic=\"Full\"}",
+        3,
+    );
+    let deadline = Instant::now() + STEP;
+    let text = loop {
+        let text = zerodds_monitor::render_prometheus(&registry.snapshot());
+        // RabbitMQ 4.0.5 rejects without an error (measured): the reason
+        // label is `other` (§8.2).
+        let refused = text
+            .lines()
+            .find(|l| {
+                l.starts_with("zerodds_amqp_bridge_dispositions_rejected_total{reason=\"other\"}")
+            })
+            .and_then(|l| l.rsplit(' ').next()?.parse::<u64>().ok());
+        if refused == Some(2) {
+            break text;
+        }
+        assert!(Instant::now() < deadline, "two refusals:\n{text}");
+        dds.wait_match_event(Duration::from_millis(50));
+    };
+    std::thread::sleep(Duration::from_millis(500));
+    let out = metric(
+        &registry,
+        "zerodds_amqp_bridge_transfers_out_total{dds_topic=\"Full\"}",
+    );
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    assert_eq!(out, Some(3), "a refused message is not sent again:\n{text}");
+    assert_eq!(
+        metric(&registry, "zerodds_amqp_bridge_dispositions_accepted_total"),
+        Some(1),
+        "{text}"
+    );
+    assert_eq!(depth(&node, queue), 1);
+    let got = take(&node, queue, 1, STEP);
+    assert!(body(&got[0]).ends_with("01010101"), "{got:?}");
+}
+
+/// §6 Durability: a sample of a TRANSIENT_LOCAL topic reaches the queue as
+/// a persistent message (`header.durable` true; AMQP 0-9-1 delivery mode 2
+/// as pika reads it), one of a VOLATILE topic as a transient one (1).
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_6_rabbitmq_takes_a_transient_local_sample_as_a_persistent_message() {
+    let node = RabbitNode::start();
+    let (qtl, qvo) = ("zd_bridge_tl", "zd_bridge_vo");
+    declare(&node, &[qtl, qvo]);
+    let dds = participant();
+    let tl = dds
+        .register_user_writer_kind(
+            UserWriterConfig {
+                reliable: true,
+                durability: zerodds_qos::DurabilityKind::TransientLocal,
+                ..writer_cfg("DurableTL")
+            },
+            false,
+        )
+        .unwrap();
+    let vo = dds
+        .register_user_writer_kind(writer_cfg("DurableVO"), false)
+        .unwrap();
+    let yaml = bridge_yaml(&node, "DurableTL", qtl, "out").replace(
+        "      history: { kind: keep_all }\n",
+        "      history: { kind: keep_all }\n      durability: transient_local\n",
+    ) + "  - dds_name: DurableVO\n    dds_type: DurableVOType\n    amqp_address: /queues/zd_bridge_vo\n    direction: out\n";
+    let (stop, join) = start_bridge(config(&yaml));
+    wait_writer_matched(&dds, tl);
+    wait_writer_matched(&dds, vo);
+    dds.write_user_sample(tl, vec![1, 1, 1, 1]).unwrap();
+    dds.write_user_sample(vo, vec![2, 2, 2, 2]).unwrap();
+    let mode = |queue: &str| {
+        node.pika(&format!(
+            "import time\n\
+             end = time.time() + 10\n\
+             m = None\n\
+             while m is None and time.time() < end:\n\
+             \x20   m, p, b = ch.basic_get(queue='{queue}', auto_ack=True)\n\
+             \x20   if m is None:\n\
+             \x20       time.sleep(0.1)\n\
+             print(p.delivery_mode if m else 'none')"
+        ))
+    };
+    let (m_tl, m_vo) = (mode(qtl), mode(qvo));
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    assert_eq!(m_tl, "2", "persistent");
+    assert!(m_vo == "1" || m_vo == "None", "transient: {m_vo}");
+}
+
+/// §1 L6 against RabbitMQ: the daemon's participant (user `guest`) and a
+/// tenant's (user `bob`, a domain of its own) bridge the same topic name to
+/// two queues; a sample of each domain reaches its tenant's queue only,
+/// and RabbitMQ lists one connection per user.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_1_l6_each_tenant_has_its_participant_and_its_connection_at_rabbitmq() {
+    let node = RabbitNode::start();
+    let _ = node.ctl(&["add_user", "bob", "bob-secret"]);
+    let _ = node.ctl(&["set_permissions", "-p", "/", "bob", ".*", ".*", ".*"]);
+    let (qa, qb) = ("zd_l6_a", "zd_l6_b");
+    declare(&node, &[qa, qb]);
+    let lease_b = zerodds_test_vendor_reader::lease_domain();
+    let yaml = format!(
+        "{}catalog:\n  enabled: false\ntenants:\n  - name: plant-b\n    domain: {}\n    amqp:\n      container_id: zd-l6-b-{}\n      sasl:\n        username: bob\n        password: bob-secret\n    topics:\n      - dds_name: L6\n        dds_type: L6Type\n        amqp_address: /queues/{qb}\n        direction: out\n",
+        bridge_yaml(&node, "L6", qa, "out"),
+        lease_b.id(),
+        std::process::id()
+    );
+    let (stop, join, registry) = start_bridge_with_metrics(config(&yaml));
+    let dds = participant();
+    let dds_b = DcpsRuntime::start(
+        lease_b.id(),
+        GuidPrefix::from_bytes([0x6c; 12]),
+        RuntimeConfig::default(),
+    )
+    .unwrap();
+    let wa = dds
+        .register_user_writer_kind(writer_cfg("L6"), false)
+        .unwrap();
+    let wb = dds_b
+        .register_user_writer_kind(writer_cfg("L6"), false)
+        .unwrap();
+    wait_writer_matched(&dds, wa);
+    wait_writer_matched(&dds_b, wb);
+    dds.write_user_sample(wa, vec![0xa, 0xa, 0xa, 0xa]).unwrap();
+    dds_b
+        .write_user_sample(wb, vec![0xb, 0xb, 0xb, 0xb])
+        .unwrap();
+    let got_a = take(&node, qa, 2, Duration::from_secs(3));
+    let got_b = take(&node, qb, 2, Duration::from_secs(3));
+    // Both connections stand once both messages are in: pika's own
+    // connections are closed by then.
+    let users = node.ctl(&["list_connections", "--silent", "user"]);
+    let text = zerodds_monitor::render_prometheus(&registry.snapshot());
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    dds_b.shutdown();
+    assert_eq!(got_a.len(), 1, "{got_a:?}");
+    assert!(body(&got_a[0]).ends_with("0a0a0a0a"), "{got_a:?}");
+    assert_eq!(got_b.len(), 1, "{got_b:?}");
+    assert!(body(&got_b[0]).ends_with("0b0b0b0b"), "{got_b:?}");
+    let mut listed: Vec<&str> = users.lines().map(str::trim).collect();
+    listed.sort_unstable();
+    assert_eq!(listed, ["bob", "guest"], "{users}");
+    assert!(
+        text.lines().any(
+            |l| l.starts_with("zerodds_amqp_bridge_transfers_out_total{")
+                && l.contains("tenant=\"plant-b\"")
+                && l.ends_with(" 1")
+        ),
+        "{text}"
+    );
+}
+
+/// A CA, a server certificate for `localhost` and `127.0.0.1`, and a client
+/// certificate with the subject `CN=<cn>,O=ZeroDDS Test`, written as PEM
+/// into `dir`: `ca.pem`, `server.pem`, `server.key`, `<cn>.pem`,
+/// `<cn>.key`.
+fn write_pki(dir: &std::path::Path, clients: &[&str]) {
+    let ca_key = rcgen::KeyPair::generate().unwrap();
+    let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
+    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let mut ca_dn = rcgen::DistinguishedName::new();
+    ca_dn.push(rcgen::DnType::CommonName, "ZeroDDS Test CA");
+    ca_params.distinguished_name = ca_dn;
+    let ca = ca_params.self_signed(&ca_key).unwrap();
+    std::fs::write(dir.join("ca.pem"), ca.pem()).unwrap();
+    let issue = |names: Vec<String>, cn: &str, file: &str| {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let mut params = rcgen::CertificateParams::new(names).unwrap();
+        let mut dn = rcgen::DistinguishedName::new();
+        dn.push(rcgen::DnType::OrganizationName, "ZeroDDS Test");
+        dn.push(rcgen::DnType::CommonName, cn);
+        params.distinguished_name = dn;
+        let cert = params.signed_by(&key, &ca, &ca_key).unwrap();
+        std::fs::write(dir.join(format!("{file}.pem")), cert.pem()).unwrap();
+        std::fs::write(dir.join(format!("{file}.key")), key.serialize_pem()).unwrap();
+    };
+    issue(
+        vec!["localhost".into(), "127.0.0.1".into()],
+        "localhost",
+        "server",
+    );
+    for cn in clients {
+        issue(vec!["bridge.example".into()], cn, cn);
+    }
+}
+
+/// A RabbitMQ node with a TLS listener that asks for a client certificate
+/// and offers SASL EXTERNAL (`rabbitmq_auth_mechanism_ssl`, the user is the
+/// certificate's CN) beside PLAIN; the client `zd-bridge` is a user of the
+/// node, `zd-stranger` has a certificate of the same CA and no user.
+/// Returns the node and its TLS port.
+fn rabbit_with_external() -> (RabbitNode, u16) {
+    let tls_port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let node = RabbitNode::start_with(&["rabbitmq_auth_mechanism_ssl"], |dir| {
+        write_pki(dir, &["zd-bridge", "zd-stranger"]);
+        format!(
+            "listeners.ssl.default = {tls_port}\n\
+             ssl_options.cacertfile = {d}/ca.pem\n\
+             ssl_options.certfile = {d}/server.pem\n\
+             ssl_options.keyfile = {d}/server.key\n\
+             ssl_options.verify = verify_peer\n\
+             ssl_options.fail_if_no_peer_cert = true\n\
+             auth_mechanisms.1 = EXTERNAL\n\
+             auth_mechanisms.2 = PLAIN\n\
+             ssl_cert_login_from = common_name\n",
+            d = dir.display()
+        )
+    });
+    let _ = node.ctl(&["add_user", "zd-bridge", "unused-password"]);
+    let _ = node.ctl(&["set_permissions", "-p", "/", "zd-bridge", ".*", ".*", ".*"]);
+    (node, tls_port)
+}
+
+/// The daemon towards the TLS listener with EXTERNAL and the client
+/// certificate of `cn`, topic `topic` out to queue `queue`, the ACL naming
+/// `reader` as the one subject that may read the topic.
+fn external_yaml(
+    node: &RabbitNode,
+    tls_port: u16,
+    cn: &str,
+    topic: &str,
+    queue: &str,
+    reader: &str,
+) -> String {
+    let d = node.dir().display();
+    format!(
+        "domain: {dom}\namqp:\n  broker_url: \"amqps://localhost:{tls_port}\"\n  container_id: \"zd-e2e-{topic}-{pid}\"\n  sasl:\n    mechanism: EXTERNAL\n  tls:\n    enabled: true\n    ca_file: \"{d}/ca.pem\"\n    cert_file: \"{d}/{cn}.pem\"\n    key_file: \"{d}/{cn}.key\"\ntopics:\n  - dds_name: {topic}\n    dds_type: {topic}Type\n    amqp_address: /queues/{queue}\n    direction: out\nacl:\n  default_deny: true\n  rules:\n    - topic: {topic}\n      read: [\"{reader}\"]\n      write: []\n",
+        dom = domain(),
+        pid = std::process::id()
+    )
+}
+
+/// §7.2, §7.1, §7.3 against RabbitMQ 4: the daemon authenticates with
+/// SASL EXTERNAL and the TLS client certificate (RabbitMQ takes the CN as
+/// the user); the ACL knows the bridge by the subject DN of that
+/// certificate, so a rule naming `CN=zd-bridge,O=ZeroDDS Test` lets the
+/// samples through to the queue. A certificate of the same CA whose CN is
+/// no user of the node is refused in the SASL stage: exit code 5.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqpbridge_7_2_rabbitmq_accepts_external_with_the_client_certificate() {
+    let (node, tls_port) = rabbit_with_external();
+    declare(&node, &["zd_bridge_external"]);
+    let (stop, join) = start_bridge(config(&external_yaml(
+        &node,
+        tls_port,
+        "zd-bridge",
+        "BridgeExternal",
+        "zd_bridge_external",
+        "CN=zd-bridge,O=ZeroDDS Test",
+    )));
+    let dds = participant();
+    let eid = dds
+        .register_user_writer_kind(writer_cfg("BridgeExternal"), false)
+        .unwrap();
+    wait_writer_matched(&dds, eid);
+    dds.write_user_sample(eid, vec![7, 7, 7, 7]).unwrap();
+    let got = take(&node, "zd_bridge_external", 1, STEP);
+    stop.store(true, Ordering::SeqCst);
+    join.join().unwrap();
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(body(&got[0]).ends_with("07070707"), "{got:?}");
+    // A certificate of the CA whose CN is not a user: SASL refused.
+    let cfg = config(&external_yaml(
+        &node,
+        tls_port,
+        "zd-stranger",
+        "BridgeStranger",
+        "zd_bridge_external",
+        "*",
+    ));
+    let e = bridge_daemon::run(
+        &cfg,
+        RuntimeConfig::default(),
+        &Arc::new(AtomicBool::new(false)),
+        &BridgeMetrics::register(&Registry::new()),
+        false,
+        Duration::from_secs(5),
+    )
+    .expect_err("RabbitMQ refuses a CN that is no user");
+    assert_eq!(e.code, 5, "{e}");
+    dds.shutdown();
 }

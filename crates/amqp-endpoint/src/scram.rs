@@ -1,5 +1,6 @@
 //! SASL SCRAM-SHA-256 (RFC 7677 / RFC 5802) — Salted Challenge Response
-//! Authentication Mechanism.
+//! Authentication Mechanism; the client side also SCRAM-SHA-512
+//! ([`ScramHash`], the same RFC 5802 key schedule over SHA-512).
 //!
 //! The optional-but-recommended SASL mechanism for the AMQP endpoint (Spec
 //! §10.2; the mandatory PLAIN/ANONYMOUS/EXTERNAL live in [`crate::sasl`]).
@@ -23,9 +24,110 @@ use alloc::vec::Vec;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 
 type HmacSha256 = Hmac<Sha256>;
+type HmacSha512 = Hmac<Sha512>;
+
+/// The hash of a SCRAM mechanism (RFC 5802 §2.2 `H`, `HMAC`, `Hi`): the
+/// key schedule of SCRAM is the same over each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScramHash {
+    /// `SCRAM-SHA-256` (RFC 7677).
+    Sha256,
+    /// `SCRAM-SHA-512` (the SCRAM family of RFC 5802 §4 over SHA-512, as
+    /// the IANA registry of SASL mechanisms lists it).
+    Sha512,
+}
+
+impl ScramHash {
+    /// The SASL mechanism name.
+    #[must_use]
+    pub fn mechanism(self) -> &'static str {
+        match self {
+            Self::Sha256 => "SCRAM-SHA-256",
+            Self::Sha512 => "SCRAM-SHA-512",
+        }
+    }
+
+    /// `HMAC(key, msg)`.
+    // `new_from_slice` is infallible for HMAC (any key length is valid).
+    #[allow(clippy::expect_used)]
+    #[must_use]
+    pub fn hmac(self, key: &[u8], msg: &[u8]) -> Vec<u8> {
+        match self {
+            Self::Sha256 => hmac_sha256(key, msg).to_vec(),
+            Self::Sha512 => {
+                let mut mac =
+                    <HmacSha512 as Mac>::new_from_slice(key).expect("HMAC any key length");
+                mac.update(msg);
+                mac.finalize().into_bytes().to_vec()
+            }
+        }
+    }
+
+    /// `H(data)`.
+    #[must_use]
+    pub fn h(self, data: &[u8]) -> Vec<u8> {
+        match self {
+            Self::Sha256 => sha256(data).to_vec(),
+            Self::Sha512 => Sha512::digest(data).to_vec(),
+        }
+    }
+
+    /// `Hi(str, salt, i)` (RFC 5802 §2.2): PBKDF2 with this HMAC and one
+    /// output block of the hash length.
+    #[must_use]
+    pub fn hi(self, password: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
+        let mut msg = Vec::with_capacity(salt.len() + 4);
+        msg.extend_from_slice(salt);
+        msg.extend_from_slice(&1u32.to_be_bytes());
+        let mut u = self.hmac(password, &msg);
+        let mut t = u.clone();
+        for _ in 1..iterations {
+            u = self.hmac(password, &u);
+            for (a, b) in t.iter_mut().zip(&u) {
+                *a ^= b;
+            }
+        }
+        t
+    }
+
+    /// `ClientProof = ClientKey XOR HMAC(H(ClientKey), AuthMessage)`
+    /// (RFC 5802 §3).
+    #[must_use]
+    pub fn client_proof(
+        self,
+        password: &str,
+        salt: &[u8],
+        iterations: u32,
+        auth_message: &str,
+    ) -> Vec<u8> {
+        let salted = self.hi(password.as_bytes(), salt, iterations);
+        let client_key = self.hmac(&salted, b"Client Key");
+        let signature = self.hmac(&self.h(&client_key), auth_message.as_bytes());
+        client_key
+            .iter()
+            .zip(&signature)
+            .map(|(a, b)| a ^ b)
+            .collect()
+    }
+
+    /// `ServerSignature = HMAC(HMAC(SaltedPassword, "Server Key"),
+    /// AuthMessage)` (RFC 5802 §3): what the client expects in `v=`.
+    #[must_use]
+    pub fn server_signature(
+        self,
+        password: &str,
+        salt: &[u8],
+        iterations: u32,
+        auth_message: &str,
+    ) -> Vec<u8> {
+        let salted = self.hi(password.as_bytes(), salt, iterations);
+        let server_key = self.hmac(&salted, b"Server Key");
+        self.hmac(&server_key, auth_message.as_bytes())
+    }
+}
 
 /// `HMAC-SHA-256(key, msg)`.
 // `new_from_slice` is infallible for HMAC (any key length is valid); the
@@ -440,6 +542,46 @@ mod tests {
     fn exchange_rejects_unknown_user() {
         let r = ScramServerExchange::start("n,,n=nobody,r=abc", "xyz", |_| None);
         assert!(r.is_err());
+    }
+
+    /// [`ScramHash::Sha256`] is the key schedule of RFC 7677 §3.
+    #[test]
+    fn rfc7677_scram_hash_sha256_is_the_rfc_schedule() {
+        let salt = b64_decode(SALT_B64).unwrap();
+        let am = rfc_auth_message();
+        assert_eq!(
+            b64(&ScramHash::Sha256.client_proof("pencil", &salt, 4096, &am)),
+            "dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="
+        );
+        assert_eq!(
+            b64(&ScramHash::Sha256.server_signature("pencil", &salt, 4096, &am)),
+            "6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4="
+        );
+    }
+
+    /// SCRAM-SHA-512 over the messages of RFC 7677 §3. RFC 5802 has no
+    /// SHA-512 vector; the expected proof and signature come from CPython
+    /// `hashlib.pbkdf2_hmac('sha512', ...)` and `hmac` (an implementation
+    /// independent of this one), which give the RFC 7677 bytes for
+    /// `'sha256'`.
+    #[test]
+    fn amqpbridge_7_2_scram_sha_512_proof_and_signature() {
+        let salt = b64_decode(SALT_B64).unwrap();
+        let am = rfc_auth_message();
+        let proof = ScramHash::Sha512.client_proof("pencil", &salt, 4096, &am);
+        assert_eq!(proof.len(), 64);
+        assert_eq!(
+            b64(&proof),
+            "gMGXRcevScNtxZ6/8lQYpGtnsNAc3mGcmNomv+xnoOMw+3R2xNJdMNnzMlTN8PPC6wdp6dybEmDYXYTxwnYPJQ=="
+        );
+        assert_eq!(
+            b64(&ScramHash::Sha512.server_signature("pencil", &salt, 4096, &am)),
+            "ZQnYEgWQMFmmsM8aQMF0nDDCy/AgCzkwk8CmMZYcMg0vSVlKDanekLtifDSeVGT4+5ZxXnJq199RVG2rR7N7Zw=="
+        );
+        assert_ne!(
+            ScramHash::Sha512.client_proof("pencil", &salt, 4096, &am),
+            ScramHash::Sha512.client_proof("pencil2", &salt, 4096, &am)
+        );
     }
 
     #[test]

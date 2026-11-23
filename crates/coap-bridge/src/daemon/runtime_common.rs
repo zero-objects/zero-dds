@@ -5,12 +5,14 @@
 
 #![allow(clippy::print_stderr)]
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use zerodds_monitor::admin::AdminEndpoints;
+use zerodds_monitor::json::push_escaped as push_json_str;
 use zerodds_monitor::{Counter, Gauge, Labels, Registry};
 use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
@@ -21,9 +23,11 @@ pub const SERVICE_NAME: &str = "zerodds-coap-bridged";
 /// Crate-Version.
 pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Standard-Counter-Set.
+/// The daemon's metrics (spec §8.2): the ten families of §8.2, with their
+/// labels, and the datagram counters every bridge daemon has.
 #[derive(Clone)]
 pub struct BridgeMetrics {
+    registry: Arc<Registry>,
     /// Incoming CoAP datagrams.
     pub frames_in_total: Arc<Counter>,
     /// Outgoing CoAP datagrams.
@@ -32,49 +36,87 @@ pub struct BridgeMetrics {
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Active Observe subscriptions.
+    /// Active Observe subscriptions, over all topics.
     pub connections_active: Arc<Gauge>,
-    /// Lifetime accept-Counter (Observer-Setup-Counter).
+    /// Observe registrations and DTLS sessions since the start.
     pub connections_total: Arc<Counter>,
-    /// CoAP → DDS Samples.
+    /// CoAP → DDS samples.
     pub dds_samples_in_total: Arc<Counter>,
-    /// DDS → CoAP Samples.
+    /// DDS → CoAP samples.
     pub dds_samples_out_total: Arc<Counter>,
-    /// Wire-Errors.
+    /// Wire and codec errors.
     pub errors_total: Arc<Counter>,
-    /// Rejected OSCORE replays (Spec §8.2, RFC 8613 §7.4).
+    /// `zerodds_coap_bridge_oscore_replays_total` (RFC 8613 §7.4).
     pub oscore_replays_total: Arc<Counter>,
+}
+
+/// The families of §8.2.
+pub mod family {
+    /// `counter{method, code}`.
+    pub const REQUESTS: &str = "zerodds_coap_bridge_requests_total";
+    /// `gauge{topic}`.
+    pub const OBSERVERS: &str = "zerodds_coap_bridge_observers_active";
+    /// `counter{topic}`.
+    pub const NOTIFIES: &str = "zerodds_coap_bridge_notifies_sent_total";
+    /// `counter{topic}`.
+    pub const BLOCKS_IN: &str = "zerodds_coap_bridge_blocks_in_total";
+    /// `counter{topic}`.
+    pub const BLOCKS_OUT: &str = "zerodds_coap_bridge_blocks_out_total";
+    /// `counter{result}`.
+    pub const HANDSHAKES: &str = "zerodds_coap_bridge_dtls_handshakes_total";
+    /// `counter`.
+    pub const OSCORE_REPLAYS: &str = "zerodds_coap_bridge_oscore_replays_total";
+    /// `counter{topic}`.
+    pub const DDS_RECEIVED: &str = "zerodds_coap_bridge_dds_samples_received";
+    /// `counter{topic}`.
+    pub const DDS_PUBLISHED: &str = "zerodds_coap_bridge_dds_samples_published";
+    /// `counter{reason}`.
+    pub const ACL_DENIALS: &str = "zerodds_coap_bridge_acl_denials_total";
 }
 
 impl BridgeMetrics {
     /// Registers the set.
-    pub fn register(registry: &Registry) -> Self {
-        registry.set_help("zerodds_coap_frames_in_total", "CoAP datagrams received");
-        registry.set_help("zerodds_coap_frames_out_total", "CoAP datagrams sent");
-        registry.set_help("zerodds_coap_bytes_in_total", "CoAP bytes received");
-        registry.set_help("zerodds_coap_bytes_out_total", "CoAP bytes sent");
-        registry.set_help(
-            "zerodds_coap_connections_active",
-            "Active observe subscriptions",
-        );
-        registry.set_help(
-            "zerodds_coap_connections_total",
-            "Lifetime observe-setup attempts",
-        );
-        registry.set_help(
-            "zerodds_coap_dds_samples_in_total",
-            "Samples written into DDS",
-        );
-        registry.set_help(
-            "zerodds_coap_dds_samples_out_total",
-            "Samples emitted from DDS",
-        );
-        registry.set_help("zerodds_coap_errors_total", "Wire/codec errors");
-        registry.set_help(
-            "zerodds_coap_oscore_replays_total",
-            "Rejected OSCORE replays",
-        );
+    pub fn register(registry: &Arc<Registry>) -> Self {
+        for (name, help) in [
+            ("zerodds_coap_frames_in_total", "CoAP datagrams received"),
+            ("zerodds_coap_frames_out_total", "CoAP datagrams sent"),
+            ("zerodds_coap_bytes_in_total", "CoAP bytes received"),
+            ("zerodds_coap_bytes_out_total", "CoAP bytes sent"),
+            (
+                "zerodds_coap_connections_active",
+                "Active observe subscriptions",
+            ),
+            (
+                "zerodds_coap_connections_total",
+                "Observe registrations and DTLS sessions",
+            ),
+            (
+                "zerodds_coap_dds_samples_in_total",
+                "Samples written into DDS",
+            ),
+            (
+                "zerodds_coap_dds_samples_out_total",
+                "Samples emitted from DDS",
+            ),
+            ("zerodds_coap_errors_total", "Wire/codec errors"),
+            (
+                family::REQUESTS,
+                "CoAP requests by method and response code",
+            ),
+            (family::OBSERVERS, "Active observers per topic"),
+            (family::NOTIFIES, "Notifications sent per topic"),
+            (family::BLOCKS_IN, "Block1 blocks received per topic"),
+            (family::BLOCKS_OUT, "Block2 blocks sent per topic"),
+            (family::HANDSHAKES, "DTLS handshakes by result"),
+            (family::OSCORE_REPLAYS, "Rejected OSCORE replays"),
+            (family::DDS_RECEIVED, "DDS samples received per topic"),
+            (family::DDS_PUBLISHED, "DDS samples published per topic"),
+            (family::ACL_DENIALS, "Requests the ACL denied, by reason"),
+        ] {
+            registry.set_help(name, help);
+        }
         Self {
+            registry: Arc::clone(registry),
             frames_in_total: registry.counter("zerodds_coap_frames_in_total", Labels::new()),
             frames_out_total: registry.counter("zerodds_coap_frames_out_total", Labels::new()),
             bytes_in_total: registry.counter("zerodds_coap_bytes_in_total", Labels::new()),
@@ -86,9 +128,79 @@ impl BridgeMetrics {
             dds_samples_out_total: registry
                 .counter("zerodds_coap_dds_samples_out_total", Labels::new()),
             errors_total: registry.counter("zerodds_coap_errors_total", Labels::new()),
-            oscore_replays_total: registry
-                .counter("zerodds_coap_oscore_replays_total", Labels::new()),
+            oscore_replays_total: registry.counter(family::OSCORE_REPLAYS, Labels::new()),
         }
+    }
+
+    fn count(&self, family: &'static str, key: &'static str, value: &str) {
+        self.registry
+            .counter(family, Labels::new().with(key, value))
+            .inc();
+    }
+
+    /// A response to a request: `requests_total{method, code}`.
+    pub fn request(&self, method: &str, code: &str) {
+        self.registry
+            .counter(
+                family::REQUESTS,
+                Labels::new().with("method", method).with("code", code),
+            )
+            .inc();
+    }
+
+    /// An observer of `topic` registered.
+    pub fn observer_added(&self, topic: &str) {
+        self.connections_total.inc();
+        self.connections_active.inc();
+        self.registry
+            .gauge(family::OBSERVERS, Labels::new().with("topic", topic))
+            .inc();
+    }
+
+    /// An observer of `topic` is gone.
+    pub fn observer_removed(&self, topic: &str) {
+        self.connections_active.dec();
+        self.registry
+            .gauge(family::OBSERVERS, Labels::new().with("topic", topic))
+            .dec();
+    }
+
+    /// A notification of `topic` went out.
+    pub fn notified(&self, topic: &str) {
+        self.count(family::NOTIFIES, "topic", topic);
+    }
+
+    /// A Block1 block of `topic` came in.
+    pub fn block_in(&self, topic: &str) {
+        self.count(family::BLOCKS_IN, "topic", topic);
+    }
+
+    /// A Block2 block of `topic` went out.
+    pub fn block_out(&self, topic: &str) {
+        self.count(family::BLOCKS_OUT, "topic", topic);
+    }
+
+    /// A DTLS handshake ended with `result` (`ok` or `failed`).
+    pub fn handshake(&self, result: &str) {
+        self.count(family::HANDSHAKES, "result", result);
+    }
+
+    /// A sample of `topic` came from DDS.
+    pub fn dds_received(&self, topic: &str) {
+        self.dds_samples_out_total.inc();
+        self.count(family::DDS_RECEIVED, "topic", topic);
+    }
+
+    /// A sample of `topic` was written to DDS.
+    pub fn dds_published(&self, topic: &str) {
+        self.dds_samples_in_total.inc();
+        self.count(family::DDS_PUBLISHED, "topic", topic);
+    }
+
+    /// The ACL denied a request, for `reason` (`read`, `write`,
+    /// `unauthenticated`).
+    pub fn acl_denied(&self, reason: &str) {
+        self.count(family::ACL_DENIALS, "reason", reason);
     }
 }
 
@@ -126,6 +238,8 @@ pub struct CatalogSnapshot {
     pub version: String,
     /// Topics.
     pub topics: Vec<TopicConfig>,
+    /// The tenants (spec §1 L6): name, domain, topics.
+    pub tenants: Vec<(String, i32, Vec<TopicConfig>)>,
 }
 
 impl CatalogSnapshot {
@@ -136,6 +250,11 @@ impl CatalogSnapshot {
             service: SERVICE_NAME.into(),
             version: SERVICE_VERSION.into(),
             topics: cfg.topics.clone(),
+            tenants: cfg
+                .tenants
+                .iter()
+                .map(|t| (t.name.clone(), t.domain, t.topics.clone()))
+                .collect(),
         }
     }
 
@@ -147,47 +266,49 @@ impl CatalogSnapshot {
         push_json_str(&mut out, &self.service);
         out.push_str("\",\"version\":\"");
         push_json_str(&mut out, &self.version);
-        out.push_str("\",\"topics\":[");
-        for (i, t) in self.topics.iter().enumerate() {
+        out.push_str("\",\"topics\":");
+        push_topics(&mut out, &self.topics);
+        out.push_str(",\"tenants\":[");
+        for (i, (name, domain, topics)) in self.tenants.iter().enumerate() {
             if i > 0 {
                 out.push(',');
             }
-            out.push_str("{\"dds_name\":\"");
-            push_json_str(&mut out, &t.dds_name);
-            out.push_str("\",\"dds_type\":\"");
-            push_json_str(&mut out, &t.dds_type);
-            out.push_str("\",\"coap_uri_path\":\"");
-            push_json_str(&mut out, &t.coap_uri_path);
-            out.push_str("\",\"direction\":\"");
-            push_json_str(&mut out, &t.direction);
-            out.push_str("\",\"qos\":{\"reliability\":\"");
-            push_json_str(&mut out, &t.reliability);
-            out.push_str("\",\"durability\":\"");
-            push_json_str(&mut out, &t.durability);
-            out.push_str("\",\"history_depth\":");
-            out.push_str(&t.history_depth.to_string());
-            out.push_str("}}");
+            out.push_str("{\"name\":\"");
+            push_json_str(&mut out, name);
+            out.push_str("\",\"domain\":");
+            out.push_str(&domain.to_string());
+            out.push_str(",\"topics\":");
+            push_topics(&mut out, topics);
+            out.push('}');
         }
         out.push_str("]}");
         out
     }
 }
 
-fn push_json_str(out: &mut String, s: &str) {
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                use std::fmt::Write as _;
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
+fn push_topics(out: &mut String, topics: &[TopicConfig]) {
+    out.push('[');
+    for (i, t) in topics.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
         }
+        out.push_str("{\"dds_name\":\"");
+        push_json_str(out, &t.dds_name);
+        out.push_str("\",\"dds_type\":\"");
+        push_json_str(out, &t.dds_type);
+        out.push_str("\",\"coap_uri_path\":\"");
+        push_json_str(out, &t.coap_uri_path);
+        out.push_str("\",\"direction\":\"");
+        push_json_str(out, &t.direction);
+        out.push_str("\",\"qos\":{\"reliability\":\"");
+        push_json_str(out, &t.reliability);
+        out.push_str("\",\"durability\":\"");
+        push_json_str(out, &t.durability);
+        out.push_str("\",\"history_depth\":");
+        out.push_str(&t.history_depth.to_string());
+        out.push_str("}}");
     }
+    out.push(']');
 }
 
 /// Admin HTTP server (TCP, since the daemon path itself is UDP/CoAP).
@@ -197,116 +318,155 @@ pub fn serve_admin_endpoints(
     registry: Arc<Registry>,
     healthy: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
+    metrics_path: String,
 ) -> std::io::Result<(JoinHandle<()>, SocketAddr)> {
-    let listener = TcpListener::bind(addr)?;
-    let bound = listener.local_addr()?;
-    listener.set_nonblocking(true)?;
-    let h = thread::Builder::new()
-        .name("zerodds-coap-admin".into())
-        .spawn(move || {
-            loop {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match listener.accept() {
-                    Ok((mut s, _peer)) => {
-                        let _ = s.set_nonblocking(false);
-                        let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-                        let _ = s.set_write_timeout(Some(Duration::from_secs(2)));
-                        admin_handle(&mut s, &catalog, &registry, &healthy);
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => thread::sleep(Duration::from_millis(100)),
-                }
-            }
-        })?;
-    Ok((h, bound))
-}
-
-fn admin_handle(
-    stream: &mut std::net::TcpStream,
-    catalog: &CatalogSnapshot,
-    registry: &Registry,
-    healthy: &AtomicBool,
-) {
-    use std::io::{Read, Write};
-    let mut buf = [0u8; 1024];
-    let n = match stream.read(&mut buf) {
-        Ok(n) => n,
-        Err(_) => return,
-    };
-    let req = String::from_utf8_lossy(&buf[..n]);
-    let first = req.lines().next().unwrap_or("");
-    let path = first
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .split('?')
-        .next()
-        .unwrap_or("/");
-    let (status, ctype, body) = match path {
-        "/catalog" => ("200 OK", "application/json", catalog.render_json()),
-        "/healthz" => {
-            if healthy.load(Ordering::SeqCst) {
-                ("200 OK", "text/plain; charset=utf-8", "OK\n".to_string())
-            } else {
-                (
-                    "503 Service Unavailable",
-                    "text/plain; charset=utf-8",
-                    "DOWN\n".to_string(),
-                )
-            }
-        }
-        "/metrics" => (
-            "200 OK",
-            "text/plain; version=0.0.4; charset=utf-8",
-            registry.render_prometheus(),
-        ),
-        "/" => (
-            "200 OK",
-            "text/plain; charset=utf-8",
-            format!("{SERVICE_NAME}\nendpoints: /catalog /healthz /metrics\n"),
-        ),
-        _ => ("404 Not Found", "text/plain; charset=utf-8", String::new()),
-    };
-    let resp = format!(
-        "HTTP/1.1 {status}\r\n\
-         Content-Type: {ctype}\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(resp.as_bytes());
+    zerodds_monitor::admin::serve_admin_endpoints(
+        addr,
+        "zerodds-coap-admin",
+        AdminEndpoints {
+            service_name: SERVICE_NAME.into(),
+            metrics_path,
+            catalog: move || catalog.render_json(),
+            registry,
+            healthy,
+        },
+        stop,
+    )
 }
 
 /// Endpoint-Parser.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
-    let trimmed = raw
-        .strip_prefix("http://")
-        .or_else(|| raw.strip_prefix("https://"))
-        .unwrap_or(raw)
-        .trim_end_matches('/');
-    let (host, port) = match trimmed.rsplit_once(':') {
-        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(4318)),
-        None => (trimmed.to_string(), 4318),
-    };
-    OtlpConfig {
-        host,
-        port,
-        service_name: service_name.into(),
-        service_version: SERVICE_VERSION.into(),
-        timeout: Duration::from_secs(5),
-    }
+    OtlpConfig::from_endpoint(service_name, SERVICE_VERSION, raw)
 }
 
 /// Aus ENV.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
-    let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
-    Some(otlp_config_from_endpoint(service_name, &raw))
+    OtlpConfig::from_env(service_name, SERVICE_VERSION)
+}
+
+/// Spec §8.3: the spans of the daemon, sent when
+/// `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+#[derive(Clone, Default)]
+pub struct Tracer {
+    exporter: Option<Arc<OtlpExporter>>,
+}
+
+/// One CoAP exchange as a span.
+#[derive(Debug, Clone, Default)]
+pub struct ExchangeSpan {
+    /// When the request arrived, in nanoseconds since the Unix epoch.
+    pub start_ns: u64,
+    /// When its response left.
+    pub end_ns: u64,
+    /// Whether the response is no error (2.xx).
+    pub ok: bool,
+    /// `coap.method`, `coap.code`, `coap.uri`, `net.peer`, `dds.topic`.
+    pub attributes: Vec<(&'static str, String)>,
+    /// The DDS write the request made: its start and end.
+    pub write: Option<(u64, u64)>,
+}
+
+impl Tracer {
+    /// A tracer sending to `exporter`; none sends nothing.
+    #[must_use]
+    pub fn new(exporter: Option<Arc<OtlpExporter>>) -> Self {
+        Self { exporter }
+    }
+
+    /// Whether spans go anywhere.
+    #[must_use]
+    pub fn enabled(&self) -> bool {
+        self.exporter.is_some()
+    }
+
+    /// The exporter, for the thread that flushes it.
+    #[must_use]
+    pub fn exporter(&self) -> Option<Arc<OtlpExporter>> {
+        self.exporter.clone()
+    }
+
+    /// Spec §8.3: the span `coap.request` (`SpanKind::Server`) of the
+    /// exchange and, when it wrote a sample, its child `dds.write`
+    /// (`SpanKind::Client`).
+    pub fn exchange(&self, span: ExchangeSpan) {
+        use zerodds_foundation::observability::Attribute;
+        use zerodds_foundation::tracing::{Span, SpanContext, SpanKind, SpanStatus};
+        let Some(exporter) = &self.exporter else {
+            return;
+        };
+        let root = SpanContext::new_root(new_trace_id(), new_span_id());
+        let status = if span.ok {
+            SpanStatus::Ok
+        } else {
+            SpanStatus::Error
+        };
+        let attributes: Vec<Attribute> = span
+            .attributes
+            .iter()
+            .map(|(key, value)| Attribute {
+                key,
+                value: value.clone(),
+            })
+            .collect();
+        if let Some((start, end)) = span.write {
+            exporter.add_span(Span {
+                context: SpanContext::child_of(&root, new_span_id()),
+                name: "dds.write".to_string(),
+                kind: SpanKind::Client,
+                start_unix_ns: start,
+                end_unix_ns: end,
+                status,
+                status_description: None,
+                attributes: attributes
+                    .iter()
+                    .filter(|a| a.key == "dds.topic")
+                    .cloned()
+                    .collect(),
+            });
+        }
+        exporter.add_span(Span {
+            context: root,
+            name: "coap.request".to_string(),
+            kind: SpanKind::Server,
+            start_unix_ns: span.start_ns,
+            end_unix_ns: span.end_ns,
+            status,
+            status_description: None,
+            attributes,
+        });
+    }
+}
+
+/// Nanoseconds since the Unix epoch.
+#[must_use]
+pub fn unix_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
+}
+
+/// Mixed into the span IDs: they only need to be told apart by a
+/// collector.
+static SPAN_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn new_trace_id() -> zerodds_foundation::tracing::TraceId {
+    let mut bytes = [0u8; 16];
+    if getrandom::getrandom(&mut bytes).is_err() || bytes.iter().all(|b| *b == 0) {
+        bytes = u128::from(unix_ns()).max(1).to_be_bytes();
+    }
+    zerodds_foundation::tracing::TraceId(bytes)
+}
+
+fn new_span_id() -> zerodds_foundation::tracing::SpanId {
+    let n = SPAN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mixed = n ^ (u64::from(std::process::id()).rotate_left(32));
+    let mut bytes = mixed.to_be_bytes();
+    if bytes.iter().all(|b| *b == 0) {
+        bytes[7] = 1;
+    }
+    zerodds_foundation::tracing::SpanId(bytes)
 }
 
 /// Periodischer flush-Thread.
@@ -315,18 +475,13 @@ pub fn spawn_otlp_flush_loop(
     stop: Arc<AtomicBool>,
     interval: Duration,
 ) -> std::io::Result<JoinHandle<()>> {
-    thread::Builder::new()
-        .name("zerodds-coap-otlp".into())
-        .spawn(move || {
-            while !stop.load(Ordering::SeqCst) {
-                thread::sleep(interval);
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                let _ = exporter.flush();
-            }
-            let _ = exporter.flush();
-        })
+    zerodds_observability_otlp::spawn_flush_loop(
+        exporter,
+        stop,
+        interval,
+        interval,
+        "zerodds-coap-otlp",
+    )
 }
 
 #[cfg(test)]
@@ -336,7 +491,7 @@ mod tests {
 
     #[test]
     fn coapbridge_8_2_metrics_register_idempotent() {
-        let r = Registry::new();
+        let r = Arc::new(Registry::new());
         let m1 = BridgeMetrics::register(&r);
         let m2 = BridgeMetrics::register(&r);
         m1.frames_in_total.inc();
@@ -354,6 +509,7 @@ mod tests {
             reliability: "reliable".into(),
             durability: "volatile".into(),
             history_depth: 10,
+            ..Default::default()
         });
         let snap = CatalogSnapshot::from_config(&cfg);
         let j = snap.render_json();
@@ -370,6 +526,16 @@ mod tests {
         let reg = Arc::new(Registry::new());
         let m = BridgeMetrics::register(&reg);
         m.frames_in_total.add(11);
+        m.request("POST", "2.04");
+        m.observer_added("Chat::Message");
+        m.notified("Chat::Message");
+        m.block_in("Chat::Message");
+        m.block_out("Chat::Message");
+        m.handshake("ok");
+        m.oscore_replays_total.inc();
+        m.dds_received("Chat::Message");
+        m.dds_published("Chat::Message");
+        m.acl_denied("write");
         let healthy = Arc::new(AtomicBool::new(true));
         let stop = Arc::new(AtomicBool::new(false));
         let (_h, bound) = serve_admin_endpoints(
@@ -378,15 +544,31 @@ mod tests {
             Arc::clone(&reg),
             Arc::clone(&healthy),
             Arc::clone(&stop),
+            "/prom".to_string(),
         )
         .expect("spawn");
         let mut s = TcpStream::connect_timeout(&bound, Duration::from_secs(2)).expect("conn");
         s.set_read_timeout(Some(Duration::from_secs(2))).ok();
-        s.write_all(b"GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n")
+        s.write_all(b"GET /prom HTTP/1.1\r\nHost: x\r\n\r\n")
             .unwrap();
         let mut body = String::new();
         s.read_to_string(&mut body).ok();
         assert!(body.contains("zerodds_coap_frames_in_total 11"));
+        // Spec §8.2: the ten families with their labels.
+        for line in [
+            "zerodds_coap_bridge_requests_total{code=\"2.04\",method=\"POST\"} 1",
+            "zerodds_coap_bridge_observers_active{topic=\"Chat::Message\"} 1",
+            "zerodds_coap_bridge_notifies_sent_total{topic=\"Chat::Message\"} 1",
+            "zerodds_coap_bridge_blocks_in_total{topic=\"Chat::Message\"} 1",
+            "zerodds_coap_bridge_blocks_out_total{topic=\"Chat::Message\"} 1",
+            "zerodds_coap_bridge_dtls_handshakes_total{result=\"ok\"} 1",
+            "zerodds_coap_bridge_oscore_replays_total 1",
+            "zerodds_coap_bridge_dds_samples_received{topic=\"Chat::Message\"} 1",
+            "zerodds_coap_bridge_dds_samples_published{topic=\"Chat::Message\"} 1",
+            "zerodds_coap_bridge_acl_denials_total{reason=\"write\"} 1",
+        ] {
+            assert!(body.contains(line), "{line} in\n{body}");
+        }
         stop.store(true, Ordering::SeqCst);
     }
 }

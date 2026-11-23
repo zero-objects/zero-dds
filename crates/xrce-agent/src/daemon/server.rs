@@ -8,13 +8,14 @@
 //!
 //! ## SIGHUP reload scope
 //!
-//! Reloadable without a restart: `log_level`, `limits.*`,
-//! `session_timeout_secs`, `discovery.enabled` (the responder thread is
-//! stopped/started accordingly). **Not** reloadable — a changed
-//! `listeners:`/`type_files:`/`xml_profile_files:` entry is
-//! logged and ignored until restart, because live-rebinding a listening
-//! socket or swapping the `TypeObject` set under in-flight sessions would
-//! risk silently orphaning them; the daemon says so on stderr rather than
+//! Reloadable without a restart: `limits.max_clients`,
+//! `limits.max_objects_per_client` and `session_timeout_secs`. Every other
+//! key that changed (among them `listeners:`, `type_files:`,
+//! `xml_profile_files:`, `heartbeat.*` and `upstream.*`) is named on stderr
+//! and ignored until restart ([`unapplied_changes`]): live-rebinding a
+//! listening socket, swapping the `TypeObject` set or the upstream link
+//! under in-flight sessions, or changing the heartbeat of streams that exist,
+//! would risk silently orphaning them; the daemon says so rather than
 //! attempting it.
 
 #![allow(clippy::print_stderr)]
@@ -61,6 +62,9 @@ pub struct DaemonHandle {
     threads: Vec<JoinHandle<()>>,
     engine: Arc<Mutex<SessionEngine<RealDdsPort>>>,
     reload_fn: Option<Box<dyn FnMut() -> Result<DaemonConfig, String> + Send>>,
+    /// The configuration the daemon runs with: the one it started with, with
+    /// the reloadable keys of each reload.
+    running: DaemonConfig,
     /// The first UDP listener's real bound address, read back from the
     /// socket right after `bind` — lets a caller that configured
     /// `0.0.0.0:0`/`127.0.0.1:0` (an OS-assigned ephemeral port, e.g. so
@@ -110,9 +114,20 @@ impl DaemonHandle {
                 if let Ok(mut e) = self.engine.lock() {
                     apply_reloadable(&mut e, &cfg);
                 }
+                self.running.max_clients = cfg.max_clients;
+                self.running.max_objects_per_client = cfg.max_objects_per_client;
+                self.running.session_timeout_secs = cfg.session_timeout_secs;
                 eprintln!(
-                    "[zerodds-xrce-agentd] reloaded (log_level/limits/session_timeout/discovery.enabled)"
+                    "[zerodds-xrce-agentd] reloaded (limits.max_clients, \
+                     limits.max_objects_per_client, session_timeout_secs)"
                 );
+                let unapplied = unapplied_changes(&self.running, &cfg);
+                if !unapplied.is_empty() {
+                    eprintln!(
+                        "[zerodds-xrce-agentd] changed and ignored until restart: {}",
+                        unapplied.join(", ")
+                    );
+                }
             }
             Err(m) => eprintln!(
                 "[zerodds-xrce-agentd] reload failed, keeping the running configuration: {m}"
@@ -133,6 +148,140 @@ impl Drop for DaemonHandle {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// The keys whose value in `new` differs from `running` and that a reload
+/// does not apply: every key except `limits.max_clients`,
+/// `limits.max_objects_per_client` and `session_timeout_secs`, in the order
+/// of [`crate::daemon::config::KEYS`].
+#[must_use]
+pub fn unapplied_changes(running: &DaemonConfig, new: &DaemonConfig) -> Vec<&'static str> {
+    let (a, b) = (running, new);
+    let checks: [(&'static str, bool); 34] = [
+        ("log_level", a.log_level != b.log_level),
+        ("vendor_id", a.vendor_id != b.vendor_id),
+        (
+            "read_without_delivery_control",
+            a.read_without_delivery_control != b.read_without_delivery_control,
+        ),
+        (
+            "unknown_topic_types",
+            a.forward_unknown_topic_types != b.forward_unknown_topic_types,
+        ),
+        (
+            "same_session_create_client",
+            a.restart_on_same_session != b.restart_on_same_session,
+        ),
+        (
+            "update_of_missing_object",
+            a.refuse_update_of_missing_object != b.refuse_update_of_missing_object,
+        ),
+        (
+            "timestamp_interval_secs",
+            a.timestamp_interval_secs != b.timestamp_interval_secs,
+        ),
+        (
+            "unannotated_types",
+            a.unannotated_types != b.unannotated_types,
+        ),
+        (
+            "representation_timestamps",
+            a.representation_timestamps != b.representation_timestamps,
+        ),
+        (
+            "representation_formats",
+            a.allow_any_representation_format != b.allow_any_representation_format,
+        ),
+        (
+            "unsupported_qos",
+            a.ignore_unsupported_qos != b.ignore_unsupported_qos,
+        ),
+        (
+            "status_agent",
+            a.status_agent_with_result_status != b.status_agent_with_result_status,
+        ),
+        (
+            "delete_client_reply",
+            a.delete_client_reply_is_status_agent != b.delete_client_reply_is_status_agent,
+        ),
+        (
+            "no_client_threshold",
+            a.no_client_threshold != b.no_client_threshold,
+        ),
+        (
+            "max_elapsed_time_unit",
+            a.max_elapsed_time_in_milliseconds != b.max_elapsed_time_in_milliseconds,
+        ),
+        ("sample_info", a.sample_info_form != b.sample_info_form),
+        ("vendor_forms", a.vendor_forms != b.vendor_forms),
+        (
+            "heartbeat.period_ms",
+            a.heartbeat_period_ms != b.heartbeat_period_ms,
+        ),
+        (
+            "heartbeat.client_active_window_ms",
+            a.client_active_window_ms != b.client_active_window_ms,
+        ),
+        (
+            "heartbeat.silent_client",
+            a.heartbeat_to_silent_client != b.heartbeat_to_silent_client,
+        ),
+        (
+            "upstream.locator",
+            a.upstream.as_ref().map(|u| u.locator) != b.upstream.as_ref().map(|u| u.locator),
+        ),
+        (
+            "upstream.mtu",
+            a.upstream.as_ref().map(|u| u.mtu) != b.upstream.as_ref().map(|u| u.mtu),
+        ),
+        (
+            "upstream.keepalive_ms",
+            a.upstream.as_ref().map(|u| u.keepalive) != b.upstream.as_ref().map(|u| u.keepalive),
+        ),
+        (
+            "upstream.link_timeout_ms",
+            a.upstream.as_ref().map(|u| u.link_timeout)
+                != b.upstream.as_ref().map(|u| u.link_timeout),
+        ),
+        (
+            "upstream.reconnect_ms",
+            a.upstream.as_ref().map(|u| u.reconnect) != b.upstream.as_ref().map(|u| u.reconnect),
+        ),
+        (
+            "upstream.max_queued_messages",
+            a.upstream.as_ref().map(|u| u.max_queued_messages)
+                != b.upstream.as_ref().map(|u| u.max_queued_messages),
+        ),
+        (
+            "upstream.clients",
+            a.upstream.as_ref().map(|u| &u.clients) != b.upstream.as_ref().map(|u| &u.clients),
+        ),
+        (
+            "discovery.enabled",
+            a.discovery_enabled != b.discovery_enabled,
+        ),
+        ("discovery.port", a.discovery_port != b.discovery_port),
+        (
+            "discovery.address",
+            a.discovery_address != b.discovery_address,
+        ),
+        ("access control", a.access != b.access),
+        (
+            "client_applications",
+            a.client_applications != b.client_applications,
+        ),
+        ("listeners", a.listeners != b.listeners),
+        (
+            "type_files/xml_profile_files/qos_library_files",
+            a.type_files != b.type_files
+                || a.xml_profile_files != b.xml_profile_files
+                || a.qos_library_files != b.qos_library_files,
+        ),
+    ];
+    checks
+        .into_iter()
+        .filter_map(|(key, changed)| changed.then_some(key))
+        .collect()
 }
 
 fn apply_reloadable(engine: &mut SessionEngine<RealDdsPort>, cfg: &DaemonConfig) {
@@ -200,6 +349,7 @@ pub fn start(
     runtime_config: RuntimeConfig,
     reload: Option<ConfigLoader>,
 ) -> Result<DaemonHandle, ServerError> {
+    let running = cfg.clone();
     // The way the types of Annex A without @extensibility are written is a
     // setting of the process (zerodds_xrce::encoding::set_unannotated_types).
     zerodds_xrce::encoding::set_unannotated_types(cfg.unannotated_types);
@@ -212,7 +362,6 @@ pub fn start(
         agent_vendor_id: cfg.vendor_id,
         max_clients: cfg.max_clients,
         max_objects_per_client: cfg.max_objects_per_client,
-        max_pending_samples: cfg.max_pending_samples,
         session_timeout: std::time::Duration::from_secs(cfg.session_timeout_secs),
         listening_locators: Vec::new(),
         known_types: std::collections::BTreeMap::new(),
@@ -230,6 +379,12 @@ pub fn start(
             .then(|| std::time::Duration::from_secs(cfg.timestamp_interval_secs)),
         client_applications: cfg.client_applications,
         access: cfg.access,
+        heartbeat_period: std::time::Duration::from_millis(cfg.heartbeat_period_ms),
+        client_active_window: std::time::Duration::from_millis(cfg.client_active_window_ms),
+        heartbeat_to_silent_client: cfg.heartbeat_to_silent_client,
+        // The daemon's samples stay in its DataReaders; the queue of
+        // `SessionEngine::submit_sample` keeps its library default.
+        ..SessionEngineConfig::default()
     };
     let profiles = crate::daemon::profiles::AgentProfiles::load_with(
         &cfg.xml_profile_files,
@@ -257,8 +412,19 @@ pub fn start(
     engine_config.profiles = profiles;
     engine_config.listening_locators = listener_locators(&cfg.listeners);
 
+    if let Some(up) = &cfg.upstream {
+        check_routed_clients(
+            up,
+            &engine_config.client_applications,
+            &engine_config.access,
+        )?;
+    }
     let dds = RealDdsPort::new(runtime_config);
-    let engine = Arc::new(Mutex::new(SessionEngine::new(dds, engine_config)));
+    let mut engine = SessionEngine::new(dds, engine_config);
+    if let Some(up) = cfg.upstream.clone() {
+        engine.set_upstream(Box::new(crate::daemon::federation::XrceUpstream::new(up)));
+    }
+    let engine = Arc::new(Mutex::new(engine));
 
     let stop = Arc::new(AtomicBool::new(false));
     let mut threads = Vec::new();
@@ -436,6 +602,7 @@ pub fn start(
         threads,
         engine,
         reload_fn: reload,
+        running,
         udp_local_addr,
     })
 }
@@ -449,6 +616,50 @@ pub fn start(
 /// that names the protection (`dtls://127.0.0.1:2018`, `tls://…`,
 /// `serial:///dev/ttyUSB0?address=0`), so that a client does not take the plain
 /// locator of the same host for it and connect without the protection.
+/// What the configuration may not hold for a client routed to the upstream
+/// agent (DDS-XRCE 1.0 §10.4). The upstream agent makes the objects of such a
+/// client, so objects made for it here (`client_applications:`) would sit on
+/// the wrong side. Its CREATE, DELETE, WRITE_DATA, READ_DATA and GET_INFO go
+/// upstream unchanged and the AccessController of the upstream agent decides
+/// them (§7.4): that agent holds the objects and sees the client's ClientKey
+/// and properties. The `access_rules:` of this agent are not applied to them,
+/// so an entry that covers a routed client (one that names it, or one without
+/// `client:` while any client is routed) is refused instead of read and not
+/// applied. `authorized_client_keys:` and `required_client_properties:` apply
+/// to every client: this agent answers the CREATE_CLIENT.
+///
+/// # Errors
+/// [`ServerError::Config`] naming the entry.
+pub fn check_routed_clients(
+    up: &crate::daemon::federation::UpstreamConfig,
+    client_applications: &[([u8; 4], String)],
+    access: &crate::daemon::access::AccessController,
+) -> Result<(), ServerError> {
+    for (key, application) in client_applications {
+        if up.routes(*key) {
+            return Err(ServerError::Config(format!(
+                "client_applications: client {key:02x?} ({application}) is routed to the \
+                 upstream agent (upstream.clients); its objects are made there"
+            )));
+        }
+    }
+    for (i, rule) in access.rules.iter().enumerate() {
+        if up.covers_routed(rule.client) {
+            let whom = match rule.client {
+                Some(key) => format!("names client {key:02x?}, which is routed"),
+                None => "has no `client:` and so covers the clients routed".to_string(),
+            };
+            return Err(ServerError::Config(format!(
+                "access_rules[{i}] {whom} to the upstream agent (upstream.clients): the \
+                 operations of a routed client go there unchanged and the access rules of the \
+                 upstream agent decide them; give each rule the `client:` of a client this \
+                 agent serves itself"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn listener_locators(
     listeners: &[ListenerConfig],
 ) -> Vec<zerodds_xrce::transport_locator::TransportLocator> {
@@ -530,7 +741,7 @@ pub fn install_signal_watcher(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -573,6 +784,76 @@ mod tests {
             Err(ServerError::Config(_))
         ));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// DDS-XRCE 1.0 §7.4, §10.4: an `access_rules:` entry that covers a
+    /// client routed upstream is refused at start, where it would be read
+    /// and not applied; an entry for a client this agent serves itself is
+    /// accepted, and so are the client keys and properties every
+    /// CREATE_CLIENT is checked against.
+    #[test]
+    fn xrce_10_4_an_access_rule_that_covers_a_routed_client_is_refused_at_start() {
+        use crate::daemon::access::{AccessController, Effect, Rule};
+        use crate::daemon::federation::{UpstreamConfig, UpstreamLocator};
+        const ROUTED: [u8; 4] = [0x10, 0x04, 0x00, 0x01];
+        const LOCAL: [u8; 4] = [0x10, 0x04, 0x00, 0x02];
+        let rule = |client: Option<[u8; 4]>| Rule {
+            client,
+            effect: Effect::Deny,
+            operations: vec![],
+            kinds: vec![],
+            domains: vec![],
+            topics: vec![],
+        };
+        let access = |rules: Vec<Rule>| AccessController {
+            authorized_clients: vec![ROUTED, LOCAL],
+            required_properties: vec![("auth".to_string(), "token".to_string())],
+            rules,
+        };
+        let locator = UpstreamLocator::Udp("127.0.0.1:1".parse().unwrap());
+        let some = UpstreamConfig {
+            clients: Some(vec![ROUTED]),
+            ..UpstreamConfig::new(locator)
+        };
+        let all = UpstreamConfig::new(locator);
+        let none = UpstreamConfig {
+            clients: Some(vec![]),
+            ..UpstreamConfig::new(locator)
+        };
+        let refused = |up: &UpstreamConfig, rules: Vec<Rule>| match check_routed_clients(
+            up,
+            &[],
+            &access(rules),
+        ) {
+            Err(ServerError::Config(m)) => Some(m),
+            Ok(()) => None,
+            Err(e) => panic!("{e}"),
+        };
+        // A rule that names the routed client, and one for every client.
+        let m = refused(&some, vec![rule(Some(LOCAL)), rule(Some(ROUTED))]).unwrap();
+        assert!(m.starts_with("access_rules[1] names client"), "{m}");
+        let m = refused(&some, vec![rule(None)]).unwrap();
+        assert!(m.starts_with("access_rules[0] has no `client:`"), "{m}");
+        // Every client routed: every rule covers one.
+        assert!(refused(&all, vec![rule(Some(LOCAL))]).is_some());
+        // Rules for the clients this agent serves itself.
+        assert_eq!(refused(&some, vec![rule(Some(LOCAL))]), None);
+        assert_eq!(refused(&none, vec![rule(None), rule(Some(ROUTED))]), None);
+        assert_eq!(refused(&all, vec![]), None, "keys and properties apply");
+
+        // `start` refuses the configuration before it binds anything.
+        let cfg = DaemonConfig {
+            discovery_enabled: false,
+            listeners: vec![],
+            upstream: Some(some.clone()),
+            access: access(vec![rule(None)]),
+            ..DaemonConfig::default()
+        };
+        match start(cfg, RuntimeConfig::default(), None) {
+            Err(ServerError::Config(m)) => assert!(m.starts_with("access_rules[0]"), "{m}"),
+            Err(e) => panic!("{e}"),
+            Ok(_) => panic!("a rule that covers a routed client was accepted"),
+        }
     }
 
     /// DDS-XRCE 1.0 §11.2.1, §11.3.1: UDP v4 and TCP v4 are
@@ -653,6 +934,49 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// A SIGHUP reload names every changed key it does not apply, the
+    /// heartbeat and upstream keys among them, and not the three it applies.
+    #[test]
+    fn a_reload_names_the_changed_keys_it_does_not_apply() {
+        use crate::daemon::federation::{UpstreamConfig, UpstreamLocator};
+        let running = DaemonConfig::default();
+        let mut new = running.clone();
+        new.max_clients += 1;
+        new.max_objects_per_client += 1;
+        new.session_timeout_secs += 1;
+        assert!(unapplied_changes(&running, &new).is_empty());
+        new.heartbeat_period_ms += 1;
+        new.client_active_window_ms += 1;
+        new.heartbeat_to_silent_client = !new.heartbeat_to_silent_client;
+        new.upstream = Some(UpstreamConfig::new(UpstreamLocator::Udp(
+            "127.0.0.1:2019".parse().unwrap(),
+        )));
+        new.listeners.push(ListenerConfig::Tcp {
+            bind: "127.0.0.1:2020".to_string(),
+        });
+        assert_eq!(
+            unapplied_changes(&running, &new),
+            vec![
+                "heartbeat.period_ms",
+                "heartbeat.client_active_window_ms",
+                "heartbeat.silent_client",
+                "upstream.locator",
+                "upstream.mtu",
+                "upstream.keepalive_ms",
+                "upstream.link_timeout_ms",
+                "upstream.reconnect_ms",
+                "upstream.max_queued_messages",
+                "upstream.clients",
+                "listeners",
+            ]
+        );
+        let mut mtu_only = new.clone();
+        if let Some(up) = mtu_only.upstream.as_mut() {
+            up.mtu = 1024;
+        }
+        assert_eq!(unapplied_changes(&new, &mtu_only), vec!["upstream.mtu"]);
     }
 
     #[test]

@@ -91,6 +91,44 @@ fn hex16(bytes: [u8; 16]) -> String {
     s
 }
 
+/// One JSON line of an event.
+fn json_line(level: LogLevel, participant: [u8; 16], category: &str, message: &str) -> String {
+    alloc::format!(
+        r#"{{"level":"{lvl}","participant":"{pid}","category":"{cat}","message":"{msg}"}}"#,
+        lvl = level_name(level),
+        pid = hex16(participant),
+        cat = escape_json(category),
+        msg = escape_json(message),
+    )
+}
+
+impl JsonLinesLoggingPlugin {
+    /// Writes one line in the format of [`LoggingPlugin::log`], without
+    /// the level filter and the listener, and returns only once the line
+    /// is written, flushed and synchronized to the disk (`sync_data`).
+    /// For records that must not be lost, such as the audit records of
+    /// the Time Service administration (feature `time-service`).
+    ///
+    /// # Errors
+    /// The `io::Error` of the write, the flush or the synchronization.
+    pub fn append_synced(
+        &self,
+        level: LogLevel,
+        participant: [u8; 16],
+        category: &str,
+        message: &str,
+    ) -> std::io::Result<()> {
+        let line = json_line(level, participant, category, message);
+        let mut w = self
+            .writer
+            .lock()
+            .map_err(|_| std::io::Error::other("log writer poisoned"))?;
+        writeln!(w, "{line}")?;
+        w.flush()?;
+        w.get_ref().sync_data()
+    }
+}
+
 impl LoggingPlugin for JsonLinesLoggingPlugin {
     // The sink writes its JSON file only; it has no DataWriter to
     // distribute.
@@ -104,13 +142,7 @@ impl LoggingPlugin for JsonLinesLoggingPlugin {
         {
             return;
         }
-        let line = alloc::format!(
-            r#"{{"level":"{lvl}","participant":"{pid}","category":"{cat}","message":"{msg}"}}"#,
-            lvl = level_name(level),
-            pid = hex16(participant),
-            cat = escape_json(category),
-            msg = escape_json(message),
-        );
+        let line = json_line(level, participant, category, message);
         if let Ok(mut w) = self.writer.lock() {
             // `writeln!` + `flush` — otherwise a BufWriter would lose
             // the last events on a crash.

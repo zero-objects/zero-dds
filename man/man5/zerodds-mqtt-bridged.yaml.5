@@ -11,7 +11,7 @@ the parser that reads it is
 .IR crates/mqtt-bridge/src/daemon/config.rs::load_from_str .
 .PP
 Top-level keys:
-.BR domain ", " log_level ", " mqtt ", " auth ", " acl ", " metrics ", " topics .
+.BR domain ", " log_level ", " mqtt ", " auth ", " acl ", " metrics ", " topics ", " tenants .
 .PP
 An unknown top-level key is
 .I not
@@ -43,19 +43,111 @@ defaults to
 .IR /mqtt .
 .TP
 .B client_id
-MQTT client identifier; must be unique on the broker.
+MQTT client identifier; must be unique on the broker. Default
+.IR zerodds-bridge-<host> ,
+the host name of the operating system.
+.TP
+.B protocol_version
+.IR 5 " (default) or " 3.1.1 .
+Under 3.1.1 the daemon is an MQTT 3.1.1 client: no properties in CONNECT
+and PUBLISH (spec \(sc1 L1); a DDS dispose or unregister is then not
+published, it is logged and counted as an error (spec \(sc4.4).
 .TP
 .B drain_timeout_secs
 Seconds the shutdown waits for the broker's acknowledgements of QoS 1/2
-messages before DISCONNECT (spec \(sc9.2). Default 30.
+messages before DISCONNECT (spec \(sc9.2). Default 30; a value too large
+for the clock of the system waits without end.
 .TP
 .B keep_alive_secs
-CONNECT keep-alive in seconds.
+CONNECT keep-alive in seconds. The daemon sends PINGREQ when it has sent
+nothing for that long and closes the connection when the PINGRESP does not
+come within half of it; the broker's Server Keep Alive replaces the value.
+.I 0
+switches it off.
 .TP
 .B clean_start
 Boolean.
 .I false
-keeps the session across a reconnect.
+keeps the session across a reconnect and a restart of the daemon, with a
+.B session_expiry_interval_secs
+above 0 (under 3.1.1 always); the client side of it is kept in
+.BR session_dir .
+.I true
+discards it.
+.TP
+.B session_expiry_interval_secs
+Session Expiry Interval of the CONNECT. Default
+.IR 0 :
+the session ends with the connection.
+.TP
+.B session_dir
+Directory of the client's Session State of a session that outlives its
+connection: the QoS 1/2 messages the broker has not acknowledged and the
+broker's QoS 2 messages not yet released, one file
+.I <client id>.session
+and its lock file per connection, written before each packet. After a
+restart, a CONNACK with Session Present 1 resends them (spec \(sc4.1).
+It also holds the replay buffer
+.I <client id>.replay
+of the persistent topics (spec \(sc6).
+Default
+.I /var/lib/zerodds/mqtt-bridge
+.RI ( /usr/local/var/lib/zerodds/mqtt-bridge
+on macOS). A directory the daemon cannot create or write, or a file another
+process holds, prevents the start (exit 1).
+.TP
+.B max_packet_size
+Maximum Packet Size of the CONNECT, 1 to 16777216 octets (the default). A
+larger packet of the broker ends the connection with DISCONNECT 0x95.
+.TP
+.B receive_maximum
+Receive Maximum of the CONNECT, 1 to 65535 (the default): QoS 2 messages
+of the broker held unreleased at once; more end the connection with 0x93.
+.TP
+.B topic_alias_maximum
+Topic Alias Maximum of the CONNECT, 0 to 65535, default
+.IR 100 .
+.TP
+.B connect_timeout_secs
+How long the start tries a broker it cannot reach before exit 2: a wait of
+.B reconnect
+that would pass it is shortened to it and the last attempt starts there.
+An attempt waits at most 10 s for the TCP connection and 5 s for each
+answer of the broker. Default
+.IR 30 ;
+.I 0
+tries without end, and so does a value too large for the clock of the
+system.
+.TP
+.B reconnect
+Sub-map: the waits between two connect attempts.
+.B initial_delay_ms
+(default 500, at least 1) after the first,
+.B factor
+(default 2.0, at least 1.0) times the last for each further one, at most
+.B max_delay_ms
+(default 30000).
+.TP
+.B own_topic_prefix
+The topic levels in front of
+.I <client_id>/
+in the daemon's own topics: the retained catalog
+.RI ( <prefix>/<client_id>/catalog ,
+spec \(sc5.2), the reports of a missed deadline and a lost liveliness and
+the will of the CONNECT
+.RI ( <prefix>/<client_id>/liveliness_lost ,
+spec \(sc6). Default
+.IR $zerodds .
+MQTT 5.0 \(sc4.7.2 leaves the topics beginning with
+.I $
+to the broker: HiveMQ 4 refuses a will there with CONNACK 0x82 and ends the
+connection of a PUBLISH there, so it needs a prefix such as
+.IR zerodds .
+Not empty, no
+.IR + ", " #
+and no trailing
+.IR / .
+A change needs a restart.
 .TP
 .B username ", " password
 Legacy credentials for the CONNECT packet. They are a fallback:
@@ -69,55 +161,150 @@ Sub-map with
 .B ca_file
 (trust anchor for the broker certificate),
 .BR cert_file " and " key_file
-(client material for mTLS) and
+(client material for mTLS, set together; material that does not load
+ends the start with exit 4),
 .B server_name
-(SNI/hostname override). The client keys are named
+(SNI/hostname override),
+.B verify_hostname
+(only
+.IR true ;
+.I false
+prevents the start, the certificate is always checked against the name)
+and
+.B alpn
+(list of the protocol names the TLS handshake offers; default
+.I mqtt
+under
+.IR mqtts:// ,
+.I http/1.1
+under
+.IR wss:// ).
+The client keys are named
 .BR cert_file / key_file ,
 not
 .IR client_cert_file / client_key_file .
+A
+.I mqtts://
+or
+.I wss://
+URL needs
+.B enabled
+true, a
+.I mqtt://
+or
+.I ws://
+URL refuses it.
 .SS auth
+How the daemon authenticates towards the broker (\(sc7.2).
 .TP
 .B mode
-.IR none " | " bearer " | " sasl " | " sasl_plain " | " mtls " (\(sc7.2)."
-.TP
-.B bearer_token
-Token sent as the CONNECT password when
-.B mode
-is
-.IR bearer .
-.TP
-.B bearer_subject
-Subject that single token authenticates as.
+.IR none " | " password " | " mtls " | " enhanced ;
+.IR bearer ", " sasl " and " sasl_plain
+are other names of
+.IR password .
+Not set:
+.I enhanced
+with
+.BR enhanced ,
+.I password
+with a user name, a password or
+.BR bearer_token ,
+.I mtls
+with
+.B mqtt.tls.cert_file
+under
+.BR mqtt.tls.enabled ,
+else
+.IR none .
+.I none
+connects anonymously and only to a broker on the loopback interface
+.RI ( localhost ", 127.0.0.0/8, " ::1 ).
+.I password
+sends User Name and Password.
+.I mtls
+presents the client certificate and sends neither.
+.I enhanced
+is MQTT 5.0 enhanced authentication. Settings that do not fit the mode
+prevent the start (exit 1).
 .TP
 .B username ", " password
-SASL-PLAIN credentials towards the broker.
+User name and password of
+.I password
+and of SCRAM-SHA-256; they win over
+.B mqtt.username
+and
+.BR mqtt.password .
 .TP
-.B sasl_users
-Map
-.IR user: password
-used by the daemon-internal ACL path to validate inbound subjects.
+.B bearer_token
+The token: the CONNECT password under
+.I password
+(not together with
+.BR auth.password ),
+the OAUTHBEARER token or the Authentication Data of another method under
+.IR enhanced .
+.TP
+.B bearer_subject
+The daemon's subject for the ACL in place of the one it has (see
+.BR acl ).
+.TP
+.B enhanced
+Map with
+.BR method ,
+the Authentication Method under
+.IR enhanced :
+.I SCRAM-SHA-256
+(RFC 7677; the broker's signature is checked, a failure is exit 5),
+.I OAUTHBEARER
+(RFC 7628), or another method that takes
+.B bearer_token
+as one message. Needs
+.B mqtt.protocol_version
+5. A reload with new credentials re-authenticates the standing connection
+(AUTH 0x19); a reload that keeps them sends none.
 .SS acl
-Daemon-side access control, evaluated before MQTT. The subject is taken from
-the TLS certificate DN, the MQTT username or the JWT
+Daemon-side access control, evaluated before MQTT. The subject is the
+daemon's own identity towards the broker: the DN of the client certificate
+in
+.B mqtt.tls.cert_file
+(RFC 4514, or its fingerprint
+.IR mtls: <sha256>),
+else the user name it authenticates with, else the
 .I sub
-claim, in that order.
+claim of the JWT in
+.BR auth.bearer_token ;
+.B auth.bearer_subject
+replaces it. The daemon's own topics under
+.I <prefix>/<client_id>/
+.RI ( <prefix>
+is
+.BR mqtt.own_topic_prefix )
+are not subject to the ACL.
 .TP
 .B default_deny
-Boolean.
+Boolean. Decides the topics no rule names:
 .I true
-denies a topic no rule names, also without any rule;
+refuses them,
 .I false
-opens the unnamed rest. Not set: a topic no rule names is denied once a
-rule exists or an auth mode other than
-.I none
-is set; with neither, every topic is open.
+allows them. Not set:
+.I true
+once a rule exists,
+.I false
+without rules.
 .TP
 .B rules
-List of subject-keyed rules. Each entry carries
+List of rules. Each entry carries
 .B subject
-plus the topic pattern lists
-.BR allow_publish " and " allow_subscribe .
-The daemon inverts this into a topic-keyed map.
+.RI ( * :
+every subject) and the lists of MQTT topic filters
+.B allow_publish
+(the PUBLISH packets the daemon sends) and
+.B allow_subscribe
+(the subscriptions within a filter, and the PUBLISH packets the broker
+delivers). A topic that only rules of other subjects name is refused. A
+refusal is logged as
+.I acl_denied
+and counted in
+.IR zerodds_mqtt_bridge_acl_denials_total .
 .SS metrics
 .TP
 .B enabled
@@ -135,6 +322,27 @@ The key is
 .BR listen ,
 not
 .IR address .
+.TP
+.B path
+The path of the Prometheus metrics on the admin endpoint. Default
+.IR /metrics ;
+not
+.IR / ", " /catalog " or " /healthz .
+The families (\(sc8.2), each with the prefix
+.IR zerodds_mqtt_bridge_ :
+.IR connect_attempts_total ,
+.IR connect_successes_total ,
+.IR publish_in_total {dds_topic,mqtt_qos},
+.IR publish_out_total {dds_topic,mqtt_qos},
+.IR bytes_in_total {dds_topic},
+.IR bytes_out_total {dds_topic},
+.IR inflight_messages {direction},
+.IR dds_samples_received_total {dds_topic},
+.IR dds_samples_published_total {dds_topic},
+.IR acl_denials_total {reason},
+.IR broker_disconnects_total {reason_code},
+.IR dds_samples_dropped_total {dds_topic},
+.IR errors_total .
 .SS topics (list)
 .TP
 .B dds_name
@@ -161,16 +369,131 @@ both. Default
 .TP
 .B mqtt_qos
 .IR 0 " | " 1 " | " 2 .
+Not set: 1 for a reliable topic, 0 for a best-effort one.
 .TP
 .B retain
-Boolean; sets the MQTT retain flag on published messages.
+Boolean; sets the MQTT retain flag on published messages. Not set: true for
+the durabilities
+.IR transient_local ", " transient " and " persistent .
+.TP
+.B data_representation
+.IR xcdr1 " | " xcdr2 :
+the one data representation the topic's DataWriter offers from its creation
+and its DataReader accepts (DDS-XTypes 1.3 \(sc7.6.3.1). A DDS reader of
+another vendor that accepts only XCDR2 matches the DataWriter before the
+first PUBLISH only with
+.IR xcdr2 .
+A DDS writer that offers only the other representation matches no
+DataReader of the topic
+.RI ( out ", " bidir ):
+its samples do not reach MQTT.
+A PUBLISH whose encapsulation header names the other XCDR version is
+refused: logged as
+.IR publish_refused ,
+counted as an error, not written. Not set: the DataWriter offers XCDR1 and
+takes the representation of the header of each PUBLISH, the DataReader
+accepts both (spec \(sc3, \(sc4.2).
+.TP
+.B schema_url
+Optional; where the schema of the topic's type is published. The retained
+catalog on
+.I <prefix>/<client_id>/catalog
+.RI ( <prefix>
+is
+.BR mqtt.own_topic_prefix )
+and
+.I /catalog
+of the admin endpoint carry it (spec \(sc5.2).
 .TP
 .B qos
 DDS QoS sub-map with
 .BR reliability ", " durability " and "
 .B history
 carrying
-.BR depth .
+.B kind
+.RI ( keep_last ", the default, or " keep_all )
+and
+.B depth
+(default 10): the HISTORY of the topic's DataWriter
+.RI ( in ", " bidir )
+and the samples the daemon holds while the broker acknowledges nothing
+.RI ( out ", " bidir ):
+.I keep_last
+the newest
+.B depth
+of each instance (the older ones are dropped and counted),
+.I keep_all
+every one (spec \(sc6). Further keys of
+.BR qos :
+.B lifespan_ms
+(the LIFESPAN of the DataWriter and the Message Expiry Interval of a sample
+whose writer names none, less the time the sample waited in the daemon; a
+sample whose lifespan passed while it waited is not published and is
+counted as dropped),
+.B deadline_ms
+(the DEADLINE of both endpoints; a missed one is a retained message on
+.IR <prefix>/<client_id>/deadline_missed/<slug> ,
+.I <prefix>
+being
+.BR mqtt.own_topic_prefix ),
+.B liveliness
+with
+.B kind
+.RI ( automatic ", " manual_by_participant ", " manual_by_topic )
+and
+.B lease_ms
+(a DDS writer that loses it is a message on
+.IR <prefix>/<client_id>/liveliness_lost/<slug> ),
+.B partition
+(the DDS partitions of both endpoints; the samples of another partition are
+not published). Not set: infinite, AUTOMATIC, the default partition; a
+.BR lifespan_ms ,
+.B deadline_ms
+or
+.B lease_ms
+of 2147483647000 or more (2^31 \- 1 s) is infinite as well. A
+topic with durability
+.I transient
+or
+.I persistent
+keeps the newest sample of each instance and publishes them again after
+each CONNACK;
+.I persistent
+also in
+.I <client id>.replay
+in
+.B session_dir
+(spec \(sc6).
+.SS tenants (list)
+Participants and broker connections beside those of
+.B domain
+(spec \(sc1 L6). Each entry carries
+.B name
+(unique, without
+.IR / ),
+.B domain
+(default: the top-level one),
+.B mqtt
+with
+.B client_id
+(required; the tenant's binding on the broker, not the one of the top level
+or of another tenant),
+.B username
+and
+.B password
+(default: the top level's credentials; in the mode of the top level they
+replace the user name and password of
+.I password
+and of SCRAM-SHA-256, and where the top level presents
+.BR auth.bearer_token ,
+the password is the tenant's token; a user name or password the mode does
+not use, such as a user name under
+.IR OAUTHBEARER ,
+prevents the start, exit 1),
+.B topics
+(as above) and
+.B acl
+(as above, for the tenant's topics).
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/mqtt-bridged.yaml.example .

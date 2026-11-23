@@ -25,7 +25,9 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use zerodds_corba_giop::AlignedBody;
 use zerodds_corba_giop::object_ops::{self, ObjectOpReply};
+use zerodds_corba_iiop::IiopVersion;
 use zerodds_corba_ior::Ior;
 use zerodds_wire::Endianness;
 
@@ -79,6 +81,9 @@ pub struct NamingServant {
     /// sub-contexts, `list`'s `BindingIterator`) advertise.
     host: String,
     port: u16,
+    /// The highest GIOP version the hosting server processes; no IOR of
+    /// this servant names a higher one.
+    highest_version: IiopVersion,
     persistence: Option<Persistence>,
 }
 
@@ -92,8 +97,21 @@ impl NamingServant {
             graph,
             host,
             port,
+            highest_version: IiopVersion::MAX,
             persistence: None,
         }
+    }
+
+    /// As [`Self::new`] for a server that processes GIOP up to
+    /// `version` only: the IORs this servant hands back name no higher
+    /// version (CORBA 3.3 Part 2 §9.7.2), and an IPv6 host goes in an
+    /// IIOP 1.4 profile only when `version` is 1.4 (§7.9 Table 7.2). The
+    /// default is [`IiopVersion::MAX`], GIOP 1.0 to 1.4, the versions
+    /// `zerodds-naming-svc` serves.
+    #[must_use]
+    pub fn with_highest_version(mut self, version: IiopVersion) -> Self {
+        self.highest_version = version;
+        self
     }
 
     /// As [`Self::new`], saving the whole graph to `persistence.path`
@@ -122,14 +140,17 @@ impl NamingServant {
     }
 
     /// Dispatches one request. `object_key` is the `TargetAddress` the
-    /// GIOP layer already resolved; `operation`/`body`/`endianness` are
-    /// the request's own fields.
+    /// GIOP layer already resolved; `operation`/`endianness` are the
+    /// request's own fields and `body` its body at its offset in the GIOP
+    /// message, where CDR aligns the arguments from (CORBA 3.3 Part 2
+    /// §9.4.2.1: a GIOP 1.0/1.1 body follows the header without
+    /// padding).
     #[must_use]
     pub fn dispatch(
         &self,
         object_key: &[u8],
         operation: &str,
-        body: &[u8],
+        body: &AlignedBody,
         endianness: Endianness,
     ) -> ServantReply {
         if self.graph.is_iterator_key(object_key) {
@@ -181,7 +202,7 @@ impl NamingServant {
         // neither reachable here) — the nil reference is the honest
         // fallback rather than a panic on an unreachable branch.
         self.graph
-            .ior_for_context(ctx, &self.host, self.port)
+            .ior_for_context(ctx, &self.host, self.port, self.highest_version)
             .unwrap_or_else(|_| wire::nil_object_reference())
     }
 
@@ -206,12 +227,12 @@ impl NamingServant {
         &self,
         ctx: &Arc<NamingContext>,
         operation: &str,
-        body: &[u8],
+        body: &AlignedBody,
         e: Endianness,
     ) -> ServantReply {
         match operation {
             "bind" | "rebind" => {
-                let Ok((name, obj_ior)) = wire::decode_bind_request(body, e) else {
+                let Ok((name, obj_ior)) = wire::decode_bind_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 let Ok(obj) = ObjectRef::from_ior(obj_ior) else {
@@ -231,7 +252,8 @@ impl NamingServant {
                 }
             }
             "bind_context" | "rebind_context" => {
-                let Ok((name, target_ior)) = wire::decode_bind_context_request(body, e) else {
+                let Ok((name, target_ior)) = wire::decode_bind_context_request(&mut body.reader(e))
+                else {
                     return ServantReply::Marshal;
                 };
                 let sub = object_key_of(&target_ior).and_then(|k| self.graph.context_for_key(&k));
@@ -260,9 +282,9 @@ impl NamingServant {
             }
             "resolve" | "resolve_str" => {
                 let name_result = if operation == "resolve" {
-                    wire::decode_name_request(body, e).ok()
+                    wire::decode_name_request(&mut body.reader(e)).ok()
                 } else {
-                    wire::decode_string_request(body, e)
+                    wire::decode_string_request(&mut body.reader(e))
                         .ok()
                         .and_then(|s| ctx.to_name(&s).ok())
                 };
@@ -282,7 +304,7 @@ impl NamingServant {
                 }
             }
             "unbind" => {
-                let Ok(name) = wire::decode_name_request(body, e) else {
+                let Ok(name) = wire::decode_name_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 match ctx.unbind(&name) {
@@ -302,7 +324,7 @@ impl NamingServant {
                 }
             }
             "bind_new_context" => {
-                let Ok(name) = wire::decode_name_request(body, e) else {
+                let Ok(name) = wire::decode_name_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 match ctx.bind_new_context(&name) {
@@ -325,14 +347,14 @@ impl NamingServant {
                 Err(err) => self.exception_reply(&err, ctx, e),
             },
             "list" => {
-                let Ok(how_many) = wire::decode_list_request(body, e) else {
+                let Ok(how_many) = wire::decode_list_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 let (bindings, iter) = ctx.list(how_many);
                 let iter_ior = iter.map(|it| {
                     let key = self.graph.register_iterator(it);
                     self.graph
-                        .ior_for_iterator_key(&key, &self.host, self.port)
+                        .ior_for_iterator_key(&key, &self.host, self.port, self.highest_version)
                         .unwrap_or_else(|_| wire::nil_object_reference())
                 });
                 match wire::encode_list_reply(&bindings, iter_ior.as_ref(), e) {
@@ -341,7 +363,7 @@ impl NamingServant {
                 }
             }
             "to_string" => {
-                let Ok(name) = wire::decode_name_request(body, e) else {
+                let Ok(name) = wire::decode_name_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 match ctx.to_string(&name) {
@@ -350,7 +372,7 @@ impl NamingServant {
                 }
             }
             "to_name" => {
-                let Ok(s) = wire::decode_string_request(body, e) else {
+                let Ok(s) = wire::decode_string_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 match ctx.to_name(&s) {
@@ -362,7 +384,8 @@ impl NamingServant {
                 }
             }
             "to_url" => {
-                let Ok((address, name_part)) = wire::decode_to_url_request(body, e) else {
+                let Ok((address, name_part)) = wire::decode_to_url_request(&mut body.reader(e))
+                else {
                     return ServantReply::Marshal;
                 };
                 match ctx.to_url(&address, &name_part) {
@@ -392,7 +415,7 @@ impl NamingServant {
         &self,
         object_key: &[u8],
         operation: &str,
-        body: &[u8],
+        body: &AlignedBody,
         e: Endianness,
     ) -> ServantReply {
         match operation {
@@ -407,7 +430,7 @@ impl NamingServant {
                 }
             }
             "next_n" => {
-                let Ok(how_many) = wire::decode_next_n_request(body, e) else {
+                let Ok(how_many) = wire::decode_next_n_request(&mut body.reader(e)) else {
                     return ServantReply::Marshal;
                 };
                 let bindings = self
@@ -434,6 +457,11 @@ mod tests {
     use super::*;
     use crate::name::NameComponent;
 
+    /// A body at offset 0 of its message.
+    fn at0(bytes: &[u8]) -> AlignedBody {
+        AlignedBody::new(bytes, 0)
+    }
+
     fn servant() -> NamingServant {
         let graph = Arc::new(NamingGraph::new());
         NamingServant::new(graph, "localhost".into(), 2809)
@@ -452,6 +480,46 @@ mod tests {
         }
     }
 
+    /// CORBA 3.3 Part 2 §9.4.2.1: a GIOP 1.0/1.1 request body follows
+    /// the header without padding, so it can start at any offset, and the
+    /// `Name` of `resolve` begins with a `unsigned long` aligned from the
+    /// message start. Read at its offset, the name resolves; the same
+    /// octets read from offset 0 are no name of the context.
+    #[test]
+    fn corba_p2_9_4_2_1_a_request_body_is_read_at_its_offset_in_the_message() {
+        let s = servant();
+        let root_key = crate::graph::ROOT_OBJECT_KEY;
+        let name = alloc::vec![NameComponent::new("echo")];
+        let bind = wire::encode_bind_request(&name, &a_test_ior(), Endianness::Big).unwrap();
+        assert!(matches!(
+            s.dispatch(root_key, "bind", &at0(&bind), Endianness::Big),
+            ServantReply::Ok(_)
+        ));
+        for e in [Endianness::Big, Endianness::Little] {
+            for offset in [13usize, 14, 15, 17] {
+                let mut w = zerodds_corba_giop::body_writer(offset, e);
+                wire::write_name(&mut w, &name).unwrap();
+                let body = zerodds_corba_giop::finish_body(w, offset);
+                // The length of the sequence stands after padding.
+                assert_ne!(offset % 4, 0);
+                let reply = s.dispatch(root_key, "resolve", &AlignedBody::new(&body, offset), e);
+                let ServantReply::Ok(reply) = reply else {
+                    panic!("offset {offset}: {reply:?}");
+                };
+                let ior = wire::decode_object_reply(&reply, e).unwrap();
+                assert_eq!(ior.type_id, "IDL:fin/Echo:1.0");
+                // From offset 0 the padding is read as the length.
+                assert!(
+                    !matches!(
+                        s.dispatch(root_key, "resolve", &at0(&body), e),
+                        ServantReply::Ok(_)
+                    ),
+                    "offset {offset}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn bind_then_resolve_round_trips_via_the_wire() {
         let s = servant();
@@ -463,13 +531,13 @@ mod tests {
             Endianness::Big,
         )
         .unwrap();
-        let reply = s.dispatch(root_key, "bind", &bytes, Endianness::Big);
+        let reply = s.dispatch(root_key, "bind", &at0(&bytes), Endianness::Big);
         assert!(matches!(reply, ServantReply::Ok(_)));
 
         let req =
             wire::encode_name_request(&alloc::vec![NameComponent::new("echo")], Endianness::Big)
                 .unwrap();
-        let reply = s.dispatch(root_key, "resolve", &req, Endianness::Big);
+        let reply = s.dispatch(root_key, "resolve", &at0(&req), Endianness::Big);
         let ServantReply::Ok(body) = reply else {
             panic!("expected Ok, got {reply:?}");
         };
@@ -487,13 +555,50 @@ mod tests {
         let reply = s.dispatch(
             crate::graph::ROOT_OBJECT_KEY,
             "resolve",
-            &req,
+            &at0(&req),
             Endianness::Big,
         );
         let ServantReply::UserException { repository_id, .. } = reply else {
             panic!("expected a UserException, got {reply:?}");
         };
         assert_eq!(repository_id, wire::REPO_ID_NOT_FOUND);
+    }
+
+    /// CORBA 3.3 Part 2 §7.9 Table 7.2, §9.7.2: the context a servant
+    /// hands back for an IPv6 host is an IIOP 1.4 profile with `::1`;
+    /// a servant of a server that processes GIOP up to 1.2 (the
+    /// CORBA/DDS bridge daemon) names no version above 1.2.
+    #[test]
+    fn corba_p2_7_9_a_servant_names_no_profile_version_above_its_server() {
+        let ctx_profile = |s: &NamingServant| {
+            let reply = s.dispatch(
+                crate::graph::ROOT_OBJECT_KEY,
+                "new_context",
+                &at0(&[]),
+                Endianness::Big,
+            );
+            let ServantReply::Ok(body) = reply else {
+                panic!("expected Ok, got {reply:?}");
+            };
+            let ior = wire::decode_object_reply(&body, Endianness::Big).unwrap();
+            ior.profiles
+                .iter()
+                .find_map(zerodds_corba_ior::TaggedProfile::as_iiop)
+                .and_then(Result::ok)
+                .unwrap()
+        };
+        let v6 = NamingServant::new(Arc::new(NamingGraph::new()), "[::1]".into(), 2809);
+        let p = ctx_profile(&v6);
+        assert_eq!((p.iiop_version, &p.host[..]), (IiopVersion::V1_4, "::1"));
+        let v6_1_2 = NamingServant::new(Arc::new(NamingGraph::new()), "[::1]".into(), 2809)
+            .with_highest_version(IiopVersion::V1_2);
+        let p = ctx_profile(&v6_1_2);
+        assert_eq!((p.iiop_version, &p.host[..]), (IiopVersion::V1_2, "::1"));
+        let p = ctx_profile(&servant());
+        assert_eq!(
+            (p.iiop_version, &p.host[..]),
+            (IiopVersion::V1_2, "localhost")
+        );
     }
 
     #[test]
@@ -503,7 +608,7 @@ mod tests {
         let req =
             wire::encode_name_request(&alloc::vec![NameComponent::new("App")], Endianness::Big)
                 .unwrap();
-        let reply = s.dispatch(root_key, "bind_new_context", &req, Endianness::Big);
+        let reply = s.dispatch(root_key, "bind_new_context", &at0(&req), Endianness::Big);
         let ServantReply::Ok(body) = reply else {
             panic!("expected Ok, got {reply:?}");
         };
@@ -517,7 +622,7 @@ mod tests {
             Endianness::Big,
         )
         .unwrap();
-        let reply = s.dispatch(&sub_key, "bind", &bind_body, Endianness::Big);
+        let reply = s.dispatch(&sub_key, "bind", &at0(&bind_body), Endianness::Big);
         assert!(matches!(reply, ServantReply::Ok(_)));
 
         let compound = wire::encode_name_request(
@@ -525,7 +630,7 @@ mod tests {
             Endianness::Big,
         )
         .unwrap();
-        let reply = s.dispatch(root_key, "resolve", &compound, Endianness::Big);
+        let reply = s.dispatch(root_key, "resolve", &at0(&compound), Endianness::Big);
         let ServantReply::Ok(body) = reply else {
             panic!("expected Ok, got {reply:?}");
         };
@@ -548,7 +653,7 @@ mod tests {
         let reply = s.dispatch(
             crate::graph::ROOT_OBJECT_KEY,
             "bind_context",
-            &body,
+            &at0(&body),
             Endianness::Big,
         );
         let ServantReply::UserException { repository_id, .. } = reply else {
@@ -569,12 +674,13 @@ mod tests {
             )
             .unwrap();
             assert!(matches!(
-                s.dispatch(root_key, "bind", &body, Endianness::Big),
+                s.dispatch(root_key, "bind", &at0(&body), Endianness::Big),
                 ServantReply::Ok(_)
             ));
         }
         let list_body = wire::encode_list_request(2, Endianness::Big);
-        let ServantReply::Ok(body) = s.dispatch(root_key, "list", &list_body, Endianness::Big)
+        let ServantReply::Ok(body) =
+            s.dispatch(root_key, "list", &at0(&list_body), Endianness::Big)
         else {
             panic!("expected Ok");
         };
@@ -586,7 +692,8 @@ mod tests {
         // Drain via next_one.
         let mut seen = first.len();
         loop {
-            let ServantReply::Ok(body) = s.dispatch(&iter_key, "next_one", &[], Endianness::Big)
+            let ServantReply::Ok(body) =
+                s.dispatch(&iter_key, "next_one", &at0(&[]), Endianness::Big)
             else {
                 panic!("expected Ok");
             };
@@ -599,11 +706,11 @@ mod tests {
 
         // destroy releases the object key.
         assert!(matches!(
-            s.dispatch(&iter_key, "destroy", &[], Endianness::Big),
+            s.dispatch(&iter_key, "destroy", &at0(&[]), Endianness::Big),
             ServantReply::Ok(_)
         ));
         assert!(matches!(
-            s.dispatch(&iter_key, "next_one", &[], Endianness::Big),
+            s.dispatch(&iter_key, "next_one", &at0(&[]), Endianness::Big),
             ServantReply::ObjectNotExist
         ));
     }
@@ -614,7 +721,7 @@ mod tests {
         let root_key = crate::graph::ROOT_OBJECT_KEY;
         let name = alloc::vec![NameComponent::new("App"), NameComponent::new("Service")];
         let req = wire::encode_name_request(&name, Endianness::Big).unwrap();
-        let ServantReply::Ok(body) = s.dispatch(root_key, "to_string", &req, Endianness::Big)
+        let ServantReply::Ok(body) = s.dispatch(root_key, "to_string", &at0(&req), Endianness::Big)
         else {
             panic!("expected Ok");
         };
@@ -622,7 +729,8 @@ mod tests {
         assert_eq!(s_text, "App/Service");
 
         let req = wire::encode_string_request(&s_text, Endianness::Big);
-        let ServantReply::Ok(body) = s.dispatch(root_key, "to_name", &req, Endianness::Big) else {
+        let ServantReply::Ok(body) = s.dispatch(root_key, "to_name", &at0(&req), Endianness::Big)
+        else {
             panic!("expected Ok");
         };
         assert_eq!(
@@ -632,7 +740,8 @@ mod tests {
 
         let req =
             wire::encode_to_url_request(":host:2809/NameService", "App/Service", Endianness::Big);
-        let ServantReply::Ok(body) = s.dispatch(root_key, "to_url", &req, Endianness::Big) else {
+        let ServantReply::Ok(body) = s.dispatch(root_key, "to_url", &at0(&req), Endianness::Big)
+        else {
             panic!("expected Ok");
         };
         let url = wire::decode_string_reply(&body, Endianness::Big).unwrap();
@@ -645,7 +754,7 @@ mod tests {
         let reply = s.dispatch(
             crate::graph::ROOT_OBJECT_KEY,
             "frobnicate",
-            &[],
+            &at0(&[]),
             Endianness::Big,
         );
         assert!(matches!(reply, ServantReply::BadOperation));
@@ -654,7 +763,7 @@ mod tests {
     #[test]
     fn an_unknown_object_key_is_object_not_exist() {
         let s = servant();
-        let reply = s.dispatch(b"no-such-key", "resolve", &[], Endianness::Big);
+        let reply = s.dispatch(b"no-such-key", "resolve", &at0(&[]), Endianness::Big);
         assert!(matches!(reply, ServantReply::ObjectNotExist));
     }
 
@@ -664,7 +773,7 @@ mod tests {
         let reply = s.dispatch(
             crate::graph::ROOT_OBJECT_KEY,
             "bind",
-            &[1, 2],
+            &at0(&[1, 2]),
             Endianness::Big,
         );
         assert!(matches!(reply, ServantReply::Marshal));
@@ -694,7 +803,7 @@ mod tests {
                 s.dispatch(
                     crate::graph::ROOT_OBJECT_KEY,
                     "bind",
-                    &body,
+                    &at0(&body),
                     Endianness::Big
                 ),
                 ServantReply::Ok(_)
@@ -711,7 +820,7 @@ mod tests {
         let reply = s2.dispatch(
             crate::graph::ROOT_OBJECT_KEY,
             "resolve",
-            &req,
+            &at0(&req),
             Endianness::Big,
         );
         assert!(matches!(reply, ServantReply::Ok(_)));

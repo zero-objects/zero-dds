@@ -59,11 +59,16 @@
 extern crate alloc;
 
 pub mod dds4ccm;
+pub mod executor;
 pub mod lightweight;
 pub mod model;
 pub mod transform;
 pub mod validate;
 
+pub use executor::{
+    ComponentExecutors, ExecutorIdl, HomeExecutors, component_executors, consumer_executor,
+    executor_idl, facet_executor, home_executors,
+};
 pub use lightweight::{LightweightFilterError, filter_to_lightweight};
 pub use model::{Cookie, FailureReason, FeatureName, RepositoryId};
 pub use transform::{

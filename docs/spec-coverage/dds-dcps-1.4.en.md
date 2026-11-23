@@ -478,13 +478,15 @@ all other cases, none of the policies is modified."
 
 **Repo:** `crates/dcps/src/publisher.rs` (`DataWriter::set_qos`),
 `crates/dcps/src/subscriber.rs` (`DataReader::set_qos`),
-`crates/dcps/src/topic.rs` (`Topic::set_qos`)
+`crates/dcps/src/topic.rs` (`Topic::set_qos`),
+`crates/dcps/src/participant.rs` (`DomainParticipant::set_qos`)
 
 **Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_1_datawriter_immutable_reliability_post_enable`,
 `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_1_topic_immutable_durability_post_enable`,
-`crates/dcps/tests/set_qos_atomic.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber`
+`crates/dcps/tests/set_qos_atomic.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_the_participant`
 
-**Status:** done — the DataWriter, the DataReader and the Topic refuse before any assignment; the Publisher and the Subscriber set ENTITY_FACTORY after the new PARTITION is checked against the runtime (next item).
+**Status:** done — the DataWriter, the DataReader and the Topic refuse before any assignment; the Publisher and the Subscriber set ENTITY_FACTORY after the new PARTITION is checked against the runtime (next item). The DomainParticipant sets ENTITY_FACTORY only after `DcpsRuntime::update_participant_properties`, together with the stored QoS: a `set_qos` that changes ENTITY_FACTORY and a propagated PROPERTY over 64 KiB at once is refused with BAD_PARAMETER, and the `enable` cascade as well as an entity created afterwards follow the old value. The DomainParticipant test runs on Linux only (a participant with a runtime).
 
 ### §2.2.2.1.1.1 set_qos — no change on failure: Publisher and Subscriber
 
@@ -784,7 +786,8 @@ will automatically enable all entities created from the factory."
 over `children`)
 
 **Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so`,
-`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_7_a_participant_created_disabled_is_discovered_after_its_enable`
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_7_a_participant_created_disabled_is_discovered_after_its_enable`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_3_20_the_enable_of_a_factory_follows_the_entity_factory_it_has_then`
 
 **Status:** done
 
@@ -7871,11 +7874,22 @@ factory will automatically enable each created Entity otherwise it will not."
 
 **Spec:** §2.2.3, p. 112 — ENTITY_FACTORY: RxO "No".
 
-**Repo:** —
+**Repo:** `crates/dcps/src/runtime.rs` (`RxoView` without ENTITY_FACTORY,
+`first_incompatible_policy` as the rule of every match path); the SEDP data
+(`PublicationBuiltinTopicData`, `SubscriptionBuiltinTopicData` in
+`crates/rtps`) has no field for ENTITY_FACTORY.
 
-**Tests:** —
+**Tests:** `crates/dcps/tests/status_reads.rs::dcps_2_2_3_20_differing_entity_factory_values_match_without_an_incompatible_qos_status`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_3_20_entity_factory_of_participant_publisher_and_subscriber_is_not_compared_across_participants`
 
-**Status:** open — fulfilled by the code: ENTITY_FACTORY is not in `RxoView` (`crates/dcps/src/runtime.rs`) and is not announced; a test is missing that shows that different ENTITY_FACTORY values of publisher and subscriber do not affect matching.
+**Status:** done — different values in the Publisher and the Subscriber of
+one participant (Publisher FALSE and Subscriber TRUE, then the other way
+round) prevent neither matching nor delivery. Two participants, one with
+ENTITY_FACTORY FALSE on DomainParticipant, Publisher and Subscriber level,
+match their endpoints in both directions; the SEDP data goes over the in-process path,
+and the match runs against the SEDP cache as for a remote participant.
+OFFERED_ and REQUESTED_INCOMPATIBLE_QOS stay at `total_count` 0 in every
+case. The test with two participants runs on Linux only.
 
 ### §2.2.3.20 ENTITY_FACTORY — Changeable Yes, affects later creations
 
@@ -7884,13 +7898,38 @@ factory will automatically enable each created Entity otherwise it will not."
 created after the change; not the previously created entities."
 
 **Repo:** `crates/dcps/src/participant.rs` (`DomainParticipant::set_qos`:
-`set_autoenable_children`), `crates/dcps/src/publisher.rs`,
-`crates/dcps/src/subscriber.rs`
+`set_autoenable_children`), `crates/dcps/src/publisher.rs`
+(`Publisher::set_qos`), `crates/dcps/src/subscriber.rs`
+(`Subscriber::set_qos`), `crates/dcps/src/factory.rs`
+(`DomainParticipantFactory::set_qos`, `creation_autoenable`, `autoenable`),
+`crates/dcps/src/entity.rs` (`EntityState::enable_entity`)
 
-**Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so`
+**Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_3_20_a_changed_entity_factory_affects_only_entities_created_afterwards`,
+`crates/dcps/tests/enable_semantics.rs::dcps_2_2_3_20_a_changed_factory_qos_affects_only_participants_created_afterwards`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_3_20_the_enable_of_a_factory_follows_the_entity_factory_it_has_then`,
+`crates/dcps/tests/enable_semantics.rs::dcps_2_2_3_20_the_enable_of_a_participant_follows_the_entity_factory_it_has_then`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_3_20_a_participant_created_while_the_factory_qos_changes_follows_one_value`,
+`crates/dcps/tests/set_qos_atomic.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber`,
+`crates/dcps/tests/enable_after_create.rs::dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_the_participant`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so`
 
-**Status:** done — the value takes effect at creation and in the cascade of
-`enable`; entities already created are not enabled by the change.
+**Status:** done — `set_qos` on DomainParticipantFactory, DomainParticipant,
+Publisher and Subscriber changes no entity already created: after the switch
+to TRUE an entity created under FALSE stays disabled, after the switch to
+FALSE an enabled one stays enabled; only the ones created afterwards follow
+the new value. The cascade of `enable` (§2.2.2.1.1.7: "will automatically
+enable all entities created from the factory") follows the value the factory
+has at its `enable`, also for entities it created before the change; checked
+on the Publisher, the Subscriber and a disabled DomainParticipant (topic,
+publisher and subscriber). The specification does not settle this case
+explicitly; the wording of §2.2.2.1.1.7 is taken here. A refused `set_qos`
+of the DomainParticipant leaves ENTITY_FACTORY at the old value for the
+cascade and for creation. The DomainParticipantFactory reads its value once
+per creation; that value sets `RuntimeConfig::discoverable` and the enable.
+A `set_qos` of the factory during the creation thus gives a participant that
+follows the old or the new value: 12 creations, while a second thread
+switches the value without pause, are each enabled exactly when their
+runtime sends SPDP. The two tests with a runtime run on Linux only.
 
 ### §2.2.3.20 ENTITY_FACTORY — create_* calls enable
 
@@ -11916,7 +11955,7 @@ height < 1000 AND x <23” Example of a query_expression or a filter_expression:
 
 ## Audit-Status
 
-796 done / 0 partial / 1 open / 0 blocked / 62 n/a (informative).
+797 done / 0 partial / 0 open / 0 blocked / 62 n/a (informative).
 
 Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-dcps-1.4.md`):
 
@@ -11933,4 +11972,3 @@ Test run: in CI, crate tier and pillar jobs; the cited tests with the latest res
 
 813 cited tests green, 0 not green.
 
-Open items: `dds-dcps-1.4.open.en.md`.

@@ -20,7 +20,7 @@ use zerodds_corba_interop::runtime::{
     CorbaServer, object_reference, object_reference_from_ior, stringify_object_ref,
     stringify_object_reference,
 };
-use zerodds_corba_rust::{CorbaException, ObjectReference};
+use zerodds_corba_rust::{CompletionStatus, CorbaException, ObjectReference, SystemExceptionKind};
 
 include!(concat!(env!("OUT_DIR"), "/corba_gen.rs"));
 use corba_gen::CosNaming::{NamingContext, NamingContextError, NotFound, dispatch_namingcontext};
@@ -100,8 +100,8 @@ fn cosname_to_model(
         .collect()
 }
 
-fn sys_exc(message: &'static str) -> NamingContextError {
-    NamingContextError::System(CorbaException::SystemException { minor: 0, message })
+fn sys_exc(kind: SystemExceptionKind, completed: CompletionStatus) -> NamingContextError {
+    NamingContextError::System(CorbaException::system(kind, 0, completed))
 }
 
 fn map_naming_err(
@@ -137,7 +137,14 @@ fn map_naming_err(
             NamingContextError::AlreadyBound(corba_gen::CosNaming::AlreadyBound {})
         }
         NamingError::NotEmpty => NamingContextError::NotEmpty(corba_gen::CosNaming::NotEmpty {}),
-        NamingError::CannotProceed { .. } => sys_exc("CORBA CANNOT_PROCEED"),
+        // `CannotProceed` is a user exception the CosNaming IDL compiled
+        // here does not declare: UNKNOWN with standard minor code 1
+        // (CORBA 3.3 Part 1 §8.12.3.1, Annex A.6).
+        NamingError::CannotProceed { .. } => NamingContextError::System(CorbaException::omg(
+            SystemExceptionKind::Unknown,
+            1,
+            CompletionStatus::Yes,
+        )),
     }
 }
 
@@ -147,7 +154,8 @@ impl NamingContext for NamingContextServant {
         n: corba_gen::CosNaming::CosName,
         obj: zerodds_corba_rust::ObjectReference,
     ) -> Result<(), NamingContextError> {
-        let s = stringify_object_reference(&obj).map_err(|_| sys_exc("CORBA MARSHAL"))?;
+        let s = stringify_object_reference(&obj)
+            .map_err(|_| sys_exc(SystemExceptionKind::Marshal, CompletionStatus::No))?;
         self.root
             .bind(
                 &cosname_to_model(&n),
@@ -160,7 +168,8 @@ impl NamingContext for NamingContextServant {
         n: corba_gen::CosNaming::CosName,
         obj: zerodds_corba_rust::ObjectReference,
     ) -> Result<(), NamingContextError> {
-        let s = stringify_object_reference(&obj).map_err(|_| sys_exc("CORBA MARSHAL"))?;
+        let s = stringify_object_reference(&obj)
+            .map_err(|_| sys_exc(SystemExceptionKind::Marshal, CompletionStatus::No))?;
         self.root
             .rebind(
                 &cosname_to_model(&n),
@@ -178,7 +187,8 @@ impl NamingContext for NamingContextServant {
             .map_err(|e| map_naming_err(e, &n))?
         {
             zerodds_corba_cosnaming::context::ResolveResult::Object(o) => {
-                object_reference_from_ior(&o.stringified).map_err(|_| sys_exc("CORBA MARSHAL"))
+                object_reference_from_ior(&o.stringified)
+                    .map_err(|_| sys_exc(SystemExceptionKind::Marshal, CompletionStatus::Yes))
             }
             zerodds_corba_cosnaming::context::ResolveResult::Context(ctx) => {
                 // Sub-context → published NamingContext object reference

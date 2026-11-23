@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Transaction semantics — DDS 1.4 §B.7.4.
+//! Transactions over [`crate::object_cache::ObjectCache`].
 //!
-//! Spec §B.7.4: DLRL supports transactional updates over the object
-//! cache:
+//! Not a part of DDS 1.2 §8, which has no transaction; the publication
+//! of a set of changes there is `CacheAccess::write` (§8.1.6.3.3).
+//!
+//! The transactions over the object cache:
 //!
 //! * `begin()` starts a transaction, snapshotting the versions of all
 //!   objects.
@@ -20,7 +22,7 @@ use crate::object_cache::{ObjectCache, ObjectId};
 /// Unique transaction ID.
 pub type TransactionId = u64;
 
-/// Consistency level (Spec §B.7.4.2).
+/// Consistency level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConsistencyLevel {
     /// `OPTIMISTIC` — conflict check at commit time.
@@ -88,7 +90,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    /// `begin` — Spec §B.7.4.1.
+    /// `begin` —
     #[must_use]
     pub fn begin(cache: &ObjectCache, level: ConsistencyLevel) -> Self {
         let snapshot = cache.iter().map(|o| (o.id.clone(), o.version)).collect();
@@ -130,7 +132,7 @@ impl Transaction {
         self.snapshot.get(id).copied()
     }
 
-    /// `commit` — Spec §B.7.4.4. Checks for all snapshotted objects
+    /// `commit` — Checks for all snapshotted objects
     /// whether the version still matches; on conflict returns
     /// `OptimisticConflict` and sets state → `Aborted`.
     ///
@@ -157,7 +159,7 @@ impl Transaction {
         Ok(())
     }
 
-    /// `rollback` — Spec §B.7.4.5.
+    /// `rollback` —
     ///
     /// # Errors
     /// `NotActive` if the transaction is already finished.

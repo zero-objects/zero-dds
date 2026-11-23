@@ -88,3 +88,7 @@ pub mod idl;
 pub mod pubsub_glue;
 #[cfg(feature = "daemon")]
 pub mod ua_client;
+#[cfg(feature = "daemon")]
+pub mod ua_structure;
+#[cfg(feature = "daemon")]
+pub mod ua_types;

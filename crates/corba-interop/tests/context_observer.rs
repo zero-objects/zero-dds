@@ -11,9 +11,10 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use zerodds_corba_interop::string_argument;
 
+use zerodds_corba_interop::decode_string_body;
 use zerodds_corba_interop::runtime::{CorbaServer, IiopCorbaConnection, object_reference};
-use zerodds_corba_interop::{decode_string_body, encode_string_body};
 use zerodds_corba_rust::{CorbaConnection, SkeletonResult};
 use zerodds_wire::Endianness;
 
@@ -24,7 +25,7 @@ fn server_observes_incoming_request_contexts() {
     let server = CorbaServer::new();
     server.register(b"Echo", |op, body, _e| {
         if op == "ping" {
-            SkeletonResult::Reply(body.to_vec())
+            SkeletonResult::Reply(body.bytes().to_vec())
         } else {
             SkeletonResult::BadOperation
         }
@@ -42,7 +43,7 @@ fn server_observes_incoming_request_contexts() {
 
     let conn = IiopCorbaConnection::new();
     let (body, _e) = conn
-        .invoke(&ior, "ping", Endianness::Big, &encode_string_body("hi"))
+        .invoke(&ior, "ping", Endianness::Big, &string_argument("hi"))
         .expect("call succeeds despite the observer");
     assert_eq!(decode_string_body(&body).unwrap(), "hi");
 

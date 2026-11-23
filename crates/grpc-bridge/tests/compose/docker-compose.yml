@@ -1,0 +1,44 @@
+# zerodds-grpc-bridge-1.0 §12.3: a tonic client, a Cyclone DDS participant
+# and zerodds-grpc-bridged in Docker Compose (crates/grpc-bridge/tests/
+# compose_e2e.rs runs it).
+#
+#   docker compose -f crates/grpc-bridge/tests/compose/docker-compose.yml \
+#     up --build --abort-on-container-exit --exit-code-from client
+#
+# bridge   the daemon's image (packaging/docker/grpc-bridged/Dockerfile) with
+#          grpc-bridged.yaml: h2c on 127.0.0.1:50051 inside its network
+#          namespace (§4.1 refuses h2c on another address), the topic
+#          ChatMessage of Chat::Message, DDS domain 0.
+# cyclone  cyclone_chat.c (crates/grpc-bridge/tests/interop) on Cyclone DDS
+#          0.10 from Debian, `echo 0 120`: it answers each Chat::Message on
+#          ChatMessage with { seq, "echo: " text }.
+# client   the tonic client (crates/grpc-bridge/tests/interop/tonic) in the
+#          bridge's network namespace, `echo`: a Subscribe stream, then
+#          PublishOne of { 7, "hello from compose" } once a second until the
+#          answer of Cyclone DDS comes through the stream; its exit code is
+#          the result.
+#
+# The bridge and Cyclone DDS find each other with SPDP multicast on the
+# Compose network.
+services:
+  bridge:
+    build:
+      context: ../../../..
+      dockerfile: packaging/docker/grpc-bridged/Dockerfile
+    volumes:
+      - ./grpc-bridged.yaml:/etc/zerodds/grpc-bridged.yaml:ro
+    stop_grace_period: 40s
+
+  cyclone:
+    build:
+      context: ../../../..
+      dockerfile: crates/grpc-bridge/tests/compose/cyclone.Dockerfile
+    command: ["echo", "0", "120"]
+
+  client:
+    build:
+      context: ../../../..
+      dockerfile: crates/grpc-bridge/tests/compose/tonic.Dockerfile
+    network_mode: "service:bridge"
+    depends_on: [bridge, cyclone]
+    command: ["127.0.0.1:50051", "echo", "90", "00010000070000001300000068656c6c6f2066726f6d20636f6d706f736500"]

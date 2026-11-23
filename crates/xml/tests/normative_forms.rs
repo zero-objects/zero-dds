@@ -651,6 +651,64 @@ const VENDOR_FORMS: &[(&str, Loader, &str, &str)] = &[
         r#"<qos_library name="L"><qos_profile name="P"><datawriter_qos><deadline><period>DURATION_INFINITY</period></deadline></datawriter_qos></qos_profile></qos_library>"#,
         "qos_library[L]/qos_profile[P]/datawriter_qos/deadline/period",
     ),
+    // DDS for Lightweight CCM 1.1 §7.4.2.1 Table 7.1: the Boolean forms
+    // beyond true/1/false/0, not case-sensitive. Table 7.1 of DDS-XML 1.0
+    // §7.1.4 and of DDS4CCM 1.1: the hexadecimal Long and UnsignedLong and
+    // the negative Long in fields whose schema type leaves them out.
+    (
+        "boolean_yes",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><domain_participant_qos><entity_factory><autoenable_created_entities>yes</autoenable_created_entities></entity_factory></domain_participant_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/domain_participant_qos/entity_factory/autoenable_created_entities",
+    ),
+    (
+        "boolean_boolean_false",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datawriter_qos><writer_data_lifecycle><autodispose_unregistered_instances>BOOLEAN_FALSE</autodispose_unregistered_instances></writer_data_lifecycle></datawriter_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datawriter_qos/writer_data_lifecycle/autodispose_unregistered_instances",
+    ),
+    (
+        "boolean_upper_case_true",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><publisher_qos><presentation><coherent_access>TRUE</coherent_access></presentation></publisher_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/publisher_qos/presentation/coherent_access",
+    ),
+    (
+        "hexadecimal_resource_limit",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datareader_qos><resource_limits><max_samples>0x10</max_samples></resource_limits></datareader_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datareader_qos/resource_limits/max_samples",
+    ),
+    (
+        "negative_transport_priority",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datawriter_qos><transport_priority><value>-5</value></transport_priority></datawriter_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datawriter_qos/transport_priority/value",
+    ),
+    (
+        "hexadecimal_history_depth",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datareader_qos><history><depth>0x10</depth></history></datareader_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datareader_qos/history/depth",
+    ),
+    (
+        "hexadecimal_initial_samples",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datareader_qos><resource_limits><initial_samples>0x10</initial_samples></resource_limits></datareader_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datareader_qos/resource_limits/initial_samples",
+    ),
+    (
+        "hexadecimal_ownership_strength",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datawriter_qos><ownership_strength><value>0x10</value></ownership_strength></datawriter_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datawriter_qos/ownership_strength/value",
+    ),
+    (
+        "hexadecimal_duration_sec",
+        qos,
+        r#"<qos_library name="L"><qos_profile name="P"><datawriter_qos><deadline><period><sec>0x3c</sec></period></deadline></datawriter_qos></qos_profile></qos_library>"#,
+        "qos_library[L]/qos_profile[P]/datawriter_qos/deadline/period/sec",
+    ),
     (
         "topic_qos_profile_ref",
         domains,

@@ -33,7 +33,7 @@ use zerodds_hpack::{Decoder as HpackDecoder, Encoder as HpackEncoder, HeaderFiel
 use zerodds_http2::{Flags, FrameHeader, FrameType, encode_frame};
 
 const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
-const SERVICE: &str = "/zerodds.bridge.v1.DemoStream";
+const SERVICE: &str = "/zerodds.demo.v1.DemoStream";
 
 fn daemon_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_zerodds-grpc-bridged"))
@@ -77,16 +77,17 @@ fn spawn_daemon(port: u16) -> DaemonGuard {
             "--idle-timeout-ms",
             "20000",
         ])
-        .stderr(Stdio::piped())
-        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
         .spawn()
         .expect("spawn daemon");
-    let stderr = child.stderr.take().expect("stderr");
+    // Spec §8.1: the JSON log is on stdout.
+    let stdout = child.stdout.take().expect("stdout");
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        // Reads to the end even after the test stopped listening: a daemon
-        // writing to a closed pipe would fail its `eprintln!`.
-        for line in BufReader::new(stderr).lines() {
+        // Reads to the end even after the test stopped listening: a line
+        // written to a closed pipe is lost.
+        for line in BufReader::new(stdout).lines() {
             let Ok(line) = line else { break };
             let _ = tx.send(line);
         }
@@ -138,7 +139,7 @@ fn handshake(stream: &mut TcpStream) {
     }
 }
 
-/// Encodes `Sample { bytes payload = 1; }` protobuf.
+/// Encodes `Sample { bytes cdr_payload = 1; }` protobuf.
 fn proto_sample(payload: &[u8]) -> Vec<u8> {
     let mut out = vec![0x0A];
     let mut v = payload.len() as u64;
@@ -221,7 +222,8 @@ fn read_response(stream: &mut TcpStream) -> (Option<Vec<u8>>, bool) {
     (data, status_ok)
 }
 
-/// gRPC `Publish(Sample{payload})`. Returns `PublishAck.accepted`.
+/// gRPC `Publish(Sample{cdr_payload})`. Returns `PublishAck.sequence_number`
+/// (spec §4.2), the RTPS sequence number of the write.
 fn publish(port: u16, payload: &[u8]) -> u64 {
     let mut stream = connect(port);
     handshake(&mut stream);
@@ -254,7 +256,7 @@ fn publish(port: u16, payload: &[u8]) -> u64 {
 
     let (data, status_ok) = read_response(&mut stream);
     assert!(status_ok, "Publish: no grpc-status:0 trailer");
-    // PublishAck { uint64 accepted = 1; } → tag 0x08 + varint.
+    // PublishAck { uint64 sequence_number = 1; ... } → tag 0x08 + varint.
     match data {
         Some(msg) if msg.first() == Some(&0x08) => {
             let mut v = 0u64;
@@ -360,7 +362,7 @@ fn grpcbridge_4_3_dds_publish_reaches_every_subscribe_stream() {
     assert_eq!(
         publish(port, &cdr_payload),
         1,
-        "PublishAck.accepted should be 1 (DDS write ok)"
+        "PublishAck.sequence_number: the first write of the daemon's writer"
     );
 
     // Egress: each stream's own DataReader → a message of that stream.
@@ -392,7 +394,7 @@ fn xtypes_7_6_3_1_2_a_stream_message_carries_the_header_the_sample_came_under() 
         })
         .collect();
     let cdr_payload = [&[0x00, 0x0a, 0x00, 0x00][..], &octets[..]].concat();
-    assert_eq!(publish(port, &cdr_payload), 1, "PublishAck.accepted");
+    assert_eq!(publish(port, &cdr_payload), 1, "PublishAck.sequence_number");
     let got = next_message(&mut stream);
     assert_eq!(got[..4], [0x00, 0x0a, 0x00, 0x00], "PL_CDR2_BE");
     assert_eq!(got[4..], octets[..]);

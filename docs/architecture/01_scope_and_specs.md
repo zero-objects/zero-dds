@@ -23,7 +23,7 @@ The following OMG specifications are implemented completely. Versions reflect th
 |---|---|---|---|
 | **DDS-RPC** | 1.0 | Request/reply over DDS, service definition | `zerodds-rpc` |
 | **DDS-XML** | 1.0 | XML syntax for DDS resources, QoS profiles, deployment | `zerodds-xml` |
-| **DDSI-RTPS TCP/IP PSM** | (with RTPS 2.5) | TCP mapping for NAT/firewall scenarios | `zerodds-transport-tcp` |
+| **ZeroDDS TCP Transport** | 1.0 | RTPS messages over TCP for NAT/firewall scenarios; an own specification, DDSI-RTPS 2.5 defines no mapping to TCP | `zerodds-transport-tcp` |
 | **DDS-XRCE** | 1.0 | Extremely Resource-Constrained Environments: client-agent protocol | `zerodds-xrce-client`, `zerodds-xrce-agent` |
 
 ### 1.3 Language mappings

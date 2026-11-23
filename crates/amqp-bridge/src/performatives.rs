@@ -13,7 +13,7 @@
 use alloc::vec::Vec;
 
 use crate::extended_types::AmqpExtValue;
-use crate::types::{TypeError, codes};
+use crate::types::TypeError;
 
 /// Spec `amqp-1.0-transport` §2.7 Tab 2.7 — descriptor codes of the
 /// 9 performatives.
@@ -67,10 +67,15 @@ pub fn encode_performative(descriptor: u64, body: &AmqpExtValue) -> Result<Vec<u
 
 /// Decodes a performative.
 ///
-/// Returns (descriptor, body, consumed_bytes).
+/// Returns (descriptor, body, consumed_bytes). The descriptor is the
+/// numeric one of the type, also when the peer sent the symbolic one
+/// (Spec `amqp-1.0-types` §1.3.3, §1.5: `amqp:open:list` is `0x10`;
+/// [`crate::descriptors`]).
 ///
 /// # Errors
-/// see [`TypeError`].
+/// see [`TypeError`]; `UnknownDescriptor` for a symbolic descriptor that
+/// names no type of the specification, `ReservedDescriptor` for a
+/// descriptor that is neither a `ulong` nor a `symbol`.
 pub fn decode_performative(bytes: &[u8]) -> Result<(u64, AmqpExtValue, usize), TypeError> {
     if bytes.is_empty() || bytes[0] != DESCRIBED_PREFIX {
         return Err(TypeError::Truncated);
@@ -80,7 +85,11 @@ pub fn decode_performative(bytes: &[u8]) -> Result<(u64, AmqpExtValue, usize), T
     cur += n;
     let descriptor = match desc {
         AmqpExtValue::Ulong(u) => u,
-        _ => return Err(TypeError::UnsupportedFormatCode(codes::ULONG)),
+        AmqpExtValue::Symbol(symbol) => match crate::descriptors::code_of(&symbol) {
+            Some(code) => code,
+            None => return Err(TypeError::UnknownDescriptor(symbol)),
+        },
+        _ => return Err(TypeError::ReservedDescriptor),
     };
     let (body, n) = AmqpExtValue::decode(&bytes[cur..])?;
     cur += n;
@@ -787,6 +796,81 @@ mod tests {
         assert_eq!(
             decode_performative(&octets).unwrap(),
             (0xdead_beef, body, octets.len())
+        );
+    }
+
+    /// Part 1 §1.5 with §1.3.3: a frame body sent with the symbolic
+    /// descriptor of its type is the body sent with the numeric one: open
+    /// by `amqp:open:list` is open by 0x10, and a source inside an attach
+    /// by `amqp:source:list` is the source by 0x28.
+    #[test]
+    fn amqp10_1_5_open_by_its_symbol_is_open_by_its_code() {
+        let by_code = open("client-1").unwrap();
+        let mut by_symbol = alloc::vec![0x00, 0xa3, 0x0e];
+        by_symbol.extend_from_slice(b"amqp:open:list");
+        by_symbol.extend_from_slice(&by_code[3..]);
+        let decoded = decode_performative(&by_symbol).unwrap();
+        assert_eq!(decoded.0, descriptor::OPEN);
+        assert_eq!(decoded.2, by_symbol.len());
+        assert_eq!(decoded.1, decode_performative(&by_code).unwrap().1);
+
+        // attach with its source by symbol.
+        let source_by_code = [0x00, 0x53, 0x28, 0xc0, 0x04, 0x01, 0xa1, 0x01, b'q'];
+        let mut source_by_symbol = alloc::vec![0x00, 0xa3, 0x10];
+        source_by_symbol.extend_from_slice(b"amqp:source:list");
+        source_by_symbol.extend_from_slice(&source_by_code[3..]);
+        let attach = |source: &[u8]| {
+            let mut fields = alloc::vec![0xa1, 0x01, b'L', 0x43, 0x41, 0x40, 0x40];
+            fields.extend_from_slice(source);
+            let mut out = alloc::vec![0x00, 0xa3, 0x10];
+            out.extend_from_slice(b"amqp:attach:list");
+            out.extend_from_slice(&[0xc0, (fields.len() + 1) as u8, 6]);
+            out.extend_from_slice(&fields);
+            out
+        };
+        let (code, with_symbol, _) = decode_performative(&attach(&source_by_symbol)).unwrap();
+        let (_, with_code, _) = decode_performative(&attach(&source_by_code)).unwrap();
+        assert_eq!(code, descriptor::ATTACH);
+        assert_eq!(with_symbol, with_code);
+        let AmqpExtValue::List(fields) = with_symbol else {
+            panic!("attach is a list");
+        };
+        assert!(matches!(
+            &fields[5],
+            AmqpExtValue::Described {
+                descriptor: 0x28,
+                ..
+            }
+        ));
+
+        // The five SASL bodies and the nine performatives, each by symbol.
+        for (name, code) in crate::descriptors::AMQP_DESCRIPTORS {
+            let mut octets = alloc::vec![0x00, 0xa3, name.len() as u8];
+            octets.extend_from_slice(name.as_bytes());
+            octets.push(0x45);
+            assert_eq!(
+                decode_performative(&octets).unwrap(),
+                (*code, AmqpExtValue::List(Vec::new()), octets.len()),
+                "{name}"
+            );
+        }
+    }
+
+    /// Part 1 §1.5: a symbolic descriptor that names no type of the
+    /// specification is refused with the symbol; a descriptor of another
+    /// type is reserved.
+    #[test]
+    fn amqp10_1_5_a_frame_body_under_an_unknown_symbol_is_refused_by_name() {
+        let mut octets = alloc::vec![0x00, 0xa3, 0x09];
+        octets.extend_from_slice(b"amqp:nope");
+        octets.push(0x45);
+        assert_eq!(
+            decode_performative(&octets),
+            Err(TypeError::UnknownDescriptor("amqp:nope".into()))
+        );
+        assert_eq!(
+            decode_performative(&[0x00, 0x52, 0x10, 0x45]),
+            Err(TypeError::ReservedDescriptor)
         );
     }
 

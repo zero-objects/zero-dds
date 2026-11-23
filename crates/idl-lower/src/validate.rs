@@ -2409,6 +2409,7 @@ pub fn rule_name(code: DiagnosticCode) -> &'static str {
         DiagnosticCode::KeywordCollision => "keyword-collision",
         DiagnosticCode::InvalidInheritance => "inheritance",
         DiagnosticCode::OutsideProfile => "profile",
+        DiagnosticCode::CompositionRule => "composition",
         DiagnosticCode::Preprocessing | DiagnosticCode::ErrorDirective => "preprocessor",
         DiagnosticCode::UnexpectedToken
         | DiagnosticCode::MissingToken

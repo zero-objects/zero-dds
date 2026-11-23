@@ -16,10 +16,16 @@
 //!   (`start`), `participant::bridge_guid_prefix` of the CoAP bind address,
 //!   `DcpsRuntime::start` and `shutdown`, per topic `register_user_reader`
 //!   and `register_user_writer` with a `UserReaderConfig` /
-//!   `UserWriterConfig` that sets topic, type, `reliable` and `durability`
-//!   over `Default`, `write_user_sample` of a CoAP payload, and the
-//!   `UserSample` of a reader channel (`Alive`: its payload goes to the
-//!   observers; `Lifecycle` and `CoherentSetEnd` are dropped).
+//!   `UserWriterConfig` that sets topic, type, `reliable`, `durability`,
+//!   `deadline`, `liveliness`, `partition` (and on the writer `lifespan` and
+//!   `data_representation_offer`, XCDR2 or XCDR) over `Default`;
+//!   `set_user_writer_wire_extensibility` for the header of the topic's
+//!   extensibility; `write_user_sample` of a CoAP payload,
+//!   `write_user_sample_keyed_with_holder` of a sample of a keyed type,
+//!   `write_user_lifecycle` with `DISPOSED` for a DELETE; and the
+//!   `UserSample` of a reader channel (`Alive`: its payload and its
+//!   `representation_identifier` go to the observers; `Lifecycle` and
+//!   `CoherentSetEnd` are dropped).
 //!
 //! What it relies on and is checked here without a socket: the layers of
 //! the daemon's own file and keys, the runtime keys in that file, the rank

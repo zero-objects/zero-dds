@@ -33,7 +33,9 @@
 
 use alloc::vec::Vec;
 
-use zerodds_wire::{Endianness, Reader, Writer};
+use zerodds_wire::{Endianness, Writer};
+
+use crate::body::AlignedBody;
 
 /// `get_interface()` (Part 1 §4.3.1), sent over GIOP as `_interface`.
 pub const OP_INTERFACE: &str = "_interface";
@@ -105,14 +107,14 @@ pub enum ObjectOpReply {
 /// dispatch continues unchanged.
 pub fn dispatch(
     operation: &str,
-    body: &[u8],
+    body: &AlignedBody,
     endianness: Endianness,
     repository_id: &str,
     is_a: &dyn Fn(&str) -> bool,
 ) -> Option<ObjectOpReply> {
     match operation {
         OP_IS_A => {
-            let mut r = Reader::new(body, endianness);
+            let mut r = body.reader(endianness);
             let Ok(candidate) = r.read_string() else {
                 return Some(ObjectOpReply::Marshal);
             };
@@ -148,7 +150,7 @@ pub fn dispatch(
 /// configured `repo_id` mapping).
 pub fn dispatch_with_bases(
     operation: &str,
-    body: &[u8],
+    body: &AlignedBody,
     endianness: Endianness,
     repository_id: &str,
     base_repository_ids: &[&str],
@@ -208,11 +210,16 @@ fn encode_nil_object_reference(endianness: Endianness) -> Vec<u8> {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use zerodds_wire::Reader;
 
-    fn encode_is_a_request(id: &str, e: Endianness) -> Vec<u8> {
+    fn encode_is_a_request(id: &str, e: Endianness) -> AlignedBody {
         let mut w = Writer::new(e);
         w.write_string(id);
-        w.finish()
+        AlignedBody::new(&w.finish(), 0)
+    }
+
+    fn empty() -> AlignedBody {
+        AlignedBody::new(&[], 0)
     }
 
     fn decode_bool(body: &[u8], e: Endianness) -> bool {
@@ -301,11 +308,44 @@ mod tests {
         assert!(!decode_bool(&b, Endianness::Big));
     }
 
+    /// CORBA 3.3 Part 2 §9.4.2: a GIOP 1.0/1.1 body follows the header
+    /// without padding, and its CDR alignment counts from the message
+    /// start. An `_is_a` argument at offset 45 (string length aligned to
+    /// 48) is read there; read from the body's first octet it is not.
+    #[test]
+    fn corba_p2_9_4_2_is_a_reads_its_argument_at_the_body_offset() {
+        const OFFSET: usize = 45;
+        for e in [Endianness::Big, Endianness::Little] {
+            let mut w = crate::body_writer(OFFSET, e);
+            w.write_string("IDL:demo/Echo:1.0");
+            let bytes = crate::finish_body(w, OFFSET);
+            let reply = dispatch(
+                OP_IS_A,
+                &AlignedBody::new(&bytes, OFFSET),
+                e,
+                "IDL:demo/Echo:1.0",
+                &|_| false,
+            );
+            let Some(ObjectOpReply::Ok(b)) = reply.clone() else {
+                panic!("expected Ok, got {reply:?}");
+            };
+            assert!(decode_bool(&b, e));
+            let from_zero = dispatch(
+                OP_IS_A,
+                &AlignedBody::new(&bytes, 0),
+                e,
+                "IDL:demo/Echo:1.0",
+                &|_| false,
+            );
+            assert_ne!(from_zero, reply);
+        }
+    }
+
     #[test]
     fn is_a_on_a_truncated_body_is_marshal() {
         let reply = dispatch(
             OP_IS_A,
-            &[1, 2],
+            &AlignedBody::new(&[1, 2], 0),
             Endianness::Big,
             "IDL:demo/Echo:1.0",
             &|_| false,
@@ -316,7 +356,9 @@ mod tests {
     #[test]
     fn non_existent_and_the_legacy_spelling_are_false_for_a_resolved_object() {
         for op in [OP_NON_EXISTENT, OP_NOT_EXISTENT] {
-            let reply = dispatch(op, &[], Endianness::Big, "IDL:demo/Echo:1.0", &|_| false);
+            let reply = dispatch(op, &empty(), Endianness::Big, "IDL:demo/Echo:1.0", &|_| {
+                false
+            });
             let Some(ObjectOpReply::Ok(b)) = reply else {
                 panic!("expected Ok for {op}");
             };
@@ -346,7 +388,7 @@ mod tests {
     fn repository_id_returns_the_most_derived_id() {
         let reply = dispatch(
             OP_REPOSITORY_ID,
-            &[],
+            &empty(),
             Endianness::Big,
             "IDL:demo/Echo:1.0",
             &|_| false,
@@ -362,7 +404,7 @@ mod tests {
     fn interface_without_an_interface_repository_is_the_marker_reply() {
         let reply = dispatch(
             OP_INTERFACE,
-            &[],
+            &empty(),
             Endianness::Big,
             "IDL:demo/Echo:1.0",
             &|_| false,
@@ -374,7 +416,7 @@ mod tests {
     fn domain_managers_is_an_empty_sequence() {
         let reply = dispatch(
             OP_DOMAIN_MANAGERS,
-            &[],
+            &empty(),
             Endianness::Big,
             "IDL:demo/Echo:1.0",
             &|_| false,
@@ -390,7 +432,7 @@ mod tests {
     fn component_is_a_nil_object_reference() {
         let reply = dispatch(
             OP_COMPONENT,
-            &[],
+            &empty(),
             Endianness::Big,
             "IDL:demo/Echo:1.0",
             &|_| false,
@@ -406,9 +448,13 @@ mod tests {
     #[test]
     fn an_unrelated_operation_is_not_intercepted() {
         assert_eq!(
-            dispatch("ping", &[], Endianness::Big, "IDL:demo/Echo:1.0", &|_| {
-                false
-            }),
+            dispatch(
+                "ping",
+                &empty(),
+                Endianness::Big,
+                "IDL:demo/Echo:1.0",
+                &|_| { false }
+            ),
             None
         );
     }

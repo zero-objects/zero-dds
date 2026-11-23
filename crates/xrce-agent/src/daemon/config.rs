@@ -42,7 +42,16 @@ pub const KEYS: &[&str] = &[
     "vendor_forms",
     "limits.max_clients",
     "limits.max_objects_per_client",
-    "limits.max_pending_samples",
+    "heartbeat.period_ms",
+    "heartbeat.client_active_window_ms",
+    "heartbeat.silent_client",
+    "upstream.locator",
+    "upstream.mtu",
+    "upstream.keepalive_ms",
+    "upstream.link_timeout_ms",
+    "upstream.reconnect_ms",
+    "upstream.max_queued_messages",
+    "upstream.clients",
     "discovery.enabled",
     "discovery.port",
     "discovery.address",
@@ -55,6 +64,18 @@ pub const KEYS: &[&str] = &[
     "xml_profile_files",
     "qos_library_files",
 ];
+
+/// `limits.max_pending_samples`, a key this daemon no longer reads: it
+/// bounded a queue the daemon never filled. A file that still sets it stops
+/// the start with [`REMOVED_MAX_PENDING_SAMPLES_REASON`].
+pub const REMOVED_MAX_PENDING_SAMPLES: &str = "max_pending_samples";
+
+/// Why `limits.max_pending_samples` is refused, and what bounds the samples
+/// instead.
+pub const REMOVED_MAX_PENDING_SAMPLES_REASON: &str = "no longer read; remove it. The DATA \
+     of a reliable output stream are bounded by its sender window (16 messages, DDS-XRCE 1.0 \
+     §8.4.14): the agent takes a sample out of a DataReader only while the window has room, \
+     and the other samples stay in the DataReader under its History QoS";
 
 /// Whether `path` is one of [`KEYS`] (or a `listeners[]`/`type_files[]`
 /// entry's own sub-keys, checked separately by [`read_listener`]).
@@ -160,9 +181,26 @@ pub struct DaemonConfig {
     pub max_clients: usize,
     /// `limits.max_objects_per_client:`.
     pub max_objects_per_client: usize,
-    /// `limits.max_pending_samples:` — maps onto
-    /// `XrceAgent::with_max_pending_samples`.
-    pub max_pending_samples: usize,
+    /// `heartbeat.period_ms:` — the period of the HEARTBEATs on a reliable
+    /// output stream with unacknowledged messages; default 500. DDS-XRCE 1.0
+    /// §8.3.5.12 dictates no timing.
+    pub heartbeat_period_ms: u64,
+    /// `heartbeat.client_active_window_ms:` — how long a client counts as
+    /// active after the agent last heard it or sent a new message on the
+    /// stream; default 2000. DDS-XRCE 1.0 §8.3.5.12: HEARTBEATs only when the
+    /// agent "has some indication that the XRCE Client is active and not in a
+    /// sleep cycle".
+    pub client_active_window_ms: u64,
+    /// `heartbeat.silent_client:` — `suppress` (default, §8.3.5.12: no
+    /// HEARTBEAT to a client silent for longer than the window) or `send`
+    /// (the period also for a silent client, until the session times out).
+    pub heartbeat_to_silent_client: bool,
+    /// `upstream:` — the agent whose client this agent is for its routed
+    /// clients (DDS-XRCE 1.0 §10.4, federation): `locator:`
+    /// (`udp://host:port` or `tcp://host:port`), `mtu:`, `keepalive_ms:`,
+    /// `link_timeout_ms:`, `reconnect_ms:`, `max_queued_messages:`,
+    /// `clients:` (ClientKeys; all when absent). `None`: no federation.
+    pub upstream: Option<crate::daemon::federation::UpstreamConfig>,
     /// `discovery.enabled:` — answer `GET_INFO` on the multicast
     /// discovery group (§11.2.4).
     pub discovery_enabled: bool,
@@ -294,7 +332,10 @@ impl Default for DaemonConfig {
             session_timeout_secs: 60,
             max_clients: 1024,
             max_objects_per_client: 256,
-            max_pending_samples: 256,
+            heartbeat_period_ms: 500,
+            client_active_window_ms: 2000,
+            heartbeat_to_silent_client: false,
+            upstream: None,
             discovery_enabled: true,
             discovery_port: 7400,
             discovery_address: zerodds_xrce::discovery::XRCE_DISCOVERY_GROUP,
@@ -366,6 +407,8 @@ impl DaemonConfig {
             "sample_info",
             "vendor_forms",
             "limits",
+            "heartbeat",
+            "upstream",
             "discovery",
             "authorized_client_keys",
             "required_client_properties",
@@ -460,20 +503,44 @@ impl DaemonConfig {
         }
 
         let limits = root.section("limits")?;
-        limits.only(&[
-            "max_clients",
-            "max_objects_per_client",
-            "max_pending_samples",
-        ])?;
+        if let Some(node) = limits.node(REMOVED_MAX_PENDING_SAMPLES) {
+            return Err(invalid(
+                limits.path_of(REMOVED_MAX_PENDING_SAMPLES),
+                zerodds_config::read::first_origin(node),
+                REMOVED_MAX_PENDING_SAMPLES_REASON.to_string(),
+            ));
+        }
+        limits.only(&["max_clients", "max_objects_per_client"])?;
         if let Some(v) = limits.parse::<usize>("max_clients", "an integer")? {
             out.max_clients = v;
         }
         if let Some(v) = limits.parse::<usize>("max_objects_per_client", "an integer")? {
             out.max_objects_per_client = v;
         }
-        if let Some(v) = limits.parse::<usize>("max_pending_samples", "an integer")? {
-            out.max_pending_samples = v;
+
+        let heartbeat = root.section("heartbeat")?;
+        heartbeat.only(&["period_ms", "client_active_window_ms", "silent_client"])?;
+        if let Some(v) = heartbeat.parse::<u64>("period_ms", "milliseconds, an integer")? {
+            if v == 0 {
+                return Err(invalid(
+                    heartbeat.path_of("period_ms"),
+                    zerodds_config::Origin::Default,
+                    "a period of 0 ms would send a HEARTBEAT on every tick; expected 1 or more"
+                        .to_string(),
+                ));
+            }
+            out.heartbeat_period_ms = v;
         }
+        if let Some(v) =
+            heartbeat.parse::<u64>("client_active_window_ms", "milliseconds, an integer")?
+        {
+            out.client_active_window_ms = v;
+        }
+        if let Some(v) = heartbeat.choice("silent_client", &["suppress", "send"])? {
+            out.heartbeat_to_silent_client = v == "send";
+        }
+
+        out.upstream = read_upstream(&root)?;
 
         let discovery = root.section("discovery")?;
         discovery.only(&["enabled", "port", "address"])?;
@@ -589,6 +656,117 @@ impl DaemonConfig {
 fn parse_vendor_id(text: &str) -> Option<[u8; 2]> {
     let (major, minor) = text.split_once('.')?;
     Some([major.trim().parse().ok()?, minor.trim().parse().ok()?])
+}
+
+/// The `upstream:` block (DDS-XRCE 1.0 §10.4).
+fn read_upstream(
+    root: &Section<'_>,
+) -> Result<Option<crate::daemon::federation::UpstreamConfig>, ConfigError> {
+    use crate::daemon::federation::{UpstreamConfig, UpstreamLocator};
+    if root.node("upstream").is_none() {
+        return Ok(None);
+    }
+    let up = root.section("upstream")?;
+    up.only(&[
+        "locator",
+        "mtu",
+        "keepalive_ms",
+        "link_timeout_ms",
+        "reconnect_ms",
+        "max_queued_messages",
+        "clients",
+    ])?;
+    let Some((text, origin)) = up.scalar("locator")? else {
+        return Err(invalid(
+            up.path_of("locator"),
+            zerodds_config::Origin::Default,
+            "an upstream: block needs a locator: (udp://host:port or tcp://host:port)".to_string(),
+        ));
+    };
+    let locator = UpstreamLocator::parse(text)
+        .map_err(|m| invalid(up.path_of("locator"), origin.clone(), m))?;
+    let mut cfg = UpstreamConfig::new(locator);
+    let positive = |key: &str, v: u64| {
+        if v == 0 {
+            Err(invalid(
+                up.path_of(key),
+                zerodds_config::Origin::Default,
+                "expected 1 or more".to_string(),
+            ))
+        } else {
+            Ok(v)
+        }
+    };
+    if let Some(v) = up.parse::<u16>("mtu", "octets, an integer")? {
+        let min = crate::daemon::federation::MIN_UPSTREAM_MTU;
+        if v < min {
+            return Err(invalid(
+                up.path_of("mtu"),
+                zerodds_config::Origin::Default,
+                alloc::format!(
+                    "{v} leaves no room for FRAGMENT data after a message header with \
+                     a ClientKey (8 octets) and a submessage header (4 octets); \
+                     the smallest upstream mtu is {min}"
+                ),
+            ));
+        }
+        let max = locator.max_message_size();
+        if usize::from(v) > max {
+            return Err(invalid(
+                up.path_of("mtu"),
+                zerodds_config::Origin::Default,
+                alloc::format!(
+                    "{v} octets do not fit one message of the link `{text}` ({max} octets); \
+                     a FRAGMENT of that size would fail at every attempt"
+                ),
+            ));
+        }
+        cfg.mtu = v;
+    }
+    if let Some(v) = up.parse::<u64>("keepalive_ms", "milliseconds, an integer")? {
+        cfg.keepalive = std::time::Duration::from_millis(positive("keepalive_ms", v)?);
+    }
+    if let Some(v) = up.parse::<u64>("link_timeout_ms", "milliseconds, an integer")? {
+        cfg.link_timeout = std::time::Duration::from_millis(positive("link_timeout_ms", v)?);
+    }
+    if let Some(v) = up.parse::<u64>("reconnect_ms", "milliseconds, an integer")? {
+        cfg.reconnect = std::time::Duration::from_millis(positive("reconnect_ms", v)?);
+    }
+    if let Some(v) = up.parse::<usize>("max_queued_messages", "a count")? {
+        cfg.max_queued_messages = v;
+    }
+    if cfg.link_timeout <= cfg.keepalive {
+        return Err(invalid(
+            up.path_of("link_timeout_ms"),
+            zerodds_config::Origin::Default,
+            "link_timeout_ms must be longer than keepalive_ms, or every link counts as lost"
+                .to_string(),
+        ));
+    }
+    if up.node("clients").is_some() {
+        let mut keys = Vec::new();
+        for (path, item) in up.items("clients")? {
+            let zerodds_config::Node::Scalar(text, origin) = item else {
+                return Err(invalid(
+                    path,
+                    zerodds_config::read::first_origin(item),
+                    "expected a ClientKey, the four octets in hexadecimal (e.g. `0xAABBCCDD`)"
+                        .to_string(),
+                ));
+            };
+            let key = crate::daemon::access::parse_client_key(text).ok_or_else(|| {
+                invalid(
+                    path,
+                    origin.clone(),
+                    "expected a ClientKey, the four octets in hexadecimal (e.g. `0xAABBCCDD`)"
+                        .to_string(),
+                )
+            })?;
+            keys.push(key);
+        }
+        cfg.clients = Some(keys);
+    }
+    Ok(Some(cfg))
 }
 
 /// A `listeners[]` entry written as one string, `udp:<host:port>`,
@@ -925,6 +1103,159 @@ mod tests {
         ] {
             assert!(DaemonConfig::load_from_str(missing).is_err(), "{missing}");
         }
+    }
+
+    /// `limits.max_pending_samples` bounded a queue the daemon never filled;
+    /// the bound of the DATA of a reliable stream is its sender window
+    /// (DDS-XRCE 1.0 §8.4.14). A file that sets the key does not start the
+    /// daemon, and the error names the key, its line and the reason; the two
+    /// other limits are read as before.
+    #[test]
+    fn xrce_8_4_14_limits_max_pending_samples_is_refused_with_the_reason() {
+        let e = DaemonConfig::load_from_str(
+            "log_level: info\nlimits:\n  max_clients: 8\n  max_pending_samples: 256\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("limits.max_pending_samples"), "{e}");
+        assert!(e.contains("<string>:4"), "the line of the key: {e}");
+        assert!(
+            e.contains("no longer read") && e.contains("sender window"),
+            "{e}"
+        );
+        assert!(!is_key("limits.max_pending_samples"));
+        let c =
+            DaemonConfig::load_from_str("limits:\n  max_clients: 8\n  max_objects_per_client: 9\n")
+                .unwrap();
+        assert_eq!((c.max_clients, c.max_objects_per_client), (8, 9));
+    }
+
+    #[test]
+    fn xrce_8_3_5_12_the_heartbeat_keys_are_read() {
+        let d = DaemonConfig::default();
+        assert_eq!(
+            (
+                d.heartbeat_period_ms,
+                d.client_active_window_ms,
+                d.heartbeat_to_silent_client
+            ),
+            (500, 2000, false)
+        );
+        let c = DaemonConfig::load_from_str(
+            "heartbeat:\n  period_ms: 250\n  client_active_window_ms: 10000\n  silent_client: send\n",
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                c.heartbeat_period_ms,
+                c.client_active_window_ms,
+                c.heartbeat_to_silent_client
+            ),
+            (250, 10_000, true)
+        );
+        for bad in [
+            "heartbeat:\n  period_ms: 0\n",
+            "heartbeat:\n  silent_client: maybe\n",
+            "heartbeat:\n  client_active_window_ms: soon\n",
+            "heartbeat:\n  jitter_ms: 5\n",
+        ] {
+            assert!(DaemonConfig::load_from_str(bad).is_err(), "{bad}");
+        }
+        for key in [
+            "heartbeat.period_ms",
+            "heartbeat.client_active_window_ms",
+            "heartbeat.silent_client",
+        ] {
+            assert!(is_key(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn xrce_10_4_the_upstream_block_is_read() {
+        use crate::daemon::federation::UpstreamLocator;
+        assert!(DaemonConfig::default().upstream.is_none());
+        let c = DaemonConfig::load_from_str(
+            "upstream:\n  locator: udp://127.0.0.1:2019\n  mtu: 1024\n  keepalive_ms: 200\n  link_timeout_ms: 900\n  reconnect_ms: 300\n  max_queued_messages: 8\n  clients:\n    - 0xAABBCCDD\n",
+        )
+        .unwrap();
+        let up = c.upstream.unwrap();
+        assert_eq!(
+            up.locator,
+            UpstreamLocator::Udp("127.0.0.1:2019".parse().unwrap())
+        );
+        assert_eq!(up.mtu, 1024);
+        assert_eq!(up.keepalive, std::time::Duration::from_millis(200));
+        assert_eq!(up.link_timeout, std::time::Duration::from_millis(900));
+        assert_eq!(up.reconnect, std::time::Duration::from_millis(300));
+        assert_eq!(up.max_queued_messages, 8);
+        assert_eq!(up.clients, Some(vec![[0xAA, 0xBB, 0xCC, 0xDD]]));
+        let tcp = DaemonConfig::load_from_str("upstream:\n  locator: tcp://127.0.0.1:2020\n")
+            .unwrap()
+            .upstream
+            .unwrap();
+        assert_eq!(
+            tcp.locator,
+            UpstreamLocator::Tcp("127.0.0.1:2020".parse().unwrap())
+        );
+        assert_eq!(tcp.clients, None, "all clients by default");
+        assert_eq!(
+            tcp.mtu, 508,
+            "the default MTU of a client without requested_mtu"
+        );
+        let smallest =
+            DaemonConfig::load_from_str("upstream:\n  locator: udp://127.0.0.1:2019\n  mtu: 13\n")
+                .unwrap();
+        assert_eq!(smallest.upstream.unwrap().mtu, 13);
+        for mtu in [0, 12] {
+            let e = DaemonConfig::load_from_str(&format!(
+                "upstream:\n  locator: udp://127.0.0.1:2019\n  mtu: {mtu}\n"
+            ))
+            .unwrap_err()
+            .to_string();
+            assert!(
+                e.contains("upstream.mtu") && e.contains("the smallest upstream mtu is 13"),
+                "{e}"
+            );
+        }
+        for bad in [
+            "upstream:\n  mtu: 512\n",
+            "upstream:\n  locator: dtls://127.0.0.1:2019\n",
+            "upstream:\n  locator: 127.0.0.1:2019\n",
+            "upstream:\n  locator: udp://127.0.0.1:2019\n  keepalive_ms: 0\n",
+            "upstream:\n  locator: udp://127.0.0.1:2019\n  keepalive_ms: 5000\n  link_timeout_ms: 1000\n",
+            "upstream:\n  locator: udp://127.0.0.1:2019\n  clients:\n    - nokey\n",
+            "upstream:\n  locator: udp://127.0.0.1:2019\n  discover: []\n",
+        ] {
+            assert!(DaemonConfig::load_from_str(bad).is_err(), "{bad}");
+        }
+        for key in [
+            "upstream.locator",
+            "upstream.clients",
+            "upstream.max_queued_messages",
+        ] {
+            assert!(is_key(key), "{key}");
+        }
+    }
+
+    /// DDS-XRCE 1.0 §10.4 with §11.2, §11.3.3: a FRAGMENT of the upstream
+    /// mtu has to fit one message of the link, a UDP datagram (65 507 octets
+    /// over IPv4, 65 527 over IPv6) or a TCP frame (65 535).
+    #[test]
+    fn xrce_10_4_the_upstream_mtu_fits_one_message_of_the_link() {
+        let mtu = |locator: &str, mtu: u32| {
+            DaemonConfig::load_from_str(&format!("upstream:\n  locator: {locator}\n  mtu: {mtu}\n"))
+                .map(|c| c.upstream.unwrap().mtu)
+                .map_err(|e| e.to_string())
+        };
+        assert_eq!(mtu("udp://127.0.0.1:2019", 65_507), Ok(65_507));
+        let e = mtu("udp://127.0.0.1:2019", 65_508).unwrap_err();
+        assert!(
+            e.contains("upstream.mtu") && e.contains("(65507 octets)"),
+            "{e}"
+        );
+        assert_eq!(mtu("udp://[::1]:2019", 65_527), Ok(65_527));
+        assert!(mtu("udp://[::1]:2019", 65_528).is_err());
+        assert_eq!(mtu("tcp://127.0.0.1:2019", 65_535), Ok(65_535));
     }
 
     #[test]

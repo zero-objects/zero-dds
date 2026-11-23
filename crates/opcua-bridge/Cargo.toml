@@ -46,6 +46,7 @@ crypto = [
     "dep:rsa",
     "dep:pem",
     "dep:rand",
+    "dep:x509-cert",
 ]
 # `daemon` enables the `zerodds-opcua-bridged` binary + the DDS pump.
 daemon = [
@@ -124,6 +125,9 @@ pem = { version = "3", optional = true }
 # A real OS CSPRNG for the secured-handshake path — the same crate/version
 # `crates/opcua-server`'s own crypto e2e test uses for the same reason.
 rand = { version = "0.8", default-features = false, features = ["std", "std_rng", "getrandom"], optional = true }
+# The public key of a push target's certificate (Part 14 §8.6, the SKS's
+# SecureChannel to the target).
+x509-cert = { version = "0.2", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 zerodds-test-domains = { path = "../test-domains" }

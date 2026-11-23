@@ -3,7 +3,7 @@
 //! Contract of `zerodds-grpc-bridge` with `zerodds-types`
 //! (internal/release/rc8-test-suite.md, "Crate tier").
 //!
-//! What this crate uses of `zerodds-types` (`src/bin/zerodds-grpc-bridged.rs`, feature `std`):
+//! What this crate uses of `zerodds-types` (`src/bridge_daemon/`, feature `std`):
 //! `qos::ExtensibilityForRepr`, the category it hands
 //! `DcpsRuntime::set_user_writer_wire_extensibility` for a body whose
 //! encapsulation header it passes on. It relies on the type having the three

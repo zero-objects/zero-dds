@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "OMG Time Service 1.1 (formal/2002-05-07) data types + UTO/TIO operations + TimeService API. Pure-Rust no_std + alloc."
+description = "OMG Time Service 1.1 (formal/2002-05-07): TimeBase, CosTime (UTO, TIO, TimeService) and CosTimerEvent (Timer Event Service). Pure Rust; the data types and UTO/TIO operations build no_std + alloc."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-time-service"
@@ -17,10 +17,66 @@ publish = true
 [lints]
 workspace = true
 
+# The merge lane also runs the crate with `serve` (the GIOP servant and
+# server, tests/time_svc_e2e.rs).
+[package.metadata.crate-tier]
+feature-runs = ["serve"]
+
 [lib]
 path = "src/lib.rs"
 
 [features]
-default = ["std"]
-std = ["alloc"]
+default = ["std", "timer-event"]
+std = ["alloc", "dep:jiff"]
 alloc = []
+# The Timer Event Service, module CosTimerEvent (spec §2.2 to §2.4): a
+# worker thread pushes timer events to CosEventComm::PushConsumer.
+timer-event = ["std", "dep:zerodds-corba-cos-event"]
+# CosTime::TimeService, UTO and TIO as CORBA objects (spec §1.2): the GIOP
+# dispatch (`servant`) and an IIOP server (`server`).
+serve = [
+    "std",
+    "dep:zerodds-wire",
+    "dep:zerodds-corba-giop",
+    "dep:zerodds-corba-iiop",
+    "dep:zerodds-corba-ior",
+]
+
+[dependencies]
+# The time displacement factor of the local time zone (spec §1.3.2.4):
+# the TZ variable (IANA name, TZif path or POSIX rule), /etc/localtime,
+# the Windows setting. Pure Rust, no libc time-zone state. std only.
+# Windows has no system zone database: jiff maps the Windows zone to its
+# IANA name and looks it up in the database `tzdb-bundle-platform` puts
+# into the binary on Windows and wasm only (on Unix /usr/share/zoneinfo
+# serves, `tzdb-zoneinfo`). Without it the Windows zone is not found and
+# the tdf is 0.
+jiff = { version = "0.2.35", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"], optional = true }
+# CosEventComm::PushConsumer and the `any` of an event (AnyEvent), the
+# channel side of the Timer Event Service (spec §2.4.1).
+zerodds-corba-cos-event = { version = "1.0.0-rc.7", path = "../corba-cos-event", optional = true }
+# Feature `serve`: CDR, GIOP messages and CORBA::Object operations, the
+# IIOP acceptor and connector, IORs.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire", optional = true }
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", optional = true }
+zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", optional = true }
+zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior", optional = true }
+
+# The contract with zerodds-wire (internal/release/rc8-test-suite.md, "Crate
+# tier"): the CDR of the GIOP servant, feature `serve`.
+[[test]]
+name = "contract_wire"
+path = "tests/contract_wire.rs"
+required-features = ["serve"]
+
+[[test]]
+name = "time_svc_e2e"
+path = "tests/time_svc_e2e.rs"
+required-features = ["serve"]
+
+# Against omniORB 4.3 (`#[ignore]`): the integration job
+# integration-bridges-vendor-corba runs it (ci/integration_scenarios.py).
+[[test]]
+name = "omniorb_e2e"
+path = "tests/omniorb_e2e.rs"
+required-features = ["serve"]

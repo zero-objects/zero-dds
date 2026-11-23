@@ -1481,7 +1481,19 @@ impl AesGcmCryptoPlugin {
             } else {
                 &body[..]
             };
-        decoded_rtps_message(&rtps_header, &extension, stripped)
+        // Table 80, 1): without the flag A no tag covers a HeaderExtension,
+        // and "the input RTPS Message cannot contain an RTPS Header
+        // Extension". One in front of the SRTPS_PREFIX was put there behind
+        // the protection, as a stream transport states the message length
+        // (DDSI-RTPS 2.5 §8.3.3), or on the way. "The returned RTPS Message
+        // shall match the input to the encode_rtps_message operation": it
+        // has none, and what an unauthenticated one says is not handed on.
+        let authenticated: &[u8] = if prefix_flags & SRTPS_FLAG_A != 0 {
+            &extension
+        } else {
+            &[]
+        };
+        decoded_rtps_message(&rtps_header, authenticated, stripped)
     }
 
     /// `decode_serialized_payload` with the key `(owner, key_id)`; with
@@ -5115,6 +5127,58 @@ mod tests {
             .decode_rtps_message_cyclone(&wire)
             .expect("cross-instance SRTPS decode");
         assert_eq!(back, msg, "cross-instance SRTPS cyclone roundtrip");
+    }
+
+    /// Table 80, 1): in the form without the flag A no tag covers a
+    /// HeaderExtension, and the input of `encode_rtps_message` has none. A
+    /// message that got one in front of its SRTPS_PREFIX behind the
+    /// protection, as a stream transport states the message length
+    /// (DDSI-RTPS 2.5 §8.3.3), decodes to the message that was protected,
+    /// without the HeaderExtension. One with a timestamp put there on the
+    /// way decodes to the same message: the timestamp is not handed on.
+    #[test]
+    fn security_10_5_3_3_1_an_unauthenticated_header_extension_is_not_part_of_the_decoded_message()
+    {
+        let (mut alice, mut bob) = dual_key_pair(0x56);
+        let al = alice
+            .register_local_participant(IdentityHandle(1), &[])
+            .unwrap();
+        let bl = bob
+            .register_local_participant(IdentityHandle(1), &[])
+            .unwrap();
+        let b2a = bob
+            .register_matched_remote_participant(bl, IdentityHandle(1), SharedSecretHandle(1))
+            .unwrap();
+        let tok = alice
+            .create_local_participant_crypto_tokens(al, CryptoHandle(0))
+            .unwrap();
+        bob.set_remote_participant_crypto_tokens(bl, b2a, &tok)
+            .unwrap();
+        let msg = [
+            b"RTPS\x02\x05".as_slice(),
+            &[0u8; 14],
+            &[0x09, 0x01, 0x08, 0x00, 1, 2, 3, 4, 5, 6, 7, 8],
+        ]
+        .concat();
+        let wire = alice.encode_rtps_message_cyclone(al, &msg).unwrap();
+        assert_eq!(wire[21] & SRTPS_FLAG_A, 0, "the form without AAD");
+
+        // E | L: the messageLength alone.
+        let total = u32::try_from(wire.len() + 8).unwrap().to_le_bytes();
+        let mut stated = wire[..20].to_vec();
+        stated.extend_from_slice(&[HEADER_EXTENSION_ID, 0x03, 4, 0]);
+        stated.extend_from_slice(&total);
+        stated.extend_from_slice(&wire[20..]);
+        assert_eq!(bob.decode_rtps_message_cyclone(&stated).unwrap(), msg);
+
+        // E | L | T: a timestamp nobody authenticated.
+        let total = u32::try_from(wire.len() + 16).unwrap().to_le_bytes();
+        let mut stamped = wire[..20].to_vec();
+        stamped.extend_from_slice(&[HEADER_EXTENSION_ID, 0x07, 12, 0]);
+        stamped.extend_from_slice(&total);
+        stamped.extend_from_slice(&[0x77; 8]);
+        stamped.extend_from_slice(&wire[20..]);
+        assert_eq!(bob.decode_rtps_message_cyclone(&stamped).unwrap(), msg);
     }
 
     /// DDS-Security 1.2 §9.5.1.8: `unregister_local_endpoint` releases the

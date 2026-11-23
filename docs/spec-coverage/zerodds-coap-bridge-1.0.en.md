@@ -19,6 +19,17 @@ L1–L4 mandatory, L5–L6 optional.
 
 **Status:** n/a (informative) — assignment of the levels; the requirements are the items §2 to §12.
 
+### §1a L6 multi-tenant
+
+**Spec:** §1 L6 — several DomainParticipants per daemon; one tenant
+binding per DTLS session.
+
+**Repo:** `crates/coap-bridge/src/daemon/config.rs::{TenantConfig, DaemonConfig::from_config}`, `crates/coap-bridge/src/daemon/server.rs::{start_with_reload, DtlsShared::core_of, dtls_session}`.
+
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_1_l6_a_dtls_session_is_bound_to_the_tenant_of_its_subject`, `crates/coap-bridge/src/daemon/config.rs::tests::coapbridge_1_l6_the_tenants`, `crates/coap-bridge/tests/example_yaml_loadback.rs::coapbridge_3_the_example_of_the_spec_loads`.
+
+**Status:** done — a tenant is a DomainParticipant on its domain with its own topics, observations and catalog; a DTLS session with a PSK a tenant names writes to its domain (checked at the DDS reader) and sees its resources only; plaintext and a session without a tenant see the topics of `domain`. Checked with a PSK; a certificate and a raw public key bind through the same subject but are not checked by themselves.
+
 ## §2 CLI surface
 
 ### §2 zerodds-coap-bridged CLI
@@ -33,7 +44,7 @@ exit codes 0/1/2/3/4.
 **Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_post_to_configured_path_returns_2_04_changed`,
 `::coapbridge_2_well_known_core_returns_link_format_catalog`,
 `::coapbridge_2_observe_register_returns_initial_content_with_observe_option`,
-`::coapbridge_2_unknown_path_returns_bad_request`.
+`::coap_5_9_2_5_an_unknown_resource_is_4_04_and_a_dot_segment_4_00`.
 
 **Status:** done
 
@@ -45,14 +56,11 @@ exit codes 0/1/2/3/4.
 `domain`/`coap`/`oscore`/`topics`/`content_format`/`acl`/`metrics`; ENV
 substitution.
 
-**Repo:** `crates/coap-bridge/src/daemon/config.rs`,
-`crates/config/src/parse.rs` (the shared parser), `crates/coap-bridge/src/daemon/mod.rs`.
+**Repo:** `crates/coap-bridge/src/daemon/config.rs`, `crates/config/src/parse.rs` (the shared parser), `crates/coap-bridge/src/daemon/mod.rs`.
 
-**Tests:** `crates/coap-bridge/tests/example_yaml_loadback.rs::coapbridge_3_example_yaml_parses_without_error`,
-`crates/coap-bridge/tests/example_yaml_loadback.rs::coapbridge_3_example_yaml_key_fields_match_intent`
-(loads the example of the specification). Inline tests in `crates/coap-bridge/src/daemon/config.rs::tests`.
+**Tests:** `crates/coap-bridge/tests/example_yaml_loadback.rs::{coapbridge_3_the_example_of_the_spec_loads, coapbridge_3_example_yaml_parses_without_error, coapbridge_3_example_yaml_key_fields_match_intent}`, `crates/coap-bridge/src/daemon/config.rs::tests::coapbridge_3_the_keys_of_the_forms_the_blocks_and_the_qos`, `crates/coap-bridge/src/daemon/config.rs::tests::what_the_old_parser_turned_into_defaults_is_refused`.
 
-**Status:** done
+**Status:** done — the example of §3 loads word for word with the values it names; every new key and its bounds are checked.
 
 ## §4 CoAP wire protocol
 
@@ -94,64 +102,45 @@ options, payload marker `0xFF`.
 **Spec:** §4.2 — POST → DDS write (`2.04 Changed`), PUT idempotent, DELETE
 → dispose; `4.00`/`4.13`/`5.00` error mapping.
 
-**Repo:** `crates/coap-bridge/src/daemon/server.rs`,
-`crates/coap-bridge/src/bridge.rs`, `crates/coap-bridge/src/method_props.rs`.
+**Repo:** `crates/coap-bridge/src/daemon/server.rs::{serve_write, write_sample, serve_delete, dispatch, suppressed}`, `crates/coap-bridge/src/daemon/proxy.rs::deliver` (No-Response at the proxy), `crates/coap-bridge/src/daemon/representation.rs::TopicType::{read, key_hash, key_holder}`.
 
-**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_post_to_configured_path_returns_2_04_changed`,
-`::coapbridge_2_unknown_path_returns_bad_request`.
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::{coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form, coapbridge_4_2_delete_disposes_the_instance_it_names, rfc7967_a_suppressed_response_does_not_leave}`, `crates/coap-bridge/src/daemon/server.rs::tests::{coapbridge_4_2_a_failed_dds_write_is_5_00, rfc7967_2_1_the_bits_suppress_the_classes, coapbridge_4_2_a_key_hash_is_32_hex_digits}`, `crates/coap-bridge/tests/proxy_e2e.rs::rfc7967_2_the_proxy_forwards_no_response_and_suppresses_its_response`, `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_post_to_configured_path_returns_2_04_changed`.
 
-**Status:** done
+**Status:** done — POST/PUT in every form into DDS, checked at the reader; `4.00` for a body that is no sample, `4.15` for a Content-Format of no form, `5.00` for a failed DDS write; DELETE disposes the instance named by `key_hash` or by a sample in the body, the reader sees the dispose; `4.05` without key or writer; No-Response suppresses the classes of its bits, also at the proxy, a CON gets an empty ACK. Against DDS readers of other vendors the dispose is not measured.
 
 ### §4.3 GET + Observe (RFC 7641) → DDS→CoAP push
 
 **Spec:** §4.3 — GET with `Observe:0` registers, notify per sample with
 `Observe:<seq>`; cancel via `Observe:1` or RST.
 
-**Repo:** `crates/coap-bridge/src/observe.rs`,
-`crates/coap-bridge/src/daemon/server.rs`.
+**Repo:** `crates/coap-bridge/src/daemon/observe.rs` (registry, notifications, retransmission, Reset, ping, deadline), `crates/coap-bridge/src/daemon/server.rs::serve_get`.
 
-**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_observe_register_returns_initial_content_with_observe_option`.
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::{coapbridge_4_3_a_dds_sample_is_a_confirmable_notification_until_a_reset, coapbridge_6_replay_lifespan_and_deadline, coapbridge_6_the_ping_and_the_bound_of_unconfirmed_notifications}`, `crates/coap-bridge/src/daemon/observe.rs::tests::{coap_4_2_a_confirmable_message_is_retransmitted_with_back_off, rfc7641_3_4_the_sequence_number_is_24_bits, rfc7641_4_5_the_bound_of_unconfirmed_notifications, rfc7641_4_1_an_observer_is_named_by_endpoint_and_token}`, `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_observe_register_returns_initial_content_with_observe_option`.
 
-**Status:** done
+**Status:** done — a notification per DDS sample in the form of the registration (XCDR1 from the DDS writer, JSON at the observer); CON for RELIABLE with retransmission, a newer one replaces the one in flight; a Reset, an unacknowledged CON notification, an unanswered ping and a missed deadline end the observation; VOLATILE gives nothing first; `observe_max_age_secs` makes a CON notification after a second without an ACK.
 
 ### §4.4 Block-wise transfer (RFC 7959)
 
 **Spec:** §4.4 — Block1 (POST) + Block2 (notify); `block_size` (SZX
 16..1024); defragmentation cap.
 
-**Repo:** `crates/coap-bridge/src/blockwise.rs`,
-`crates/coap-bridge/src/reliability.rs`,
-`crates/coap-bridge/src/option.rs` (Block1/Block2 options),
-`crates/coap-bridge/src/daemon/server.rs` (block wire-up).
+**Repo:** `crates/coap-bridge/src/blockwise.rs`, `crates/coap-bridge/src/daemon/server.rs::{serve_write, representation, content_response}`, `crates/coap-bridge/src/daemon/observe.rs::notify_one`.
 
-**Tests:** `crates/coap-bridge/src/blockwise.rs::tests` (10 tests):
-`coapbridge_4_4_block_size_matches_spec_szx_table`, `coapbridge_4_4_szx_7_rejected`,
-`coapbridge_4_4_a_small_block_value_is_one_octet`, `coapbridge_4_4_the_largest_block_number_is_three_octets`,
-`coapbridge_4_4_num_too_large_rejected`, `coapbridge_4_4_decode_rejects_bad_length`,
-`coapbridge_4_4_reassembler_combines_blocks_in_order`, `coapbridge_4_4_out_of_order_block_rejected`,
-`coapbridge_4_4_intermediate_block_size_must_match`, `coapbridge_4_4_final_block_can_be_smaller`;
-`crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_4_4_block1_chunked_post_completes_with_2_04_changed`,
-`crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_4_4_block1_out_of_order_returns_2_31_continue_only_in_order`.
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::{rfc7959_block_size_and_the_limits_of_a_transfer, coapbridge_12_2_a_4_kib_sample_by_block1_and_back_by_block2}`, `crates/coap-bridge/src/blockwise.rs::tests` (10), `crates/coap-bridge/src/daemon/server.rs::tests::{coap_11_3_an_unauthenticated_response_is_sliced_into_small_blocks, rfc7959_2_2_the_block_size_as_szx}`, `crates/coap-bridge/tests/daemon_e2e.rs::{coapbridge_4_4_block1_chunked_post_completes_with_2_04_changed, coapbridge_4_4_block1_out_of_order_returns_2_31_continue_only_in_order}`.
 
-**Status:** done
+**Status:** done — `block_size` 16 cuts into blocks of 16 octets, a block out of order is `4.08`, a transfer beyond `max_body_size` `4.13` with Size1; 4 KiB in by Block1 and back by Block2.
 
 ### §4.5 Content-format registry 65000/65001/65002/50/60
 
 **Spec:** §4.5 — vendor range 65000-65535 for CDR2-LE/BE + CDR1-LE;
 `50=application/json`, `60=application/cbor`.
 
-**Repo:** `crates/coap-bridge/src/option.rs` (content-format tags),
-`crates/coap-bridge/src/bridge.rs` (CDR decoder).
+**Repo:** `crates/coap-bridge/src/daemon/representation.rs` (`Form`, `ContentFormats`, `Extensibility`, `TopicType`), `crates/coap-bridge/src/content_format.rs`, `crates/coap-bridge/src/daemon/server.rs::Core::represent`.
 
-**Tests:** `crates/coap-bridge/src/option.rs::tests::coap_5_10_content_format_uses_number_12`,
-`crates/coap-bridge/src/codec.rs::tests::coap_5_5_representation_carries_content_format_per_spec_5_5`,
-`crates/coap-bridge/src/codec.rs::tests::coap_5_5_diagnostic_payload_of_error_response_carries_no_content_format`;
-the value 65000 is set by `crates/coap-bridge/src/daemon/server.rs` and read
-back by `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_observe_register_returns_initial_content_with_observe_option`.
-65001, 65002, 50 and 60 do not exist as a registry — see §4.5a.
+**Tests:** `crates/coap-bridge/src/daemon/representation.rs::tests::{coapbridge_4_5_the_five_forms_and_their_numbers, coapbridge_4_5_the_identifier_names_the_form, xtypes_7_4_the_encoding_of_a_form_follows_the_extensibility, coapbridge_4_5_every_form_carries_the_same_sample, rfc8949_6_2_the_cbor_form_is_the_json_value_in_cbor}`, `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form`, `crates/coap-bridge/src/content_format.rs::tests::coap_12_3_the_initial_registry_entries`.
 
-**Status:** partial — the option itself and the CDR2-LE value 65000 are covered; the
-four other values are carried as §4.5a `open`.
+**Status:** done — the five forms with their numbers; every form carries the same sample (octets of the DHEADER and the alignment checked), the DDS side under `D_CDR2_LE`.
+
 ## §5 Topic mapping
 
 ### §4.5a Content-format values 65001/65002/50/60
@@ -159,12 +148,11 @@ four other values are carried as §4.5a `open`.
 **Spec:** §4.5 — CDR2-BE (65001), CDR1-LE (65002), `50=application/json`,
 `60=application/cbor`.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/representation.rs`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::{coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form, coapbridge_4_3_a_dds_sample_is_a_confirmable_notification_until_a_reset}`, `crates/coap-bridge/src/daemon/representation.rs::tests::coapbridge_4_5_every_form_carries_the_same_sample`.
 
-**Status:** open — the part of §4.5 beyond 65000. The tree carries no
-registry type and no test for the four values.
+**Status:** done — 65001, 65002, 50 and 60 in and out, checked at the DDS reader and from the DDS writer.
 
 ### §5.1 Slug algorithm DDS → CoAP URI
 
@@ -179,8 +167,8 @@ registry type and no test for the four values.
 `coap_6_1_parses_query_params`, `coap_6_1_parses_empty_path_when_no_slash`,
 `coap_6_1_rejects_unknown_scheme`, `coap_6_1_rejects_missing_host`, `coap_6_1_rejects_invalid_port`,
 `coap_6_1_rejects_fragment`, `coap_1_1_default_port_returns_5684_for_coaps`,
-`coap_6_1_round_trip_path_filtering_strips_empty_segments`;
-the override path `crates/coap-bridge/src/daemon/config.rs::tests` and
+`coap_6_4_an_empty_segment_is_a_uri_path_option`;
+the slug `crates/coap-bridge/src/daemon/config.rs::tests::{slug_handles_double_colon, slug_replaces_unsafe_chars}` and
 `crates/coap-bridge/tests/example_yaml_loadback.rs::coapbridge_5_1_example_yaml_topics_reach_the_daemon`.
 
 **Status:** done
@@ -190,12 +178,11 @@ the override path `crates/coap-bridge/src/daemon/config.rs::tests` and
 **Spec:** §5.2 — `/.well-known/core` returns a link-format resource list
 with `rt="dds.topic"`, `ct=65000`, `type="..."`.
 
-**Repo:** `crates/coap-bridge/src/core_link.rs`,
-`crates/coap-bridge/src/daemon/server.rs`.
+**Repo:** `crates/coap-bridge/src/daemon/server.rs::{render_well_known_core, serve_schema}`, `crates/coap-bridge/src/core_link.rs`, `crates/coap-bridge/src/daemon/representation.rs::TopicType::idl`.
 
-**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_well_known_core_returns_link_format_catalog`.
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form`, `crates/coap-bridge/src/daemon/representation.rs::tests::coapbridge_5_2_the_schema_is_the_idl_of_the_type`, `crates/coap-bridge/tests/contract_idl_compose.rs::idl_7_3_a_file_compiles_with_its_includes_from_its_own_directory`, `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_well_known_core_returns_link_format_catalog`.
 
-**Status:** done
+**Status:** done — the catalog names `ct="65000 65001 65002 50 60"`, `type="Sensor::Reading"` and the link `</schema/…>;rt="dds.schema"`; `GET /schema/<slug>` gives the IDL, which compiles back into the type; a POST to it is `4.05`.
 
 ## §6 QoS translation
 
@@ -204,76 +191,58 @@ with `rt="dds.topic"`, `ct=65000`, `type="..."`.
 **Spec:** §6 — Reliable→CON, BestEffort→NON, Volatile/TransientLocal,
 Lifespan→`Max-Age`, Deadline→`5.03`, Liveliness→ping, Partition→filter.
 
-**Repo:** `crates/coap-bridge/src/reliability.rs`,
-`crates/coap-bridge/src/observe.rs`, `crates/coap-bridge/src/bridge.rs`,
-`crates/coap-bridge/src/daemon/qos_translation.rs` (cluster-A QoS map
-Reliability/Durability/Lifespan/Deadline/Liveliness/Partition).
+**Repo:** `crates/coap-bridge/src/daemon/qos_translation.rs::topic_behavior`, `crates/coap-bridge/src/daemon/observe.rs`, `crates/coap-bridge/src/daemon/server.rs::register_topic`.
 
-**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_post_to_configured_path_returns_2_04_changed`
-(reliable POST→write); a QoS matrix in
-`crates/coap-bridge/src/daemon/qos_translation.rs::tests`.
+**Tests:** `crates/coap-bridge/src/daemon/qos_translation.rs::tests::{coapbridge_6_reliability_picks_the_message_type, coapbridge_6_durability_and_history_set_the_replay, coapbridge_6_lifespan_and_deadline}`, `crates/coap-bridge/tests/topic_e2e.rs::{coapbridge_6_replay_lifespan_and_deadline, coapbridge_6_the_ping_and_the_bound_of_unconfirmed_notifications, coapbridge_4_3_a_dds_sample_is_a_confirmable_notification_until_a_reset}`, `crates/coap-bridge/src/daemon/observe.rs::tests::coapbridge_6_the_max_age_is_what_is_left_of_the_lifespan`.
 
-**Status:** done
+**Status:** done — RELIABLE → CON, BEST_EFFORT → NON; TRANSIENT_LOCAL with KEEP_LAST(3) gives the last three; Max-Age from `lifespan_ms`; `5.03` with Max-Age 0 on a missed `deadline_ms` to GET and observers; the ping every `keep_alive_secs`. Partition and liveliness lease go to the DDS endpoints; their effect on the DDS side is not checked by itself.
 
 ## §7 Security
 
 ### §7.1 DTLS coaps:// + cipher suites
 
 **Spec:** §7.1 — "`coaps://` mode is enabled via `coap.dtls.enabled: true`";
-the cipher suites §7.1 recommends are `TLS_PSK_WITH_AES_128_CCM_8`
-(PSK mode, RFC 7252 §9.1.3), `TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8` (cert mode)
-and `TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256` (hybrid); "Cert rotation via SIGHUP
-(the daemon re-reads cert/key, sessions are kept)". The config schema (§3) names
-`coap.dtls.cert_file`/`key_file`/`ca_file` and the `psk` list of `identity` +
-`secret_hex`, the CLI (§3) `--dtls-psk-id`/`--dtls-psk`/`--dtls-cert`/
-`--dtls-key`. Auth+ACL run over vendor option 65000 (CoAP application auth
-token).
+the modes PreSharedKey (`coap.dtls.psk`), RawPublicKey (`rpk_key_file`,
+`rpk_trusted` with RFC 6920 names) and Certificate (`cert_file`, `key_file`,
+`ca_file`); the cipher suites `TLS_PSK_WITH_AES_128_CCM_8`,
+`TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8` and `TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256`;
+"Cert rotation via SIGHUP (the daemon re-reads cert/key, sessions are kept)".
+The subject of a DTLS client for §7.2/§7.3 is `psk:<identity>`, the
+certificate's DN, or `rpk:` with the `ni` URI of the raw public key.
 
-**Repo:** `crates/coap-bridge/src/dtls.rs` — `DtlsMode` (RFC 7252 §9.1),
-`DtlsCipherSuite` with the three §7.1 suites and their IANA code points,
-`PskStore`/`PskEntry` (lookup per identity, identity hint per RFC 4279 §5.2),
-`parse_secret_hex` and `DtlsCredentials` with
-`effective_cipher_suites`/`uses_psk`. `crates/coap-bridge/src/dtls_transport.rs`
-(feature `dtls`) — `load_certificate` reads `cert_file`+`key_file` as PEM
-(PKCS#8; a SEC1/PKCS#1 file is refused with the conversion named),
-`load_client_cas` turns `ca_file` into a trust store and switches on
-`RequireAndVerifyClientCert`, `server_config` builds either the PSK or the cert
-handshake through `supported_cipher_suites`, `DtlsCoapServer::bind_with` keeps
-the UDP listener and the DTLS configuration apart, `rotate` swaps the
-configuration used by the next handshake on the same socket,
-`DtlsCoapClient::connect` / `connect_psk`.
-`crates/coap-bridge/src/daemon/config.rs` reads the `coap.dtls` block
-(`cert_file`, `key_file`, `ca_file`, `cipher_suites`, `psk`) and rejects
-unknown suite names, missing `secret_hex` fields and a `cert_file` without its
-`key_file`; `crates/coap-bridge/src/daemon/cli.rs` +
-`crates/coap-bridge/src/bin/zerodds-coap-bridged.rs` wire up the four DTLS
-flags; `crates/coap-bridge/src/daemon/server.rs`
-(`spawn_dtls_server`/`dtls_accept_loop`) hands the credentials to the listener
-and performs the rotation on the SIGHUP `reload_flag`;
-`crates/coap-bridge/src/daemon/security.rs` (option-65000 auth wire-up).
+**Repo:** `crates/coap-bridge/src/dtls.rs` — `DtlsMode`, `DtlsCipherSuite` with
+the three §7.1 suites and their IANA code points, `PskStore`,
+`parse_secret_hex`, `DtlsCredentials` (with `rpk_key_file`, `rpk_trusted`).
+`crates/coap-bridge/src/dtls_transport.rs` (feature `dtls`) on
+`crates/dtls-openssl` (OpenSSL 3.2 or later, ADR 0014) — `server_config`,
+`DtlsCoapServer::{bind_with, rotate, accept}`, `DtlsCoapClient::{connect,
+connect_psk, connect_verified, connect_rpk}`. `crates/coap-bridge/src/daemon/config.rs`
+reads the `coap.dtls` block and refuses unknown suites and identifiers that
+are no RFC 6920 names; `crates/coap-bridge/src/daemon/server.rs`
+(`spawn_dtls_server`, `dtls_session`, `dtls_subject`) runs a thread per
+session, rotates on the SIGHUP `reload_flag` and forms the subject.
 
-**Tests:** inline in `crates/coap-bridge/src/dtls.rs` —
+**Tests:** `crates/coap-bridge/src/dtls.rs` inline —
 `coapbridge_7_1_cipher_suite_names_and_code_points_match_iana`,
 `coapbridge_7_1_psk_store_looks_up_by_identity_and_refuses_short_secrets`,
 `coapbridge_7_1_secret_hex_round_trips_and_rejects_garbage`,
-`coapbridge_7_1_credentials_pick_the_mode_they_were_configured_for` plus the
-`validate_dtls_mode` cases; `crates/coap-bridge/tests/dtls_coap_e2e.rs`
-(feature `dtls`) — `coap_9_dtls_coap_get_content_roundtrip` (handshake + CoAP-GET →
-2.05 Content), `coap_9_dtls_psk_handshake_carries_coap` (PSK mode, no certificate),
-`coap_9_dtls_psk_unknown_identity_is_refused`,
-`coap_9_dtls_certificate_files_and_rotation_keep_sessions_alive` (cert/key from disk,
-SIGHUP rotation: a new client handshakes against the new certificate while the
-session opened before the rotation keeps carrying CoAP),
-`coapbridge_7_1_dtls_rejects_a_non_pkcs8_key_file`;
+`coapbridge_7_1_credentials_pick_the_mode_they_were_configured_for`;
+`crates/coap-bridge/tests/dtls_coap_e2e.rs::{coap_9_dtls_coap_get_content_roundtrip,
+coap_9_dtls_psk_handshake_carries_coap, coap_9_dtls_psk_unknown_identity_is_refused,
+coap_9_1_3_2_raw_public_keys_carry_coap,
+coap_9_dtls_certificate_files_and_rotation_keep_sessions_alive,
+coapbridge_7_1_the_three_suites_of_section_7_1_are_negotiated,
+coapbridge_7_1_dtls_refuses_a_key_file_it_cannot_read}`;
+`crates/coap-bridge/tests/daemon_dtls_e2e.rs::{coap_9_daemon_serves_coaps_over_dtls_request_response_and_observe,
+coapbridge_7_3_mtls_takes_the_psk_identity_as_the_acl_subject,
+coapbridge_7_3_mtls_takes_the_certificate_dn_as_the_acl_subject,
+coap_9_1_3_2_the_daemon_takes_raw_public_keys_and_names_them_in_the_acl}`;
 `crates/coap-bridge/tests/security_e2e.rs` (option-65000 auth).
 
-**Status:** done — PSK and cert mode including `ca_file` client verification,
-the config and CLI path and the SIGHUP cert rotation are implemented and
-measured. Of the three suites §7.1 *recommends*, the endpoint offers
-`TLS_PSK_WITH_AES_128_CCM_8` and `TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8`;
-`TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256` (0xc037) is not in webrtc-dtls 0.12's
-`CipherSuiteId`, and `supported_cipher_suites` refuses to start naming the
-suite rather than quietly negotiating a different one.
+**Status:** done — the three modes, the three suites of §7.1, the `ca_file`
+check of client certificates, `rpk_trusted`, the SIGHUP rotation and the
+subjects are built and tested; checked against libcoap 4.3.4 (GnuTLS: raw
+public keys in both directions and PSK; OpenSSL: PSK and certificate).
 
 ### §7.2 OSCORE (RFC 8613)
 
@@ -349,39 +318,32 @@ identity did not reach the request path; `mtls` answered every request 4.01
 
 **Spec:** §8.1 — JSON log + a `--log-level` switch.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/log.rs`, `crates/coap-bridge/src/daemon/server.rs::finish`, `crates/coap-bridge/src/bin/zerodds-coap-bridged.rs`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/src/daemon/log.rs::tests::{coapbridge_8_1_a_line_is_a_json_object_with_the_spec_fields, rfc3339_5_6_the_utc_date_and_time, coapbridge_8_1_the_log_level_is_the_threshold}`, `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_8_1_8_3_the_log_lines_and_the_spans_of_an_exchange`, `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_9_2_the_binary_exits_0_on_sigterm`.
 
-**Status:** open — `crates/coap-bridge/src/daemon/cli.rs::tests` covers the flag
-splitting, but nothing tests the JSON log form or the effect of
-`--log-level`.
+**Status:** done — every line is a JSON object with `timestamp`, `level`, `event` and the fields of §8.1; checked through the binary with `log_level: debug`.
+
 ### §8.2 Prometheus metrics
 
 **Spec:** §8.2 — `--metrics` CLI + 10 counter/gauge families.
 
-**Repo:** `crates/coap-bridge/src/daemon/server.rs`,
-`crates/coap-bridge/src/daemon/config.rs`,
-`crates/coap-bridge/src/daemon/runtime_common.rs` (counter/gauge families
-cluster-A wire-up).
+**Repo:** `crates/coap-bridge/src/daemon/runtime_common.rs::{BridgeMetrics, family, serve_admin_endpoints}`, `crates/coap-bridge/src/daemon/config.rs` (`metrics.path`), `crates/dtls-openssl/src/transport.rs::Server::failed_handshakes`.
 
-**Tests:** `crates/coap-bridge/src/daemon/runtime_common.rs::tests::coapbridge_8_2_metrics_register_idempotent`,
-`crates/coap-bridge/src/daemon/runtime_common.rs::tests::coapbridge_8_2_admin_endpoint_serves_metrics`,
-`crates/coap-bridge/src/daemon/runtime_common.rs::tests::coapbridge_8_2_catalog_render_contains_topic_fields`.
+**Tests:** `crates/coap-bridge/src/daemon/runtime_common.rs::tests::{coapbridge_8_2_admin_endpoint_serves_metrics, coapbridge_8_2_metrics_register_idempotent, coapbridge_8_2_catalog_render_contains_topic_fields}`, `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form`.
 
-**Status:** done
+**Status:** done — the ten families with their labels at `metrics.path`; counted in the end-to-end run.
 
 ### §8.3 OTLP spans
 
 **Spec:** §8.3 — `OTEL_EXPORTER_OTLP_ENDPOINT` enables span emission.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/src/daemon/runtime_common.rs::{Tracer, ExchangeSpan, otlp_config_from_env, spawn_otlp_flush_loop}`, `crates/coap-bridge/src/daemon/server.rs::finish`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_8_1_8_3_the_log_lines_and_the_spans_of_an_exchange`.
 
-**Status:** open — `crates/coap-bridge/src/daemon/runtime_common.rs` builds the
-`OtlpConfig`, but nothing tests that `OTEL_EXPORTER_OTLP_ENDPOINT` is read
-or that a span is emitted per CoAP exchange.
+**Status:** done — with `OTEL_EXPORTER_OTLP_ENDPOINT` a span `coap.request` with its child `dds.write` reaches a collector in the test, at the latest at the shutdown.
+
 ## §9 Lifecycle
 
 ### §9.1 Startup sequence
@@ -422,27 +384,21 @@ flag; the binary was still running 3 s after SIGTERM before, measured),
 **Spec:** §10 — the daemon is a normal RTPS peer; the CoAP side against
 libcoap/californium/aiocoap/Eclipse-Wakaama.
 
-**Repo:** `crates/coap-bridge/src/daemon/server.rs`.
+**Repo:** `crates/coap-bridge/src/daemon/server.rs`, `crates/coap-bridge/tests/cross_vendor.rs`, `crates/coap-bridge/tests/interop/{aiocoap_client.py, CfClient.java, reading.idl}`, `tests/integration/provision.sh` (`aiocoap`, `californium`, `wakaama`), `ci/integration_scenarios.py` (`integration-bridges-vendor`).
 
-**Tests:** `crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_post_to_zerodds_daemon_returns_2_04_changed`,
-`crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_get_well_known_core_returns_catalog`,
-`crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_observe_receives_notification` (all `#[ignore]`, feature
-`cross-vendor-tests`); the RTPS side
-`crates/coap-bridge/src/bridge.rs::tests::coap_4_1_bridge_apply_write_then_read_round_trip`.
-Californium and aiocoap have not been run against the daemon — see §10a.
+**Tests:** `crates/coap-bridge/tests/cross_vendor.rs::{coapbridge_10_libcoap_post_to_zerodds_daemon_returns_2_04_changed, coapbridge_10_libcoap_get_well_known_core_returns_catalog, coapbridge_10_libcoap_observe_receives_notification, coapbridge_10_aiocoap_posts_reads_and_observes_json, coapbridge_10_californium_posts_reads_and_observes_json, coapbridge_10_wakaama_registration_is_read_and_answered}` (`#[ignore]`, feature `cross-vendor-tests`, weekly in `integration-bridges-vendor`); the RTPS side `crates/coap-bridge/tests/topic_e2e.rs::coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form`.
 
-**Status:** partial — libcoap is measured, Californium and aiocoap are not; the
-missing part is carried as §10a `open`.
+**Status:** done — measured on the Linux test host against libcoap 4.3.4, aiocoap 0.4.14, Eclipse Californium 3.14.0 and Eclipse Wakaama `snapshots/2026-05-26` (7 of 7 tests of `cross_vendor.rs`): POST, GET and an observation in JSON with aiocoap and Californium; Wakaama's registration (`POST /rd`) is read and answered with `4.05`, Wakaama reads the answer with its Message ID and does not send again.
+
 ### §10a Client matrix Californium/aiocoap
 
 **Spec:** §10 — the CoAP side runs against Californium and aiocoap.
 
-**Repo:** —
+**Repo:** `crates/coap-bridge/tests/cross_vendor.rs`, `crates/coap-bridge/tests/interop/{aiocoap_client.py, CfClient.java}`.
 
-**Tests:** —
+**Tests:** `crates/coap-bridge/tests/cross_vendor.rs::{coapbridge_10_aiocoap_posts_reads_and_observes_json, coapbridge_10_californium_posts_reads_and_observes_json}`.
 
-**Status:** open — the part of §10 and §12.3 beyond libcoap.
-`crates/coap-bridge/tests/cross_vendor.rs` knows only libcoap.
+**Status:** done — Californium 3.14.0 and aiocoap 0.4.14 measured against the daemon (see §10).
 
 ---
 
@@ -495,38 +451,30 @@ manuals.
 plus `crates/coap-bridge/tests/fuzz_smoke.rs::coap_11_1_fuzz_coap_decode_no_panic`,
 `::coapbridge_12_1_empty_input_returns_err_not_panic`, `::coapbridge_12_1_single_byte_inputs_no_panic`.
 
-**Status:** done
+**Status:** done — every module has at least five tests; the pump is `crates/coap-bridge/src/daemon/observe.rs` (`on_sample`, `notify_one`, `tick`) with five unit tests and the end-to-end tests of §12.2.
 
 ### §12.2 Integration tests bridge_e2e
 
 **Spec:** §12.2 — spawn the daemon, libcoap client, POST/Observe/Block
 round-trip.
 
-**Repo:** `crates/coap-bridge/src/bin/zerodds-coap-bridged.rs`.
+**Repo:** `crates/coap-bridge/src/bin/zerodds-coap-bridged.rs`, `crates/coap-bridge/tests/topic_e2e.rs`.
 
-**Tests:** `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_post_to_configured_path_returns_2_04_changed`,
-`::coapbridge_2_well_known_core_returns_link_format_catalog`,
-`::coapbridge_2_observe_register_returns_initial_content_with_observe_option`,
-`::coapbridge_2_unknown_path_returns_bad_request`.
+**Tests:** `crates/coap-bridge/tests/topic_e2e.rs::{coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form, coapbridge_4_3_a_dds_sample_is_a_confirmable_notification_until_a_reset, coapbridge_12_2_a_4_kib_sample_by_block1_and_back_by_block2, coapbridge_8_1_8_3_the_log_lines_and_the_spans_of_an_exchange}`, `crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_9_2_the_binary_exits_0_on_sigterm`.
 
-**Status:** done
+**Status:** done — a DDS reader receives the sample of a POST, a DDS writer makes a notification, 4 KiB by Block1/Block2, the binary as a subprocess (SIGTERM, log, spans); libcoap as the peer is in §12.3.
 
 ### §12.3 Multi-vendor cross_vendor.rs
 
 **Spec:** §12.3 — a Cyclone-DDS subscriber + libcoap/californium client in
 compose.
 
-**Repo:** `crates/coap-bridge/tests/cross_vendor.rs` (cluster-C cross-vendor
-harness).
+**Repo:** `crates/coap-bridge/tests/cross_vendor.rs`, `crates/coap-bridge/tests/interop/{cyclone_reading.c, reading.idl}`, `tests/integration/provision.sh` (`cyclonedds-dev`).
 
-**Tests:** `crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_post_to_zerodds_daemon_returns_2_04_changed`,
-`crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_get_well_known_core_returns_catalog`,
-`crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_observe_receives_notification`; the DDS side
-`crates/coap-bridge/src/bridge.rs::tests::coap_4_1_bridge_apply_write_then_read_round_trip`.
-The client matrix beyond libcoap is not measured — see §10a.
+**Tests:** `crates/coap-bridge/tests/cross_vendor.rs::coapbridge_12_3_a_coap_post_reaches_cyclone_and_a_cyclone_sample_an_observer`, `crates/coap-bridge/tests/cross_vendor.rs::coapbridge_10_libcoap_post_to_zerodds_daemon_returns_2_04_changed`.
 
-**Status:** partial — libcoap and the DDS side are covered, the rest of the client
-matrix is not.
+**Status:** done — measured against Cyclone DDS 0.10.5 and libcoap 4.3.4: a JSON sample a libcoap POST sends reaches the Cyclone reader as that sample, a sample of the Cyclone writer reaches libcoap's observation as JSON. Instead of Docker Compose the weekly job provisions the programs.
+
 ## §13 Cross-references
 
 ### §13 Related library + RFCs + daemons
@@ -557,15 +505,14 @@ IDs), major=wire-protocol change.
 
 ## Audit status
 
-18 done / 3 partial / 4 open / 0 blocked / 3 n/a (informative).
+26 done / 0 partial / 0 open / 0 blocked / 3 n/a (informative).
 
-Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-coap-bridge-1.0.md`):
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9860 of `main` (`python3 ci/coverage_results.py --document zerodds-coap-bridge-1.0.md`):
 
-* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets` (job `merge-rust-coap-bridge`) — 83 tests green.
+* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets` (job `merge-rust-coap-bridge`) — 110 tests green.
 * `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (job `merge-rust-traceability`) — 4 tests green.
-* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets --features dtls,oscore` (job `merge-rust-coap-bridge-features-dtls-oscore`) — 18 tests green.
+* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets --features dtls,oscore` (job `merge-rust-coap-bridge-features-dtls-oscore`) — 23 tests green.
 * `python3 ci/run_integration.py integration-bridges-vendor` (job `integration-bridges-vendor`) — 3 tests green.
 
-108 cited tests green, 0 not green.
+140 cited tests green, 4 not green.
 
-Open items: `zerodds-coap-bridge-1.0.open.en.md`.

@@ -12,8 +12,9 @@ format. The parser that reads it is
 .PP
 Top-level keys:
 .BR log_level ", " vendor_id ", " session_timeout_secs ", "
-.BR limits ", " discovery ", " listeners ", " type_files ", "
-.BR xml_profile_files " and " qos_library_files .
+.BR limits ", " heartbeat ", " upstream ", " discovery ", " authorized_client_keys ", "
+.BR required_client_properties ", " access_rules ", " client_applications ", "
+.BR listeners ", " type_files ", " xml_profile_files " and " qos_library_files .
 .PP
 An unknown top-level key, or an unknown key inside a known section, stops
 the daemon from starting; the error names the file and line.
@@ -49,14 +50,200 @@ Maximum concurrent client sessions. Default
 .TP
 .B max_objects_per_client
 Maximum DDS-XRCE objects (participants, topics, publishers, subscribers,
-writers, readers, types, QoS profiles) one client session may CREATE.
+writers, readers, types, QoS profiles) one client session may CREATE at
+this agent. Default
+.IR 256 .
+For a client routed to an upstream agent
+.RB ( upstream: )
+this agent creates no object; the limits of the upstream agent apply.
+.PP
+The DATA the agent holds for a reliable output stream of a client are
+bounded by the sender window of the stream: 16 messages sent and not
+acknowledged (DDS-XRCE 1.0 \(sc8.4.14). A read on a reliable stream takes a
+sample out of its DDS DataReader only while the window has room; the other
+samples stay in the DataReader, whose History QoS decides which it keeps
+(KEEP_LAST depth, or KEEP_ALL within its resource limits). The client's
+ACKNACK that frees the window takes the next samples at once. A sample larger
+than the client's MTU goes out in FRAGMENTs; those the window has no room for
+wait for the ACKNACKs. A READ_DATA without delivery_control makes its one read
+call when the stream has room, for as many samples as the room; the others
+stay in the DataReader for the next READ_DATA. A best-effort stream holds
+nothing for an acknowledgement and is not bounded this way.
+.PP
+.B max_pending_samples
+is no longer read: a file that sets it stops the daemon with an error that
+names the key. It bounded a queue of the library interface
+.RB ( SessionEngine::submit_sample )
+that the daemon never fills.
+.SS heartbeat
+HEARTBEATs of the agent on its reliable output streams (DDS-XRCE 1.0
+\(sc8.3.5.12). The specification dictates no timing and expects the agent to
+send HEARTBEATs only when it has an indication that the client is active and
+not in a sleep cycle. The agent counts a client as active on a stream for
+.B client_active_window_ms
+after it last heard the client or sent a new message on that stream; a
+retransmission does not count. A client heard again after a silence gets the
+HEARTBEATs of its streams with unacknowledged messages with the answer to
+its message.
+.TP
+.B period_ms
+Milliseconds between two HEARTBEATs of a stream with unacknowledged
+messages, 1 or more. Default
+.IR 500 .
+.TP
+.B client_active_window_ms
+Milliseconds a client counts as active. Default
+.IR 2000 .
+.TP
+.B silent_client
+.I suppress
+(default): no HEARTBEAT to a client silent for longer than the window.
+.IR send :
+the period also for a silent client, until the session times out.
+.SS upstream
+Federation (DDS-XRCE 1.0 \(sc10.4): this agent is a client of another
+agent for the clients it routes there. For each routed client it opens a
+session at the upstream agent with the client's ClientKey, session_id and
+properties, and relays CREATE, DELETE, WRITE_DATA, READ_DATA and GET_INFO
+unchanged on the stream they came on; STATUS, INFO and DATA of the upstream
+agent go back to the client on their stream. This agent creates no DDS
+entity for a routed client. While the upstream agent cannot be reached the
+requests wait (store and forward); a lost session is opened again and its
+objects and running reads are created again, and the requests the upstream
+agent had neither acknowledged nor answered are sent again after them, in
+their order (a request whose acknowledgement was lost with the link may be
+carried out twice, none is lost). A FRAGMENT run goes upstream whole; the
+part the sender window has no room for follows as the upstream agent
+acknowledges. The limits of the upstream agent apply to the objects of a
+routed client; of this agent's
+.B limits
+only
+.B max_clients
+applies to it. The answers of the upstream agent on a reliable stream go to
+the client as far as the client's sender window on that stream has room;
+this agent takes no more of them from the link and leaves them there
+unacknowledged, so the window of the upstream agent fills and it takes no
+more samples out of its DataReaders for the client. The client's ACKNACK
+hands over what waited and acknowledges it to the upstream agent at once.
+While the link holds answers it sends no keepalive (below); the HEARTBEATs of
+the upstream agent for the held messages keep the link heard.
+The first session of a client at the upstream agent replaces any session the
+upstream agent may still hold for it (one an earlier run of this agent left
+there, or one whose DELETE was lost): a CREATE_CLIENT with the other
+session_id goes first, then one with the client's. A RESET of a routed client
+ends its reads at the upstream agent: each gets a READ_DATA with max_samples
+0, and a DATA of them still on its way does not reach the client. Without the
+block there is no federation.
+.TP
+.B locator
+.IR udp://host:port " or " tcp://host:port .
+Required. Other schemes are refused.
+.TP
+.B mtu
+The MTU this agent asks for at the upstream agent and splits its requests
+into FRAGMENTs by. Default
+.IR 508 ;
+the smallest is
+.I 13
+(a message header with a ClientKey and a FRAGMENT submessage header leave
+one octet of FRAGMENT data); a smaller value is refused, and so is one
+larger than one message of the link (65\|507 over UDP and IPv4, 65\|527
+over UDP and IPv6).
+.TP
+.B keepalive_ms
+Milliseconds between two GET_INFO of the upstream agent while a session is
+open and the link holds no answer the client has no room for. Default
+.IR 1000 .
+.TP
+.B link_timeout_ms
+Milliseconds without a message of the upstream agent after which the link
+counts as lost and is opened again; longer than
+.BR keepalive_ms .
 Default
+.IR 5000 .
+.TP
+.B reconnect_ms
+Milliseconds before a new attempt after a failed one. Default
+.IR 1000 .
+.TP
+.B max_queued_messages
+Requests one client's link holds while the upstream agent cannot take them;
+a request beyond is answered STATUS_ERR_RESOURCES. Default
 .IR 256 .
 .TP
-.B max_pending_samples
-Reliable-stream samples buffered per client while waiting on ACKNACK.
-Default
-.IR 256 .
+.B clients
+List of ClientKeys
+.RI ( 0xAABBCCDD )
+routed upstream; without it all clients are. A client routed upstream must
+not have
+.BR client_applications ,
+and no
+.B access_rules
+entry may cover it (see below).
+.PP
+A link over
+.I tcp://
+is connected, written and read by threads of its own, never while the agent
+handles a message of a client: an upstream agent that drops the connection
+attempt or stops reading delays no other client. What it does not read
+waits in the link up to 1\|MiB beyond the socket's send buffer; past that the
+requests wait in the queue
+.RB ( max_queued_messages ).
+A link that hears nothing for
+.B link_timeout_ms
+is opened again on a new connection; a connection attempt gives up after
+.BR link_timeout_ms .
+A connected link that is given up (the session of its client ended, or it
+is opened again) writes what it was handed, the DELETE of the session among
+it, and then ends the connection, within 1\|s; one whose connection was not
+made sends nothing.
+.PP
+A best-effort or STREAMID_NONE request larger than one message of the link
+(65\|507 octets over UDP and IPv4, 65\|527 over UDP and IPv6, 65\|535 over
+TCP) cannot be split into FRAGMENTs and is answered STATUS_ERR_RESOURCES.
+.SS "authorized_client_keys, required_client_properties, access_rules"
+The AccessController (DDS-XRCE 1.0 \(sc7.4). Without any of them the
+agent restricts nothing.
+.TP
+.B authorized_client_keys
+List of ClientKeys
+.RI ( 0xAABBCCDD ).
+A CREATE_CLIENT with another key is answered STATUS_ERR_DENIED
+(\(sc7.8.2.1). Empty or absent: every key.
+.TP
+.B required_client_properties
+List of
+.BR name: / value:
+pairs every CREATE_CLIENT has to carry; otherwise STATUS_ERR_DENIED.
+.TP
+.B access_rules
+List of rules, evaluated in order; the first that matches an operation
+decides it. Each has
+.BR effect: " " allow | deny
+and may narrow it with
+.B client
+(a ClientKey; absent: every client),
+.B operations
+.RI ( create ", " update ", " get_info ", " delete ", " write_data ", " read_data ),
+.B kinds
+.RI ( participant ", " topic ", " publisher ", " subscriber ", " datawriter ,
+.IR datareader ", " type ", " qosprofile ", " application ),
+.B domains
+(domain ids) and
+.B topics
+(names; a trailing
+.I *
+matches a prefix). As soon as one rule exists, an operation no rule matches
+is answered STATUS_ERR_DENIED.
+.PP
+The keys and properties apply to every client: this agent answers the
+CREATE_CLIENT. The rules do not apply to a client routed upstream
+.RB ( upstream: ):
+its operations go to the upstream agent unchanged, and the access rules of
+that agent decide them; it holds the client's objects and sees its ClientKey
+and properties. A rule that names a routed client, or a rule without
+.B client
+while any client is routed, stops the daemon from starting.
 .SS discovery
 Multicast
 .B GET_INFO
@@ -191,11 +378,13 @@ SIGHUP to
 re-reads this file (and its
 .I xrce-agentd.d/
 drop-ins) and applies
-.BR log_level ", " limits.* ", " session_timeout_secs " and "
-.BR discovery.enabled
-without a restart. A changed
-.BR listeners: ", " type_files: " or " xml_profile_files:
-is logged and ignored until the daemon is restarted.
+.BR limits.max_clients ", " limits.max_objects_per_client " and "
+.B session_timeout_secs
+without a restart. Every other key that changed, among them
+.BR listeners: ", " type_files: ", " xml_profile_files: ", " heartbeat.*
+and
+.BR upstream.* ,
+is named in the log and ignored until the daemon is restarted.
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/xrce-agentd.yaml.example .

@@ -49,6 +49,151 @@ pub fn tree(ast: &Ast) -> String {
     out
 }
 
+/// The compositions and PSDL declarations of a CIDL file, CORBA 3.3
+/// Part 3 §8: each composition with its category, home executor,
+/// bindings, executor, segments and their identifiers (§8.11),
+/// delegations and proxy home, as the compiler resolved them.
+#[must_use]
+pub fn cidl(model: &zerodds_ast::cidl::CidlModel) -> String {
+    let mut out = String::new();
+    let list = |items: &[String]| items.join(", ");
+    let delegations = |items: &[zerodds_ast::cidl::Delegation]| {
+        items
+            .iter()
+            .map(|d| match &d.target {
+                Some(target) => format!("{}: {target}", d.operation),
+                None => d.operation.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for decl in &model.storage {
+        let _ = write!(out, "{} {}", decl.kind.as_str(), decl.name);
+        if let Some(of) = &decl.of {
+            let _ = write!(out, " of {of}");
+        }
+        if !decl.bases.is_empty() {
+            let _ = write!(out, " : {}", list(&decl.bases));
+        }
+        if !decl.implements.is_empty() {
+            let _ = write!(out, " implements {}", list(&decl.implements));
+        }
+        if let Some(key) = &decl.primary_key {
+            let _ = write!(out, " primary key {key}");
+        }
+        out.push('\n');
+        for state in &decl.state_members {
+            let readonly = if state.readonly { "readonly " } else { "" };
+            let _ = writeln!(out, "  {readonly}state {} {}", state.type_, state.name);
+        }
+        for operation in &decl.operations {
+            let qualifier = if operation.is_const { " const" } else { "" };
+            let _ = writeln!(out, "  operation {}{qualifier}", operation.name);
+        }
+        for key in &decl.keys {
+            let _ = writeln!(out, "  key {}({})", key.name, list(&key.members));
+        }
+        for factory in &decl.factories {
+            let _ = writeln!(
+                out,
+                "  factory {}({})",
+                factory.name,
+                list(&factory.members)
+            );
+        }
+        if !decl.ref_representation.is_empty() {
+            let _ = writeln!(out, "  ref({})", list(&decl.ref_representation));
+        }
+        for store in &decl.stores {
+            let _ = write!(out, "  stores {} as {}", store.member, store.as_);
+            if let Some(scope) = &store.scope {
+                let _ = write!(out, " scope {scope}");
+            }
+            out.push('\n');
+        }
+    }
+    for composition in &model.compositions {
+        let he = &composition.home_executor;
+        let _ = writeln!(
+            out,
+            "composition {} {}",
+            composition.category.as_str(),
+            composition.name
+        );
+        let _ = writeln!(
+            out,
+            "  home executor {} implements {}",
+            he.name, he.implements
+        );
+        if let Some(binds_to) = &he.binds_to {
+            let _ = writeln!(out, "    bindsTo {binds_to}");
+        }
+        if let Some(stored_on) = &he.stored_on {
+            let _ = writeln!(out, "    storedOn {stored_on}");
+        }
+        let segmented = if composition.is_segmented() {
+            "segmented"
+        } else {
+            "monolithic"
+        };
+        let _ = writeln!(out, "    manages {} ({segmented})", he.executor.name);
+        // §8.11: every executor has the component segment, identifier 0,
+        // with every facet no other segment declares.
+        let _ = writeln!(out, "      segment 0 (component segment)");
+        for segment in &he.executor.segments {
+            let _ = write!(
+                out,
+                "      segment {} {}: {}",
+                segment.id,
+                segment.name,
+                list(&segment.facets)
+            );
+            if let Some(stored_on) = &segment.stored_on {
+                let _ = write!(out, " storedOn {stored_on}");
+            }
+            out.push('\n');
+        }
+        for feature in &he.executor.feature_delegations {
+            let _ = writeln!(
+                out,
+                "      delegatesTo storage {}: {}",
+                feature.feature, feature.storage_member
+            );
+        }
+        if !he.storage_home_delegations.is_empty() {
+            let _ = writeln!(
+                out,
+                "    delegatesTo abstract storagehome ({})",
+                delegations(&he.storage_home_delegations)
+            );
+        }
+        if !he.executor_delegations.is_empty() {
+            let _ = writeln!(
+                out,
+                "    delegatesTo executor ({})",
+                delegations(&he.executor_delegations)
+            );
+        }
+        if !he.abstract_operations.is_empty() {
+            let _ = writeln!(out, "    abstract ({})", list(&he.abstract_operations));
+        }
+        if let Some(proxy) = &composition.proxy_home {
+            let _ = writeln!(out, "  proxy home {}", proxy.name);
+            if !proxy.home_delegations.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "    delegatesTo home ({})",
+                    delegations(&proxy.home_delegations)
+                );
+            }
+            if !proxy.abstract_operations.is_empty() {
+                let _ = writeln!(out, "    abstract ({})", list(&proxy.abstract_operations));
+            }
+        }
+    }
+    out
+}
+
 /// Every type each declaration names, so a caller can see what a unit
 /// pulls in.
 #[must_use]

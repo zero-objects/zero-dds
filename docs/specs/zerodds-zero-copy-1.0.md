@@ -138,7 +138,10 @@ UDP socket. Multicast (SPDP announcements) stays on UDP.
 - One receive thread per participant for all peers: after every frame
   the sender rings the receiver's doorbell (a word in a
   small segment, `ShmDoorbell`), the thread parks on it and empties
-  all incoming rings.
+  all incoming rings. A participant without a channel has no doorbell
+  yet; its thread waits until the first channel opens one. `shutdown`
+  wakes the thread in either state, and the thread reads what it waits
+  on before it looks at its stop flag, so the wake is not lost.
 - A ring holds four datagrams of `transport.shm_max_datagram`
   (default 64 KiB, so one ring is 256 KiB); what does not fit goes over
   UDP.

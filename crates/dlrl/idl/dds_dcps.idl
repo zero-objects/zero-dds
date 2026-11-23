@@ -1,0 +1,25 @@
+// The declarations of the DCPS IDL of DDS that dds_dlrl.idl refers to.
+//
+// The generic DLRL IDL of DDS 1.2 §8.2.1.2.1 starts with
+// #include "dds_dcps.idl", the IDL PSM of DCPS (§2.2.3). This file is not
+// that file: it declares, under the same names, the types of module DDS
+// that dds_dlrl.idl uses, so that dds_dlrl.idl compiles on its own:
+// StringSeq, and the three entity interfaces the attributes
+// Cache::the_publisher, Cache::the_subscriber and CacheDescription::domain
+// refer to. The interfaces are declared without their operations: the
+// DLRL IDL passes and returns them and calls none of them. The DCPS API
+// itself is crates/dcps.
+
+#ifndef DDS_DCPS_IDL
+#define DDS_DCPS_IDL
+
+module DDS {
+    typedef sequence<string> StringSeq;
+
+    local interface Entity {};
+    local interface DomainParticipant : Entity {};
+    local interface Publisher : Entity {};
+    local interface Subscriber : Entity {};
+};
+
+#endif

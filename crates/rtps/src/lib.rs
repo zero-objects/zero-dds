@@ -25,6 +25,8 @@ extern crate alloc;
 extern crate std;
 
 #[cfg(feature = "alloc")]
+pub mod content_filter_info;
+#[cfg(feature = "alloc")]
 pub mod datagram;
 #[cfg(feature = "alloc")]
 pub mod dialect;

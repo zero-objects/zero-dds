@@ -151,7 +151,7 @@ impl Connector {
         // one family must still be reachable by name — connecting only
         // to whichever address the resolver happened to list first
         // silently refused every other, reachable candidate.
-        let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs()?.collect();
+        let addrs: Vec<SocketAddr> = (ip_host(host), port).to_socket_addrs()?.collect();
         let key_addr = *addrs.first().ok_or_else(|| {
             IiopError::Other(alloc::format!("no address resolved for {host}:{port}"))
         })?;
@@ -190,9 +190,12 @@ impl Connector {
         sni: &str,
         config: Arc<rustls::ClientConfig>,
     ) -> Result<PooledConnection, IiopError> {
-        let addr = (host, ssl_port).to_socket_addrs()?.next().ok_or_else(|| {
-            IiopError::Other(alloc::format!("no address resolved for {host}:{ssl_port}"))
-        })?;
+        let addr = (ip_host(host), ssl_port)
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| {
+                IiopError::Other(alloc::format!("no address resolved for {host}:{ssl_port}"))
+            })?;
         let cfg_id = Arc::as_ptr(&config) as *const () as usize;
         let key = PoolKey::Tls {
             addr,
@@ -289,7 +292,7 @@ impl Connector {
     /// Number of idle plain-IIOP connections in the pool for an endpoint — diagnostics.
     #[must_use]
     pub fn idle_count(&self, host: &str, port: u16) -> usize {
-        let Some(endpoint) = (host, port)
+        let Some(endpoint) = (ip_host(host), port)
             .to_socket_addrs()
             .ok()
             .and_then(|mut a| a.next())
@@ -312,7 +315,7 @@ impl Connector {
         sni: &str,
         config: &Arc<rustls::ClientConfig>,
     ) -> usize {
-        let Some(addr) = (host, ssl_port)
+        let Some(addr) = (ip_host(host), ssl_port)
             .to_socket_addrs()
             .ok()
             .and_then(|mut a| a.next())
@@ -329,6 +332,16 @@ impl Connector {
             .map(|p| p.idle.get(&key).map_or(0, Vec::len))
             .unwrap_or(0)
     }
+}
+
+/// The host of an IIOP profile as the resolver takes it: an IPv6
+/// address another ORB writes in brackets (`[::1]`, the form of an object
+/// URL, Part 2 §7.6.10) without them. An IIOP 1.4 profile may carry an
+/// IPv6 address (§7.9 Table 7.2); the text does not say whether in
+/// brackets, so both forms are dialed. This ORB writes the address
+/// without them ([`crate::IiopProfileBody::for_endpoint`]).
+fn ip_host(host: &str) -> &str {
+    crate::profile_body::unbracketed_host(host)
 }
 
 #[cfg(test)]
@@ -464,6 +477,22 @@ mod tests {
         connector
             .connect("localhost", port)
             .expect("must fall back past an unreachable resolved address");
+    }
+
+    /// CORBA 3.3 Part 2 §7.9 Table 7.2 "IPV6 addresses in IOR": the host
+    /// of an IIOP 1.4 profile may be an IPv6 address, with or without
+    /// brackets; both forms are dialed.
+    #[test]
+    fn corba_p2_7_9_an_ipv6_profile_host_is_dialed_with_and_without_brackets() {
+        let listener = TcpListener::bind("[::1]:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || echo_server(listener));
+        let connector = Connector::new(ConnectorConfig::default());
+        connector.connect("::1", port).expect("::1");
+        connector.connect("[::1]", port).expect("[::1]");
+        assert_eq!(ip_host("[::1]"), "::1");
+        assert_eq!(ip_host("::1"), "::1");
+        assert_eq!(ip_host("host.example"), "host.example");
     }
 
     #[cfg(unix)]

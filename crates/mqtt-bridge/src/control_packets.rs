@@ -792,36 +792,15 @@ pub enum PropertyDataType {
 /// `Some` if the ID is a known spec property identifier.
 #[must_use]
 pub fn property_data_type(id: u8) -> Option<PropertyDataType> {
-    Some(match id {
-        // Spec Tab 2-4 (S. 23-26):
-        0x01 => PropertyDataType::Byte, // Payload Format Indicator
-        0x02 => PropertyDataType::FourByteInt, // Message Expiry Interval
-        0x03 => PropertyDataType::Utf8String, // Content Type
-        0x08 => PropertyDataType::Utf8String, // Response Topic
-        0x09 => PropertyDataType::BinaryData, // Correlation Data
-        0x0B => PropertyDataType::VariableByteInt, // Subscription Identifier
-        0x11 => PropertyDataType::FourByteInt, // Session Expiry Interval
-        0x12 => PropertyDataType::Utf8String, // Assigned Client Identifier
-        0x13 => PropertyDataType::TwoByteInt, // Server Keep Alive
-        0x15 => PropertyDataType::Utf8String, // Authentication Method
-        0x16 => PropertyDataType::BinaryData, // Authentication Data
-        0x17 => PropertyDataType::Byte, // Request Problem Information
-        0x18 => PropertyDataType::FourByteInt, // Will Delay Interval
-        0x19 => PropertyDataType::Byte, // Request Response Information
-        0x1A => PropertyDataType::Utf8String, // Response Information
-        0x1C => PropertyDataType::Utf8String, // Server Reference
-        0x1F => PropertyDataType::Utf8String, // Reason String
-        0x21 => PropertyDataType::TwoByteInt, // Receive Maximum
-        0x22 => PropertyDataType::TwoByteInt, // Topic Alias Maximum
-        0x23 => PropertyDataType::TwoByteInt, // Topic Alias
-        0x24 => PropertyDataType::Byte, // Maximum QoS
-        0x25 => PropertyDataType::Byte, // Retain Available
-        0x26 => PropertyDataType::Utf8StringPair, // User Property
-        0x27 => PropertyDataType::FourByteInt, // Maximum Packet Size
-        0x28 => PropertyDataType::Byte, // Wildcard Subscription Available
-        0x29 => PropertyDataType::Byte, // Subscription Identifier Available
-        0x2A => PropertyDataType::Byte, // Shared Subscription Available
-        _ => return None,
+    use crate::properties::{PropertyId, PropertyValueKind as K};
+    Some(match PropertyId::from_value(u32::from(id)).value_kind()? {
+        K::Byte => PropertyDataType::Byte,
+        K::TwoByteInt => PropertyDataType::TwoByteInt,
+        K::FourByteInt => PropertyDataType::FourByteInt,
+        K::VariableByteInt => PropertyDataType::VariableByteInt,
+        K::Utf8String => PropertyDataType::Utf8String,
+        K::BinaryData => PropertyDataType::BinaryData,
+        K::Utf8StringPair => PropertyDataType::Utf8StringPair,
     })
 }
 

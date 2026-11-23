@@ -24,12 +24,17 @@
 //!   over `Default`, `set_user_writer_history_depth`,
 //!   `set_user_writer_key_support` with a
 //!   `serialized_type::SerializedTypeSupport::from_complete_type_objects` of
-//!   the topic's `type_file` (refused unless `is_keyed()`); the
-//!   `UserSample::Alive` fields `key_hash`, `payload`, `writer_guid`,
+//!   the topic's `type_file` (refused unless `is_keyed()`), and the same
+//!   support for the topic's reader through `set_user_reader_key_support`,
+//!   with which the reader computes the KeyHash a writer left out; the
+//!   `UserSample::Alive` fields `key_hash` (`None`: neither sent nor
+//!   computed), `payload`, `writer_guid`,
 //!   `representation`, `big_endian`, `source_timestamp` (through
 //!   `time::he_timestamp_to_time` into nanoseconds), `source_sequence_number`
 //!   and `lifespan_nanos`, `remember_user_writer_instance`,
-//!   `UserSample::Lifecycle` (`key_hash`, `kind`), `CoherentSetEnd`; on the
+//!   `UserSample::Lifecycle` (`key_hash`, `key_hash_unavailable`, `kind`,
+//!   `writer_guid`, `source_sequence_number`, `source_timestamp`),
+//!   `CoherentSetEnd`; on the
 //!   way into DDS `set_user_writer_data_rep_override` (`[XCDR]` or
 //!   `[XCDR2]` from the encapsulation header of the AMQP body),
 //!   `set_user_writer_byte_order_override`, `write_user_sample_keyed` /

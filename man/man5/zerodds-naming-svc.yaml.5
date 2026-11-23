@@ -32,6 +32,8 @@ is a wildcard address. Default
 .IR 127.0.0.1 ,
 environment
 .BR ZERODDS_NAMING_ADVERTISE_HOST .
+An IPv6 host goes into an IIOP 1.4 profile, written without brackets
+(CORBA 3.3 Part 2 \(sc7.9); other hosts into IIOP 1.2 profiles.
 .TP
 .B persist_file
 Where the naming graph is saved (atomic write: a sibling temporary file,
@@ -80,8 +82,10 @@ An asserted identity whose form is not listed is refused
 .RI ( NO_PERMISSION ,
 a
 .B ContextError
-service context attached). Empty (the default): a request may still
-authenticate as itself via GSSUP; it cannot assert a different identity.
+service context attached), and so is an asserted identity other than the
+authenticated GSSUP user itself or the anonymous identity. Empty (the
+default): a request may still authenticate as itself via GSSUP; it cannot
+assert a different identity.
 .SS naming.csiv2.gssup
 .TP
 .B password_file

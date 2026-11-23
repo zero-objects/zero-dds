@@ -20,32 +20,38 @@
 //! server (§5.1), answers a Ping with a Pong (§5.5.2) and a Close with a
 //! Close (§5.5.1). Nothing is negotiated, so a frame with an RSV bit set is
 //! refused (§5.2).
+//!
+//! Invalid data of the server fails the connection (RFC 6455 §7.1.7,
+//! §10.7): the client sends a Close frame with the status code of the
+//! violation and shuts the network connection down. The codes are 1002 for
+//! a violation of the framing rules or a Close frame with an invalid status
+//! code, 1003 for a data frame that is not binary, 1007 for a Close reason
+//! that is not UTF-8, 1009 for a frame over the limit.
 
 use std::io::{self, Read, Write};
 use std::string::String;
 use std::vec::Vec;
 
-use zerodds_websocket_bridge::codec::{CodecError, decode, encode};
+use zerodds_websocket_bridge::close::parse_close_body;
+use zerodds_websocket_bridge::codec::{decode, encode};
 use zerodds_websocket_bridge::frame::{Frame, Opcode};
 use zerodds_websocket_bridge::handshake::{
     client_key, render_client_request, validate_server_response,
 };
 
 use super::client::MqttStream;
-
-/// The subprotocol MQTT 5.0 §6 requires.
-const SUBPROTOCOL: &str = "mqtt";
-
-/// The largest handshake response read before the header block must end.
-const MAX_HANDSHAKE_RESPONSE: usize = 16 * 1024;
+use crate::ws::{SUBPROTOCOL, close_reason, invalid, read_handshake_head};
 
 /// The largest frame payload accepted: one maximal MQTT packet with its
 /// fixed header. A larger announcement is refused before it is buffered.
 const MAX_FRAME_PAYLOAD: u64 = crate::net::MAX_MQTT_PACKET_SIZE as u64 + 5;
 
-fn invalid(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
+/// RFC 6455 §7.4.1 — "a protocol error".
+const PROTOCOL_ERROR: u16 = 1002;
+/// RFC 6455 §7.4.1 — "a type of data it cannot accept".
+const UNSUPPORTED_DATA: u16 = 1003;
+/// RFC 6455 §7.4.1 — "a message that is too big for it to process".
+const MESSAGE_TOO_BIG: u16 = 1009;
 
 /// Fills `buf` from the TLS provider's random source, the strong source
 /// RFC 6455 §4.1 and §5.3 require for the nonce and the masking keys.
@@ -103,34 +109,13 @@ impl WsStream {
         let key = client_key(&nonce);
         wire.write_all(render_client_request(host, path, &key, &[SUBPROTOCOL]).as_bytes())?;
         wire.flush()?;
-        let mut buf: Vec<u8> = Vec::new();
-        let mut chunk = [0u8; 1024];
-        let end = loop {
-            if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-                break i + 4;
-            }
-            if buf.len() > MAX_HANDSHAKE_RESPONSE {
-                return Err(invalid(format!(
-                    "WebSocket handshake response exceeds {MAX_HANDSHAKE_RESPONSE} bytes"
-                )));
-            }
-            let n = wire.read(&mut chunk)?;
-            if n == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "connection closed during the WebSocket handshake",
-                ));
-            }
-            buf.extend_from_slice(&chunk[..n]);
-        };
-        let head = std::str::from_utf8(&buf[..end])
-            .map_err(|_| invalid("WebSocket handshake response is not UTF-8"))?;
-        validate_server_response(head, &key, &[SUBPROTOCOL], true)
+        let (head, raw) = read_handshake_head(&mut wire, "WebSocket handshake response")?;
+        validate_server_response(&head, &key, &[SUBPROTOCOL], true)
             .map_err(|e| invalid(format!("WebSocket handshake: {e}")))?;
         Ok(Self {
             wire,
             // Frames the server sent right behind its response.
-            raw: buf[end..].to_vec(),
+            raw,
             payload: Vec::new(),
             read_pos: 0,
             in_message: false,
@@ -167,19 +152,41 @@ impl WsStream {
         self.wire.flush()
     }
 
+    /// Fails the connection for invalid data of the server (RFC 6455
+    /// §7.1.7, §10.7; MQTT 5.0 §6 [MQTT-6.0.0-1]): the Close frame with
+    /// `status` and `message` as its reason, unless a Close frame went out
+    /// before, then the network connection is shut down. Returns the error
+    /// the read ends with.
+    fn fail(&mut self, status: u16, message: impl Into<String>) -> io::Error {
+        let message = message.into();
+        if !self.closed {
+            // The connection ends either way; a Close frame that cannot be
+            // written any more changes nothing about the error reported.
+            let _ = self.send(Frame::close(status, close_reason(&message)));
+            self.closed = true;
+        }
+        self.wire.shutdown_both();
+        invalid(message)
+    }
+
     fn on_frame(&mut self, frame: Frame) -> io::Result<()> {
         if frame.masking_key.is_some() {
-            return Err(invalid("the server sent a masked frame (RFC 6455 §5.1)"));
+            return Err(self.fail(
+                PROTOCOL_ERROR,
+                "the server sent a masked frame (RFC 6455 §5.1)",
+            ));
         }
         if frame.rsv1 || frame.rsv2 || frame.rsv3 {
-            return Err(invalid(
+            return Err(self.fail(
+                PROTOCOL_ERROR,
                 "a frame with an RSV bit set, and no extension was negotiated (RFC 6455 §5.2)",
             ));
         }
         match frame.opcode {
             Opcode::Binary => {
                 if self.in_message {
-                    return Err(invalid(
+                    return Err(self.fail(
+                        PROTOCOL_ERROR,
                         "a new binary frame inside an unfinished message (RFC 6455 §5.4)",
                     ));
                 }
@@ -188,7 +195,8 @@ impl WsStream {
             }
             Opcode::Continuation => {
                 if !self.in_message {
-                    return Err(invalid(
+                    return Err(self.fail(
+                        PROTOCOL_ERROR,
                         "a continuation frame outside a message (RFC 6455 §5.4)",
                     ));
                 }
@@ -196,7 +204,8 @@ impl WsStream {
                 self.push_payload(frame.payload);
             }
             Opcode::Text => {
-                return Err(invalid(
+                return Err(self.fail(
+                    UNSUPPORTED_DATA,
                     "a text frame; MQTT travels in binary frames only (MQTT 5.0 §6)",
                 ));
             }
@@ -206,21 +215,41 @@ impl WsStream {
                 self.send(pong)?;
             }
             Opcode::Pong => {}
-            Opcode::Close => {
-                // §5.5.1: answer with a Close carrying the same status.
-                let status = frame
-                    .payload
-                    .get(..2)
-                    .map_or(1000, |b| u16::from_be_bytes([b[0], b[1]]));
-                let _ = self.send(Frame::close(status, ""));
-                self.closed = true;
-            }
+            Opcode::Close => self.on_close(&frame.payload)?,
             Opcode::Reserved(op) => {
-                return Err(invalid(format!(
-                    "a frame with the reserved opcode {op:#x} (RFC 6455 §5.2)"
-                )));
+                return Err(self.fail(
+                    PROTOCOL_ERROR,
+                    format!("a frame with the reserved opcode {op:#x} (RFC 6455 §5.2)"),
+                ));
             }
         }
+        Ok(())
+    }
+
+    /// The Close frame of the server with `body` (RFC 6455 §5.5.1). A body
+    /// of one octet, a status code that must not appear in a Close frame
+    /// (§7.4.1, §7.4.2) and a reason that is not UTF-8 are invalid data. A
+    /// valid one is answered with a Close frame of the same status code, or
+    /// one without a body when the server sent none.
+    fn on_close(&mut self, body: &[u8]) -> io::Result<()> {
+        let answer = match parse_close_body(body) {
+            Ok(Some((status, _reason))) => Frame::close(status, ""),
+            Ok(None) => Frame {
+                payload: Vec::new(),
+                ..Frame::close(1000, "")
+            },
+            Err(e) => {
+                return Err(self.fail(
+                    e.close_code().to_u16(),
+                    format!("the Close frame of the server is invalid: {e} (RFC 6455 §5.5.1)"),
+                ));
+            }
+        };
+        // No frame is read after a Close frame went out (`read`), so this
+        // end has not sent one yet. The server closes the network
+        // connection whether the answer reaches it or not.
+        let _ = self.send(answer);
+        self.closed = true;
         Ok(())
     }
 
@@ -246,15 +275,14 @@ impl Read for WsStream {
                     self.raw.drain(..used);
                     self.on_frame(frame)?;
                 }
-                Err(
-                    CodecError::HeaderTooShort
-                    | CodecError::PayloadTruncated
-                    | CodecError::MaskingKeyTruncated,
-                ) => {
+                Err(e) if e.is_incomplete() => {
                     if announced_payload_len(&self.raw).is_some_and(|n| n > MAX_FRAME_PAYLOAD) {
-                        return Err(invalid(format!(
-                            "a WebSocket frame announces more than {MAX_FRAME_PAYLOAD} bytes"
-                        )));
+                        return Err(self.fail(
+                            MESSAGE_TOO_BIG,
+                            format!(
+                                "a WebSocket frame announces more than {MAX_FRAME_PAYLOAD} bytes"
+                            ),
+                        ));
                     }
                     let n = self.wire.read(&mut chunk)?;
                     if n == 0 {
@@ -263,7 +291,9 @@ impl Read for WsStream {
                     }
                     self.raw.extend_from_slice(&chunk[..n]);
                 }
-                Err(e) => return Err(invalid(format!("WebSocket frame: {e}"))),
+                Err(e) => {
+                    return Err(self.fail(e.close_code().to_u16(), format!("WebSocket frame: {e}")));
+                }
             }
         }
         let n = out.len().min(self.payload.len() - self.read_pos);

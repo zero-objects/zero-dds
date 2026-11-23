@@ -42,8 +42,8 @@ pub const fn active_profile() -> CodecProfile {
 /// conformant.
 ///
 /// Codec-Lite allows:
-/// * all primitives (null, boolean, int types, float, double,
-///   char, timestamp, uuid, binary, string, symbol).
+/// * all primitives (null, boolean, int types, float, double, the
+///   decimals, char, timestamp, uuid, binary, string, symbol).
 ///
 /// Codec-Lite forbids:
 /// * `List`, `Map`, `Array` (compound types).
@@ -63,6 +63,9 @@ pub const fn is_codec_lite_value(v: &AmqpExtValue) -> bool {
             | AmqpExtValue::Long(_)
             | AmqpExtValue::Float(_)
             | AmqpExtValue::Double(_)
+            | AmqpExtValue::Decimal32(_)
+            | AmqpExtValue::Decimal64(_)
+            | AmqpExtValue::Decimal128(_)
             | AmqpExtValue::Char(_)
             | AmqpExtValue::Timestamp(_)
             | AmqpExtValue::Uuid(_)
@@ -109,6 +112,9 @@ mod tests {
             AmqpExtValue::Long(42),
             AmqpExtValue::Float(1.0),
             AmqpExtValue::Double(2.0),
+            AmqpExtValue::Decimal32([0; 4]),
+            AmqpExtValue::Decimal64([0; 8]),
+            AmqpExtValue::Decimal128([0; 16]),
             AmqpExtValue::Timestamp(1_000),
             AmqpExtValue::Uuid([0; 16]),
         ] {

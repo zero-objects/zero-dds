@@ -105,7 +105,7 @@ cargo build --release -p zerodds-idlc
 # Binary: target/release/zerodds-idlc
 ```
 
-### Subcommands (`tools/idlc/src/main.rs:117-128`)
+### Subcommands (`tools/idlc/src/main.rs`, `Command::parse`)
 
 | Subcommand | Wirkung |
 |---|---|
@@ -114,7 +114,11 @@ cargo build --release -p zerodds-idlc
 | `format` | Kanonische Form nach stdout; `--check` meldet, `--write` schreibt zurück |
 | `dump-ast` | Modell als Baum |
 | `print-deps` | Die Typen, die jede Deklaration nennt |
-| `generate` | Quellcode einer Sprache |
+| `dump-cidl` | Compositions und PSDL-Deklarationen einer CIDL-Datei (`.cdl`, CORBA 3.3 Part 3 §8): Kategorien, Home Executors, Bindungen, Segmente mit Segment-ID, Delegationen, Proxy Homes; weist eine Datei ohne `.cdl` ab |
+| `generate` | Quellcode einer Sprache; weist eine `.cdl`-Datei ab |
+| `dlrl` | DLRL-Objekt- und Home-Klassen aus den drei DLRL-Pragmas (DDS 1.2 §8); weist eine `.cdl`-Datei ab |
+
+Eine `.cdl`-Datei lesen `check`, `dump-ast`, `print-deps` und `dump-cidl` als OMG CIDL (§8.1); `lint` und `format` weisen sie ab.
 
 ### Optionen (`parse_args`, `main.rs:381-735`)
 

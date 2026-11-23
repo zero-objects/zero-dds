@@ -267,6 +267,10 @@ pub mod pid {
     /// the set is signaled by a DATA with PID_COHERENT_SET=new_sn or
     /// without the PID. Implements WP 2.9 (C2.9 coherent sets).
     pub const COHERENT_SET: u16 = 0x0056;
+    /// PID_CONTENT_FILTER_INFO (DDSI-RTPS 2.5 §9.6.4.1, Table 9.20): the
+    /// filters a writer applied to the sample and their results
+    /// (`crate::content_filter_info::ContentFilterInfo`).
+    pub const CONTENT_FILTER_INFO: u16 = 0x0055;
     /// PID_GROUP_COHERENT_SET (DDSI-RTPS 2.5 §9.6.4.3): 8 byte
     /// SequenceNumber = group_sequence_number of the first sample in the
     /// group-coherent set (PRESENTATION.access_scope = GROUP).
@@ -432,6 +436,7 @@ pub fn is_standard_pid(masked_pid: u16) -> bool {
             | TYPE_CONSISTENCY_ENFORCEMENT
             | KEY_HASH
             | STATUS_INFO
+            | CONTENT_FILTER_INFO
             | COHERENT_SET
             | GROUP_COHERENT_SET
             | GROUP_SEQ_NUM

@@ -847,3 +847,63 @@ fn locate_request_answers_object_here_and_unknown_object() {
     };
     assert_eq!(reply.locate_status, LocateStatusType::UnknownObject);
 }
+
+/// CORBA 3.3 Part 2 §7.9 Table 7.2 "IPV6 addresses in IOR": the daemon
+/// bound to the IPv6 loopback publishes its contexts in IIOP 1.4
+/// profiles with the host `::1` (without the brackets of the bind
+/// address), and answers a GIOP 1.4 request, the version a client of
+/// such a profile sends, in GIOP 1.4 (§9.4).
+#[test]
+fn corba_p2_7_9_an_ipv6_daemon_publishes_1_4_profiles_and_replies_in_1_4() {
+    use zerodds_corba_iiop::{IiopProfileBody, IiopVersion};
+    let port = {
+        let l = std::net::TcpListener::bind("[::1]:0").expect("bind [::1]");
+        l.local_addr().expect("addr").port()
+    };
+    let child = Command::new(daemon_binary())
+        .args(["--bind", &format!("[::1]:{port}")])
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+    let _guard = DaemonGuard { child };
+    let mut s = (0..30)
+        .find_map(|_| {
+            TcpStream::connect(("::1", port)).ok().or_else(|| {
+                std::thread::sleep(Duration::from_millis(100));
+                None
+            })
+        })
+        .expect("connect [::1]");
+    s.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    send_request_versioned(
+        &mut s,
+        Version::V1_4,
+        Endianness::Little,
+        1,
+        ROOT_OBJECT_KEY,
+        "new_context",
+        Vec::new(),
+    );
+    let mut hdr = [0u8; 12];
+    s.read_exact(&mut hdr).expect("read header");
+    assert_eq!((hdr[4], hdr[5]), (1, 4), "the reply's GIOP version");
+    let size = u32::from_le_bytes([hdr[8], hdr[9], hdr[10], hdr[11]]) as usize;
+    let mut frame = hdr.to_vec();
+    frame.resize(12 + size, 0);
+    s.read_exact(&mut frame[12..]).expect("read body");
+    let Message::Reply(reply) = decode_message(&frame).expect("decode").0 else {
+        panic!("expected a Reply");
+    };
+    assert_eq!(reply.reply_status, ReplyStatusType::NoException);
+    let ior = wire::decode_object_reply(&reply.body, Endianness::Little).expect("context");
+    let profile: IiopProfileBody = ior
+        .profiles
+        .iter()
+        .find_map(zerodds_corba_ior::TaggedProfile::as_iiop)
+        .and_then(Result::ok)
+        .expect("an IIOP profile");
+    assert_eq!(profile.iiop_version, IiopVersion::V1_4);
+    assert_eq!(profile.host, "::1");
+    assert_eq!(profile.port, port);
+}

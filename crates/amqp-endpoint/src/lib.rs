@@ -42,7 +42,9 @@
 //! - [`coexistence`] — multi-bridge hop cap + inbound decision.
 //! - [`rpc_correlation`] — outstanding calls + reply routing.
 //! - [`errors`] — §11 spec error conditions as typed errors.
-//! - [`limits`] — `ResourceLimits` data model from Annex A.
+//! - [`limits`] — `ResourceLimits` data model from Annex A, `NodeLimits`,
+//!   the bounds of a listener's nodes, and `TxnLimits`, the bounds of its
+//!   transactions.
 //! - [`keyhash`] — SHA-256 group-id hashing for §7.6.1.
 //! - [`annex_a`] — IDL mirror of the Annex-A configuration schema.
 //! - [`codegen_helpers`] — helpers for the Annex-A IDL codegen.
@@ -94,6 +96,9 @@ pub mod link;
 pub mod management;
 pub mod mapping;
 pub mod metrics;
+// The connection endpoint of AMQP 1.0 Part 2 as a state machine without
+// I/O: sessions, links, flow control, deliveries, the error conditions.
+pub mod peer;
 pub mod properties;
 #[cfg(feature = "std")]
 pub mod qos_translation;
@@ -103,6 +108,19 @@ pub mod sasl;
 pub mod scram;
 pub mod security;
 pub mod session;
+// Error, delivery states, source and target as values (Part 2 §2.8.14,
+// Part 3 §3.4, §3.5).
+pub mod terminus;
+// The types of Part 4 (Transactions) §4.5: coordinator, declare, discharge,
+// declared, transactional-state, the capabilities and the errors.
+pub mod transactions;
+// The transactions a coordinator holds (Part 4 §4.2, §4.3): identifiers,
+// the work recorded against each, discharge, time-out.
+pub mod txn_resource;
+// The transaction controller of Part 4 on the client connection: the
+// control link, and one connection driven by the calling thread. std-only.
+#[cfg(feature = "std")]
+pub mod txn;
 
 pub use coexistence::{
     BridgeId, CoexistenceConfig, DEFAULT_HOP_CAP, InboundDecision, MAX_HOP_CAP, inspect_inbound,
@@ -117,7 +135,7 @@ pub use errors::{
     map_mapping_error, map_resolution_error, register_missing_key, resource_limit_exceeded,
     unknown_dds_operation, unsettled_state_not_implemented,
 };
-pub use limits::ResourceLimits;
+pub use limits::{NodeLimits, ResourceLimits, TxnLimits};
 pub use link::{
     AttachDurabilityCheck, LinkRole, LinkSession, SettlementMode, TerminusDurability,
     check_attach_durability,

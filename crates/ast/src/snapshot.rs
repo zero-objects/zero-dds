@@ -2473,6 +2473,10 @@ fn write_facets(w: &mut SnapshotWriter, facets: &Facets) -> Result<(), AstError>
                         w.u8(1);
                         write_handle_opt(w, Some(*expr));
                     }
+                    crate::facet::corba::TemplateArg::Exception(reference) => {
+                        w.u8(2);
+                        write_ref(w, reference)?;
+                    }
                 }
             }
             w.bool(c.is_service);
@@ -3030,6 +3034,7 @@ fn read_facets(r: &mut SnapshotReader<'_>) -> Result<Facets, AstError> {
                     ))?;
                     crate::facet::corba::TemplateArg::Const(expr)
                 }
+                2 => crate::facet::corba::TemplateArg::Exception(read_ref(r)?),
                 _ => {
                     return Err(AstError::Core(AstCoreError::MalformedSnapshot {
                         offset: r.offset(),

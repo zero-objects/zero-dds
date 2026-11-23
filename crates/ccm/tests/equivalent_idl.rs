@@ -831,6 +831,49 @@ fn idl_7_4_11_4_3_a_connector_maps_through_its_ports_as_a_component() {
     assert!(op_names(&ast, connector).contains(&"connect_fragment_data".to_string()));
 }
 
+/// CORBA 3.3 Part 3 §7.2.3.3: "A connector can inherit from another
+/// connector. It means that the new connector is composed of all the ports
+/// and attributes of the inherited connector in addition to all the ones
+/// that are locally defined." Rule (8) of §7.4.4 is a single scoped name.
+/// The derived connector's equivalent interface inherits the base's, which
+/// carries the base's ports and attributes; the derived one adds only its
+/// own.
+#[test]
+fn corba_p3_7_2_3_3_a_derived_connector_inherits_the_ports_of_its_base() {
+    let mut ast = model(
+        "interface Data {}; interface Ctl {};
+         porttype Feed { provides Data data; };
+         connector K { mirrorport Feed fragment; attribute string topic; };
+         connector K2 : K { uses Ctl monitor; port Feed back; };",
+    );
+    let base = interface_by_name(&ast, "K");
+    let derived = interface_by_name(&ast, "K2");
+    let _ = zerodds_ccm::transform_connector(&mut ast, base).expect("base");
+    let _ = zerodds_ccm::transform_connector(&mut ast, derived).expect("derived");
+    assert_eq!(base_names(&ast, derived), ["K"]);
+    assert_eq!(base_names(&ast, base), ["Components::CCMObject"]);
+    let inherited = op_names(&ast, base);
+    assert!(inherited.contains(&"connect_fragment_data".to_string()));
+    let own = op_names(&ast, derived);
+    for expected in ["connect_monitor", "provide_back_data"] {
+        assert!(own.contains(&expected.to_string()), "{expected} in {own:?}");
+    }
+    assert!(
+        !own.contains(&"connect_fragment_data".to_string()),
+        "the inherited port is not declared again: {own:?}"
+    );
+    let attributes = |id| -> Vec<String> {
+        ast.interface(id)
+            .expect("connector")
+            .attributes
+            .iter()
+            .map(|a| ast.attribute(*a).expect("attribute").name.clone())
+            .collect()
+    };
+    assert_eq!(attributes(base), ["topic"]);
+    assert!(attributes(derived).is_empty());
+}
+
 /// CCM 4.0 §6.7.2: the home's explicit interface holds what the home body
 /// declares. "factory" becomes an operation returning the managed
 /// component and raising `Components::CreateFailure` besides its own

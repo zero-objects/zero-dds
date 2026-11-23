@@ -779,6 +779,35 @@ impl SecureChannel {
         self.next_sequence()
     }
 
+    /// Whether the channel signs its messages (Part 4 §7.20
+    /// `MessageSecurityMode` `Sign` or `SignAndEncrypt`).
+    #[must_use]
+    pub fn is_signed(&self) -> bool {
+        #[cfg(feature = "crypto")]
+        {
+            self.security.is_some()
+        }
+        #[cfg(not(feature = "crypto"))]
+        {
+            false
+        }
+    }
+
+    /// Whether the channel encrypts its messages (`SignAndEncrypt`).
+    #[must_use]
+    pub fn is_encrypted(&self) -> bool {
+        #[cfg(feature = "crypto")]
+        {
+            self.security
+                .as_ref()
+                .is_some_and(|s| matches!(s.mode, crate::crypto::SecuredMode::SignAndEncrypt))
+        }
+        #[cfg(not(feature = "crypto"))]
+        {
+            false
+        }
+    }
+
     /// The SecureChannel id.
     #[must_use]
     pub const fn channel_id(&self) -> u32 {

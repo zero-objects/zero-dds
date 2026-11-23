@@ -253,6 +253,85 @@ fn dcps_2_2_2_4_2_18_incompatible_qos_is_counted_once_and_read_once() {
     assert_eq!((offered.total_count, offered.total_count_change), (1, 0));
 }
 
+/// DDS 1.4 §2.2.3, ENTITY_FACTORY: RxO "No". Different values in the
+/// Publisher and the Subscriber of a pair keep it from neither matching nor
+/// delivering, and raise no incompatible-QoS status: once with the Publisher
+/// FALSE and the Subscriber TRUE, once the other way round. The endpoint its
+/// factory created disabled is enabled by hand.
+#[test]
+fn dcps_2_2_3_20_differing_entity_factory_values_match_without_an_incompatible_qos_status() {
+    use zerodds_dcps::Entity;
+
+    let p = participant();
+    for (publisher_on, subscriber_on, name) in [
+        (false, true, "StatusReadsEntityFactoryPublisherOff"),
+        (true, false, "StatusReadsEntityFactorySubscriberOff"),
+    ] {
+        let topic = p
+            .create_topic::<RawBytes>(name, TopicQos::default())
+            .unwrap();
+        let mut pq = PublisherQos::default();
+        pq.entity_factory.autoenable_created_entities = publisher_on;
+        let mut sq = SubscriberQos::default();
+        sq.entity_factory.autoenable_created_entities = subscriber_on;
+        let writer = p
+            .create_publisher(pq)
+            .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+            .unwrap();
+        let reader = p
+            .create_subscriber(sq)
+            .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+            .unwrap();
+        assert_eq!(writer.is_enabled(), publisher_on, "{name}");
+        assert_eq!(reader.is_enabled(), subscriber_on, "{name}");
+        writer.enable().unwrap();
+        reader.enable().unwrap();
+
+        assert!(
+            eventually(|| writer
+                .matched_subscriptions()
+                .is_ok_and(|matched| matched.len() == 1)),
+            "{name}: the writer did not match the reader"
+        );
+        assert!(
+            eventually(|| reader
+                .get_subscription_matched_status()
+                .is_ok_and(|status| status.current_count == 1)),
+            "{name}: the reader did not match the writer"
+        );
+        assert_eq!(
+            writer
+                .get_offered_incompatible_qos_status()
+                .unwrap()
+                .total_count,
+            0,
+            "{name}"
+        );
+        assert_eq!(
+            reader
+                .get_requested_incompatible_qos_status()
+                .unwrap()
+                .total_count,
+            0,
+            "{name}"
+        );
+
+        writer.write(&RawBytes::new(vec![7, 9])).unwrap();
+        let got = Mutex::new(Vec::new());
+        assert!(
+            eventually(|| {
+                let mut got = got.lock().unwrap();
+                got.extend(reader.take().unwrap());
+                !got.is_empty()
+            }),
+            "{name}: the sample did not arrive"
+        );
+        let got = got.into_inner().unwrap();
+        assert_eq!(got.len(), 1, "{name}");
+        assert_eq!(got[0].data, vec![7, 9], "{name}");
+    }
+}
+
 /// §2.2.2.1.1.7 allows "get_status_changes and other get status operations
 /// (although the status of a disabled entity never changes)" on a disabled
 /// entity: the status is untriggered. Operations it does not list, such as

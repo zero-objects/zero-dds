@@ -32,6 +32,7 @@ dcps = [
     "zerodds-dcps/same-host-shm",
     "zerodds-dcps/same-host-uds",
     "dep:zerodds-transport-uds",
+    "dep:zerodds-foundation",
 ]
 tsn = ["dcps", "zerodds-dcps/tsn-live"]
 security = ["dcps", "zerodds-dcps/security"]
@@ -50,6 +51,8 @@ bindings = ["dcps"]
 zerodds-test-domains = { path = "../../crates/test-domains" }
 zerodds-dcps = { path = "../../crates/dcps", optional = true }
 zerodds-transport-uds = { path = "../../crates/transport-uds", optional = true }
+# The observability sink a scenario reads the runtime's events from.
+zerodds-foundation = { path = "../../crates/foundation", optional = true }
 
 [[test]]
 name = "dcps_transports"

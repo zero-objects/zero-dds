@@ -5,11 +5,9 @@
 
 use alloc::vec::Vec;
 
-/// Property identifier (Spec §2.2.2.2 Table 2-4) — subset of the most
-/// important MQTT 5.0 properties.
-///
-/// The complete table has ~30 IDs; we provide named constants
-/// for the most common ones and expose the `u32` value for the rest.
+/// Property identifier (Spec §2.2.2.2 Table 2-4): one variant for each of
+/// the 27 identifiers of the table, and [`PropertyId::Other`] for a value
+/// the table does not define.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PropertyId {
     /// `1` Payload Format Indicator (PUBLISH).
@@ -34,15 +32,41 @@ pub enum PropertyId {
     AuthenticationMethod,
     /// `22` Authentication Data (CONNECT/CONNACK/AUTH).
     AuthenticationData,
+    /// `23` Request Problem Information (CONNECT).
+    RequestProblemInformation,
+    /// `24` Will Delay Interval (Will Properties).
+    WillDelayInterval,
+    /// `25` Request Response Information (CONNECT).
+    RequestResponseInformation,
+    /// `26` Response Information (CONNACK).
+    ResponseInformation,
+    /// `28` Server Reference (CONNACK/DISCONNECT).
+    ServerReference,
+    /// `31` Reason String (CONNACK/PUBACK/PUBREC/PUBREL/PUBCOMP/SUBACK/
+    /// UNSUBACK/DISCONNECT/AUTH).
+    ReasonString,
     /// `33` Receive Maximum (CONNECT/CONNACK).
     ReceiveMaximum,
     /// `34` Topic Alias Maximum (CONNECT/CONNACK).
     TopicAliasMaximum,
     /// `35` Topic Alias (PUBLISH).
     TopicAlias,
+    /// `36` Maximum QoS (CONNACK).
+    MaximumQos,
+    /// `37` Retain Available (CONNACK).
+    RetainAvailable,
     /// `38` User Property (any packet).
     UserProperty,
-    /// Other property IDs (Spec §2.2.2.2 Table 2-4 contains more).
+    /// `39` Maximum Packet Size (CONNECT/CONNACK).
+    MaximumPacketSize,
+    /// `40` Wildcard Subscription Available (CONNACK).
+    WildcardSubscriptionAvailable,
+    /// `41` Subscription Identifier Available (CONNACK).
+    SubscriptionIdentifierAvailable,
+    /// `42` Shared Subscription Available (CONNACK).
+    SharedSubscriptionAvailable,
+    /// An identifier Table 2-4 does not define. A packet that carries one
+    /// is a Malformed Packet (§2.2.2.2); it has no value type.
     Other(u32),
 }
 
@@ -63,10 +87,22 @@ impl PropertyId {
             Self::ServerKeepAlive => 19,
             Self::AuthenticationMethod => 21,
             Self::AuthenticationData => 22,
+            Self::RequestProblemInformation => 23,
+            Self::WillDelayInterval => 24,
+            Self::RequestResponseInformation => 25,
+            Self::ResponseInformation => 26,
+            Self::ServerReference => 28,
+            Self::ReasonString => 31,
             Self::ReceiveMaximum => 33,
             Self::TopicAliasMaximum => 34,
             Self::TopicAlias => 35,
+            Self::MaximumQos => 36,
+            Self::RetainAvailable => 37,
             Self::UserProperty => 38,
+            Self::MaximumPacketSize => 39,
+            Self::WildcardSubscriptionAvailable => 40,
+            Self::SubscriptionIdentifierAvailable => 41,
+            Self::SharedSubscriptionAvailable => 42,
             Self::Other(v) => v,
         }
     }
@@ -86,37 +122,63 @@ impl PropertyId {
             19 => Self::ServerKeepAlive,
             21 => Self::AuthenticationMethod,
             22 => Self::AuthenticationData,
+            23 => Self::RequestProblemInformation,
+            24 => Self::WillDelayInterval,
+            25 => Self::RequestResponseInformation,
+            26 => Self::ResponseInformation,
+            28 => Self::ServerReference,
+            31 => Self::ReasonString,
             33 => Self::ReceiveMaximum,
             34 => Self::TopicAliasMaximum,
             35 => Self::TopicAlias,
+            36 => Self::MaximumQos,
+            37 => Self::RetainAvailable,
             38 => Self::UserProperty,
+            39 => Self::MaximumPacketSize,
+            40 => Self::WildcardSubscriptionAvailable,
+            41 => Self::SubscriptionIdentifierAvailable,
+            42 => Self::SharedSubscriptionAvailable,
             other => Self::Other(other),
         }
     }
 
-    /// Spec §2.2.2.2 Table 2-4 — value type per property ID.
-    /// The caller decodes the `Property::value` slice according to this
-    /// classification.
+    /// Spec §2.2.2.2 Table 2-4 — the value type of the identifier, `None`
+    /// for an identifier the table does not define ([`PropertyId::Other`]),
+    /// whose value cannot be delimited. The caller decodes the
+    /// `Property::value` slice according to this classification.
     #[must_use]
-    pub const fn value_kind(self) -> PropertyValueKind {
-        match self {
-            Self::PayloadFormatIndicator => PropertyValueKind::Byte,
-            Self::MessageExpiryInterval => PropertyValueKind::FourByteInt,
-            Self::ContentType => PropertyValueKind::Utf8String,
-            Self::ResponseTopic => PropertyValueKind::Utf8String,
-            Self::CorrelationData => PropertyValueKind::BinaryData,
-            Self::SubscriptionIdentifier => PropertyValueKind::VariableByteInt,
-            Self::SessionExpiryInterval => PropertyValueKind::FourByteInt,
-            Self::AssignedClientIdentifier => PropertyValueKind::Utf8String,
-            Self::ServerKeepAlive => PropertyValueKind::TwoByteInt,
-            Self::AuthenticationMethod => PropertyValueKind::Utf8String,
-            Self::AuthenticationData => PropertyValueKind::BinaryData,
-            Self::ReceiveMaximum => PropertyValueKind::TwoByteInt,
-            Self::TopicAliasMaximum => PropertyValueKind::TwoByteInt,
-            Self::TopicAlias => PropertyValueKind::TwoByteInt,
-            Self::UserProperty => PropertyValueKind::Utf8StringPair,
-            Self::Other(_) => PropertyValueKind::BinaryData,
-        }
+    pub const fn value_kind(self) -> Option<PropertyValueKind> {
+        use PropertyValueKind as K;
+        Some(match self {
+            Self::PayloadFormatIndicator => K::Byte,
+            Self::MessageExpiryInterval => K::FourByteInt,
+            Self::ContentType => K::Utf8String,
+            Self::ResponseTopic => K::Utf8String,
+            Self::CorrelationData => K::BinaryData,
+            Self::SubscriptionIdentifier => K::VariableByteInt,
+            Self::SessionExpiryInterval => K::FourByteInt,
+            Self::AssignedClientIdentifier => K::Utf8String,
+            Self::ServerKeepAlive => K::TwoByteInt,
+            Self::AuthenticationMethod => K::Utf8String,
+            Self::AuthenticationData => K::BinaryData,
+            Self::RequestProblemInformation => K::Byte,
+            Self::WillDelayInterval => K::FourByteInt,
+            Self::RequestResponseInformation => K::Byte,
+            Self::ResponseInformation => K::Utf8String,
+            Self::ServerReference => K::Utf8String,
+            Self::ReasonString => K::Utf8String,
+            Self::ReceiveMaximum => K::TwoByteInt,
+            Self::TopicAliasMaximum => K::TwoByteInt,
+            Self::TopicAlias => K::TwoByteInt,
+            Self::MaximumQos => K::Byte,
+            Self::RetainAvailable => K::Byte,
+            Self::UserProperty => K::Utf8StringPair,
+            Self::MaximumPacketSize => K::FourByteInt,
+            Self::WildcardSubscriptionAvailable => K::Byte,
+            Self::SubscriptionIdentifierAvailable => K::Byte,
+            Self::SharedSubscriptionAvailable => K::Byte,
+            Self::Other(_) => return None,
+        })
     }
 }
 
@@ -224,69 +286,69 @@ impl Property {
 mod tests {
     use super::*;
 
-    /// §2.2.2.2, Table 2-4: the identifier of each named property, both
-    /// ways.
+    /// §2.2.2.2, Table 2-4: the 27 identifiers, each with its name, its
+    /// value both ways and its type, row by row as the table gives them.
     #[test]
-    fn mqtt5_2_2_2_each_named_property_has_its_identifier_of_table_2_4() {
-        for (id, value) in [
-            (PropertyId::PayloadFormatIndicator, 1),
-            (PropertyId::MessageExpiryInterval, 2),
-            (PropertyId::ContentType, 3),
-            (PropertyId::ResponseTopic, 8),
-            (PropertyId::CorrelationData, 9),
-            (PropertyId::SubscriptionIdentifier, 11),
-            (PropertyId::SessionExpiryInterval, 17),
-            (PropertyId::AssignedClientIdentifier, 18),
-            (PropertyId::ServerKeepAlive, 19),
-            (PropertyId::AuthenticationMethod, 21),
-            (PropertyId::AuthenticationData, 22),
-            (PropertyId::ReceiveMaximum, 33),
-            (PropertyId::TopicAliasMaximum, 34),
-            (PropertyId::TopicAlias, 35),
-            (PropertyId::UserProperty, 38),
-        ] {
+    fn mqtt5_2_2_2_all_27_identifiers_of_table_2_4_and_their_types() {
+        use PropertyValueKind as K;
+        let table = [
+            (PropertyId::PayloadFormatIndicator, 1, K::Byte),
+            (PropertyId::MessageExpiryInterval, 2, K::FourByteInt),
+            (PropertyId::ContentType, 3, K::Utf8String),
+            (PropertyId::ResponseTopic, 8, K::Utf8String),
+            (PropertyId::CorrelationData, 9, K::BinaryData),
+            (PropertyId::SubscriptionIdentifier, 11, K::VariableByteInt),
+            (PropertyId::SessionExpiryInterval, 17, K::FourByteInt),
+            (PropertyId::AssignedClientIdentifier, 18, K::Utf8String),
+            (PropertyId::ServerKeepAlive, 19, K::TwoByteInt),
+            (PropertyId::AuthenticationMethod, 21, K::Utf8String),
+            (PropertyId::AuthenticationData, 22, K::BinaryData),
+            (PropertyId::RequestProblemInformation, 23, K::Byte),
+            (PropertyId::WillDelayInterval, 24, K::FourByteInt),
+            (PropertyId::RequestResponseInformation, 25, K::Byte),
+            (PropertyId::ResponseInformation, 26, K::Utf8String),
+            (PropertyId::ServerReference, 28, K::Utf8String),
+            (PropertyId::ReasonString, 31, K::Utf8String),
+            (PropertyId::ReceiveMaximum, 33, K::TwoByteInt),
+            (PropertyId::TopicAliasMaximum, 34, K::TwoByteInt),
+            (PropertyId::TopicAlias, 35, K::TwoByteInt),
+            (PropertyId::MaximumQos, 36, K::Byte),
+            (PropertyId::RetainAvailable, 37, K::Byte),
+            (PropertyId::UserProperty, 38, K::Utf8StringPair),
+            (PropertyId::MaximumPacketSize, 39, K::FourByteInt),
+            (PropertyId::WildcardSubscriptionAvailable, 40, K::Byte),
+            (PropertyId::SubscriptionIdentifierAvailable, 41, K::Byte),
+            (PropertyId::SharedSubscriptionAvailable, 42, K::Byte),
+        ];
+        assert_eq!(table.len(), 27);
+        for (id, value, kind) in table {
             assert_eq!(id.to_value(), value, "{id:?}");
             assert_eq!(PropertyId::from_value(value), id);
+            assert_eq!(id.value_kind(), Some(kind), "{id:?}");
+        }
+        // Every value between 1 and 42 that is not in the table is Other,
+        // and every identifier of the table is named.
+        let named = table.iter().map(|(_, v, _)| *v).collect::<Vec<u32>>();
+        for v in 0..=42u32 {
+            let id = PropertyId::from_value(v);
+            assert_eq!(
+                matches!(id, PropertyId::Other(_)),
+                !named.contains(&v),
+                "{v}"
+            );
         }
     }
 
+    /// §2.2.2.2: an identifier outside Table 2-4 keeps its value and has
+    /// no value type, so its value cannot be delimited (a Malformed
+    /// Packet).
     #[test]
-    fn mqtt5_2_2_2_property_id_unknown_yields_other_variant() {
-        // Spec §2.2.2.2 — future IDs are kept as Other.
-        assert_eq!(PropertyId::from_value(99), PropertyId::Other(99));
-    }
-
-    #[test]
-    fn value_kind_matches_table_2_4() {
-        // Spec §2.2.2.2 Table 2-4.
-        assert_eq!(
-            PropertyId::PayloadFormatIndicator.value_kind(),
-            PropertyValueKind::Byte
-        );
-        assert_eq!(
-            PropertyId::MessageExpiryInterval.value_kind(),
-            PropertyValueKind::FourByteInt
-        );
-        assert_eq!(
-            PropertyId::ContentType.value_kind(),
-            PropertyValueKind::Utf8String
-        );
-        assert_eq!(
-            PropertyId::CorrelationData.value_kind(),
-            PropertyValueKind::BinaryData
-        );
-        assert_eq!(
-            PropertyId::SubscriptionIdentifier.value_kind(),
-            PropertyValueKind::VariableByteInt
-        );
-        assert_eq!(
-            PropertyId::ReceiveMaximum.value_kind(),
-            PropertyValueKind::TwoByteInt
-        );
-        assert_eq!(
-            PropertyId::UserProperty.value_kind(),
-            PropertyValueKind::Utf8StringPair
-        );
+    fn mqtt5_2_2_2_an_identifier_outside_table_2_4_has_no_value_type() {
+        for v in [0u32, 4, 7, 10, 12, 16, 20, 27, 29, 30, 32, 43, 99] {
+            assert_eq!(PropertyId::from_value(v), PropertyId::Other(v));
+            assert_eq!(PropertyId::Other(v).to_value(), v);
+            assert_eq!(PropertyId::Other(v).value_kind(), None, "{v}");
+        }
     }
 
     #[test]

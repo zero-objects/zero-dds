@@ -104,6 +104,7 @@ fn make_sub(filter: &str, qos: QoS) -> BrokerSubscription {
         max_qos: qos,
         no_local: false,
         retain_as_published: false,
+        ..BrokerSubscription::default()
     }
 }
 
@@ -167,6 +168,7 @@ fn case_4_1_will_delivered_on_abnormal_disconnect() -> CaseResult {
             payload: alloc::vec![9, 9],
             qos: QoS::AtLeastOnce,
             retain: false,
+            ..Will::default()
         }),
     );
     b.connect("c2".into(), true, None);
@@ -189,6 +191,7 @@ fn case_4_2_clean_disconnect_drops_will() -> CaseResult {
             payload: alloc::vec![],
             qos: QoS::AtMostOnce,
             retain: false,
+            ..Will::default()
         }),
     );
     let envs = b.disconnect("c1", false);

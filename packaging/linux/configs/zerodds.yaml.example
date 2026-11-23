@@ -27,7 +27,21 @@ transport:
                                      # TCPv6; SHM | UDS | TSN with their features
   # user_transports: [SHM, UDPv4]    # ZERODDS_USER_TRANSPORTS; first preferred,
                                      # replaces user_transport
-  tcp_locator_kinds: vendor        # ZERODDS_TCP_LOCATOR_KINDS; vendor | fast-dds (kinds 4 and 8)
+  tcp_locator_kinds: vendor        # ZERODDS_TCP_LOCATOR_KINDS; vendor (the kinds of the dialect) |
+                                     # fast-dds (kinds 4 and 8); per runtime
+  tcp_dialect: zerodds             # ZERODDS_TCP_DIALECT; the connections this runtime opens: zerodds
+                                     # (handshake, length-prefixed frames) | rtps (no handshake, messages
+                                     # delimited by the messageLength of their HeaderExtension) | cyclone
+                                     # (the stream of Cyclone DDS, kinds 4 and 8) | fastdds (the TCP
+                                     # protocol of Fast DDS, RTCP: bind, logical ports, kinds 4 and 8)
+  # tcp_accept_dialects: [zerodds, cyclone]  # ZERODDS_TCP_ACCEPT_DIALECTS; the dialects a connection
+                                     # to the listener may begin in; unset = every dialect
+  tcp_port: 0                      # ZERODDS_TCP_PORT; port of the TCP listeners; 0 = chosen by the system
+  # tcp_accepted_vendors: [01f0]     # ZERODDS_TCP_ACCEPTED_VENDORS; vendor ids (four hex digits) whose
+                                     # TCP connections are taken; unset = every vendor; an empty
+                                     # list is refused
+  tcp_logical_port_claim: listener # ZERODDS_TCP_LOGICAL_PORT_CLAIM; listener | none (hosts behind
+                                     # one translated address)
   udp:
     connected_cache: true            # ZERODDS_UDP_CACHE_ENABLE
     cache_max_entries: 16            # ZERODDS_UDP_CACHE_MAX; > 0
@@ -35,6 +49,17 @@ transport:
     recv_buffer: 1048576             # ZERODDS_UDP_RCVBUF; 0 = kernel default
     dont_route: false                # ZERODDS_UDP_DONTROUTE
     max_message_size: 1472           # ZERODDS_UDP_MAX_MESSAGE_SIZE; 20..=65507
+  uds:                               # the UDS user transport (user_transport: UDS)
+    base_dir: /tmp/zerodds/uds       # ZERODDS_UDS_BASE_DIR; absolute; a volume shared by containers
+    socket_mode: umask               # ZERODDS_UDS_SOCKET_MODE; umask | octal <= 0777 (0660: a peer
+                                     # under another UID in a shared group may send)
+    base_dir_mode: "0700"            # ZERODDS_UDS_BASE_DIR_MODE; octal <= 07777, for a directory the
+                                     # runtime creates (3770: shared by the UIDs of one group;
+                                     # set-group-ID for the group, sticky against removal)
+    max_datagram: 65536              # ZERODDS_UDS_MAX_DATAGRAM; > 0; the kernel must grant it
+    # mode: datagram                 # ZERODDS_UDS_MODE; datagram | stream (length-prefixed frames
+                                     # over one connection per peer); default datagram, on Windows
+                                     # stream, the only mode there
   # interface_bindings:              # file only; a build with `security`
   #   - name: lab
   #     bind: 10.0.0.5
@@ -58,7 +83,7 @@ writer:
   nack_response_delay_ms: 200        # ZERODDS_NACK_RESPONSE_DELAY_MS; >= 0, the spec value; 0 answers on the next tick
   heartbeat_period_ms: 100           # ZERODDS_WRITER_HEARTBEAT_PERIOD_MS; > 0
   nack_suppression_duration_ms: 0    # ZERODDS_NACK_SUPPRESSION_DURATION_MS; >= 0
-  unacked_window_bytes: 524288       # ZERODDS_WRITER_UNACKED_WINDOW; >= 0, 0 = no window
+  unacked_window_bytes: 8388608      # ZERODDS_WRITER_UNACKED_WINDOW; >= 0, 0 = no window
   unregister_on_delete: true         # ZERODDS_WRITER_UNREGISTER_ON_DELETE; false: no unregister/dispose on delete
   linger_ms: 1000                    # ZERODDS_WRITER_LINGER_MS; >= 0, wait on delete for the readers' acknowledgments
   keyless_lifecycle_on_wire: false   # ZERODDS_WRITER_KEYLESS_LIFECYCLE_ON_WIRE; true: send dispose/unregister of a
@@ -77,8 +102,11 @@ discovery:
   wlp_period_ms: 0                   # ZERODDS_WLP_PERIOD_MS; 0 = a third of the lease
   spdp_new_sequence_per_period: false  # ZERODDS_SPDP_NEW_SEQUENCE_PER_PERIOD; true: a new sequence
                                      # number for every SPDP announcement (Cyclone, OpenDDS)
-  # peers: [192.0.2.20, "192.0.2.21:7410"]  # ZERODDS_PEERS; without a port the
-                                     # ports of the domain are expanded
+  # peers: [192.0.2.20, "192.0.2.21:7410", "tcp://192.0.2.22:7400"]  # ZERODDS_PEERS; without a
+                                     # port the ports of the domain are expanded; tcp://ip:port is the
+                                     # TCP listener of a peer
+  unicast_transports: [udp, tcp]     # ZERODDS_DISCOVERY_UNICAST_TRANSPORTS; what is announced as
+                                     # metatraffic unicast locator; [tcp] for a network without UDP
   # participant_name: my-robot       # ZERODDS_PARTICIPANT_NAME; default zerodds:<GUID prefix in hex>
   max_peer_participants: 10          # ZERODDS_MAX_PEER_PARTICIPANTS; 1..=120
   no_multicast: false                # ZERODDS_NO_MULTICAST

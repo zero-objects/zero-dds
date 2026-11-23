@@ -23,17 +23,30 @@ validator (§8.1), and a WebSocket↔DDS topic bridge. `no_std + alloc`,
 - **`Frame` / `Opcode`** + **`encode` / `decode`** — wire codec
   (§5.2) including payload length encoding (7-bit / 7+16-bit / 7+64-
   bit, each minimal).
-- **`apply_mask` / `MaskingKeyProvider`** — XOR masking (§5.3); two
-  providers: `InsecureSplitmixProvider` for tests/no_std builds,
-  `ClosureMaskingKeyProvider` for a caller CSPRNG.
+- **`apply_mask` / `MaskingKeyProvider`** — XOR masking (§5.3); the
+  key source: `OsRngProvider` and `generate_masking_key` (the operating
+  system's random source, with `std`), `ClosureMaskingKeyProvider` for
+  a caller's source in a `no_std` build.
+- **`Receiver` / `Sender`** (`connection` module) — one end of a
+  connection: every received frame is checked (masking by role,
+  reserved bits and opcodes, the size limits of §10.4), fragmented
+  messages are reassembled, text is validated, invalid data fails the
+  connection with its close code (1002, 1007, 1009); the sender builds
+  messages, Ping, Pong and the closing handshake of §7.1.
 - **`compute_accept` / `parse_client_request` /
   `build_server_response` / `render_server_response`** — opening
   handshake (§4) with the `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` GUID
   + SHA-1 + Base64.
+- **`OriginPolicy`** (`origin` module) — the origins a server expects
+  (§10.2): the `Origin` field of the opening handshake is compared as
+  RFC 6454 §5 says, an origin outside the list is HTTP 403.
 - **`parse_extensions` / `parse_subprotocols` / `select_subprotocol`**
   (`negotiation` module) — §9 extension / subprotocol negotiation.
-- **`PermessageDeflateParams` / `parse_offer` / `render_accept` /
-  `append_tail` / `strip_tail`** — RFC 7692 permessage-deflate.
+- **`accept_offers` / `render_accept` / `render_offer` /
+  `accept_response` / `Deflater` / `Inflater`** — RFC 7692
+  permessage-deflate: the negotiation of both sides and, with `std`,
+  the codec (`flate2` over `zlib-rs`) with the negotiated window and
+  context takeover.
 - **`CloseCode` / `ClosePayload` / `validate_wire_status_code`** —
   §7.4 status-code semantics with forbidden-on-wire checking
   (1004/1005/1006/1015 are not wire-permissible).

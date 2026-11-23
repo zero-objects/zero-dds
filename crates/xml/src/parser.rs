@@ -188,6 +188,87 @@ pub fn parse_xml_tree(xml: &str) -> Result<DdsXmlDocument, XmlError> {
     // a `&str` and discards the declaration's encoding, so a different
     // one has to be refused here.
     check_declared_encoding(xml)?;
+    parse_checked_text(xml)
+}
+
+/// The encodings [`parse_xml_tree_bytes`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XmlEncoding {
+    /// UTF-8, also when the document declares no encoding.
+    Utf8,
+    /// ISO-8859-1 (Latin-1): each byte is the character of that code.
+    Iso8859_1,
+}
+
+/// Parses an XML document of another specification than DDS-XML from its
+/// bytes, honouring the encoding its XML declaration names: UTF-8 (also
+/// without a declaration) or ISO-8859-1, which the DTD of the DLRL model
+/// tags declares (DDS 1.2 §8.2.2.3.1). A DOCTYPE line is accepted as in
+/// [`parse_xml_tree`]; an external DTD it names is not fetched. The tree
+/// and the limits are those of [`parse_xml_tree`]. DDS-XML documents go
+/// through [`parse_xml_tree`], which keeps the UTF-8 rule of §7.1.1.
+///
+/// # Errors
+/// * [`XmlError::InvalidXml`] — another declared encoding, bytes that are
+///   not UTF-8 in a UTF-8 document, or XML not well-formed.
+/// * [`XmlError::LimitExceeded`] — a DoS cap was hit.
+pub fn parse_xml_tree_bytes(bytes: &[u8]) -> Result<(DdsXmlDocument, XmlEncoding), XmlError> {
+    let encoding = declared_encoding(bytes)?;
+    let text: String = match encoding {
+        XmlEncoding::Utf8 => core::str::from_utf8(bytes)
+            .map_err(|e| XmlError::InvalidXml(format!("not UTF-8: {e}")))?
+            .into(),
+        XmlEncoding::Iso8859_1 => bytes.iter().map(|b| char::from(*b)).collect(),
+    };
+    Ok((parse_checked_text(&text)?, encoding))
+}
+
+/// The encoding the XML declaration at the start of `bytes` names.
+fn declared_encoding(bytes: &[u8]) -> Result<XmlEncoding, XmlError> {
+    // The declaration is ASCII in both encodings read here.
+    let head = &bytes[..bytes.len().min(256)];
+    let head: String = head
+        .iter()
+        .take_while(|b| b.is_ascii())
+        .map(|b| char::from(*b))
+        .collect();
+    let trimmed = head.trim_start();
+    if !trimmed.starts_with("<?xml") {
+        return Ok(XmlEncoding::Utf8);
+    }
+    let Some(end) = trimmed.find("?>") else {
+        return Err(XmlError::InvalidXml("unterminated XML declaration".into()));
+    };
+    let decl = &trimmed[..end];
+    let Some(pos) = decl.find("encoding") else {
+        return Ok(XmlEncoding::Utf8);
+    };
+    let rest = decl[pos + "encoding".len()..].trim_start();
+    let value = rest
+        .strip_prefix('=')
+        .map(str::trim_start)
+        .and_then(|r| {
+            let q = r.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+            let r = &r[1..];
+            r.find(q).map(|close| &r[..close])
+        })
+        .ok_or_else(|| XmlError::InvalidXml("malformed encoding declaration".into()))?;
+    if value.eq_ignore_ascii_case("utf-8") || value.eq_ignore_ascii_case("utf8") {
+        Ok(XmlEncoding::Utf8)
+    } else if value.eq_ignore_ascii_case("iso-8859-1")
+        || value.eq_ignore_ascii_case("latin1")
+        || value.eq_ignore_ascii_case("iso_8859-1")
+    {
+        Ok(XmlEncoding::Iso8859_1)
+    } else {
+        Err(XmlError::InvalidXml(format!(
+            "document declares encoding `{value}`; UTF-8 and ISO-8859-1 are read"
+        )))
+    }
+}
+
+/// [`parse_xml_tree`] after the check of the declared encoding.
+fn parse_checked_text(xml: &str) -> Result<DdsXmlDocument, XmlError> {
     check_entity_declarations(xml)?;
     // `roxmltree` descends once per open element, so nesting has to be
     // bounded before it runs, not after.
@@ -465,6 +546,42 @@ mod tests {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?><root/>"#;
         let doc = parse_xml_tree(xml).expect("parse");
         assert_eq!(doc.root_name(), "root");
+    }
+
+    /// DDS 1.2 §8.2.2.3.1: the DLRL model tags declare ISO-8859-1; the
+    /// byte reader decodes them, keeps refusing other encodings, and
+    /// the DDS-XML reader keeps its UTF-8 rule.
+    #[test]
+    fn dlrl_8_2_2_3_1_iso_8859_1_document_read_from_bytes() {
+        let mut latin1 = br#"<?xml version="1.0" encoding="ISO-8859-1"?>
+<!DOCTYPE Dlrl SYSTEM "dlrl.dtd">
+<Dlrl name="caf"#
+            .to_vec();
+        latin1.push(0xE9); // é in ISO-8859-1, not UTF-8
+        latin1.extend_from_slice(br#""><value>x</value></Dlrl>"#);
+        let (doc, enc) = parse_xml_tree_bytes(&latin1).expect("latin1");
+        assert_eq!(enc, XmlEncoding::Iso8859_1);
+        assert_eq!(doc.root_name(), "Dlrl");
+        assert_eq!(doc.root.attribute("name"), Some("caf\u{e9}"));
+        // The same bytes declared as UTF-8 are not UTF-8.
+        let mut bad = br#"<?xml version="1.0" encoding="UTF-8"?><r a=""#.to_vec();
+        bad.push(0xE9);
+        bad.extend_from_slice(br#""/>"#);
+        assert!(matches!(
+            parse_xml_tree_bytes(&bad),
+            Err(XmlError::InvalidXml(_))
+        ));
+        // No declaration: UTF-8.
+        let (doc, enc) = parse_xml_tree_bytes("<r a=\"\u{e9}\"/>".as_bytes()).expect("utf8");
+        assert_eq!(enc, XmlEncoding::Utf8);
+        assert_eq!(doc.root.attribute("a"), Some("\u{e9}"));
+        // Another encoding is refused.
+        assert!(matches!(
+            parse_xml_tree_bytes(br#"<?xml version="1.0" encoding="UTF-16"?><r/>"#),
+            Err(XmlError::InvalidXml(_))
+        ));
+        // parse_xml_tree keeps §7.1.1.
+        assert!(parse_xml_tree(r#"<?xml version="1.0" encoding="ISO-8859-1"?><r/>"#).is_err());
     }
 
     #[test]

@@ -1,0 +1,8 @@
+// The type of the cross-vendor tests (crates/websocket-bridge/tests/cross_vendor.rs).
+module Sensor {
+  @appendable struct Reading {
+    @key long id;
+    double value;
+    string unit;
+  };
+};

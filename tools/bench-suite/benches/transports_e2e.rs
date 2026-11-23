@@ -226,11 +226,13 @@ fn bench_uds_fs(c: &mut Criterion) {
         base_dir: tmp.clone(),
         max_datagram: DGRAM_MAX,
         recv_timeout: Some(Duration::from_millis(50)),
+        ..UdsConfig::default()
     };
     let tx_cfg = UdsConfig {
         base_dir: tmp.clone(),
         max_datagram: DGRAM_MAX,
         recv_timeout: None,
+        ..UdsConfig::default()
     };
     let rx = UdsTransport::bind(id(1), rx_cfg).unwrap();
     let tx = UdsTransport::bind(id(2), tx_cfg).unwrap();
@@ -272,13 +274,15 @@ fn bench_uds_abstract(c: &mut Criterion) {
         address: UdsAddress::Abstract {
             prefix: prefix.clone(),
         },
-        recv_buf: DGRAM_MAX,
+        max_datagram: DGRAM_MAX,
         recv_timeout: Some(Duration::from_millis(50)),
+        ..AbstractDgramConfig::default()
     };
     let tx_cfg = AbstractDgramConfig {
         address: UdsAddress::Abstract { prefix },
-        recv_buf: DGRAM_MAX,
+        max_datagram: DGRAM_MAX,
         recv_timeout: None,
+        ..AbstractDgramConfig::default()
     };
     let rx = UdsAbstractDgramTransport::bind(id(1), rx_cfg).unwrap();
     let tx = UdsAbstractDgramTransport::bind(id(2), tx_cfg).unwrap();

@@ -10,10 +10,10 @@ AMQP addresses. The schema is the one of
 the reader is
 .I DaemonConfig::from_config
 in
-.IR crates/amqp-endpoint/src/bridge_daemon.rs .
+.IR crates/amqp-endpoint/src/bridge_daemon/config.rs .
 .PP
 Top-level keys:
-.BR domain ", " log_level ", " amqp ", " acl ", " metrics ", " topics .
+.BR domain ", " log_level ", " amqp ", " acl ", " metrics ", " catalog ", " topics ", " tenants .
 .PP
 An unknown top-level key is
 .I not
@@ -49,7 +49,9 @@ enabled, and the other way round.
 .TP
 .B container_id
 AMQP container identifier of this daemon; it also seeds the GUID prefix of
-the daemon's DDS participant, so two daemons need two ids.
+the daemon's DDS participant, so two daemons need two ids. Default
+.IR zerodds\-bridge\-<host> ,
+the host name with its dots as hyphens, at most 32 characters.
 .TP
 .B channel_max
 Highest channel number the daemon offers in
@@ -72,7 +74,7 @@ hostname (virtual host); the broker host when empty.
 .B sasl
 Sub-map with
 .B mechanism
-.RI ( PLAIN " | " SCRAM-SHA-256 " | " EXTERNAL " | " ANONYMOUS " | " XOAUTH2 )
+.RI ( PLAIN " | " SCRAM-SHA-256 " | " SCRAM-SHA-512 " | " EXTERNAL " | " ANONYMOUS " | " XOAUTH2 )
 and the
 .BR username " / " password
 pair the mechanism needs (for XOAUTH2 the password is the bearer token).
@@ -99,6 +101,28 @@ and
 Sub-map with
 .BR initial_delay_ms ", " max_delay_ms " and " factor
 of the exponential back-off after a lost connection.
+.TP
+.B cbs
+Sub-map of claims-based security (the AMQP CBS draft, as Azure Service Bus
+uses it):
+.B enabled
+(boolean; with it the links wait until a shared access signature token for
+each AMQP address was accepted on
+.IR $cbs ),
+.B key_name
+and
+.B secret
+(the shared access key, shown as *** by
+.BR \-\-check\-config ;
+.B AMQP_CBS_SECRET
+in the environment), and
+.B ttl_s
+(the lifetime of a token in seconds, 10 to 86400, default 3600; the tokens
+are put again at four fifths of it). With
+.B enabled
+over TLS, SASL ANONYMOUS is allowed towards a broker that is not on the
+loopback interface. A refused token ends the connection; the daemon
+connects again after its back-off.
 .SS acl
 .TP
 .B default_deny
@@ -107,14 +131,26 @@ Boolean: a topic no rule names is closed.
 .B rules
 List of maps with
 .BR topic ", " read " and " write :
-the SASL subjects allowed DDS \(-> AMQP and AMQP \(-> DDS;
+the subjects allowed DDS \(-> AMQP and AMQP \(-> DDS;
 .I *
-allows every subject.
+allows every subject. The subject of the bridge is its SASL user; with
+EXTERNAL it is the subject DN of the certificate in
+.B amqp.tls.cert_file
+as an RFC 4514 string (for example
+.IR "CN=bridge-a,O=Example" ),
+and the certificate's fingerprint
+.I mtls:<SHA-256 hex>
+names it too. ANONYMOUS has no subject; only
+.I *
+admits it.
 .SS metrics
 .TP
 .B enabled
 Boolean. Turns on the admin endpoint serving
 .IR /metrics ", " /catalog " and " /healthz .
+.I /catalog
+lists the daemon's topics, then each tenant's with the field
+.IR tenant .
 .TP
 .B listen
 Admin listen address. Default
@@ -127,6 +163,21 @@ host without a collision.
 .B path
 Only
 .IR /metrics .
+.SS catalog
+.TP
+.B enabled
+Boolean. The daemon sends the topic catalog (JSON: every topic with its
+type, address and QoS) once per connection, settled, on a sender link of
+its own. Default
+.IR true .
+A broker that refuses the address leaves the other links running.
+.TP
+.B address
+AMQP address of the catalog. Default
+.IR zerodds.bridge.<container_id>.catalog ,
+which RabbitMQ 4 does not accept; give a
+.I /queues/...
+address there.
 .SS topics (list)
 .TP
 .B dds_name
@@ -138,6 +189,24 @@ DDS type name; default the topic name.
 .B keyed
 Boolean: the type has key fields (entity kind WithKey). Default
 .IR false .
+.TP
+.B type_file
+Path of a serialized COMPLETE TypeObject of
+.BR dds_type ,
+optional. For a keyed topic in the direction AMQP \(-> DDS the writer reads
+the instance keys with it: a dispose or unregister message names its
+instance by
+.I dds:instance-handle
+alone, and with the type the DDS marker carries the serialized key. In the
+direction DDS \(-> AMQP the reader computes with it the KeyHash of a sample
+whose writer leaves PID_KEY_HASH out (Cyclone DDS does), which becomes
+.IR dds:instance-handle ,
+and reads the key of a dispose from its serialized key; without it such a
+sample, and such a dispose or unregister, goes out with the nil instance
+handle, logged once per writer as
+.IR key_hash_unavailable .
+A file that does not hold a COMPLETE TypeObject of a type with a key stops
+the start. On a topic that is not keyed the key is refused.
 .TP
 .B amqp_address
 AMQP node address, e.g.
@@ -162,7 +231,10 @@ Sub-map with
 .B snd_settle_mode
 (0, 1, 2) and
 .B rcv_settle_mode
-(0, 1).
+(0 first, 1 second), for both links of the topic. With 1 a broker that
+settles second sends its outcome unsettled and the daemon settles after it;
+on a receiving link the daemon sends its outcome unsettled and keeps the
+delivery, counted against the credit, until the broker settles it.
 .TP
 .B receiver
 Sub-map with
@@ -184,7 +256,99 @@ with
 and a
 .B depth
 for keep_last: how many samples of a sender wait while the broker grants no
-credit.
+credit. A durability other than volatile also asks the broker for a durable
+node (terminus durability 1 on the target of the sender link; the source of
+the receiver link stays 0) unless
+.I sender.durable
+is set.
+.B deadline_ms
+(milliseconds, optional) is the deadline period the DataReader requests and
+the DataWriter offers; a rise of the reader's missed deadlines is logged
+.RI ( deadline_missed )
+and the next message of the topic carries the total as message annotation
+.IR x-opt-zerodds-deadline-missed .
+.B liveliness_lease_ms
+(milliseconds, optional) is the lease of the DDS endpoints (automatic
+liveliness).
+.B partition
+(a list of names, wildcards allowed) is the partition of the DataReader and
+DataWriter; a message carries its writer's partition in
+.IR dds:partition ,
+and a received message whose
+.I dds:partition
+matches none of the topic's partitions is rejected
+.RI ( amqp:precondition-failed ).
+.SS tenants (list)
+Optional. Each entry is a DomainParticipant of its own with a broker
+connection of its own (multi-tenant, spec \(sc1.1).
+.TP
+.B name
+The tenant's name, in the log field
+.I tenant
+and the metrics label
+.IR tenant .
+Two tenants of one name are refused, the second with its path
+.RI ( tenants[i].name ),
+file and line.
+.TP
+.B domain
+Its DDS domain.
+.TP
+.B amqp
+Sub-map with
+.B container_id
+(mandatory, unique among the daemon's participants; it seeds the GUID
+prefix),
+.B hostname
+(the virtual host of its open),
+.B sasl
+with
+.BR mechanism ,
+.B username
+and
+.BR password ,
+and
+.B tls
+with
+.B cert_file
+and
+.BR key_file .
+What the entry leaves out is taken from the daemon's
+.BR amqp .
+.TP
+.B catalog
+Sub-map with
+.BR address ;
+default the catalog address of the tenant's container id.
+.TP
+.B topics
+The tenant's topics, mandatory, with the keys of
+.BR "topics (list)" :
+.BR dds_name ,
+.BR dds_type ,
+.BR keyed ,
+.BR type_file ,
+.BR amqp_address ,
+.BR direction ,
+.B sender
+.RB ( settled ,
+.BR durable ,
+.BR snd_settle_mode ,
+.BR rcv_settle_mode ),
+.B receiver
+.RB ( credit )
+and
+.B qos
+.RB ( reliability ,
+.BR durability ,
+.B history
+with
+.B kind
+and
+.BR depth ,
+.BR deadline_ms ,
+.BR liveliness_lease_ms ,
+.BR partition ).
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/amqp-bridged.yaml.example .

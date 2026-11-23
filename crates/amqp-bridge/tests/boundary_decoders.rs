@@ -33,8 +33,9 @@
 )]
 
 use zerodds_amqp_bridge::extended_types::{
-    AmqpExtValue, decode_byte, decode_char, decode_double, decode_float, decode_int, decode_short,
-    decode_timestamp, decode_ubyte, decode_uint, decode_ushort, decode_uuid,
+    AmqpExtValue, decode_byte, decode_char, decode_decimal32, decode_decimal64, decode_decimal128,
+    decode_double, decode_float, decode_int, decode_short, decode_timestamp, decode_ubyte,
+    decode_uint, decode_ushort, decode_uuid,
 };
 use zerodds_amqp_bridge::types::codes;
 
@@ -659,10 +660,59 @@ fn encode_array_mixed_constructors_is_err() {
 }
 
 #[test]
-fn encode_array_empty_is_err() {
-    // No element constructor available — must Err.
+fn encode_array_empty_is_the_null_constructor_alone() {
+    // No element gives a constructor: null, and the count 0.
     let v = AmqpExtValue::Array(Vec::new());
-    assert!(v.encode().is_err());
+    assert_eq!(
+        v.encode().unwrap(),
+        [codes::ARRAY8, 0x02, 0x00, codes::NULL]
+    );
+}
+
+// ---- elements without octets: one bound for the whole value ----
+
+/// array32 of `outer` arrays, each array32 {count `inner`, constructor null}.
+fn arrays_of_nulls(outer: u32, inner: u32) -> Vec<u8> {
+    let mut body = vec![codes::ARRAY32];
+    for _ in 0..outer {
+        body.extend_from_slice(&5u32.to_be_bytes());
+        body.extend_from_slice(&inner.to_be_bytes());
+        body.push(codes::NULL);
+    }
+    let mut octets = vec![codes::ARRAY32];
+    octets.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
+    octets.extend_from_slice(&outer.to_be_bytes());
+    octets.extend_from_slice(&body);
+    octets
+}
+
+#[test]
+fn nested_arrays_of_nulls_at_the_octets_of_the_value_decode() {
+    // 19 octets: the outer header of 10, one inner array of 9. 19 nulls.
+    let octets = arrays_of_nulls(1, 19);
+    assert_eq!(octets.len(), 19);
+    let (v, n) = AmqpExtValue::decode(&octets).unwrap();
+    assert_eq!(n, 19);
+    assert_eq!(
+        v,
+        AmqpExtValue::Array(vec![AmqpExtValue::Array(vec![AmqpExtValue::Null; 19])])
+    );
+}
+
+#[test]
+fn nested_arrays_of_nulls_one_above_the_octets_of_the_value_is_err() {
+    assert!(AmqpExtValue::decode(&arrays_of_nulls(1, 20)).is_err());
+    // Two inner arrays of 14: 28 octets, 28 nulls; of 15 each: 30 nulls.
+    assert!(AmqpExtValue::decode(&arrays_of_nulls(2, 14)).is_ok());
+    assert!(AmqpExtValue::decode(&arrays_of_nulls(2, 15)).is_err());
+}
+
+#[test]
+fn nested_arrays_of_nulls_do_not_multiply_the_bound() {
+    // 910 octets that ask for 100 * 65 536 nulls.
+    let octets = arrays_of_nulls(100, 65_536);
+    assert_eq!(octets.len(), 910);
+    assert!(AmqpExtValue::decode(&octets).is_err());
 }
 
 // ---------------------------------------------------------------------------
@@ -873,4 +923,70 @@ fn encode_array_with_two_ushorts_produces_exact_bytes() {
         ],
         "ARRAY8 wire bytes mismatch"
     );
+}
+
+// ============================================================================
+// decode_decimal32 / decode_decimal64 / decode_decimal128 (OASIS AMQP 1.0
+// Part 1 §1.6.13 to §1.6.15: 0x74, 0x84, 0x94 with 4, 8, 16 octets)
+// ============================================================================
+
+#[test]
+fn amqp10_1_6_13_the_decimal_decoders_hold_their_bounds() {
+    // Empty input and the format code alone.
+    assert!(decode_decimal32(&[]).is_err());
+    assert!(decode_decimal64(&[]).is_err());
+    assert!(decode_decimal128(&[]).is_err());
+    assert!(decode_decimal32(&[codes::DECIMAL32]).is_err());
+    assert!(decode_decimal64(&[codes::DECIMAL64]).is_err());
+    assert!(decode_decimal128(&[codes::DECIMAL128]).is_err());
+
+    // One octet short, the full width, one octet more.
+    let d32 = [codes::DECIMAL32, 0x32, 0x00, 0x00, 0x0f, 0xee];
+    assert!(decode_decimal32(&d32[..4]).is_err());
+    assert_eq!(
+        decode_decimal32(&d32[..5]).unwrap(),
+        ([0x32, 0x00, 0x00, 0x0f], 5)
+    );
+    assert_eq!(
+        decode_decimal32(&d32).unwrap(),
+        ([0x32, 0x00, 0x00, 0x0f], 5)
+    );
+
+    let mut d64 = vec![codes::DECIMAL64];
+    d64.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 0xee]);
+    assert!(decode_decimal64(&d64[..8]).is_err());
+    assert_eq!(
+        decode_decimal64(&d64[..9]).unwrap(),
+        ([1, 2, 3, 4, 5, 6, 7, 8], 9)
+    );
+    assert_eq!(decode_decimal64(&d64).unwrap().1, 9);
+
+    let mut d128 = vec![codes::DECIMAL128];
+    d128.extend(1..=16u8);
+    d128.push(0xee);
+    assert!(decode_decimal128(&d128[..16]).is_err());
+    let (value, n) = decode_decimal128(&d128[..17]).unwrap();
+    assert_eq!((value[0], value[15], n), (1, 16, 17));
+    assert_eq!(decode_decimal128(&d128).unwrap().1, 17);
+
+    // The format code of another type at the right length.
+    assert!(decode_decimal32(&[codes::FLOAT, 0, 0, 0, 0]).is_err());
+    assert!(decode_decimal64(&[codes::DOUBLE, 0, 0, 0, 0, 0, 0, 0, 0]).is_err());
+    let mut uuid = vec![codes::UUID];
+    uuid.extend_from_slice(&[0; 16]);
+    assert!(decode_decimal128(&uuid).is_err());
+
+    // The value decoder takes the same three codes.
+    assert_eq!(
+        AmqpExtValue::decode(&d32[..5]).unwrap(),
+        (AmqpExtValue::Decimal32([0x32, 0x00, 0x00, 0x0f]), 5)
+    );
+    assert_eq!(
+        AmqpExtValue::decode(&d64[..9]).unwrap(),
+        (AmqpExtValue::Decimal64([1, 2, 3, 4, 5, 6, 7, 8]), 9)
+    );
+    assert!(matches!(
+        AmqpExtValue::decode(&d128[..17]).unwrap(),
+        (AmqpExtValue::Decimal128(_), 17)
+    ));
 }

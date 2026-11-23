@@ -103,6 +103,35 @@ pub fn parse_bool(s: &str) -> Result<bool, XmlError> {
     }
 }
 
+/// Boolean parser per DDS for Lightweight CCM 1.1 §7.4.2.1 Table 7.1.
+///
+/// "yes, 1, true or BOOLEAN_TRUE" and "no, 0, false or BOOLEAN_FALSE",
+/// "Not case-sensitive". The eight forms in any case are the whole set;
+/// leading and trailing spaces are removed first (§7.4.2.1).
+///
+/// The QoS reader takes these forms through
+/// [`VendorForms::Accept`](crate::VendorForms::Accept): only `true`, `1`,
+/// `false` and `0` in that spelling are forms of DDS-XML 1.0 (see
+/// [`parse_bool`]).
+///
+/// # Errors
+/// [`XmlError::ValueOutOfRange`] for any other string.
+pub fn parse_bool_dds4ccm(s: &str) -> Result<bool, XmlError> {
+    const TRUE: [&str; 4] = ["yes", "1", "true", "BOOLEAN_TRUE"];
+    const FALSE: [&str; 4] = ["no", "0", "false", "BOOLEAN_FALSE"];
+    let t = s.trim();
+    if TRUE.iter().any(|f| t.eq_ignore_ascii_case(f)) {
+        Ok(true)
+    } else if FALSE.iter().any(|f| t.eq_ignore_ascii_case(f)) {
+        Ok(false)
+    } else {
+        Err(XmlError::ValueOutOfRange(format!(
+            "DDS4CCM boolean must be yes, 1, true or BOOLEAN_TRUE, or no, 0, false or \
+             BOOLEAN_FALSE (in any case), got `{t}`"
+        )))
+    }
+}
+
 /// Long parser (signed 32-bit) per Spec §7.1.4 Table 7.1.
 ///
 /// Accepts:
@@ -366,6 +395,46 @@ mod tests {
     fn bool_invalid() {
         let err = parse_bool("yes").expect_err("invalid");
         assert!(matches!(err, XmlError::ValueOutOfRange(_)));
+    }
+
+    /// DDS4CCM 1.1 §7.4.2.1 Table 7.1: eight forms, not case-sensitive.
+    #[test]
+    fn dds4ccm_7_4_2_1_table_7_1_bool_forms_in_any_case() {
+        for t in [
+            "yes",
+            "YES",
+            "Yes",
+            "1",
+            "true",
+            "TRUE",
+            "True",
+            "BOOLEAN_TRUE",
+            "boolean_true",
+            "Boolean_True",
+            " yes ",
+        ] {
+            assert!(parse_bool_dds4ccm(t).expect(t), "{t}");
+        }
+        for t in [
+            "no",
+            "NO",
+            "No",
+            "0",
+            "false",
+            "FALSE",
+            "False",
+            "BOOLEAN_FALSE",
+            "boolean_false",
+            "\tno\n",
+        ] {
+            assert!(!parse_bool_dds4ccm(t).expect(t), "{t}");
+        }
+        for t in ["", "y", "n", "on", "off", "2", "yess", "BOOLEAN", "true1"] {
+            assert!(
+                matches!(parse_bool_dds4ccm(t), Err(XmlError::ValueOutOfRange(_))),
+                "{t}"
+            );
+        }
     }
 
     // ---- Long --------------------------------------------------------

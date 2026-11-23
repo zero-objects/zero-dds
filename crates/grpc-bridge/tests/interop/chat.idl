@@ -1,0 +1,15 @@
+// The types of the Cyclone DDS test of zerodds-grpc-bridge
+// (crates/grpc-bridge/tests/cross_vendor.rs, spec §10): Message has a key,
+// Note none. Cyclone DDS matches a WITH_KEY endpoint with a keyed topic only
+// and a NO_KEY endpoint with a keyless one (DDSI-RTPS 2.5 §9.3.1.2); the
+// daemon's topic of Note is `keyed: false`.
+module Chat {
+  @final struct Message {
+    @key long seq;
+    string text;
+  };
+  @final struct Note {
+    long seq;
+    string text;
+  };
+};

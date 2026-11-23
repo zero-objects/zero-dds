@@ -24,6 +24,13 @@ workspace = true
 [package.metadata.dist]
 features = ["daemon"]
 
+# The crate tier runs the tests of this package once more with `daemon`
+# (internal/release/rc8-test-suite.md, "Crate tier"): the object-key
+# registry, the servant and the daemon with its end-to-end tests are
+# opt-in.
+[package.metadata.crate-tier]
+feature-runs = ["daemon"]
+
 [lib]
 path = "src/lib.rs"
 

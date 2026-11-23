@@ -28,7 +28,7 @@ feature-runs = ["json,security"]
 
 [features]
 default = ["std"]
-std = ["alloc", "zerodds-opcua-gateway/std"]
+std = ["alloc", "zerodds-opcua-gateway/std", "dep:socket2"]
 alloc = ["zerodds-opcua-gateway/alloc"]
 # PubSub security (Part 14 §8): AES-CTR + HMAC-SHA256. no_std-capable
 # (RustCrypto), therefore activatable independently of `std`.
@@ -51,3 +51,7 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes", "allo
 # JSON message mapping (Feature `json`, std-only).
 serde_json = { version = "1", features = ["preserve_order"], optional = true }
 base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
+
+# Multicast receive sockets that several subscribers of one host share
+# (SO_REUSEADDR / SO_REUSEPORT, std-only).
+socket2 = { workspace = true, optional = true }

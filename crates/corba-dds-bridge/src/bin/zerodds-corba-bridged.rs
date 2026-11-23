@@ -213,13 +213,18 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // OTLP exporter (§8.3).
-    let _otlp_h = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
-        let exp = Arc::new(OtlpExporter::new(otlp_cfg));
-        spawn_otlp_flush_loop(exp, Arc::clone(&shutdown), Duration::from_secs(5)).ok()
-    } else {
-        None
-    };
+    // OTLP exporter (§8.3): the spans of the exchanges, flushed every
+    // 5 s and at the stop.
+    let exporter = otlp_config_from_env(SERVICE_NAME).map(|c| Arc::new(OtlpExporter::new(c)));
+    let _otlp_h = exporter.as_ref().and_then(|exp| {
+        spawn_otlp_flush_loop(
+            Arc::clone(exp),
+            Arc::clone(&shutdown),
+            Duration::from_secs(5),
+        )
+        .ok()
+    });
+    let tracer = bridge_daemon::Tracer::new(exporter.clone());
 
     if idle_timeout_ms > 0 {
         // Test hook: stop after the given time.
@@ -249,7 +254,11 @@ fn run() -> Result<(), DaemonError> {
             flag: Arc::clone(&reload),
             load: Box::new(reload_load),
         }),
+        tracer,
     );
+    if let Some(exp) = &exporter {
+        let _ = exp.flush();
+    }
     healthy.store(false, Ordering::SeqCst);
     res
 }

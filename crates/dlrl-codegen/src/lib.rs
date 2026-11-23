@@ -35,11 +35,13 @@ extern crate alloc;
 
 mod cpp;
 mod csharp;
+mod idl;
 mod java;
 mod ts;
 
 pub use cpp::{generate_cpp_home, generate_cpp_object};
 pub use csharp::{generate_csharp_home, generate_csharp_object};
+pub use idl::generate_implied_idl;
 pub use java::{generate_java_home, generate_java_object};
 pub use ts::{generate_ts_class, generate_ts_import, generate_ts_interface};
 

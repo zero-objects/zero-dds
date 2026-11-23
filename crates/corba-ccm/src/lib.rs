@@ -29,9 +29,12 @@ extern crate alloc;
 pub mod cidl;
 pub mod cif;
 pub mod component_def;
+pub mod compression;
+pub mod connector;
 pub mod context;
 pub mod dynamic_api;
 pub mod home;
+pub mod iop_codec;
 pub mod lwccm;
 pub mod orb_extensions;
 pub mod port;
@@ -41,17 +44,25 @@ pub mod container;
 #[cfg(all(feature = "std", feature = "cos-event"))]
 pub mod cos_event_bridge;
 #[cfg(feature = "std")]
+pub mod cos_lifecycle;
+#[cfg(feature = "std")]
+pub mod fragment;
+#[cfg(feature = "std")]
 pub mod lifecycle;
+#[cfg(feature = "std")]
+pub mod object_url;
 #[cfg(feature = "std")]
 pub mod orb_core;
 #[cfg(feature = "std")]
-pub mod pss;
+pub mod policy_management;
 #[cfg(feature = "std")]
-pub mod time_psm;
+pub mod portable_interceptor;
+#[cfg(feature = "std")]
+pub mod pss;
 #[cfg(feature = "std")]
 pub mod timer;
 
-pub use cidl::{Composition, HomeExecutor, StorageHome, StorageType};
+pub use cidl::{Composition, CompositionCategory, HomeExecutorDef, StorageDecl};
 pub use cif::{ComponentExecutor, ExecutorLocator, KeyedExecutor, SessionExecutor};
 pub use component_def::{
     AttributeDef, ComponentDef, ComponentTypeTable, EventSinkDef, EventSourceDef, FacetDef,
@@ -121,14 +132,16 @@ pub mod conformance {
     /// this marker highlights the formal LwCCM conformance level.
     pub const CORBA_PART3_14_LIGHTWEIGHT_CCM_PROFILE: &str = "OMG-CORBA-3.3-P3:14-LwCCM-Profile";
 
-    /// CORBA 3.3 Part 2 §10.6 — CSIv2 Conformance Levels.
-    /// The spec lists three levels (0=ServerAuth, 1=ClientAuthN+Server,
-    /// 2=ClientAuthZ identity assertion). ZeroDDS covers all three
-    /// via `crates/corba-csiv2/`.
+    /// CORBA 3.3 Part 2 §10.6 — the names of the three CSIv2 conformance
+    /// levels: 0 (SAS over SSL/TLS and plain IIOP, stateless modes, GSSUP,
+    /// identity assertion), 1 (adds pushed authorization tokens), 2 (adds
+    /// authorization-token-based delegation). A name, not a claim: what
+    /// `crates/corba-csiv2/` builds of each level is listed in
+    /// `docs/spec-coverage/corba-3.3.md` §10.6.
     pub const CORBA_PART2_10_6_CSIV2_LEVEL_0: &str = "OMG-CORBA-3.3-P2:10.6-CSIv2-L0";
-    /// CSIv2 Level 1 (client authentication in addition).
+    /// The name of CSIv2 conformance level 1 (§10.6.2).
     pub const CORBA_PART2_10_6_CSIV2_LEVEL_1: &str = "OMG-CORBA-3.3-P2:10.6-CSIv2-L1";
-    /// CSIv2 Level 2 (identity assertion + authorization).
+    /// The name of CSIv2 conformance level 2 (§10.6.3).
     pub const CORBA_PART2_10_6_CSIV2_LEVEL_2: &str = "OMG-CORBA-3.3-P2:10.6-CSIv2-L2";
 
     // -----------------------------------------------------------------

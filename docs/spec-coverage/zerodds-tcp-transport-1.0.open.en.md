@@ -7,36 +7,8 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §1.1 Locator kind TCPv4 / TCPv6
 
-**Status:** `partial` — the transport carries the vendor-range values `0x01F0_0004` and `0x01F0_0005` (DDSI-RTPS 2.5 §9.3.2.4 reserves 3 to `0x01ffffff` for vendors); `set_tcp_kinds_fast_dds` writes the values 4 and 8 of the spec line (Fast DDS, DDS-TCP-PSM), and both are read. Remainder: 4 and 8 are not the default.
-
-## §3.3 Reject reason codes
-
-**Status:** `partial` — the codec and the client-side handling exist and are tested for all five codes. `server_handshake` however emits only `VersionMismatch`; `ResourceLimit`, `LogicalPortConflict` and `VendorNotAccepted` never reach the wire from a ZeroDDS server. The three missing sender paths are carried separately as §3.5, §3.6 and §3.7.
-
-## §3.5 Reserved `flags` — receiver check
-
-**Status:** `open` — `crates/transport-tcp/src/handshake.rs` decodes `flags` and passes it on; neither server nor client refuses set bits.
-
-## §3.6 Logical-port claim
-
-**Status:** `open` — `server_handshake` does not check `logical_port` and assigns the connection to no port; `LogicalPortConflict` is only encoded and decoded.
-
-## §3.7 ResourceLimit reject at the peer cap
-
-**Status:** `open` — `TcpTransport::serve` closes the connection beyond `MAX_PEERS` after accept and counts it (`refused_connections`); no handshake with `ResourceLimit` goes on the wire.
-
-## §4.1 Handshake-skip mode
-
-**Status:** `open` — a peer without a handshake is refused with `HandshakeError::BadMagic` (`crates/transport-tcp/src/handshake.rs`); a client and server mode without §3 is missing.
-
-## §4.2 Auto-detect on the first frame byte
-
-**Status:** `open` — the server always expects the ZeroDDS handshake; telling `'Z'` from `'R'` on the first byte is missing.
-
-## §6.1 FastDDS BindConnection (submessages 0x71/0x72)
-
-**Status:** `open` — no handshake dialect with the submessages `0x71`/`0x72`; `set_tcp_kinds_fast_dds` concerns only the locator kinds (§1.1).
+**Status:** `partial` — built: the kind is a property of the locator, the process-wide switch `set_tcp_kinds_fast_dds` is removed; `TcpTransport::with_locator_kinds` and `transport.tcp_locator_kinds` select 4 and 8 per transport and per runtime; reading keeps the kind that was written; a destination with 4 or 8 is sent to over the TCP transport. With the dialect `cyclone` (§4.1) a runtime announces 4 and 8 and one listener port for metatraffic and user traffic, as Cyclone DDS does with `TCP/Port` (`crates/dcps/tests/runtime_config_layering.rs::tcp_4_1_the_cyclone_dialect_is_a_setting`; with a running Cyclone DDS: `crates/dcps/tests/cyclone_live_tcp.rs::tcp_4_1_a_zerodds_writer_reaches_a_cyclone_subscriber_without_a_listener`). The cited tests in `zerodds-rtps`, `zerodds-transport-tcp` and `zerodds-dcps` are green on the Linux test host. With the dialect `fastdds` (§6.1) a runtime announces 4 and 8 with the logical port in the upper 16 bits of the port, and a locator of kind 4 or 8 with a port above 65535 is read and reached as one of Fast DDS (`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_6_1_a_locator_with_a_logical_port_is_a_fast_dds_destination`, `crates/dcps/tests/fastdds_live_tcp.rs`). Remaining: the kinds and the port layout of the dialect of RTI Connext (§6.2) are missing; `transport.tcp_locator_kinds: fast-dds` alone announces 4 and 8 without a logical port, a locator Fast DDS does not address (that takes the dialect `fastdds`).
 
 ## §6.2 RTI TLS-oriented handshake
 
-**Status:** `open` — no mode with RTI's TLS-oriented bring-up.
+**Status:** `open` — no mode with the protocol of RTI Connext. Missing: RTI's TCP protocol (control messages of its own, control and data connections apart, the class ids `tcpv4_lan`/`tcpv4_wan`/`tlsv4_lan`/`tlsv4_wan` in the locator kind), the TLS layer beneath it and a test against RTI Connext. The text above is not checked against RTI; RTI publishes no specification of the protocol. The Linux test host of this unit has no RTI Connext installed to check an implementation against.

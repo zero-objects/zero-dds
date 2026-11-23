@@ -26,3 +26,10 @@ std = ["zerodds-dlrl/std"]
 
 [dependencies]
 zerodds-dlrl = { version = "1.0.0-rc.7", path = "../dlrl", default-features = false }
+
+[dev-dependencies]
+# The implied IDL (src/idl.rs) compiled after the generic DLRL IDL of
+# crates/dlrl/idl/dds_dlrl.idl (tests/implied_idl.rs).
+zerodds-idl-compose = { path = "../idl-compose" }
+zerodds-ast = { path = "../ast" }
+zerodds-ast-core = { path = "../ast-core" }

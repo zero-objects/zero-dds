@@ -9,8 +9,8 @@
 //!
 //! # Scope
 //!
-//! Full GIOP wire codec — all 8 message types for GIOP 1.0, 1.1
-//! and 1.2 (including bidirectional GIOP). CDR-1 marshalling comes from
+//! Full GIOP wire codec — all 8 message types for GIOP 1.0 to 1.4
+//! (including bidirectional GIOP). CDR-1 marshalling comes from
 //! `crates/wire/`.
 //!
 //! Implemented message types (spec §15.4.1-15.4.9):
@@ -37,6 +37,15 @@
 //!   first, `service_context` last. The `TargetAddress` union replaces
 //!   the `object_key`. Body 8-byte aligned. Fragment for all
 //!   message types. Bidirectional GIOP via `BiDirIIOPServiceContext`.
+//! * `1.3`, `1.4` — the 1.2 formats (Part 2 §9.4 declares the 1.3
+//!   headers as typedefs of the 1.2 ones); the versions add features
+//!   ([`feature`], Part 2 §7.9 Table 7.2), not formats.
+//!
+//! ZIOP (Part 2 §12): [`ziop`] compresses a GIOP 1.2 message into a ZIOP
+//! message and back through a [`ziop::ZiopCodec`] the ORB hands in, and
+//! carries the four ZIOP policies; [`messaging`] is the
+//! `Messaging::PolicyValueSeq` of the `TAG_POLICIES` component and the
+//! `INVOCATION_POLICIES` service context (Part 1 §17.4) they travel in.
 //!
 //! # What is not here
 //!
@@ -66,11 +75,14 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod body;
 pub mod cancel_request;
 pub mod close_connection;
 pub mod code_set;
+pub mod code_set_registry;
 pub mod codec;
 pub mod error;
+pub mod feature;
 pub mod flags;
 pub mod fragment;
 pub mod header;
@@ -78,13 +90,16 @@ pub mod locate_reply;
 pub mod locate_request;
 pub mod message_error;
 pub mod message_type;
+pub mod messaging;
 pub mod object_ops;
 pub mod reply;
 pub mod request;
 pub mod service_context;
 pub mod target_address;
 pub mod version;
+pub mod ziop;
 
+pub use body::{AlignedBody, body_writer, finish_body};
 pub use cancel_request::CancelRequest;
 pub use close_connection::CloseConnection;
 pub use code_set::{CodeSetContext, well_known as code_set_ids};
@@ -93,15 +108,21 @@ pub use codec::{
     encode_message_with_padding,
 };
 pub use error::{GiopError, GiopResult};
+pub use feature::{Feature, Support};
 pub use flags::Flags;
 pub use fragment::{Fragment, FragmentHeader};
-pub use header::{HEADER_SIZE, MAGIC, MAGIC_BYTES, MessageHeader};
+pub use header::{HEADER_SIZE, MAGIC, MAGIC_BYTES, Magic, MessageHeader, ZIOP_MAGIC_BYTES};
 pub use locate_reply::{LocateReply, LocateStatusType};
 pub use locate_request::LocateRequest;
 pub use message_error::MessageError;
 pub use message_type::MessageType;
-pub use reply::{Reply, ReplyStatusType};
+pub use reply::{PADDING_CONTEXT_ID, Reply, ReplyStatusType};
 pub use request::{Request, ResponseFlags};
-pub use service_context::{ServiceContext, ServiceContextList, ServiceContextTag};
-pub use target_address::{ObjectKey, TargetAddress};
+pub use service_context::{
+    OMG_SERVICE_ID_MAX, ServiceContext, ServiceContextList, ServiceContextTag, is_omg_range,
+    is_valid_for,
+};
+pub use target_address::{
+    AddressingDisposition, IorAddressingInfo, ObjectKey, TargetAddress, TargetProfile,
+};
 pub use version::Version;

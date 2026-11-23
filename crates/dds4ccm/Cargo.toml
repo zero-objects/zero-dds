@@ -1,0 +1,48 @@
+[package]
+name = "zerodds-dds4ccm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG DDS for Lightweight CCM 1.1 (formal/2012-02-01) — the DDS-DCPS basic port interfaces of CCM_DDS, the extended ports DDS_Write, DDS_Update, DDS_Read, DDS_Get, DDS_Listen and DDS_StateListen, the connectors DDS_Base, DDS_TopicBase, DDS_State and DDS_Event, their DCPS entities and QoS profiles and the threading policy, over the ZeroDDS DCPS entities; the DDS-DLRL ports and connectors over the DLRL entities."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-dds4ccm"
+readme = "README.md"
+keywords = ["dds", "ccm", "dds4ccm", "connector"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps" }
+# The event a push delivery reports a DDS error with: a listener operation
+# has no exception to carry it.
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation" }
+# The QoS profiles of connector, component and container (§7.4.2, §7.4.3).
+zerodds-xml = { version = "1.0.0-rc.7", path = "../xml" }
+# The key members of a data type, for attribute `key_fields` (§7.3.1).
+zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
+# The DLRL entities under the DDS-DLRL ports and connectors (§8): Cache,
+# CacheAccess, ObjectHome, the object model and its mapping.
+zerodds-dlrl = { version = "1.0.0-rc.7", path = "../dlrl" }
+# The IDL keywords of Table 7-6, which the names of the DLRL port types,
+# receptacles and mirror ports must not collide with (§8.2.2, §8.3).
+zerodds-idl-cst = { version = "1.0.0-rc.7", path = "../idl-cst" }
+
+[dev-dependencies]
+zerodds-qos = { path = "../qos" }
+zerodds-test-domains = { path = "../test-domains" }
+# The IDL of Annex A through the IDL frontend and the equivalent-IDL
+# transformation of the port types and connectors, the IDL of Annex B over
+# the generic DLRL IDL of crates/dlrl/idl (tests/annex_idl.rs).
+zerodds-idl-compose = { path = "../idl-compose" }
+zerodds-ast = { path = "../ast" }
+zerodds-ast-core = { path = "../ast-core" }
+zerodds-ccm = { path = "../ccm" }

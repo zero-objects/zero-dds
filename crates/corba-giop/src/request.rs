@@ -199,7 +199,48 @@ impl Request {
         Ok(())
     }
 
+    /// The offset of the body in the GIOP message of `version` and
+    /// `endianness` that carries this request, counted from the first
+    /// octet of the message header, from which CDR aligns the body
+    /// (CORBA 3.3 Part 2 §9.4). A multiple of 8 in GIOP 1.2 and later;
+    /// in GIOP 1.0 and 1.1 the length of the message without the body.
+    /// [`crate::AlignedBody`] reads the body at this offset,
+    /// [`crate::body_writer`] writes one there.
+    ///
+    /// # Errors
+    /// As [`crate::encode_message`] for the request without its body.
+    pub fn body_offset(
+        &self,
+        version: Version,
+        endianness: zerodds_wire::Endianness,
+    ) -> GiopResult<usize> {
+        let head = Self {
+            request_id: self.request_id,
+            response_flags: self.response_flags,
+            target: self.target.clone(),
+            operation: self.operation.clone(),
+            requesting_principal: self.requesting_principal.clone(),
+            service_context: self.service_context.clone(),
+            body: Vec::new(),
+        };
+        let len = crate::codec::encode_message(
+            version,
+            endianness,
+            false,
+            &crate::codec::Message::Request(head),
+        )?
+        .len();
+        Ok(if version.uses_v1_2_request_layout() {
+            len.next_multiple_of(8)
+        } else {
+            len
+        })
+    }
+
     /// CDR-decode from a `Reader`.
+    ///
+    /// The body comes without the octets before it; under GIOP 1.0 and
+    /// 1.1 [`Self::body_offset`] says where it stood in the message.
     ///
     /// # Errors
     /// Buffer read error.
@@ -333,7 +374,12 @@ mod tests {
 
     #[test]
     fn giop_1_0_rejects_profile_target_address() {
-        let req = sample_request(TargetAddress::Profile(alloc::vec![1, 2]));
+        let req = sample_request(TargetAddress::Profile(
+            crate::target_address::TargetProfile {
+                tag: 0,
+                profile_data: alloc::vec![1, 2],
+            },
+        ));
         let mut w = Writer::new(Endianness::Big);
         let err = req.encode(Version::V1_0, &mut w).unwrap_err();
         assert!(matches!(err, GiopError::Malformed(_)));

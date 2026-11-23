@@ -3,7 +3,7 @@
 
 //! Close-frame status codes — RFC 6455 §7.4.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 /// Close-Status-Code (RFC 6455 §7.4.1 + §7.4.2).
@@ -86,6 +86,12 @@ impl CloseCode {
     }
 }
 
+impl From<CloseCode> for u16 {
+    fn from(code: CloseCode) -> Self {
+        code.to_u16()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // §7.4 status code range validation
 // ---------------------------------------------------------------------------
@@ -126,21 +132,89 @@ pub const fn is_forbidden_on_wire(code: u16) -> bool {
     matches!(code, 1004 | 1005 | 1006 | 1015)
 }
 
-/// Spec §7.4.2 — validates a wire status code as legal.
+/// Spec §7.4.2 — validates a wire status code as legal: a code the
+/// protocol defines (§7.4.1 and the IANA WebSocket Close Code Number
+/// Registry of §11.7: 1000 to 1003, 1007 to 1014), or one of the ranges
+/// left to libraries (3000 to 3999) and applications (4000 to 4999).
+/// 1000 to 2999 are "reserved for definition by this protocol": a number
+/// in that range that nothing defines is not a status code.
 ///
 /// # Errors
-/// `()` if the code is outside any allowed range or violates one of
-/// the reserved-but-not-on-wire restrictions.
+/// `()` if the code is outside any allowed range, is not defined, or
+/// violates one of the reserved-but-not-on-wire restrictions.
 #[allow(clippy::result_unit_err)]
 pub const fn validate_wire_status_code(code: u16) -> Result<(), ()> {
     if is_forbidden_on_wire(code) {
         return Err(());
     }
     match classify_status_code(code) {
-        StatusCodeRange::ProtocolReserved
-        | StatusCodeRange::LibraryDefined
-        | StatusCodeRange::ApplicationDefined => Ok(()),
+        StatusCodeRange::ProtocolReserved => match CloseCode::from_u16(code) {
+            Ok(_) => Ok(()),
+            Err(()) => Err(()),
+        },
+        StatusCodeRange::LibraryDefined | StatusCodeRange::ApplicationDefined => Ok(()),
         StatusCodeRange::Invalid | StatusCodeRange::OutOfRange => Err(()),
+    }
+}
+
+/// Why the body of a received Close frame is invalid (Spec §5.5.1, §7.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseBodyError {
+    /// One octet: "If there is a body, the first two bytes of the body
+    /// MUST be a 2-byte unsigned integer" (§5.5.1).
+    TruncatedStatus,
+    /// A status code that must not appear in a Close frame (§7.4.1,
+    /// §7.4.2; [`validate_wire_status_code`]).
+    StatusNotAllowed(u16),
+    /// The reason is not UTF-8 (§5.5.1: "UTF-8-encoded data").
+    ReasonNotUtf8,
+}
+
+impl CloseBodyError {
+    /// Spec §7.4.1 — the status code the connection is failed with: 1007
+    /// for a reason that is not UTF-8, 1002 for the status code.
+    #[must_use]
+    pub const fn close_code(self) -> CloseCode {
+        match self {
+            Self::TruncatedStatus | Self::StatusNotAllowed(_) => CloseCode::ProtocolError,
+            Self::ReasonNotUtf8 => CloseCode::InvalidPayloadData,
+        }
+    }
+}
+
+impl core::fmt::Display for CloseBodyError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::TruncatedStatus => f.write_str("close body of one octet"),
+            Self::StatusNotAllowed(c) => write!(f, "close status code {c} is not allowed"),
+            Self::ReasonNotUtf8 => f.write_str("close reason is not UTF-8"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for CloseBodyError {}
+
+/// The body of a received Close frame (Spec §5.5.1): the status code and
+/// the reason, `None` for the empty body, which carries no status code
+/// (§7.1.5 reads it as 1005). Every code [`validate_wire_status_code`]
+/// allows is accepted, the library and application ranges among them,
+/// which [`decode_close_payload`] with its [`CloseCode`] cannot carry.
+///
+/// # Errors
+/// See [`CloseBodyError`].
+pub fn parse_close_body(bytes: &[u8]) -> Result<Option<(u16, String)>, CloseBodyError> {
+    match bytes {
+        [] => Ok(None),
+        [_] => Err(CloseBodyError::TruncatedStatus),
+        [hi, lo, reason @ ..] => {
+            let code = u16::from_be_bytes([*hi, *lo]);
+            if validate_wire_status_code(code).is_err() {
+                return Err(CloseBodyError::StatusNotAllowed(code));
+            }
+            let reason = core::str::from_utf8(reason).map_err(|_| CloseBodyError::ReasonNotUtf8)?;
+            Ok(Some((code, reason.to_string())))
+        }
     }
 }
 
@@ -347,6 +421,48 @@ mod tests {
         assert!(validate_wire_status_code(5000).is_err());
     }
 
+    #[test]
+    fn ws_7_4_2_a_code_of_the_protocol_range_that_nothing_defines_is_refused() {
+        // §7.4.2: 1000 to 2999 are reserved for definition by the protocol
+        // and public specifications; 1016, 1100, 2000 and 2999 are defined
+        // nowhere. The registered ones pass.
+        for code in [1016, 1100, 2000, 2999] {
+            assert!(validate_wire_status_code(code).is_err(), "{code}");
+        }
+        for code in [
+            1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014,
+        ] {
+            assert!(validate_wire_status_code(code).is_ok(), "{code}");
+        }
+    }
+
+    #[test]
+    fn ws_5_5_1_a_close_body_is_empty_or_a_status_code_and_a_utf8_reason() {
+        assert_eq!(parse_close_body(&[]), Ok(None));
+        assert_eq!(
+            parse_close_body(&[0x03, 0xe8]),
+            Ok(Some((1000, String::new())))
+        );
+        assert_eq!(
+            parse_close_body(b"\x0f\xa0bye"),
+            Ok(Some((4000, "bye".to_string())))
+        );
+        // One octet is no status code.
+        let err = parse_close_body(&[0x03]).unwrap_err();
+        assert_eq!(err, CloseBodyError::TruncatedStatus);
+        assert_eq!(err.close_code().to_u16(), 1002);
+        // 1005 must not be sent (§7.4.1), 999 is below every range.
+        for code in [999u16, 1004, 1005, 1006, 1015, 1016, 5000, 65535] {
+            let err = parse_close_body(&code.to_be_bytes()).unwrap_err();
+            assert_eq!(err, CloseBodyError::StatusNotAllowed(code));
+            assert_eq!(err.close_code().to_u16(), 1002);
+        }
+        // A reason that is not UTF-8 is invalid payload data (1007).
+        let err = parse_close_body(&[0x03, 0xe8, 0xce, 0xba, 0xe1, 0xbd]).unwrap_err();
+        assert_eq!(err, CloseBodyError::ReasonNotUtf8);
+        assert_eq!(err.close_code().to_u16(), 1007);
+    }
+
     // ---------------------------------------------------------------
     // §7.1, §7.2, §7.3 Close-Handshake State-Machine
     // ---------------------------------------------------------------
@@ -411,6 +527,19 @@ mod tests {
         // No initiator_send_close happened first
         assert!(h.recv_close_response(CloseCode::Normal).is_err());
     }
+
+    #[test]
+    fn ws_7_1_the_responder_echoes_the_code_it_received() {
+        // §5.5.1: the endpoint "typically echos the status code it
+        // received"; an application code (4000 to 4999) is one too.
+        let mut h = CloseHandshake::new();
+        h.responder_recv_close(4321u16).expect("ok");
+        assert_eq!(h.received_code(), Some(4321));
+        assert_eq!(h.sent_code(), None);
+        h.responder_send_close_response().expect("ok");
+        assert_eq!(h.sent_code(), Some(4321));
+        assert!(h.is_closed());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,8 +567,8 @@ pub enum CloseState {
 #[derive(Debug, Clone)]
 pub struct CloseHandshake {
     state: CloseState,
-    sent_code: Option<CloseCode>,
-    received_code: Option<CloseCode>,
+    sent_code: Option<u16>,
+    received_code: Option<u16>,
     failure_reason: Option<String>,
 }
 
@@ -479,18 +608,31 @@ impl CloseHandshake {
         self.failure_reason.as_deref()
     }
 
+    /// The status code of the Close frame this endpoint sent.
+    #[must_use]
+    pub fn sent_code(&self) -> Option<u16> {
+        self.sent_code
+    }
+
+    /// The status code of the Close frame the peer sent (§7.1.5: 1005 for
+    /// a Close frame without one).
+    #[must_use]
+    pub fn received_code(&self) -> Option<u16> {
+        self.received_code
+    }
+
     /// Spec §7.1.2 — the initiator sends a close frame with a status code.
     /// Transitions from `Open` → `ClosingInitiator`.
     ///
     /// # Errors
     /// `()` if not in the `Open` state.
     #[allow(clippy::result_unit_err)]
-    pub fn initiator_send_close(&mut self, code: CloseCode) -> Result<(), ()> {
+    pub fn initiator_send_close(&mut self, code: impl Into<u16>) -> Result<(), ()> {
         if self.state != CloseState::Open {
             return Err(());
         }
         self.state = CloseState::ClosingInitiator;
-        self.sent_code = Some(code);
+        self.sent_code = Some(code.into());
         Ok(())
     }
 
@@ -500,11 +642,11 @@ impl CloseHandshake {
     /// # Errors
     /// `()` if not in the `ClosingInitiator` state.
     #[allow(clippy::result_unit_err)]
-    pub fn recv_close_response(&mut self, code: CloseCode) -> Result<(), ()> {
+    pub fn recv_close_response(&mut self, code: impl Into<u16>) -> Result<(), ()> {
         if self.state != CloseState::ClosingInitiator {
             return Err(());
         }
-        self.received_code = Some(code);
+        self.received_code = Some(code.into());
         self.state = CloseState::Closed;
         Ok(())
     }
@@ -515,11 +657,11 @@ impl CloseHandshake {
     /// # Errors
     /// `()` if not in the `Open` state.
     #[allow(clippy::result_unit_err)]
-    pub fn responder_recv_close(&mut self, code: CloseCode) -> Result<(), ()> {
+    pub fn responder_recv_close(&mut self, code: impl Into<u16>) -> Result<(), ()> {
         if self.state != CloseState::Open {
             return Err(());
         }
-        self.received_code = Some(code);
+        self.received_code = Some(code.into());
         self.state = CloseState::ClosingResponder;
         Ok(())
     }

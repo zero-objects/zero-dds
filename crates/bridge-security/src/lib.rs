@@ -27,6 +27,10 @@
 //!   [`extract_mtls_subject`] — aggregate ctx of auth + ACL + TLS.
 //! - [`TlsConfigError`], [`load_server_config`] — `rustls`
 //!   ServerConfig builder with PEM cert/key loader (§7.1).
+//! - [`ScramClient`], [`oauthbearer_initial_response`],
+//!   [`jwt_subject_unverified`] — the client side of SCRAM-SHA-256 (RFC
+//!   7677), OAUTHBEARER (RFC 7628) and the subject of a JWT, for a bridge
+//!   that authenticates to a broker.
 //!
 //! ## Example
 //!
@@ -67,12 +71,20 @@ pub fn tls_provider() -> rustls::crypto::CryptoProvider {
 
 pub mod acl;
 pub mod auth;
+pub mod client_auth;
 pub mod connection;
 pub mod ctx;
 pub mod tls;
 
 pub use acl::{Acl, AclEntry, AclOp};
-pub use auth::{AuthError, AuthMode, AuthSubject, JWT_CLOCK_LEEWAY_SECS, jwt_public_key_from_pem};
+pub use auth::{
+    AuthError, AuthMode, AuthSubject, JWT_CLOCK_LEEWAY_SECS, JwtKey, MissingClaim, Refusal,
+    jwt_key_from_pem, jwt_public_key_from_pem,
+};
+pub use client_auth::{
+    OAUTHBEARER, OAUTHBEARER_ERROR_ACK, SCRAM_SHA_256, ScramClient, ScramError,
+    jwt_subject_unverified, oauthbearer_initial_response,
+};
 pub use connection::{
     RotatingTlsConfig, build_client_tls_connector, parse_server_name, serve_tls_handshake,
 };

@@ -5,10 +5,8 @@
 //!
 //! Spec: `zerodds-ws-bridge-1.0.md` §4 + §9.
 //!
-//! `eprintln!` logging in the daemon path: Spec §8.1 leaves
-//! structured logging to the daemon. Until a workspace tracing stack
-//! is wired in, `eprintln` is the sink; marked locally as a clippy-allow
-//! on the affected functions.
+//! The daemon logs through [`super::log`]: one JSON object per line on
+//! stdout (Spec §8.1).
 //!
 //! Sync, blocking I/O on `std::net`. One reader thread per connection
 //! (TCP→WS frames→router) plus one writer thread
@@ -19,26 +17,34 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::codec::{decode, encode};
-use crate::frame::{Frame, Opcode};
+use crate::connection::{Event, Failure, Limits, Receiver, Sender};
 use crate::handshake::{build_server_response, parse_client_request, render_server_response};
+use crate::masking::Role;
+use crate::message::SendError;
+use crate::origin::OriginPolicy;
+use crate::permessage_deflate;
 
 use super::config::{DaemonConfig, TopicConfig};
 use super::json_frames::{self, ClientMessage, SampleFrame, SampleOp, TopicType};
-use super::router::{DdsSample, Router, RouterMsg, SampleKind};
+use super::log::{self, Level};
+use super::pump::{
+    BINARY_MAGIC, binary_sample_frame, check_client_flags, dds_sample_of, json_sample_frames,
+    no_type_error, split_binary_sample, writer_form,
+};
+use super::router::{ConnQueue, DdsSample, MAX_QUEUED_CONTROLS, Router, RouterMsg};
 #[cfg(feature = "daemon")]
 use super::runtime_common::{
-    BridgeMetrics, CatalogSnapshot, SERVICE_NAME, install_signal_watcher, otlp_config_from_env,
-    serve_admin_endpoints, spawn_otlp_flush_loop,
+    BridgeMetrics, CatalogSnapshot, SERVICE_NAME, auth_reason, health_response, http_response,
+    install_signal_watcher, otlp_config_from_env, serve_admin_endpoints, spawn_otlp_flush_loop,
 };
 #[cfg(feature = "daemon")]
 use super::security::{
-    AclOp, AuthSubject, authenticate_ws, authorize, ctx_from_daemon_config,
-    extract_authorization_header, serve_tls_handshake,
+    AclOp, AuthError, AuthSubject, Refusal, authenticate_ws, authorize, ctx_from_daemon_config,
+    extract_authorization_header, render_refusal, serve_tls_handshake,
 };
 #[cfg(feature = "daemon")]
 use rustls::{ServerConnection, StreamOwned};
@@ -46,6 +52,9 @@ use rustls::{ServerConnection, StreamOwned};
 use zerodds_monitor::Registry;
 #[cfg(feature = "daemon")]
 use zerodds_observability_otlp::OtlpExporter;
+
+#[cfg(feature = "daemon")]
+use super::trace::{ConnectionSpan, FrameIn, FrameOut, Tracer, unix_ns, unix_ns_since};
 
 #[cfg(feature = "daemon")]
 use zerodds_dcps::runtime::{
@@ -89,14 +98,31 @@ impl std::error::Error for ServerError {}
 
 /// Daemon handle. On drop, shutdown is invoked.
 pub struct DaemonHandle {
+    /// Ends every thread: set when the drain of a shutdown is over.
     stop: Arc<AtomicBool>,
+    /// SIGTERM or SIGINT arrived; the binary runs [`Self::shutdown`].
+    shutdown_requested: Arc<AtomicBool>,
+    /// The shutdown drains (§9.2): no connection is accepted, the pumps
+    /// hand on what their DataReaders received and end.
+    draining: Arc<AtomicBool>,
+    /// `shutdown_drain_ms`: the bound of the drain.
+    drain_bound: Duration,
     accept_thread: Option<JoinHandle<()>>,
     pump_threads: Vec<JoinHandle<()>>,
+    /// The connection threads that still run; the shutdown waits for them.
+    #[cfg(feature = "daemon")]
+    connections: Arc<ConnectionThreads>,
     #[cfg(feature = "daemon")]
     admin_thread: Option<JoinHandle<()>>,
     #[cfg(feature = "daemon")]
     otlp_thread: Option<JoinHandle<()>>,
-    router: Arc<Mutex<Router>>,
+    /// The spans of the connections (§8.3): sent once more when the last
+    /// connection ended.
+    #[cfg(feature = "daemon")]
+    tracer: Tracer,
+    /// The participants of `domain` and of the tenants (§1 L6).
+    #[cfg(feature = "daemon")]
+    cores: Arc<Cores>,
     /// Bound address (may differ from the configured listen if port=0).
     pub local_addr: String,
     /// Bound admin address (Prometheus + catalog + healthz).
@@ -123,6 +149,9 @@ pub struct DaemonHandle {
     /// Topic name → registered reader EntityId.
     #[cfg(feature = "daemon")]
     pub user_readers: std::collections::BTreeMap<String, EntityId>,
+    /// Tenant name → the DCPS runtime of its participant (§1 L6).
+    #[cfg(feature = "daemon")]
+    pub tenant_runtimes: std::collections::BTreeMap<String, Arc<DcpsRuntime>>,
 }
 
 impl DaemonHandle {
@@ -130,12 +159,25 @@ impl DaemonHandle {
     /// stop. The binary waits for it and then runs the shutdown.
     #[must_use]
     pub fn stop_requested(&self) -> bool {
-        self.stop.load(Ordering::SeqCst)
+        self.shutdown_requested.load(Ordering::SeqCst) || self.stop.load(Ordering::SeqCst)
     }
 
-    /// Initiates a graceful shutdown; the DDS participant stops last.
+    /// Shuts the daemon down in the order of zerodds-ws-bridge-1.0 §9.2,
+    /// within `shutdown_drain_ms`: no new connection is accepted; the
+    /// samples the DataReaders received are handed to the send queues;
+    /// every open WebSocket connection sends what its queue holds, then
+    /// `{"op":"shutdown"}` and a Close frame with 1001 (RFC 6455 §7.4.1,
+    /// "going away"), and is closed the way §4.5 says. When the bound
+    /// passes, the connections still open are closed with 1001 at once and
+    /// waited for at most [`SHUTDOWN_CLOSE_WAIT`]. The DDS participant
+    /// stops last.
     pub fn shutdown(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
+        // Logged once: the binary shuts down, then the drop runs it again.
+        if self.accept_thread.is_some() {
+            log::event(Level::Info, "shutdown").emit();
+        }
+        let deadline = Instant::now() + self.drain_bound;
+        self.draining.store(true, Ordering::SeqCst);
         #[cfg(feature = "daemon")]
         {
             self.healthy.store(false, Ordering::SeqCst);
@@ -145,6 +187,35 @@ impl DaemonHandle {
             // Self-connect to wake accept().
             let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(200));
         }
+        if let Some(j) = self.accept_thread.take() {
+            let _ = j.join();
+        }
+        // The pumps hand on what their DataReaders hold and end; a RELIABLE
+        // topic waits for room in a full queue until the bound.
+        while !self.pump_threads.iter().all(JoinHandle::is_finished) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        // Behind the samples in each queue: `shutdown`, then Close 1001.
+        #[cfg(feature = "daemon")]
+        for core in std::iter::once(&self.cores.base).chain(&self.cores.tenants) {
+            if let Ok(r) = core.router.lock() {
+                r.broadcast_shutdown();
+            }
+        }
+        // The accept thread has ended, so no connection thread is added.
+        #[cfg(feature = "daemon")]
+        {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if !self.connections.wait_until_none(left) {
+                log::event(Level::Warn, "shutdown_drain_bound")
+                    .number(
+                        "drain_ms",
+                        u64::try_from(self.drain_bound.as_millis()).unwrap_or(u64::MAX),
+                    )
+                    .emit();
+            }
+        }
+        self.stop.store(true, Ordering::SeqCst);
         // Self-connect the admin server (so the accept loop unblocks).
         #[cfg(feature = "daemon")]
         if let Some(admin) = self.admin_addr.as_deref() {
@@ -152,11 +223,16 @@ impl DaemonHandle {
                 let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(200));
             }
         }
-        if let Ok(r) = self.router.lock() {
-            r.broadcast_shutdown();
-        }
-        if let Some(j) = self.accept_thread.take() {
-            let _ = j.join();
+        // What is left sees the stop flag, sends its Close 1001 and closes
+        // its connection; the process must not end under them.
+        #[cfg(feature = "daemon")]
+        if !self.connections.wait_until_none(SHUTDOWN_CLOSE_WAIT) {
+            log::event(Level::Warn, "shutdown_connections_left")
+                .number(
+                    "wait_ms",
+                    u64::try_from(SHUTDOWN_CLOSE_WAIT.as_millis()).unwrap_or(u64::MAX),
+                )
+                .emit();
         }
         for j in self.pump_threads.drain(..) {
             let _ = j.join();
@@ -169,11 +245,17 @@ impl DaemonHandle {
             if let Some(j) = self.otlp_thread.take() {
                 let _ = j.join();
             }
+            // §8.3: the spans of the connections that ended after the
+            // flush thread's last flush.
+            self.tracer.flush();
             // Last, so no pump writes to a stopped runtime. Dropping the
             // handle alone would not stop it — the runtime's worker threads
             // hold `Arc`s of their own — and a daemon stopped in a process
             // that keeps running would leave its participant on the domain.
             self.runtime.shutdown();
+            for runtime in self.tenant_runtimes.values() {
+                runtime.shutdown();
+            }
         }
     }
 }
@@ -231,16 +313,17 @@ pub fn start_with_reload(
     runtime_config: RuntimeConfig,
     load: Option<ConfigLoader>,
 ) -> Result<DaemonHandle, ServerError> {
-    eprintln!(
-        "[zerodds-ws-bridged] starting on {} domain={} topics={}",
-        cfg.listen,
-        cfg.domain,
-        cfg.topics.len()
-    );
+    // Spec §8.1: `log_level` is the threshold of the log.
+    log::set_level(&cfg.log_level);
+    log::event(Level::Info, "start")
+        .field("listen", &cfg.listen)
+        .integer("domain", i64::from(cfg.domain))
+        .number("topics", cfg.topics.len() as u64)
+        .emit();
 
     // 0. Metrics registry + standard counter set (§8.2).
     let registry = Arc::new(Registry::new());
-    let metrics = BridgeMetrics::register(&registry);
+    let metrics = BridgeMetrics::register(&registry).with_topics(&cfg.topics);
 
     // 0b. Bridge security: security ctx + optional RotatingTlsConfig for
     //     SIGHUP hot-reload (§7.1 TLS / §7.2 auth / §7.3 ACL).
@@ -254,182 +337,156 @@ pub fn start_with_reload(
     })?;
     let security_ctx = Arc::new(zerodds_bridge_security::LiveSecurity::new(security_ctx));
     let rotating_tls = rotating_tls.map(Arc::new);
+    // RFC 6455 §10.2 and §10.4: the origins the daemon expects and the
+    // limits of a frame and a message, for every connection.
+    let origin = cfg
+        .origin_policy()
+        .map_err(|e| ServerError::Config(alloc_format(format_args!("origin: {e}"))))?;
+    if cfg.max_frame_size < super::config::MIN_MAX_FRAME_SIZE || cfg.max_message_size == 0 {
+        return Err(ServerError::Config(alloc_format(format_args!(
+            "limits: max_frame_size is at least {} and max_message_size at least 1, got {} and {}",
+            super::config::MIN_MAX_FRAME_SIZE,
+            cfg.max_frame_size,
+            cfg.max_message_size
+        ))));
+    }
+    if origin.is_checking() {
+        log::event(Level::Info, "origin_check")
+            .field("allowed", &cfg.origin_allowed.join(" "))
+            .field(
+                "required",
+                if cfg.origin_required { "true" } else { "false" },
+            )
+            .emit();
+    }
     if rotating_tls.is_some() {
-        eprintln!(
-            "[zerodds-ws-bridged] TLS active (cert={}, mtls={})",
-            cfg.tls_cert_file,
-            !cfg.tls_client_ca_file.is_empty(),
-        );
+        log::event(Level::Info, "tls_active")
+            .field("cert_file", &cfg.tls_cert_file)
+            .field(
+                "mtls",
+                if cfg.tls_client_ca_file.is_empty() {
+                    "false"
+                } else {
+                    "true"
+                },
+            )
+            .emit();
     }
-    eprintln!(
-        "[zerodds-ws-bridged] auth-mode={} acl-entries={}",
-        cfg.auth_mode,
-        cfg.topic_acl.len()
-    );
+    log::event(Level::Info, "auth")
+        .field("mode", &cfg.auth_mode)
+        .number("acl_entries", cfg.topic_acl.len() as u64)
+        .emit();
 
-    // 1. Bring up the DCPS runtime.
-    let prefix = zerodds_dcps::participant::bridge_guid_prefix(&cfg.listen);
-    let runtime = DcpsRuntime::start(cfg.domain, prefix, runtime_config)
-        .map_err(|e| ServerError::Dds(alloc_format(format_args!("{e:?}"))))?;
+    // 1. The DCPS participant of `domain` with the top-level topics, and
+    //    one participant of each tenant with its topics (§1 L6).
     let healthy = Arc::new(AtomicBool::new(true));
-
-    // 2. The types of the topics with an `idl_file` (§3), which the JSON
-    //    text frames (§4.3) read and write the samples with. A file that
-    //    does not load stops the start.
-    let mut types: std::collections::BTreeMap<String, TopicType> =
-        std::collections::BTreeMap::new();
-    for topic in &cfg.topics {
-        if topic.idl_file.is_empty() {
-            continue;
-        }
-        let ty = TopicType::load(&topic.idl_file, &topic.type_name).map_err(|e| {
-            ServerError::Config(alloc_format(format_args!("topic {}: {e}", topic.name)))
-        })?;
-        types.insert(topic.name.clone(), ty);
-    }
-    let types = Arc::new(types);
-
-    // Register a reader+writer per topic.
-    let mut writers: std::collections::BTreeMap<String, EntityId> =
-        std::collections::BTreeMap::new();
-    let mut reader_eids: std::collections::BTreeMap<String, EntityId> =
-        std::collections::BTreeMap::new();
-    let mut readers: Vec<(String, std::sync::mpsc::Receiver<UserSample>)> = Vec::new();
-    for topic in &cfg.topics {
-        let keyed = types.get(&topic.name).is_some_and(TopicType::keyed);
-        let (reader_eid, writer_eid) = register_topic_endpoints(&runtime, topic, keyed)?;
-        if let Some((eid, rx)) = reader_eid {
-            reader_eids.insert(topic.name.clone(), eid);
-            readers.push((topic.name.clone(), rx));
-        }
-        if let Some(eid) = writer_eid {
-            writers.insert(topic.name.clone(), eid);
+    let stop = Arc::new(AtomicBool::new(false));
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let draining = Arc::new(AtomicBool::new(false));
+    let reload_flag = Arc::new(AtomicBool::new(false));
+    let mut pump_threads = Vec::new();
+    let base = Arc::new(build_core(
+        None,
+        &cfg,
+        runtime_config.clone(),
+        metrics.clone(),
+        &stop,
+        &draining,
+        &mut pump_threads,
+    )?);
+    let mut tenants = Vec::with_capacity(cfg.tenants.len());
+    for tenant in &cfg.tenants {
+        match build_core(
+            Some(tenant),
+            &cfg,
+            runtime_config.clone(),
+            metrics.for_tenant(&tenant.name, &tenant.topics),
+            &stop,
+            &draining,
+            &mut pump_threads,
+        ) {
+            Ok(core) => tenants.push(Arc::new(core)),
+            Err(e) => {
+                abort_start(&stop, &base, &tenants);
+                return Err(e);
+            }
         }
     }
+    let cores = Arc::new(Cores { base, tenants });
+    // The admin endpoint's catalog (§4.2): the topics of `domain`.
+    let catalog = Arc::clone(&cores.base.catalog);
+    // §8.3: with `OTEL_EXPORTER_OTLP_ENDPOINT` the spans of the
+    // connections go to an OTLP exporter (its flush thread starts below).
+    let otlp_exporter = otlp_config_from_env(SERVICE_NAME).map(|c| Arc::new(OtlpExporter::new(c)));
+    let tracer = Tracer::new(otlp_exporter.clone());
+    let connection_settings = Arc::new(ConnectionSettings {
+        limits: cfg.limits(),
+        origin,
+        healthy: Arc::clone(&healthy),
+        max_send_queue: cfg.max_send_queue_per_connection,
+        ping_interval: (cfg.ping_interval_ms > 0)
+            .then(|| Duration::from_millis(cfg.ping_interval_ms)),
+        draining: Arc::clone(&draining),
+        catalog_on_connect: cfg.catalog_on_connect,
+        tracer: tracer.clone(),
+    });
 
-    // 3. Router + TCP listener.
-    let router = Arc::new(Mutex::new(Router::new()));
-    let listener = TcpListener::bind(&cfg.listen)
-        .map_err(|e| ServerError::Bind(alloc_format(format_args!("{e}"))))?;
+    // 3. The TCP listener.
+    let listener = match TcpListener::bind(&cfg.listen) {
+        Ok(l) => l,
+        Err(e) => {
+            abort_start(&stop, &cores.base, &cores.tenants);
+            return Err(ServerError::Bind(alloc_format(format_args!("{e}"))));
+        }
+    };
     let local_addr = listener
         .local_addr()
         .map(|a| a.to_string())
         .unwrap_or_else(|_| cfg.listen.clone());
-    listener
-        .set_nonblocking(false)
-        .map_err(|e| ServerError::Io(alloc_format(format_args!("{e}"))))?;
-
-    eprintln!("[zerodds-ws-bridged] bound on {local_addr}");
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let reload_flag = Arc::new(AtomicBool::new(false));
-
-    // 4. Pump threads per reader.
-    let mut pump_threads = Vec::new();
-    for (topic_name, rx) in readers {
-        let router_c = Arc::clone(&router);
-        let stop_c = Arc::clone(&stop);
-        let topic_name_c = topic_name.clone();
-        let dds_out = Arc::clone(&metrics.dds_samples_out_total);
-        let h = thread::spawn(move || {
-            while !stop_c.load(Ordering::SeqCst) {
-                match rx.recv_timeout(Duration::from_millis(200)) {
-                    Ok(UserSample::Alive {
-                        payload,
-                        representation_identifier,
-                        key_hash,
-                        source_timestamp,
-                        ..
-                    }) => {
-                        dds_out.inc();
-                        let sample = DdsSample {
-                            payload: payload.to_vec(),
-                            representation_identifier,
-                            kind: SampleKind::Alive,
-                            key_hash,
-                            timestamp_ns: source_timestamp
-                                .map(|t| json_frames::nanos_of(t.seconds, t.fraction)),
-                        };
-                        if let Ok(mut r) = router_c.lock() {
-                            r.dispatch(&topic_name_c, sample);
-                        }
-                    }
-                    // A dispose or an unregister goes to the clients too
-                    // (§4.3: the dispose flag, the JSON ops), with the key
-                    // holder where the marker carried it.
-                    Ok(UserSample::Lifecycle {
-                        key_hash,
-                        kind,
-                        key_holder,
-                        source_timestamp,
-                        ..
-                    }) => {
-                        use zerodds_rtps::history_cache::ChangeKind;
-                        let kind = match kind {
-                            ChangeKind::NotAliveDisposed => SampleKind::Disposed,
-                            ChangeKind::NotAliveUnregistered => SampleKind::Unregistered,
-                            ChangeKind::NotAliveDisposedUnregistered => {
-                                SampleKind::DisposedUnregistered
-                            }
-                            ChangeKind::Alive | ChangeKind::AliveFiltered => continue,
-                        };
-                        dds_out.inc();
-                        let sample = DdsSample {
-                            payload: key_holder.unwrap_or_default(),
-                            representation_identifier: KEY_HOLDER_IDENTIFIER,
-                            kind,
-                            key_hash: Some(key_hash),
-                            timestamp_ns: source_timestamp
-                                .map(|t| json_frames::nanos_of(t.seconds, t.fraction)),
-                        };
-                        if let Ok(mut r) = router_c.lock() {
-                            r.dispatch(&topic_name_c, sample);
-                        }
-                    }
-                    // The end-of-coherent-set marker (DDSI-RTPS 2.5 §8.7.6)
-                    // carries no user data — nothing to forward.
-                    Ok(UserSample::CoherentSetEnd { .. }) => {}
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                }
-            }
-        });
-        pump_threads.push(h);
+    if let Err(e) = listener.set_nonblocking(false) {
+        abort_start(&stop, &cores.base, &cores.tenants);
+        return Err(ServerError::Io(alloc_format(format_args!("{e}"))));
     }
+
+    log::event(Level::Info, "bound")
+        .field("peer", &local_addr)
+        .emit();
 
     // 5. Accept thread.
     let next_conn_id = Arc::new(AtomicU64::new(1));
     let stop_acc = Arc::clone(&stop);
-    let router_acc = Arc::clone(&router);
-    // Snapshot of the writer map for the DaemonHandle export, before `writers`
-    // is moved into the Arc (accepted by the dispatch path).
-    let writers_export = writers.clone();
-    let writers_arc = Arc::new(writers);
-    let runtime_acc = Arc::clone(&runtime);
-    let topics_arc = Arc::new(cfg.topics.clone());
-    let types_acc = Arc::clone(&types);
+    let cores_acc = Arc::clone(&cores);
     let metrics_acc = metrics.clone();
     let security_acc = Arc::clone(&security_ctx);
     let rotating_acc = rotating_tls.clone();
+    let connections = Arc::new(ConnectionThreads::default());
+    let connections_acc = Arc::clone(&connections);
+    let settings_acc = Arc::clone(&connection_settings);
 
+    let draining_acc = Arc::clone(&draining);
     let accept_thread = thread::spawn(move || {
         for incoming in listener.incoming() {
-            if stop_acc.load(Ordering::SeqCst) {
+            if stop_acc.load(Ordering::SeqCst) || draining_acc.load(Ordering::SeqCst) {
                 break;
             }
             match incoming {
                 Ok(tcp) => {
+                    // §8.2: every accepted TCP connection, also one whose TLS
+                    // handshake then fails.
+                    metrics_acc.connections_total.inc();
                     let conn_id = next_conn_id.fetch_add(1, Ordering::SeqCst);
-                    let router_h = Arc::clone(&router_acc);
-                    let writers_h = Arc::clone(&writers_arc);
-                    let runtime_h = Arc::clone(&runtime_acc);
+                    let peer = tcp.peer_addr().map(|a| a.to_string()).unwrap_or_default();
+                    let cores_h = Arc::clone(&cores_acc);
                     let stop_h = Arc::clone(&stop_acc);
-                    let topics_h = Arc::clone(&topics_arc);
-                    let types_h = Arc::clone(&types_acc);
                     let metrics_h = metrics_acc.clone();
                     let security_h = Arc::clone(&security_acc);
                     let rot_h = rotating_acc.clone();
+                    let settings_h = Arc::clone(&settings_acc);
+                    // Counted here, not in the thread: the shutdown reads
+                    // the count once this accept thread has ended.
+                    let running = connections_acc.enter();
                     thread::spawn(move || {
+                        let _running = running;
                         // If TLS is configured: rustls handshake. Otherwise plain.
                         let (stream, mtls_subj) = if let Some(rot) = rot_h.as_ref() {
                             let cfg = rot.current();
@@ -439,30 +496,36 @@ pub fn start_with_reload(
                                 }
                                 Err(e) => {
                                     metrics_h.errors_total.inc();
-                                    eprintln!(
-                                        "[zerodds-ws-bridged] tls handshake err conn={conn_id}: {e}"
-                                    );
+                                    log::event(Level::Warn, "tls_handshake_failed")
+                                        .number("connection_id", conn_id)
+                                        .field("peer", &peer)
+                                        .field("reason", &e.to_string())
+                                        .emit();
                                     return;
                                 }
                             }
                         } else {
                             (WsStream::Plain(tcp), None)
                         };
+                        let conn = Arc::new(ConnLog { id: conn_id, peer });
                         let _ = serve_connection(
-                            conn_id, stream, mtls_subj, router_h, writers_h, runtime_h, stop_h,
-                            topics_h, types_h, metrics_h, security_h,
+                            conn, stream, mtls_subj, cores_h, stop_h, metrics_h, security_h,
+                            settings_h,
                         );
                     });
                 }
                 Err(e) => {
-                    eprintln!("[zerodds-ws-bridged] accept error: {e}");
+                    log::event(Level::Error, "accept_failed")
+                        .field("reason", &e.to_string())
+                        .emit();
                     continue;
                 }
             }
         }
     });
 
-    // 6. Admin endpoint (§8.2 Prometheus + §5.2 catalog/healthz).
+    // 6. Admin endpoint (§8.2 Prometheus at `metrics.path`, §5.2
+    //    catalog/healthz).
     let mut admin_thread: Option<JoinHandle<()>> = None;
     let mut admin_addr: Option<String> = None;
     if cfg.metrics_enabled || !cfg.metrics_addr.is_empty() {
@@ -473,35 +536,46 @@ pub fn start_with_reload(
         };
         match bind_str.parse::<std::net::SocketAddr>() {
             Ok(sock) => {
-                let snap = Arc::new(CatalogSnapshot::from_config(&cfg));
                 match serve_admin_endpoints(
                     sock,
-                    snap,
+                    cfg.metrics_path.clone(),
+                    Arc::clone(&catalog),
                     Arc::clone(&registry),
                     Arc::clone(&healthy),
                     Arc::clone(&stop),
                 ) {
                     Ok((h, bound)) => {
-                        eprintln!(
-                            "[{SERVICE_NAME}] admin endpoint on {bound} (/metrics /catalog /healthz)"
-                        );
+                        log::event(Level::Info, "admin_bound")
+                            .field("peer", &bound.to_string())
+                            .field("metrics_path", &cfg.metrics_path)
+                            .emit();
                         admin_addr = Some(bound.to_string());
                         admin_thread = Some(h);
                     }
                     Err(e) => {
-                        eprintln!("[{SERVICE_NAME}] admin bind error: {e}");
+                        log::event(Level::Error, "admin_bind_failed")
+                            .field("peer", &bind_str)
+                            .field("reason", &e.to_string())
+                            .emit();
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[{SERVICE_NAME}] admin addr parse error: {e}");
+                log::event(Level::Error, "admin_bind_failed")
+                    .field("peer", &bind_str)
+                    .field("reason", &e.to_string())
+                    .emit();
             }
         }
     }
 
     // 7. Signal watcher (§9.2 graceful shutdown).
-    if let Err(e) = install_signal_watcher(Arc::clone(&stop), Arc::clone(&reload_flag)) {
-        eprintln!("[{SERVICE_NAME}] signal watcher init failed: {e}");
+    if let Err(e) =
+        install_signal_watcher(Arc::clone(&shutdown_requested), Arc::clone(&reload_flag))
+    {
+        log::event(Level::Error, "signal_watcher_failed")
+            .field("reason", &e.to_string())
+            .emit();
     }
 
     // 7b. Bridge security: SIGHUP hook for TLS cert hot-reload. Polls the
@@ -526,15 +600,16 @@ pub fn start_with_reload(
     }
 
     // 8. OTLP span exporter (§8.3) if the env var is set.
-    let otlp_thread = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
-        let exporter = Arc::new(OtlpExporter::new(otlp_cfg));
+    let otlp_thread = if let Some(exporter) = otlp_exporter {
         match spawn_otlp_flush_loop(exporter, Arc::clone(&stop), Duration::from_secs(5)) {
             Ok(h) => {
-                eprintln!("[{SERVICE_NAME}] OTLP exporter active");
+                log::event(Level::Info, "otlp_active").emit();
                 Some(h)
             }
             Err(e) => {
-                eprintln!("[{SERVICE_NAME}] OTLP spawn failed: {e}");
+                log::event(Level::Error, "otlp_failed")
+                    .field("reason", &e.to_string())
+                    .emit();
                 None
             }
         }
@@ -544,19 +619,328 @@ pub fn start_with_reload(
 
     Ok(DaemonHandle {
         stop,
+        shutdown_requested,
+        draining,
+        drain_bound: Duration::from_millis(cfg.shutdown_drain_ms),
         accept_thread: Some(accept_thread),
         pump_threads,
+        connections,
         admin_thread,
         otlp_thread,
-        router,
+        tracer,
+        runtime: Arc::clone(&cores.base.runtime),
+        user_writers: (*cores.base.writers).clone(),
+        user_readers: cores.base.reader_eids.clone(),
+        tenant_runtimes: cores
+            .tenants
+            .iter()
+            .map(|c| (c.tenant.clone(), Arc::clone(&c.runtime)))
+            .collect(),
+        cores,
         local_addr,
         admin_addr,
         reload_flag,
         healthy,
         metrics: Some(metrics),
-        runtime: Arc::clone(&runtime),
-        user_writers: writers_export,
-        user_readers: reader_eids,
+    })
+}
+
+/// The DCPS participant of `domain` (or of a tenant, §1 L6) with its
+/// topics: their endpoints, router, types and catalog.
+#[cfg(feature = "daemon")]
+struct Core {
+    /// The tenant's name; empty for the participant of `domain`.
+    tenant: String,
+    /// The subjects bound to the tenant; empty for `domain`.
+    tenant_config: Option<super::config::TenantConfig>,
+    runtime: Arc<DcpsRuntime>,
+    /// Topic name → its DataWriter.
+    writers: Arc<std::collections::BTreeMap<String, EntityId>>,
+    /// Topic name → the lock of its DataWriter, which all connections
+    /// share: held from setting the writer's representation to the write,
+    /// so that a sample goes out under the header its client named (§4.3).
+    write_locks: std::collections::BTreeMap<String, Mutex<()>>,
+    /// Topic name → its DataReader.
+    reader_eids: std::collections::BTreeMap<String, EntityId>,
+    topics: Arc<Vec<TopicConfig>>,
+    types: Arc<std::collections::BTreeMap<String, TopicType>>,
+    router: Arc<Mutex<Router>>,
+    /// The catalog of §5.2.
+    catalog: Arc<CatalogSnapshot>,
+    /// The metrics of its topics (§8.2: a tenant's under
+    /// `<tenant>/<topic>`).
+    metrics: BridgeMetrics,
+}
+
+#[cfg(feature = "daemon")]
+impl Core {
+    /// The name of `topic` in the topic ACL (§7.3): a tenant's topic is
+    /// `<tenant>/<topic>` (§3 `tenants`).
+    fn acl_topic<'a>(&self, topic: &'a str) -> std::borrow::Cow<'a, str> {
+        if self.tenant.is_empty() {
+            std::borrow::Cow::Borrowed(topic)
+        } else {
+            std::borrow::Cow::Owned(super::config::tenant_acl_topic(&self.tenant, topic))
+        }
+    }
+
+    /// Holds the DataWriter of `topic` for one write (see `write_locks`);
+    /// `None` for a topic without one.
+    fn hold_writer(&self, topic: &str) -> Option<std::sync::MutexGuard<'_, ()>> {
+        self.write_locks.get(topic).map(|lock| {
+            lock.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        })
+    }
+
+    /// Whether the topic ACL grants `subject` the operation `op` on this
+    /// participant's `topic` (§7.3).
+    fn allows(
+        &self,
+        security: &zerodds_bridge_security::LiveSecurity,
+        subject: &AuthSubject,
+        op: AclOp,
+        topic: &str,
+    ) -> bool {
+        authorize(&security.current().acl, subject, op, &self.acl_topic(topic))
+    }
+}
+
+/// The participants of the daemon (§1 L6).
+#[cfg(feature = "daemon")]
+struct Cores {
+    /// The participant of `domain`.
+    base: Arc<Core>,
+    /// One per tenant, in the order of the configuration.
+    tenants: Vec<Arc<Core>>,
+}
+
+#[cfg(feature = "daemon")]
+impl Cores {
+    /// The participant a connection of `subject` is bound to: the tenant
+    /// that names the subject, else the one of `domain` (§1 L6).
+    fn of(&self, subject: &AuthSubject) -> &Arc<Core> {
+        self.tenants
+            .iter()
+            .find(|c| c.tenant_config.as_ref().is_some_and(|t| t.binds(subject)))
+            .unwrap_or(&self.base)
+    }
+}
+
+/// Stops what a start that fails has started: the pumps and the
+/// participants.
+#[cfg(feature = "daemon")]
+fn abort_start(stop: &AtomicBool, base: &Core, tenants: &[Arc<Core>]) {
+    stop.store(true, Ordering::SeqCst);
+    base.runtime.shutdown();
+    for core in tenants {
+        core.runtime.shutdown();
+    }
+}
+
+/// Starts the participant of `tenant` (`None`: the one of `domain`) with
+/// its topics: their types, endpoints, router, pumps and the deadline
+/// thread (§6, §9.1). A type that does not load or an endpoint that cannot
+/// be created stops it again and fails the start.
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_lines)]
+fn build_core(
+    tenant: Option<&super::config::TenantConfig>,
+    cfg: &DaemonConfig,
+    runtime_config: RuntimeConfig,
+    metrics: BridgeMetrics,
+    stop: &Arc<AtomicBool>,
+    draining: &Arc<AtomicBool>,
+    pump_threads: &mut Vec<JoinHandle<()>>,
+) -> Result<Core, ServerError> {
+    let (name, domain, topic_list) = match tenant {
+        Some(t) => (t.name.as_str(), t.domain, t.topics.as_slice()),
+        None => ("", cfg.domain, cfg.topics.as_slice()),
+    };
+    let in_tenant = |what: String| {
+        if name.is_empty() {
+            what
+        } else {
+            alloc_format(format_args!("tenant {name}: {what}"))
+        }
+    };
+    // 2. The types of the topics with an `idl_file` (§3), which the JSON
+    //    text frames (§4.3) read and write the samples with. A file that
+    //    does not load stops the start.
+    let mut types: std::collections::BTreeMap<String, TopicType> =
+        std::collections::BTreeMap::new();
+    for topic in topic_list {
+        if topic.idl_file.is_empty() {
+            continue;
+        }
+        let ty = TopicType::load(&topic.idl_file, &topic.type_name).map_err(|e| {
+            ServerError::Config(in_tenant(alloc_format(format_args!(
+                "topic {}: {e}",
+                topic.name
+            ))))
+        })?;
+        types.insert(topic.name.clone(), ty);
+    }
+    let types = Arc::new(types);
+
+    // A participant of its own per tenant: its GUID prefix from the listen
+    // address and the tenant's name.
+    let seed = if name.is_empty() {
+        cfg.listen.clone()
+    } else {
+        alloc_format(format_args!("{}#{name}", cfg.listen))
+    };
+    let prefix = zerodds_dcps::participant::bridge_guid_prefix(&seed);
+    let runtime = DcpsRuntime::start(domain, prefix, runtime_config)
+        .map_err(|e| ServerError::Dds(in_tenant(alloc_format(format_args!("{e:?}")))))?;
+
+    // Register a reader+writer per topic.
+    let mut writers: std::collections::BTreeMap<String, EntityId> =
+        std::collections::BTreeMap::new();
+    let mut reader_eids: std::collections::BTreeMap<String, EntityId> =
+        std::collections::BTreeMap::new();
+    let mut readers: Vec<(String, std::sync::mpsc::Receiver<UserSample>)> = Vec::new();
+    for topic in topic_list {
+        let (reader_eid, writer_eid) =
+            match register_topic_endpoints(&runtime, topic, types.get(&topic.name)) {
+                Ok(endpoints) => endpoints,
+                Err(e) => {
+                    runtime.shutdown();
+                    return Err(e);
+                }
+            };
+        if let Some((eid, rx)) = reader_eid {
+            reader_eids.insert(topic.name.clone(), eid);
+            readers.push((topic.name.clone(), rx));
+        }
+        if let Some(eid) = writer_eid {
+            writers.insert(topic.name.clone(), eid);
+        }
+    }
+
+    // The router. Each topic gets its behaviour of §6 from its QoS: what a
+    // full send queue does, what it keeps for late subscribers, its
+    // deadline.
+    let mut router = Router::new().with_max_burst(cfg.max_burst_samples);
+    for topic in topic_list {
+        router.configure_topic(
+            &topic.name,
+            super::qos_translation::behavior_for(topic, cfg.queue_limits()),
+        );
+        router.set_keyed(
+            &topic.name,
+            types.get(&topic.name).is_some_and(TopicType::keyed),
+        );
+    }
+    let router = Arc::new(Mutex::new(router));
+    let stop = Arc::clone(stop);
+    let draining = Arc::clone(draining);
+
+    // 4. Pump threads per reader.
+    for (topic_name, rx) in readers {
+        let router_c = Arc::clone(&router);
+        let stop_c = Arc::clone(&stop);
+        let topic_name_c = topic_name.clone();
+        let pump_metrics = metrics.clone();
+        let errors = Arc::clone(&metrics.errors_total);
+        let draining_c = Arc::clone(&draining);
+        let h = thread::spawn(move || {
+            let mut unknown_logged = false;
+            while !stop_c.load(Ordering::SeqCst) {
+                // §9.2: a shutdown drains what the DataReader holds, then
+                // the pump ends.
+                let next = if draining_c.load(Ordering::SeqCst) {
+                    rx.try_recv().map_err(|e| match e {
+                        std::sync::mpsc::TryRecvError::Empty => {
+                            std::sync::mpsc::RecvTimeoutError::Disconnected
+                        }
+                        std::sync::mpsc::TryRecvError::Disconnected => {
+                            std::sync::mpsc::RecvTimeoutError::Disconnected
+                        }
+                    })
+                } else {
+                    rx.recv_timeout(Duration::from_millis(200))
+                };
+                match next {
+                    Ok(sample) => {
+                        let Some(sample) = dds_sample_of(sample) else {
+                            continue;
+                        };
+                        pump_metrics.dds_received(&topic_name_c);
+                        // §6: routed under the lock, handed to the queues
+                        // outside it; a RELIABLE topic waits here for a
+                        // full queue, a BEST_EFFORT one drops its oldest.
+                        let route = match router_c.lock() {
+                            Ok(mut r) => r.route(&topic_name_c, sample),
+                            Err(_) => break,
+                        };
+                        // §6: a sample of a topic with key without a
+                        // KeyHash is delivered, but not kept and not
+                        // counted for a deadline; each is an error in the
+                        // metrics, the first one a log line.
+                        if route.instance_unknown() {
+                            errors.inc();
+                            if !unknown_logged {
+                                unknown_logged = true;
+                                log::event(Level::Warn, "sample_without_key_hash")
+                                    .field("topic", &topic_name_c)
+                                    .field(
+                                        "reason",
+                                        "a sample without a key hash names no instance; it is not kept for late subscribers and starts no deadline (counted in zerodds_ws_bridge_errors_total)",
+                                    )
+                                    .emit();
+                            }
+                        }
+                        let delivery = route.deliver(&stop_c);
+                        for connection_id in delivery.dropped_on {
+                            pump_metrics.send_queue_drop(connection_id);
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        });
+        pump_threads.push(h);
+    }
+    // §6: the deadline of the topics that have one.
+    if topic_list.iter().any(|t| t.deadline_ms.is_some()) {
+        let router_d = Arc::clone(&router);
+        let stop_d = Arc::clone(&stop);
+        let draining_d = Arc::clone(&draining);
+        pump_threads.push(thread::spawn(move || {
+            while !stop_d.load(Ordering::SeqCst) && !draining_d.load(Ordering::SeqCst) {
+                thread::sleep(DEADLINE_TICK);
+                match router_d.lock() {
+                    Ok(mut r) => {
+                        r.deadlines_missed(Instant::now());
+                    }
+                    Err(_) => break,
+                }
+            }
+        }));
+    }
+
+    let catalog = Arc::new(CatalogSnapshot {
+        topics: topic_list.to_vec(),
+        ..CatalogSnapshot::from_config(cfg)
+    });
+    let write_locks = writers
+        .keys()
+        .map(|topic| (topic.clone(), Mutex::new(())))
+        .collect();
+    Ok(Core {
+        tenant: name.to_string(),
+        tenant_config: tenant.cloned(),
+        runtime,
+        writers: Arc::new(writers),
+        write_locks,
+        reader_eids,
+        topics: Arc::new(topic_list.to_vec()),
+        types,
+        router,
+        catalog,
+        metrics,
     })
 }
 
@@ -569,8 +953,9 @@ type TopicEndpoints = (Option<ReaderEndpoint>, Option<EntityId>);
 fn register_topic_endpoints(
     rt: &Arc<DcpsRuntime>,
     topic: &TopicConfig,
-    keyed: bool,
+    ty: Option<&TopicType>,
 ) -> Result<TopicEndpoints, ServerError> {
+    let keyed = ty.is_some_and(TopicType::keyed);
     use zerodds_qos::DurabilityKind;
     let durability = match topic.durability.as_str() {
         "transient_local" => DurabilityKind::TransientLocal,
@@ -579,6 +964,9 @@ fn register_topic_endpoints(
         _ => DurabilityKind::Volatile,
     };
     let reliable = !matches!(topic.reliability.as_str(), "best_effort");
+    // §6: deadline, liveliness and partition of the topic, the same for
+    // the DataReader and the DataWriter.
+    let (writer_qos, reader_qos) = super::qos_translation::topic_qos(topic);
     // Same meaning as in the other bridge daemons: `in` carries client
     // frames into DDS (a DataWriter), `out` carries DDS samples out to the
     // clients (a DataReader), `bidir` both.
@@ -597,6 +985,9 @@ fn register_topic_endpoints(
                     },
                     reliable,
                     durability,
+                    deadline: reader_qos.deadline,
+                    liveliness: reader_qos.liveliness,
+                    partition: reader_qos.partition.names.clone(),
                     ..Default::default()
                 },
                 keyed,
@@ -619,11 +1010,25 @@ fn register_topic_endpoints(
                     },
                     reliable,
                     durability,
+                    deadline: writer_qos.deadline,
+                    liveliness: writer_qos.liveliness,
+                    partition: writer_qos.partition.names.clone(),
+                    // §4.3: the JSON samples of a typed topic go out under
+                    // XCDR2, the one representation the writer offers
+                    // (DDS-XTypes 1.3 §7.6.3.1.1).
+                    data_representation_offer: ty
+                        .map(|_| vec![zerodds_rtps::publication_data::data_representation::XCDR2]),
                     ..Default::default()
                 },
                 keyed,
             )
             .map_err(|e| ServerError::Dds(alloc_format(format_args!("writer: {e:?}"))))?;
+        // The header the JSON samples carry from the first one on: the
+        // extensibility of the type and little endian.
+        if let Some(ty) = ty {
+            rt.set_user_writer_representation_identifier(eid, ty.identifier())
+                .map_err(|e| ServerError::Dds(alloc_format(format_args!("writer: {e:?}"))))?;
+        }
         Some(eid)
     } else {
         None
@@ -632,63 +1037,214 @@ fn register_topic_endpoints(
     Ok((reader, writer))
 }
 
+/// What every connection of the daemon is held to, from the configuration
+/// the daemon started with.
+#[cfg(feature = "daemon")]
+struct ConnectionSettings {
+    /// `limits.*`: the largest frame and message of a client (RFC 6455
+    /// §10.4).
+    limits: Limits,
+    /// `origin.*`: the origins the opening handshake may name (RFC 6455
+    /// §10.2).
+    origin: OriginPolicy,
+    /// Whether the DCPS runtime runs: the answer of `/healthz` (§4.2).
+    healthy: Arc<AtomicBool>,
+    /// `max_send_queue_per_connection` (§6).
+    max_send_queue: usize,
+    /// `ping_interval_ms` (§6): `None` without Ping.
+    ping_interval: Option<Duration>,
+    /// The daemon shuts down (§9.2).
+    draining: Arc<AtomicBool>,
+    /// `catalog_on_connect` (§5.2).
+    catalog_on_connect: bool,
+    /// The OTLP spans of the connections (§8.3).
+    tracer: Tracer,
+}
+
 #[cfg(feature = "daemon")]
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn serve_connection(
-    conn_id: u64,
+    conn: Arc<ConnLog>,
     mut stream: WsStream,
     mtls_subject: Option<AuthSubject>,
-    router: Arc<Mutex<Router>>,
-    writers: Arc<std::collections::BTreeMap<String, EntityId>>,
-    runtime: Arc<DcpsRuntime>,
+    cores: Arc<Cores>,
     stop: Arc<AtomicBool>,
-    topics: Arc<Vec<TopicConfig>>,
-    types: Arc<std::collections::BTreeMap<String, TopicType>>,
     metrics: BridgeMetrics,
     security: Arc<zerodds_bridge_security::LiveSecurity>,
+    settings: Arc<ConnectionSettings>,
 ) -> Result<(), ServerError> {
-    metrics.connections_total.inc();
+    let conn_id = conn.id;
+    // §8.3: the root span of the connection, from the start of its opening
+    // handshake; sent for an opening handshake the daemon refused and for a
+    // WebSocket connection when it ends.
+    let span = settings.tracer.connection(unix_ns());
+    if let Some(span) = &span {
+        span.set("net.peer", &conn.peer);
+        span.set("ws.connection_id", &conn_id.to_string());
+    }
+    // A connection that ends with an error before its reader loop.
+    let failed_span = |reason: &str| {
+        if let Some(span) = &span {
+            span.fail(reason);
+            span.end(unix_ns());
+        }
+    };
+    let refused_span = |code: u16, reason: &str| {
+        if let Some(span) = &span {
+            span.set("http.status_code", &code.to_string());
+        }
+        failed_span(reason);
+    };
     metrics.connections_active.inc();
     let conn_guard = ConnectionLifetime {
         active: Arc::clone(&metrics.connections_active),
     };
     stream.set_nodelay(true).ok();
-    stream
-        .set_read_timeout(Some(Duration::from_millis(500)))
-        .ok();
+    stream.set_read_timeout(Some(READ_POLL)).ok();
 
-    // 1. Read in the HTTP upgrade handshake.
+    // 1. Read in the HTTP upgrade handshake: at most `MAX_HANDSHAKE_SIZE`
+    //    octets within `HANDSHAKE_TIMEOUT` (§4.1).
+    let handshake_deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+    // A request the daemon refuses before it is parsed: the response, the
+    // log line, the error counter and the span (§4.1, §8.1 to §8.3).
+    let refuse_request = |stream: &mut WsStream, response: &str, code: u16, reason: &str| {
+        metrics.errors_total.inc();
+        let _ = stream.write_all(response.as_bytes());
+        conn.event(Level::Warn, "handshake_reject")
+            .number("code", u64::from(code))
+            .field("reason", reason)
+            .emit();
+        refused_span(code, reason);
+        Err(ServerError::Io(alloc_format(format_args!(
+            "handshake parse: {reason}"
+        ))))
+    };
     let mut buf = [0u8; 4096];
     let mut accumulated = Vec::new();
     let req_str = loop {
+        if Instant::now() >= handshake_deadline {
+            // RFC 9110 §15.5.9: the request did not arrive within the time
+            // the server waits for it.
+            return refuse_request(
+                &mut stream,
+                "HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                408,
+                "the opening handshake did not arrive in time",
+            );
+        }
         match stream.read(&mut buf) {
             Ok(0) => return Err(ServerError::Io("eof during handshake".to_string())),
             Ok(n) => {
                 accumulated.extend_from_slice(&buf[..n]);
-                if accumulated.windows(4).any(|w| w == b"\r\n\r\n") {
-                    let s = String::from_utf8_lossy(&accumulated).to_string();
-                    break s;
+                let head_end = accumulated.windows(4).position(|w| w == b"\r\n\r\n");
+                if head_end.map_or(accumulated.len(), |i| i + 4) > MAX_HANDSHAKE_SIZE {
+                    let e = crate::handshake::HandshakeError::MalformedRequest;
+                    return refuse_request(
+                        &mut stream,
+                        &e.render_error_response(),
+                        e.http_status(),
+                        &alloc_format(format_args!(
+                            "the request head is longer than {MAX_HANDSHAKE_SIZE} octets"
+                        )),
+                    );
                 }
-                if accumulated.len() > 64 * 1024 {
-                    return Err(ServerError::Io("handshake too large".to_string()));
+                if head_end.is_some() {
+                    // An HTTP request is ASCII (RFC 9110 §5.5); octets that
+                    // are no UTF-8 are no request (RFC 6455 §10.7).
+                    match String::from_utf8(std::mem::take(&mut accumulated)) {
+                        Ok(s) => break s,
+                        Err(_) => {
+                            let e = crate::handshake::HandshakeError::MalformedRequest;
+                            return refuse_request(
+                                &mut stream,
+                                &e.render_error_response(),
+                                e.http_status(),
+                                "the request is not UTF-8",
+                            );
+                        }
+                    }
                 }
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                // No WebSocket connection yet: a shutdown ends the TCP
+                // connection without a Close frame (RFC 6455 §7.1.2 needs
+                // an established connection).
+                if stop.load(Ordering::SeqCst) || settings.draining.load(Ordering::SeqCst) {
+                    return Err(ServerError::Io("shutdown during handshake".to_string()));
+                }
+            }
             Err(e) => return Err(ServerError::Io(e.to_string())),
         }
     };
 
+    // §4.2: `/healthz` answers a plain HTTP GET on this listener, whether
+    // or not the metrics endpoint is on, and to everyone: it names no
+    // topic, and a probe carries no credentials.
+    let plain_get = plain_get_path(&req_str);
+    if plain_get == Some(super::config::HEALTH_PATH) {
+        let _ = stream.write_all(health_response(&settings.healthy).as_bytes());
+        return Ok(());
+    }
+    let catalog_over_http = plain_get == Some(super::config::CATALOG_PATH);
+    // §5.2: the type of a topic at `/schema/<slug>`.
+    let schema_request = plain_get.and_then(super::schema::route);
+
     let req = match parse_client_request(&req_str) {
         Ok(r) => r,
+        // The catalog and the schema over HTTP are no opening handshake;
+        // their origin and their credentials are checked like those of one.
+        Err(_) if catalog_over_http || schema_request.is_some() => {
+            crate::handshake::ClientHandshake {
+                path: plain_get.unwrap_or_default().to_string(),
+                origin: origin_field(&req_str),
+                ..crate::handshake::ClientHandshake::default()
+            }
+        }
         Err(e) => {
-            let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+            // RFC 6455 §4.2.1, §4.2.2 /version/, §10.7: the HTTP status of
+            // the error, 426 with the version this server speaks for a
+            // version it does not.
+            metrics.errors_total.inc();
+            let _ = stream.write_all(e.render_error_response().as_bytes());
+            conn.event(Level::Warn, "handshake_reject")
+                .number("code", u64::from(e.http_status()))
+                .field("reason", &e.to_string())
+                .emit();
+            refused_span(e.http_status(), &e.to_string());
             return Err(ServerError::Io(alloc_format(format_args!(
                 "handshake parse: {e:?}"
             ))));
         }
     };
 
-    // §7.2 — authentication. On reject: HTTP 401 + close.
+    // RFC 6455 §10.2, §4.2.2 /origin/: an origin the daemon does not expect
+    // gets HTTP 403 and the handshake ends. The check comes before the
+    // authentication: a browser sends the user's credentials with the
+    // request of any page, and the origin says whose script asked.
+    if let Some(span) = &span {
+        span.set("ws.path", &req.path);
+    }
+    if let Err(e) = settings.origin.check(req.origin.as_deref()) {
+        metrics.errors_total.inc();
+        let _ = stream.write_all(e.render_error_response().as_bytes());
+        conn.event(Level::Warn, "origin_reject")
+            .number("code", u64::from(e.http_status()))
+            .field("origin", req.origin.as_deref().unwrap_or(""))
+            .emit();
+        if !catalog_over_http && schema_request.is_none() {
+            refused_span(e.http_status(), &e.to_string());
+        }
+        return Err(ServerError::Io(alloc_format(format_args!(
+            "origin reject: {e}"
+        ))));
+    }
+
+    // §4.1, §7.2 — authentication. Credentials that authenticate no one
+    // get HTTP 401, a verified token without the required claim 403; the
+    // connection is closed.
     let auth_header = extract_authorization_header(&req_str);
     let auth_headers: Vec<(String, String)> = if let Some(v) = auth_header {
         vec![("authorization".to_string(), v)]
@@ -702,43 +1258,110 @@ fn serve_connection(
     ) {
         Ok(s) => s,
         Err(e) => {
-            metrics.errors_total.inc();
-            let body = b"unauthorized";
-            let resp = format!(
-                "HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nWWW-Authenticate: Bearer realm=\"zerodds-ws\"\r\nConnection: close\r\n\r\nunauthorized",
-                body.len()
-            );
-            let _ = stream.write_all(resp.as_bytes());
-            eprintln!("[zerodds-ws-bridged] auth reject conn={conn_id} reason={e}");
+            metrics.auth_failure(match &e {
+                Refusal::Unauthenticated(AuthError::MissingCredentials) => auth_reason::MISSING,
+                Refusal::Unauthenticated(_) => auth_reason::REJECTED,
+                Refusal::MissingClaim(_) => auth_reason::SCOPE,
+            });
+            let _ = stream.write_all(render_refusal(&e).as_bytes());
+            conn.event(Level::Warn, "auth_reject")
+                .field("reason", &e.to_string())
+                .emit();
+            if !catalog_over_http && schema_request.is_none() {
+                refused_span(
+                    match &e {
+                        Refusal::MissingClaim(_) => 403,
+                        Refusal::Unauthenticated(_) => 401,
+                    },
+                    &e.to_string(),
+                );
+            }
             return Err(ServerError::Io(alloc_format(format_args!(
                 "auth reject: {e}"
             ))));
         }
     };
 
-    // Auto-subscribe if the path matches a topic (Spec §4.2).
-    let mut auto_topic: Option<String> = None;
-    for t in topics.iter() {
-        if t.ws_path == req.path || super::config::default_ws_path(&t.name) == req.path {
-            auto_topic = Some(t.name.clone());
-            break;
+    // §1 L6: the connection is bound to the participant of its subject's
+    // tenant for its life; its paths, subscriptions, samples, catalog and
+    // schemas are that participant's. Its topics are counted under the
+    // tenant (§8.2).
+    let core = Arc::clone(cores.of(&subject));
+    let metrics = core.metrics.clone();
+    if let Some(span) = &span {
+        if !core.tenant.is_empty() {
+            span.set("ws.tenant", &core.tenant);
         }
     }
 
+    // §4.2: the catalog names the topics its client may read or write.
+    let catalog_text = |subject: &AuthSubject| {
+        core.catalog.render_json_where(|t| {
+            core.allows(&security, subject, AclOp::Read, &t.name)
+                || core.allows(&security, subject, AclOp::Write, &t.name)
+        })
+    };
+    if catalog_over_http {
+        let body = catalog_text(&subject);
+        let _ = stream.write_all(http_response("200 OK", "application/json", &body).as_bytes());
+        return Ok(());
+    }
+    if let Some((slug, form)) = schema_request {
+        let answer = schema_response(slug, form, &core.topics, &core.types, |topic| {
+            core.allows(&security, &subject, AclOp::Read, topic)
+                || core.allows(&security, &subject, AclOp::Write, topic)
+        });
+        match answer.refusal {
+            Some(SchemaRefusal::Acl) => metrics.auth_failure(auth_reason::ACL),
+            Some(SchemaRefusal::NotFound) => metrics.errors_total.inc(),
+            None => {}
+        }
+        conn.event(
+            if answer.refusal.is_some() {
+                Level::Warn
+            } else {
+                Level::Debug
+            },
+            "schema",
+        )
+        .field("path", &req.path)
+        .number("code", u64::from(answer.code))
+        .emit();
+        let _ = stream.write_all(answer.http.as_bytes());
+        return Ok(());
+    }
+    // Over WebSocket the catalog is the first frame of a connection of the
+    // catalog path, and of every connection with `catalog_on_connect`.
+    let catalog_frame = (req.path == super::config::CATALOG_PATH || settings.catalog_on_connect)
+        .then(|| catalog_text(&subject));
+
+    // Auto-subscribe if the path is the path of a topic (Spec §4.2): its
+    // `ws_path`, or the default path where the entry names none.
+    let mut auto_topic: Option<String> = core
+        .topics
+        .iter()
+        .find(|t| t.path() == req.path)
+        .map(|t| t.name.clone());
+
     // §7.3 — auto-subscribe topic ACL check (read).
     if let Some(topic) = &auto_topic {
-        if !authorize(&security.current().acl, &subject, AclOp::Read, topic) {
-            metrics.errors_total.inc();
+        if !core.allows(&security, &subject, AclOp::Read, topic) {
+            metrics.auth_failure(auth_reason::ACL);
             let body = format!("forbidden: read on {topic}");
             let resp = format!(
                 "HTTP/1.1 403 Forbidden\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             let _ = stream.write_all(resp.as_bytes());
-            eprintln!(
-                "[zerodds-ws-bridged] acl reject conn={conn_id} subject={} topic={topic}",
-                subject.name
-            );
+            conn.event(Level::Warn, "acl_reject")
+                .field("topic", topic)
+                .field("subject", &subject.name)
+                .emit();
+            if let Some(span) = &span {
+                span.set("auth.subject", &subject.name);
+                span.set("dds.topic", topic);
+            }
+            refused_span(403, &body);
             return Err(ServerError::Io(alloc_format(format_args!(
                 "acl reject: {topic}"
             ))));
@@ -755,33 +1378,78 @@ fn serve_connection(
     } else if req.protocols.iter().any(|p| p == SUBPROTOCOL_BINARY) {
         resp.protocol = Some(SUBPROTOCOL_BINARY.to_string());
     }
+    // RFC 7692 §7.1: the first `permessage-deflate` offer of the client
+    // that is valid and that this server serves is agreed to, and the
+    // messages of the connection are compressed in both directions; RFC
+    // 6455 §4.2.2 item 9: the response names what was agreed.
+    let deflate = permessage_deflate::accept_offers(&req.extensions);
+    if let Some(params) = &deflate {
+        resp.extensions
+            .push(permessage_deflate::render_accept(params));
+    }
     let resp_bytes = render_server_response(&resp);
-    stream
-        .write_all(resp_bytes.as_bytes())
-        .map_err(|e| ServerError::Io(e.to_string()))?;
+    if let Err(e) = stream.write_all(resp_bytes.as_bytes()) {
+        failed_span(&alloc_format(format_args!(
+            "write of the 101 response: {e}"
+        )));
+        return Err(ServerError::Io(e.to_string()));
+    }
+    conn.event(Level::Info, "connection_open")
+        .field("path", &req.path)
+        .field("topic", auto_topic.as_deref().unwrap_or(""))
+        .field("subject", &subject.name)
+        .field("mode", if json_mode { "json" } else { "binary" })
+        .field("tenant", &core.tenant)
+        .emit();
+    if let Some(span) = &span {
+        span.set("http.status_code", "101");
+        span.set("auth.subject", &subject.name);
+        span.set("ws.mode", if json_mode { "json" } else { "binary" });
+        span.set("ws.subprotocol", resp.protocol.as_deref().unwrap_or(""));
+        span.set("ws.extensions", &resp.extensions.join(", "));
+        if let Some(topic) = &auto_topic {
+            span.set("dds.topic", topic);
+        }
+    }
+    let opened = Instant::now();
 
     // A JSON-mode client of a topic path gets the topic's samples as JSON
     // (§4.3), which needs the topic's type; without one the client is told
-    // so, and the connection carries no samples of it.
-    if json_mode
-        && let Some(topic) = auto_topic.as_deref()
-        && !types.contains_key(topic)
+    // so (below, once the connection can send), and the connection carries
+    // no samples of it.
+    let untyped_topic = if json_mode
+        && auto_topic
+            .as_deref()
+            .is_some_and(|topic| !core.types.contains_key(topic))
     {
-        metrics.errors_total.inc();
-        if let Ok(b) = encode(&Frame::text(no_type_error(topic))) {
-            let _ = stream.write_all(&b);
-        }
-        auto_topic = None;
-    }
+        auto_topic.take()
+    } else {
+        None
+    };
 
-    // 2. Register the connection with the router.
-    let (tx, rx) = std::sync::mpsc::channel::<RouterMsg>();
-    if let Ok(mut r) = router.lock() {
-        r.register_connection(conn_id, tx);
+    // 2. Register the connection with the router: its send queue of §6,
+    //    and the burst of a durable topic of its path.
+    let queue = ConnQueue::new(settings.max_send_queue);
+    if let Ok(mut r) = core.router.lock() {
+        r.register_connection(conn_id, Arc::clone(&queue));
         if let Some(topic) = &auto_topic {
             r.subscribe(conn_id, topic.clone());
         }
     }
+    // §9.2: a connection that completed its handshake while the daemon
+    // began to shut down may have missed the broadcast; it is told too.
+    if settings.draining.load(Ordering::SeqCst) {
+        queue.push_control(RouterMsg::Shutdown);
+    }
+    // §6 liveliness: the reader thread notes each Pong, the writer thread
+    // sends the Pings and fails the connection that misses one. A write
+    // that the client does not take within `ping_interval_ms` fails as
+    // well: such a client cannot get the Ping either, and a RELIABLE topic
+    // waiting for its send queue holds back the samples of every other
+    // connection of the topic.
+    let pong_seen = Arc::new(AtomicBool::new(true));
+    let writer_failed = Arc::new(AtomicBool::new(false));
+    stream.set_write_timeout(settings.ping_interval).ok();
 
     // 3. Split stream into independent reader and writer handles so a blocking
     //    `read()` (500 ms timeout) never blocks outbound notify frames on the
@@ -790,12 +1458,45 @@ fn serve_connection(
     //    TLS, the reader waits via `peek()` on a cloned `TcpStream` outside the
     //    session mutex and only locks the `StreamOwned` once bytes are in the
     //    kernel receive buffer.
-    let (mut reader, writer) = stream
-        .into_split()
-        .map_err(|e| ServerError::Io(e.to_string()))?;
+    let (mut reader, sink) = match stream.into_split() {
+        Ok(split) => split,
+        Err(e) => {
+            if let Ok(mut r) = core.router.lock() {
+                r.deregister_connection(conn_id);
+            }
+            conn.event(Level::Info, "connection_close")
+                .latency(opened)
+                .emit();
+            failed_span(&alloc_format(format_args!(
+                "the socket could not be split: {e}"
+            )));
+            return Err(ServerError::Io(e.to_string()));
+        }
+    };
+    let mut receiver = Receiver::new(Role::Server, settings.limits);
+    let mut sender = Sender::server();
+    if let Some(params) = &deflate {
+        receiver = receiver.with_permessage_deflate(params);
+        sender = sender.with_permessage_deflate(params);
+    }
+    let writer = Arc::new(WsOut {
+        sink,
+        sender: Mutex::new(sender),
+        conn: Arc::clone(&conn),
+        metrics: metrics.clone(),
+        span: span.clone(),
+    });
+
+    // The catalog is the first text frame of the connection (§5.2), also
+    // before the 415 error frame of a topic without a type.
+    if let Some(catalog) = &catalog_frame {
+        send_text_frame(&writer, catalog);
+    }
+    if let Some(topic) = &untyped_topic {
+        metrics.errors_total.inc();
+        send_text_frame(&writer, &no_type_error(topic));
+    }
     let stop_w = Arc::clone(&stop);
-    let frames_out = Arc::clone(&metrics.frames_out_total);
-    let bytes_out = Arc::clone(&metrics.bytes_out_total);
     let errors_out = Arc::clone(&metrics.errors_total);
     let writer_w = Arc::clone(&writer);
     // Per-connection ACL state: the read check is done per topic
@@ -803,58 +1504,172 @@ fn serve_connection(
     // have the subject + ACL via closure move.
     let security_w = Arc::clone(&security);
     let subject_w = subject.clone();
-    let types_w = Arc::clone(&types);
+    let core_w = Arc::clone(&core);
+    let queue_w = Arc::clone(&queue);
+    let pong_seen_w = Arc::clone(&pong_seen);
+    let writer_failed_w = Arc::clone(&writer_failed);
+    let ping_interval = settings.ping_interval;
     let writer_thread = thread::spawn(move || {
+        // §8.3: a write that failed fails the connection's span, unless
+        // nothing was sent because a Close frame went out before.
+        let failed_write = |e: &std::io::Error| {
+            writer_failed_w.store(true, Ordering::SeqCst);
+            if let (Some(span), Some(reason)) = (&writer_w.span, write_failure(e)) {
+                span.fail(&reason);
+            }
+        };
+        // One sample to the client; an error when the connection is closing
+        // or broken: no frame follows a Close (RFC 6455 §5.5.1).
+        let send_sample =
+            |topic: &str, sample: &DdsSample, since: Instant| -> std::io::Result<()> {
+                // §7.3 — read ACL (post-subscribe gate): if the ACL for this
+                // subject + topic is deny, the sample is not sent (no
+                // disclosure).
+                if !core_w.allows(&security_w, &subject_w, AclOp::Read, topic) {
+                    return Ok(());
+                }
+                let sent = if json_mode {
+                    let texts = match json_sample_frames(topic, sample, core_w.types.get(topic)) {
+                        Ok(texts) => texts,
+                        Err(error) => {
+                            errors_out.inc();
+                            vec![error]
+                        }
+                    };
+                    texts.iter().try_for_each(|text| {
+                        writer_w
+                            .message_on(topic, true, text.as_bytes(), since)
+                            .map(|_| ())
+                    })
+                } else {
+                    writer_w
+                        .message_on(topic, false, &binary_sample_frame(sample), since)
+                        .map(|_| ())
+                };
+                if sent.is_err() {
+                    errors_out.inc();
+                }
+                sent
+            };
+        let poll = ping_interval.map_or(Duration::from_millis(200), |p| {
+            p.min(Duration::from_millis(200))
+        });
+        let mut next_ping = ping_interval.map(|p| Instant::now() + p);
+        let mut ping_count: u64 = 0;
         'samples: while !stop_w.load(Ordering::SeqCst) {
-            match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(RouterMsg::Sample { topic, sample }) => {
-                    // §7.3 — read ACL (post-subscribe gate): if the
-                    // ACL for this subject + topic is deny,
-                    // drop the sample (no disclosure).
-                    if !authorize(&security_w.current().acl, &subject_w, AclOp::Read, &topic) {
+            // §6: a client that let more control messages pile up than its
+            // queue holds is closed with 1008; what waits is not sent.
+            if queue_w.overflowed() {
+                errors_out.inc();
+                writer_w
+                    .conn
+                    .event(Level::Warn, "send_queue_overflow")
+                    .number("queued_controls", MAX_QUEUED_CONTROLS as u64)
+                    .emit();
+                if let Some(span) = &writer_w.span {
+                    span.fail("send queue overflow");
+                }
+                let _ = writer_w.close(QUEUE_OVERFLOW_CLOSE, "send queue overflow");
+                writer_failed_w.store(true, Ordering::SeqCst);
+                break 'samples;
+            }
+            // §6: the daemon's Ping; a client that has not answered the
+            // previous one by now is failed with 1011.
+            if let (Some(due), Some(interval)) = (next_ping, ping_interval) {
+                if Instant::now() >= due {
+                    if !pong_seen_w.swap(false, Ordering::SeqCst) {
+                        if let Some(span) = &writer_w.span {
+                            span.fail("ping timeout");
+                        }
+                        let _ = writer_w.close(PING_TIMEOUT_CLOSE, "ping timeout");
+                        writer_failed_w.store(true, Ordering::SeqCst);
+                        break 'samples;
+                    }
+                    ping_count += 1;
+                    if let Err(e) = writer_w.ping(&ping_count.to_be_bytes()) {
+                        failed_write(&e);
+                        break 'samples;
+                    }
+                    next_ping = Some(Instant::now() + interval);
+                }
+            }
+            let popped = queue_w.pop(poll);
+            // §8.1: `latency_us` of a frame out counts from here.
+            let taken = Instant::now();
+            match popped {
+                Some(RouterMsg::Sample { topic, sample }) => {
+                    if let Err(e) = send_sample(&topic, &sample, taken) {
+                        failed_write(&e);
+                        break 'samples;
+                    }
+                }
+                // §6: the samples a durable topic keeps, before its live
+                // ones.
+                Some(RouterMsg::Burst { topic, samples }) => {
+                    for sample in &samples {
+                        if let Err(e) = send_sample(&topic, sample, taken) {
+                            failed_write(&e);
+                            break 'samples;
+                        }
+                    }
+                }
+                Some(RouterMsg::Text(text)) => {
+                    if let Err(e) = writer_w.message(true, text.as_bytes()) {
+                        failed_write(&e);
+                        break 'samples;
+                    }
+                }
+                // §6 `deadline_missed`: names the topic and an instance, so
+                // it passes the read ACL as a sample does (§7.3); a reload
+                // that withdraws the right withholds it.
+                Some(RouterMsg::TopicText { topic, text }) => {
+                    if !core_w.allows(&security_w, &subject_w, AclOp::Read, &topic) {
                         continue;
                     }
-                    let frames: Vec<Frame> = if json_mode {
-                        match json_sample_frames(&topic, &sample, types_w.get(&topic)) {
-                            Ok(texts) => texts.into_iter().map(Frame::text).collect(),
-                            Err(error) => {
-                                errors_out.inc();
-                                vec![Frame::text(error)]
-                            }
-                        }
-                    } else {
-                        vec![Frame::binary(binary_sample_frame(&sample))]
-                    };
-                    for frame in frames {
-                        if let Ok(bytes) = encode(&frame) {
-                            bytes_out.add(bytes.len() as u64);
-                            if writer_w.write_all(&bytes).is_err() {
-                                errors_out.inc();
-                                break 'samples;
-                            }
-                            frames_out.inc();
-                        } else {
-                            errors_out.inc();
-                        }
+                    if let Err(e) = writer_w.message_on(&topic, true, text.as_bytes(), taken) {
+                        failed_write(&e);
+                        break 'samples;
                     }
                 }
-                Ok(RouterMsg::Shutdown) => {
-                    let close = Frame::close(1001, "going away");
-                    if let Ok(b) = encode(&close) {
-                        let _ = writer_w.write_all(&b);
-                    }
+                Some(RouterMsg::Shutdown) => {
+                    // §9.2: behind the samples the queue held, the
+                    // `shutdown` message, then the Close 1001; the reader
+                    // reads the client's Close for the linger and ends.
+                    let _ = writer_w.message(true, json_frames::shutdown().as_bytes());
+                    writer_w.going_away();
+                    writer_failed_w.store(true, Ordering::SeqCst);
                     break;
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                None if queue_w.is_closed() => break,
+                None => {}
             }
         }
+        // Nothing more is sent: a pump waiting for room in the queue
+        // returns.
+        queue_w.close();
     });
 
-    // 4. Reader loop (TCP/TLS → WS frames → router/DDS writer).
+    // 4. Reader loop (TCP/TLS → WS frames → router/DDS writer). Every frame
+    //    goes through the receiver, which validates it (RFC 6455 §5, §8.2,
+    //    §10.7): invalid data fails the connection with its close code.
     let mut frame_buf: Vec<u8> = Vec::new();
+    let mut closing = false;
     'reader: loop {
+        // §6: the writer thread sent the Close 1011 for a missed Pong, or
+        // the client took no frame within `ping_interval_ms`; §9.2: it sent
+        // the `shutdown` message and the Close 1001.
+        if writer_failed.load(Ordering::SeqCst) {
+            closing = true;
+            break;
+        }
         if stop.load(Ordering::SeqCst) {
+            // zerodds-ws-bridge-1.0 §9.2: the daemon is going down. This
+            // thread sends the Close itself: the stop flag is set before
+            // the router hands `Shutdown` to the writer thread, and the
+            // writer thread leaves its loop on the flag as well, so the
+            // message alone does not reach every connection.
+            writer.going_away();
+            closing = true;
             break;
         }
         let read_result = reader.read(&mut buf);
@@ -862,48 +1677,95 @@ fn serve_connection(
             Ok(0) => break,
             Ok(n) => {
                 frame_buf.extend_from_slice(&buf[..n]);
-                while let Ok((frame, used)) = decode(&frame_buf) {
-                    frame_buf.drain(..used);
-                    match frame.opcode {
-                        Opcode::Binary if frame.payload.starts_with(&BINARY_MAGIC) => {
-                            metrics.frames_in_total.inc();
-                            metrics.bytes_in_total.add(frame.payload.len() as u64);
-                            if let Err(e) = handle_binary_sample(
-                                &frame.payload,
+                loop {
+                    let event = match receiver.feed(&mut frame_buf) {
+                        Ok(Some(event)) => event,
+                        Ok(None) => break,
+                        Err(failure) => {
+                            // RFC 6455 §7.1.7, §10.7: the Close frame with
+                            // the status code of the failure, then the
+                            // connection ends; nothing more is processed.
+                            metrics.errors_total.inc();
+                            conn.event(Level::Warn, "connection_failed")
+                                .number("code", u64::from(failure.close_code().to_u16()))
+                                .field("reason", &failure.to_string())
+                                .emit();
+                            if let Some(span) = &span {
+                                span.fail(&failure.to_string());
+                            }
+                            writer.fail(&failure);
+                            closing = true;
+                            break 'reader;
+                        }
+                    };
+                    match event {
+                        Event::Message(message)
+                            if !message.is_text && message.payload.starts_with(&BINARY_MAGIC) =>
+                        {
+                            let decoded = Instant::now();
+                            let topic = auto_topic.as_deref().unwrap_or("");
+                            metrics.frame_in(topic, message.payload.len());
+                            let mut dds_write = None;
+                            let result = handle_binary_sample(
+                                &message.payload,
                                 auto_topic.as_deref(),
-                                &writers,
-                                &runtime,
-                                &metrics,
+                                &core,
                                 &security,
                                 &subject,
                                 &writer,
-                            ) {
-                                metrics.errors_total.inc();
-                                eprintln!("[zerodds-ws-bridged] inbound err conn={conn_id}: {e}");
-                            }
-                        }
-                        Opcode::Text | Opcode::Binary => {
-                            let payload = frame.payload;
-                            metrics.frames_in_total.inc();
-                            metrics.bytes_in_total.add(payload.len() as u64);
-                            let result = handle_inbound_frame(
-                                &payload, conn_id, json_mode, &router, &writers, &topics, &types,
-                                &runtime, &metrics, &security, &subject, &writer,
+                                &mut dds_write,
                             );
-                            if let Err(e) = result {
-                                metrics.errors_total.inc();
-                                eprintln!("[zerodds-ws-bridged] inbound err conn={conn_id}: {e}");
-                            }
+                            trace_frame_in(
+                                span.as_deref(),
+                                topic,
+                                &message,
+                                decoded,
+                                dds_write,
+                                &result,
+                            );
+                            log_frame_in(&conn, topic, message.payload.len(), decoded, result);
                         }
-                        Opcode::Ping => {
-                            let pong = Frame::pong(frame.payload);
-                            if let Ok(b) = encode(&pong) {
-                                let _ = writer.write_all(&b);
-                            }
+                        Event::Message(message) => {
+                            let decoded = Instant::now();
+                            let mut topic = String::new();
+                            let mut dds_write = None;
+                            let result = handle_inbound_frame(
+                                &message.payload,
+                                message.is_text,
+                                &conn,
+                                json_mode,
+                                &core,
+                                &security,
+                                &subject,
+                                &writer,
+                                &mut topic,
+                                &mut dds_write,
+                            );
+                            trace_frame_in(
+                                span.as_deref(),
+                                &topic,
+                                &message,
+                                decoded,
+                                dds_write,
+                                &result,
+                            );
+                            log_frame_in(&conn, &topic, message.payload.len(), decoded, result);
                         }
-                        Opcode::Pong => {}
-                        Opcode::Close => break 'reader,
-                        _ => {}
+                        // RFC 6455 §5.5.2, §5.5.3: a Pong with the Ping's
+                        // application data.
+                        Event::Ping(data) => {
+                            let _ = writer.pong(&data);
+                        }
+                        // §6: the client is alive.
+                        Event::Pong(_) => pong_seen.store(true, Ordering::SeqCst),
+                        // RFC 6455 §5.5.1, §7.1: a Close is answered with a
+                        // Close of the same status, unless this end sent
+                        // its own before; then the connection ends.
+                        Event::Close(body) => {
+                            writer.close_received(body.as_ref());
+                            closing = true;
+                            break 'reader;
+                        }
                     }
                 }
             }
@@ -913,17 +1775,181 @@ fn serve_connection(
             {
                 continue;
             }
-            Err(_) => break,
+            // §8.3: a socket error fails the connection.
+            Err(e) => {
+                if let Some(span) = &span {
+                    span.fail(&alloc_format(format_args!("read: {e}")));
+                }
+                break;
+            }
+        }
+    }
+    if closing {
+        // The Close frame is out. This end stops sending and reads what
+        // the client still sends until it closes, at most 500 ms: closing
+        // a socket with unread octets resets the connection, and the
+        // client could lose the Close frame (RFC 6455 §7.1.1: the server
+        // closes the TCP connection first).
+        writer.sink.shutdown_write();
+        let deadline = Instant::now() + CLOSE_LINGER;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() || reader.set_read_timeout(left).is_err() {
+                break;
+            }
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
         }
     }
 
     // 5. Cleanup.
-    if let Ok(mut r) = router.lock() {
+    if let Ok(mut r) = core.router.lock() {
         r.deregister_connection(conn_id);
     }
+    conn.event(Level::Info, "connection_close")
+        .latency(opened)
+        .emit();
     let _ = writer_thread.join();
+    // §8.3: the root span, after the last message of the writer thread.
+    if let Some(span) = &span {
+        span.end(unix_ns());
+    }
     drop(conn_guard);
     Ok(())
+}
+
+/// Why `/schema/<slug>` was refused.
+#[cfg(feature = "daemon")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SchemaRefusal {
+    /// No topic with `idl_file` at the slug (404).
+    NotFound,
+    /// The ACL grants the client neither read nor write of the topic (403).
+    Acl,
+}
+
+/// The answer to `/schema/<slug>` (§5.2).
+#[cfg(feature = "daemon")]
+struct SchemaAnswer {
+    code: u16,
+    http: String,
+    refusal: Option<SchemaRefusal>,
+}
+
+/// The answer to a plain GET of `/schema/<slug>` (§5.2): 200 with the IDL
+/// of the topic whose slug it is (`text/plain`) or its XML type
+/// representation (`application/xml`); 404 for a slug of no topic or of a
+/// topic without `idl_file`; 403 for a topic the client may neither read
+/// nor write (§7.3).
+#[cfg(feature = "daemon")]
+fn schema_response(
+    slug: &str,
+    form: super::schema::SchemaForm,
+    topics: &[TopicConfig],
+    types: &std::collections::BTreeMap<String, TopicType>,
+    granted: impl Fn(&str) -> bool,
+) -> SchemaAnswer {
+    let refuse = |code: u16, status: &str, refusal: SchemaRefusal, message: String| SchemaAnswer {
+        code,
+        http: http_response(status, "text/plain; charset=utf-8", &format!("{message}\n")),
+        refusal: Some(refusal),
+    };
+    // A topic without `idl_file` may share the slug of one with it (§3).
+    let of_slug = |t: &&TopicConfig| super::schema::slug(&t.name) == slug;
+    let Some(topic) = topics
+        .iter()
+        .filter(of_slug)
+        .find(|t| types.contains_key(&t.name))
+        .or_else(|| topics.iter().find(of_slug))
+    else {
+        return refuse(
+            404,
+            "404 Not Found",
+            SchemaRefusal::NotFound,
+            format!("no topic has the schema path /schema/{slug}"),
+        );
+    };
+    if !granted(&topic.name) {
+        return refuse(
+            403,
+            "403 Forbidden",
+            SchemaRefusal::Acl,
+            format!("{} is not granted", topic.name),
+        );
+    }
+    let Some(ty) = types.get(&topic.name) else {
+        return refuse(
+            404,
+            "404 Not Found",
+            SchemaRefusal::NotFound,
+            format!("{} has no idl_file", topic.name),
+        );
+    };
+    let (content_type, body) = match form {
+        super::schema::SchemaForm::Idl => ("text/plain; charset=utf-8", ty.idl().to_string()),
+        super::schema::SchemaForm::Xml => {
+            match super::schema::xml_type_representation(ty.dynamic_type()) {
+                Ok(xml) => ("application/xml; charset=utf-8", xml),
+                // A type the XML form cannot carry: the IDL form can.
+                Err(e) => {
+                    return SchemaAnswer {
+                        code: 501,
+                        http: http_response(
+                            "501 Not Implemented",
+                            "text/plain; charset=utf-8",
+                            &format!("{e}; the IDL form is at /schema/{slug}.idl\n"),
+                        ),
+                        refusal: Some(SchemaRefusal::NotFound),
+                    };
+                }
+            }
+        }
+    };
+    SchemaAnswer {
+        code: 200,
+        http: http_response("200 OK", content_type, &body),
+        refusal: None,
+    }
+}
+
+/// The path of a plain HTTP GET: a request with the method GET and
+/// without an `Upgrade` field, its target without the query. `None` for an
+/// opening handshake and for any other method.
+#[cfg(feature = "daemon")]
+fn plain_get_path(request: &str) -> Option<&str> {
+    let mut lines = request.split("\r\n");
+    let mut line = lines.next()?.split(' ');
+    let (method, target, version) = (line.next()?, line.next()?, line.next()?);
+    if method != "GET" || !version.starts_with("HTTP/1.") || line.next().is_some() {
+        return None;
+    }
+    let upgrade = lines
+        .take_while(|l| !l.is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .any(|(name, _)| name.trim().eq_ignore_ascii_case("upgrade"));
+    if upgrade {
+        return None;
+    }
+    target.split('?').next()
+}
+
+/// The `Origin` field of a request that is no opening handshake, as
+/// `parse_client_request` reads it for one: the origins of several fields
+/// are one list, separated by spaces, so that each is checked. `None`
+/// without the field.
+#[cfg(feature = "daemon")]
+fn origin_field(request: &str) -> Option<String> {
+    let values: Vec<&str> = request
+        .split("\r\n")
+        .skip(1)
+        .take_while(|l| !l.is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .filter(|(n, _)| n.trim().eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.trim())
+        .collect();
+    (!values.is_empty()).then(|| values.join(" "))
 }
 
 /// A connection is either plain TCP or TLS-wrapped.
@@ -976,6 +2002,15 @@ impl WsStream {
         }
     }
 
+    /// The time one write waits for the client to take octets; the socket
+    /// option holds for the clones of [`Self::into_split`] as well.
+    fn set_write_timeout(&self, dur: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Self::Plain(s) => s.set_write_timeout(dur),
+            Self::Tls(s) => s.sock.set_write_timeout(dur),
+        }
+    }
+
     fn into_split(self) -> std::io::Result<(WsReader, Arc<WsWriter>)> {
         match self {
             Self::Plain(tcp) => {
@@ -1000,8 +2035,119 @@ impl WsStream {
     }
 }
 
+/// How long the daemon reads on after its Close frame before it closes
+/// the connection (zerodds-ws-bridge-1.0 §4.5).
+#[cfg(feature = "daemon")]
+const CLOSE_LINGER: Duration = Duration::from_millis(500);
+
+/// How often the daemon looks for missed deadlines (§6).
+#[cfg(feature = "daemon")]
+const DEADLINE_TICK: Duration = Duration::from_millis(10);
+
+/// The status code of the Close for a client that did not answer the
+/// daemon's Ping (§6; RFC 6455 §7.4.1: 1011, the server cannot go on).
+#[cfg(feature = "daemon")]
+const PING_TIMEOUT_CLOSE: u16 = 1011;
+
+/// The status code of the Close for a client that lets more control
+/// messages wait in its send queue than it may (§6; RFC 6455 §7.4.1: 1008,
+/// a message that violates the policy of the endpoint).
+#[cfg(feature = "daemon")]
+const QUEUE_OVERFLOW_CLOSE: u16 = 1008;
+
+/// The largest opening handshake the daemon reads (§4.1): a request head of
+/// more octets is answered with 400.
+#[cfg(feature = "daemon")]
+pub const MAX_HANDSHAKE_SIZE: usize = 64 * 1024;
+
+/// How long after the TCP connection the request head of the opening
+/// handshake may take to arrive (§4.1); then the daemon answers `408` and
+/// closes the connection.
+#[cfg(feature = "daemon")]
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long one `read` of a connection waits for octets before the thread
+/// looks at the stop flag again.
+#[cfg(feature = "daemon")]
+const READ_POLL: Duration = Duration::from_millis(500);
+
+/// How long [`DaemonHandle::shutdown`] waits for the connections to end
+/// (zerodds-ws-bridge-1.0 §9.2): a connection sees the stop flag within
+/// `READ_POLL`, sends its Close and reads on for at most `CLOSE_LINGER`;
+/// the rest is for a client that takes the Close frame slowly.
+#[cfg(feature = "daemon")]
+pub const SHUTDOWN_CLOSE_WAIT: Duration = Duration::from_secs(2);
+
+/// The number of connection threads that run, from the accepted TCP
+/// connection to the end of `serve_connection`.
+#[cfg(feature = "daemon")]
+#[derive(Default)]
+struct ConnectionThreads {
+    running: Mutex<usize>,
+    ended: Condvar,
+}
+
+#[cfg(feature = "daemon")]
+impl ConnectionThreads {
+    /// Counts a connection thread; the guard counts it out when the thread
+    /// drops it.
+    fn enter(self: &Arc<Self>) -> ConnectionThread {
+        let mut running = match self.running.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *running += 1;
+        ConnectionThread(Arc::clone(self))
+    }
+
+    /// Waits until no connection thread runs, at most `limit`. Whether none
+    /// runs.
+    fn wait_until_none(&self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        let mut running = match self.running.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        while *running != 0 {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            running = match self.ended.wait_timeout(running, left) {
+                Ok((g, _)) => g,
+                Err(p) => p.into_inner().0,
+            };
+        }
+        true
+    }
+}
+
+/// One running connection thread in [`ConnectionThreads`].
+#[cfg(feature = "daemon")]
+struct ConnectionThread(Arc<ConnectionThreads>);
+
+#[cfg(feature = "daemon")]
+impl Drop for ConnectionThread {
+    fn drop(&mut self) {
+        let mut running = match self.0.running.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *running = running.saturating_sub(1);
+        self.0.ended.notify_all();
+    }
+}
+
 #[cfg(feature = "daemon")]
 impl WsReader {
+    /// The time one `read` waits for octets.
+    fn set_read_timeout(&self, timeout: Duration) -> std::io::Result<()> {
+        match self {
+            Self::Plain(s) => s.set_read_timeout(Some(timeout)),
+            Self::Tls { wait_sock, .. } => wait_sock.set_read_timeout(Some(timeout)),
+        }
+    }
+
     fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Plain(s) => s.read(b),
@@ -1052,8 +2198,236 @@ impl WsReader {
     }
 }
 
+/// A connection in the log (Spec §8.1): the daemon's number of it and the
+/// client's address.
+#[cfg(feature = "daemon")]
+struct ConnLog {
+    id: u64,
+    peer: String,
+}
+
+#[cfg(feature = "daemon")]
+impl ConnLog {
+    /// A line about this connection, with `connection_id` and `peer`.
+    fn event(&self, level: Level, name: &'static str) -> log::Event {
+        log::event(level, name)
+            .number("connection_id", self.id)
+            .field("peer", &self.peer)
+    }
+}
+
+/// The log line of a client's message (§8.1): `frame_in` with its topic
+/// (none for a control message), its octets and `latency_us` from the
+/// decoded message to the DDS write returned; a message the daemon refused
+/// is `frame_refused` with the reason, the error frame told the client.
+#[cfg(feature = "daemon")]
+fn log_frame_in(
+    conn: &ConnLog,
+    topic: &str,
+    bytes: usize,
+    decoded: Instant,
+    result: Result<(), String>,
+) {
+    // The threshold first: at the default `info` no frame_in line is
+    // written, and a sample pays no allocation for it.
+    let line = match result {
+        Ok(()) if !log::enabled(Level::Debug) => return,
+        Ok(()) => conn.event(Level::Debug, "frame_in"),
+        Err(reason) => conn
+            .event(Level::Warn, "frame_refused")
+            .field("reason", &reason),
+    };
+    line.field("topic", topic)
+        .number("bytes", bytes as u64)
+        .latency(decoded)
+        .emit();
+}
+
+/// The spans of a client's message (§8.3): `ws.frame.in` from the decoded
+/// message to now, with `dds.write` when it wrote into DDS.
+#[cfg(feature = "daemon")]
+fn trace_frame_in(
+    span: Option<&ConnectionSpan>,
+    topic: &str,
+    message: &crate::message::Message,
+    decoded: Instant,
+    dds_write: Option<(u64, u64)>,
+    result: &Result<(), String>,
+) {
+    let Some(span) = span else {
+        return;
+    };
+    span.frame_in(&FrameIn {
+        start_ns: unix_ns_since(decoded),
+        end_ns: unix_ns(),
+        topic: topic.to_string(),
+        bytes: message.payload.len(),
+        text: message.is_text,
+        dds_write,
+        refused: result.as_ref().err().cloned(),
+    });
+}
+
+/// The reason a failed write of a connection fails its span with (§8.3):
+/// a write the client did not take within `ping_interval_ms` (the socket's
+/// write timeout, §6), or the socket's error. `None` when nothing was sent
+/// because a Close frame went out before (RFC 6455 §5.5.1): the connection
+/// is closing, it did not fail.
+#[cfg(feature = "daemon")]
+fn write_failure(e: &std::io::Error) -> Option<String> {
+    if e.get_ref()
+        .and_then(|inner| inner.downcast_ref::<SendError>())
+        .is_some_and(|s| *s == SendError::Closing)
+    {
+        return None;
+    }
+    Some(
+        if matches!(
+            e.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ) {
+            "write timeout: the client took no frame within ping_interval_ms".to_string()
+        } else {
+            alloc_format(format_args!("write: {e}"))
+        },
+    )
+}
+
+/// The sending side of an upgraded connection: the frames of
+/// [`Sender`] written to the socket. One lock covers building a frame and
+/// writing it, so the frames of the reader thread (Pong, Close, error
+/// frames) and of the writer thread (samples) leave whole and in the order
+/// the compression context of RFC 7692 saw them.
+#[cfg(feature = "daemon")]
+struct WsOut {
+    sink: Arc<WsWriter>,
+    sender: Mutex<Sender>,
+    /// The connection in the log (§8.1).
+    conn: Arc<ConnLog>,
+    /// Counts each message sent (§8.2 `frames_out_total`, `bytes_out_total`).
+    metrics: BridgeMetrics,
+    /// The span of the connection (§8.3): each message sent is its child.
+    span: Option<Arc<ConnectionSpan>>,
+}
+
+#[cfg(feature = "daemon")]
+impl WsOut {
+    fn send(
+        &self,
+        build: impl FnOnce(&mut Sender) -> Result<Option<Vec<u8>>, SendError>,
+    ) -> std::io::Result<usize> {
+        let mut sender = match self.sender.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        match build(&mut sender) {
+            Ok(Some(wire)) => {
+                self.sink.write_all(&wire)?;
+                Ok(wire.len())
+            }
+            Ok(None) => Ok(0),
+            Err(e) => Err(std::io::Error::other(e)),
+        }
+    }
+
+    /// Sends a text (`is_text`) or binary message of no topic; the octets
+    /// written.
+    fn message(&self, is_text: bool, payload: &[u8]) -> std::io::Result<usize> {
+        self.message_on("", is_text, payload, Instant::now())
+    }
+
+    /// Sends a message that carries a sample (or a `deadline_missed`) of
+    /// `topic`; counted under the topic (§8.2).
+    /// `since` is when the connection took it from its send queue, the
+    /// start of the `latency_us` of the log line (§8.1).
+    fn message_on(
+        &self,
+        topic: &str,
+        is_text: bool,
+        payload: &[u8],
+        since: Instant,
+    ) -> std::io::Result<usize> {
+        let sent = self.send(|s| s.message(is_text, payload).map(Some));
+        if let Some(span) = &self.span {
+            span.frame_out(&FrameOut {
+                start_ns: unix_ns_since(since),
+                end_ns: unix_ns(),
+                topic: topic.to_string(),
+                bytes: payload.len(),
+                text: is_text,
+                failed: sent.as_ref().err().map(ToString::to_string),
+            });
+        }
+        let written = sent?;
+        self.metrics.frame_out(topic, payload.len());
+        if log::enabled(Level::Debug) {
+            self.conn
+                .event(Level::Debug, "frame_out")
+                .field("topic", topic)
+                .number("bytes", payload.len() as u64)
+                .latency(since)
+                .emit();
+        }
+        Ok(written)
+    }
+
+    fn pong(&self, data: &[u8]) -> std::io::Result<usize> {
+        self.send(|s| s.pong(data).map(Some))
+    }
+
+    /// A Ping of the daemon (§6, RFC 6455 §5.5.2).
+    fn ping(&self, data: &[u8]) -> std::io::Result<usize> {
+        self.send(|s| s.ping(data).map(Some))
+    }
+
+    /// Starts the closing handshake (RFC 6455 §7.1.2).
+    fn close(&self, status: u16, reason: &str) -> std::io::Result<usize> {
+        self.send(|s| s.close(status, reason).map(Some))
+    }
+
+    /// The Close frame of a daemon that shuts down: 1001, "going away"
+    /// (RFC 6455 §7.1.2, §7.4.1). Sent once: nothing is sent when a Close
+    /// frame went out before, from either thread or for another reason.
+    fn going_away(&self) {
+        let _ = self.close(1001, "going away");
+    }
+
+    /// Answers the client's Close frame (RFC 6455 §5.5.1).
+    fn close_received(&self, body: Option<&(u16, String)>) {
+        let _ = self.send(|s| s.close_received(body));
+    }
+
+    /// Fails the connection with the Close frame of `failure` (RFC 6455
+    /// §7.1.7).
+    fn fail(&self, failure: &Failure) {
+        let _ = self.send(|s| Ok(s.fail(failure)));
+    }
+}
+
 #[cfg(feature = "daemon")]
 impl WsWriter {
+    /// Ends the sending direction: TLS `close_notify`, then the TCP FIN.
+    fn shutdown_write(&self) {
+        match self {
+            Self::Plain(m) => {
+                let guard = match m.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                let _ = guard.shutdown(std::net::Shutdown::Write);
+            }
+            Self::Tls(m) => {
+                let mut guard = match m.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                guard.conn.send_close_notify();
+                let _ = guard.flush();
+                let _ = guard.sock.shutdown(std::net::Shutdown::Write);
+            }
+        }
+    }
+
     fn write_all(&self, b: &[u8]) -> std::io::Result<()> {
         match self {
             Self::Plain(m) => {
@@ -1114,42 +2488,74 @@ impl Drop for ConnectionLifetime {
     }
 }
 
-/// A text frame from the client: a control message of §4.4 or a sample
-/// frame of §4.3. What the daemon cannot do with it is answered with an
-/// error frame (§4.4), never dropped.
+/// A message from the client that is no binary sample frame: a text
+/// message is a control message of §4.4 or a sample frame of §4.3; a binary
+/// message without the magic of §4.3 is refused, whatever it holds (§4.4:
+/// the control messages are text frames). What the daemon cannot do with a
+/// message is answered with an error frame (§4.4), never dropped.
 #[cfg(feature = "daemon")]
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_inbound_frame(
     payload: &[u8],
-    conn_id: u64,
+    is_text: bool,
+    conn: &ConnLog,
     json_mode: bool,
-    router: &Arc<Mutex<Router>>,
-    writers: &Arc<std::collections::BTreeMap<String, EntityId>>,
-    topics: &[TopicConfig],
-    types: &std::collections::BTreeMap<String, TopicType>,
-    runtime: &Arc<DcpsRuntime>,
-    metrics: &BridgeMetrics,
+    core: &Core,
     security: &Arc<zerodds_bridge_security::LiveSecurity>,
     subject: &AuthSubject,
-    writer: &WsWriter,
+    writer: &WsOut,
+    topic_seen: &mut String,
+    dds_write: &mut Option<(u64, u64)>,
 ) -> Result<(), String> {
+    let conn_id = conn.id;
+    let (router, writers, topics, types, runtime, metrics) = (
+        &core.router,
+        &core.writers,
+        &core.topics,
+        &core.types,
+        &core.runtime,
+        &core.metrics,
+    );
     let refuse = |code: u16, message: String| {
         metrics.errors_total.inc();
         send_text_frame(writer, &json_frames::error(code, &message));
         Err(message)
     };
-    let text = match core::str::from_utf8(payload) {
-        Ok(t) => t,
-        Err(e) => {
+    // §7.3: a read or write the ACL does not grant, an error frame 403,
+    // counted in `auth_failures_total`, not in `errors_total` (§8.2).
+    let refuse_acl = |message: String| {
+        metrics.auth_failure(auth_reason::ACL);
+        send_text_frame(writer, &json_frames::error(403, &message));
+        Err(message)
+    };
+    // A text message is UTF-8 when it gets here: the receiver failed the
+    // connection with 1007 otherwise (RFC 6455 §8.2). A binary message is
+    // not parsed: without the magic of §4.3 it is no message of a client.
+    let message = if is_text {
+        core::str::from_utf8(payload)
+            .ok()
+            .map(json_frames::parse_client)
+    } else {
+        None
+    };
+    // §8.2: a sample frame is counted under its topic, any other message
+    // under none; §8.1: logged the same way.
+    let topic_of_frame = match &message {
+        Some(Ok(ClientMessage::Sample(frame))) => frame.topic.as_str(),
+        _ => "",
+    };
+    metrics.frame_in(topic_of_frame, payload.len());
+    topic_seen.push_str(topic_of_frame);
+    let message = match message {
+        Some(Ok(m)) => m,
+        Some(Err(e)) => return refuse(400, e),
+        None => {
             return refuse(
                 400,
-                alloc_format(format_args!("a text frame is UTF-8: {e}")),
+                "a binary frame begins with ZDB1, a control message or a JSON sample is a text frame"
+                    .to_string(),
             );
         }
-    };
-    let message = match json_frames::parse_client(text) {
-        Ok(m) => m,
-        Err(e) => return refuse(400, e),
     };
     match message {
         ClientMessage::Ping => {
@@ -1162,19 +2568,21 @@ fn handle_inbound_frame(
                     r.unsubscribe(conn_id, topic);
                 }
             }
+            for topic in &names {
+                conn.event(Level::Debug, "unsubscribe")
+                    .field("topic", topic)
+                    .emit();
+            }
             Ok(())
         }
         ClientMessage::Subscribe(names) => {
             let mut taken = Vec::new();
             for topic in names {
-                if !authorize(&security.current().acl, subject, AclOp::Read, &topic) {
-                    let _ = refuse(
-                        403,
-                        alloc_format(format_args!(
-                            "{}: read on {topic} is not granted",
-                            subject.name
-                        )),
-                    );
+                if !core.allows(security, subject, AclOp::Read, &topic) {
+                    let _ = refuse_acl(alloc_format(format_args!(
+                        "{}: read on {topic} is not granted",
+                        subject.name
+                    )));
                     continue;
                 }
                 let bridged_out = topics
@@ -1192,26 +2600,33 @@ fn handle_inbound_frame(
                     send_text_frame(writer, &no_type_error(&topic));
                     continue;
                 }
-                taken.push(topic);
+                // `subscribed` names each topic once (§4.4).
+                if !taken.contains(&topic) {
+                    taken.push(topic);
+                }
             }
+            // `subscribed` goes through the send queue, ahead of the
+            // samples the topics keep (§6), which follow it there.
             if let Ok(mut r) = router.lock() {
+                r.send_text(conn_id, json_frames::subscribed(&taken));
                 for topic in &taken {
                     r.subscribe(conn_id, topic.clone());
                 }
             }
-            send_text_frame(writer, &json_frames::subscribed(&taken));
+            for topic in &taken {
+                conn.event(Level::Debug, "subscribe")
+                    .field("topic", topic)
+                    .emit();
+            }
             Ok(())
         }
         ClientMessage::Sample(frame) => {
             let topic = frame.topic.clone();
-            if !authorize(&security.current().acl, subject, AclOp::Write, &topic) {
-                return refuse(
-                    403,
-                    alloc_format(format_args!(
-                        "{}: write on {topic} is not granted",
-                        subject.name
-                    )),
-                );
+            if !core.allows(security, subject, AclOp::Write, &topic) {
+                return refuse_acl(alloc_format(format_args!(
+                    "{}: write on {topic} is not granted",
+                    subject.name
+                )));
             }
             let Some(eid) = writers.get(&topic).copied() else {
                 return refuse(
@@ -1240,10 +2655,20 @@ fn handle_inbound_frame(
                     }
                 },
             };
-            match write_sample_frame(runtime, eid, ty, &frame, source_ts) {
+            let started = unix_ns();
+            let written = {
+                let _held = core.hold_writer(&topic);
+                write_sample_frame(runtime, eid, ty, &frame, source_ts)
+            };
+            // A `register` writes nothing (§4.3); a write that failed is
+            // the error of the frame span.
+            if written.is_ok() && frame.op != SampleOp::Register {
+                *dds_write = Some((started, unix_ns()));
+            }
+            match written {
                 Ok(()) => {
                     if frame.op != SampleOp::Register {
-                        metrics.dds_samples_in_total.inc();
+                        metrics.dds_published(&topic);
                     }
                     Ok(())
                 }
@@ -1314,67 +2739,9 @@ fn write_sample_frame(
     }
 }
 
-/// The error frame for a JSON-mode client of a topic without `idl_file`
-/// (§3): its samples cannot be JSON without the type.
 #[cfg(feature = "daemon")]
-fn no_type_error(topic: &str) -> String {
-    json_frames::error(
-        415,
-        &alloc_format(format_args!(
-            "{topic} has no idl_file: the JSON text frames need the topic's type"
-        )),
-    )
-}
-
-/// The text frames of a DDS sample for a JSON-mode client (§4.3): a
-/// `publish` with the sample as JSON, a `dispose`, an `unregister` (both
-/// for a marker that is both).
-///
-/// # Errors
-/// The error frame (§4.4) for a topic without type or a sample that does
-/// not decode as its type.
-#[cfg(feature = "daemon")]
-fn json_sample_frames(
-    topic: &str,
-    sample: &DdsSample,
-    ty: Option<&TopicType>,
-) -> Result<Vec<String>, String> {
-    let frame = |op: SampleOp, data: Option<serde_json::Value>| SampleFrame {
-        topic: topic.to_string(),
-        op,
-        key_hash: sample.key_hash,
-        data,
-        timestamp_ns: sample.timestamp_ns,
-    };
-    let frames = match sample.kind {
-        SampleKind::Alive => {
-            let ty = ty.ok_or_else(|| no_type_error(topic))?;
-            let data = ty
-                .decode(&sample.payload, sample.representation_identifier)
-                .map_err(|e| {
-                    json_frames::error(
-                        422,
-                        &alloc_format(format_args!("a sample of {topic} does not decode: {e}")),
-                    )
-                })?;
-            vec![frame(SampleOp::Publish, Some(data))]
-        }
-        SampleKind::Disposed => vec![frame(SampleOp::Dispose, None)],
-        SampleKind::Unregistered => vec![frame(SampleOp::Unregister, None)],
-        SampleKind::DisposedUnregistered => vec![
-            frame(SampleOp::Dispose, None),
-            frame(SampleOp::Unregister, None),
-        ],
-    };
-    Ok(frames.iter().map(SampleFrame::render).collect())
-}
-
-#[cfg(feature = "daemon")]
-fn send_text_frame(writer: &WsWriter, text: &str) {
-    let frame = Frame::text(text.to_string());
-    if let Ok(b) = encode(&frame) {
-        let _ = writer.write_all(&b);
-    }
+fn send_text_frame(writer: &WsOut, text: &str) {
+    let _ = writer.message(true, text.as_bytes());
 }
 
 /// The subprotocol of the binary frames (zerodds-ws-bridge-1.0 §4.1). A
@@ -1383,96 +2750,25 @@ fn send_text_frame(writer: &WsWriter, text: &str) {
 const SUBPROTOCOL_BINARY: &str = "zerodds-ws-bridge-1.0";
 /// The subprotocol of the JSON text frames (§4.3).
 const SUBPROTOCOL_JSON: &str = "zerodds-ws-bridge-1.0+json";
-/// `ZDB1`, the magic of a binary frame (§4.3).
-const BINARY_MAGIC: [u8; 4] = *b"ZDB1";
-/// Flag bit 0 of a binary frame: a dispose (§4.3).
-const FLAG_DISPOSE: u8 = 0x01;
-/// Flag bit 2 of a binary frame: an unregister (§4.3).
-const FLAG_UNREGISTER: u8 = 0x04;
-/// The representation identifier of a key holder, PLAIN_CDR2 big endian
-/// (DDS-XTypes 1.3 §7.6.8): the payload of a dispose or an unregister.
-const KEY_HOLDER_IDENTIFIER: [u8; 2] = [0x00, 0x06];
-
-/// A binary frame of §4.3: `ZDB1`, the flags octet (bit 0 a dispose, bit 2
-/// an unregister), the encapsulation header the payload came under
-/// (DDSI-RTPS 2.5 §10.5: its representation identifier, which names
-/// version, format and byte order, and options), the CDR bytes as they
-/// travelled over RTPS; for a dispose or an unregister the key holder.
-fn binary_sample_frame(sample: &DdsSample) -> Vec<u8> {
-    let flags = match sample.kind {
-        SampleKind::Alive => 0,
-        SampleKind::Disposed => FLAG_DISPOSE,
-        SampleKind::Unregistered => FLAG_UNREGISTER,
-        SampleKind::DisposedUnregistered => FLAG_DISPOSE | FLAG_UNREGISTER,
-    };
-    let identifier = sample.representation_identifier;
-    let mut out = Vec::with_capacity(sample.payload.len() + 9);
-    out.extend_from_slice(&BINARY_MAGIC);
-    out.push(flags);
-    out.extend_from_slice(&[identifier[0], identifier[1], 0, 0]);
-    out.extend_from_slice(&sample.payload);
-    out
-}
-
-/// The flags, the representation identifier and the CDR bytes of a binary
-/// frame of §4.3.
-///
-/// # Errors
-/// A frame shorter than magic, flags and header, or a header that names no
-/// CDR representation (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60).
-fn split_binary_sample(frame: &[u8]) -> Result<(u8, [u8; 2], &[u8]), String> {
-    if frame.len() < 9 || frame[..4] != BINARY_MAGIC {
-        return Err("a binary frame shorter than ZDB1, flags and encapsulation header".into());
-    }
-    let identifier = [frame[5], frame[6]];
-    match u16::from_be_bytes(identifier) {
-        0x0000..=0x0003 | 0x0006..=0x000b => Ok((frame[4], identifier, &frame[9..])),
-        other => Err(alloc_format(format_args!(
-            "encapsulation {other:#06x} is not a CDR representation"
-        ))),
-    }
-}
-
-/// How the DDS writer frames a body that came under `identifier` (DDS-XTypes
-/// 1.3 Table 60): its data representation (`CDR`, `PL_CDR` are XCDR1, the
-/// others XCDR2), the extensibility the format belongs to (a parameter list
-/// is `@mutable`, a delimited body `@appendable`, anything else `@final`) and
-/// whether it is big-endian (the even identifiers).
-#[cfg(feature = "daemon")]
-fn writer_form(identifier: [u8; 2]) -> (i16, zerodds_types::qos::ExtensibilityForRepr, bool) {
-    use zerodds_rtps::publication_data::data_representation as dr;
-    use zerodds_types::qos::ExtensibilityForRepr as Ext;
-    let representation = if identifier[1] <= 0x03 {
-        dr::XCDR
-    } else {
-        dr::XCDR2
-    };
-    let extensibility = match identifier[1] & !0x01 {
-        0x02 | 0x0a => Ext::Mutable,
-        0x08 => Ext::Appendable,
-        _ => Ext::Final,
-    };
-    (representation, extensibility, identifier[1] & 0x01 == 0)
-}
-
 /// A binary frame from the client (§4.3) on a connection whose path names
 /// a topic (§4.2): the sample is written into DDS with the representation
 /// and byte order its header names. A client disposes or unregisters with a
-/// JSON sample frame; a binary frame with those flags is refused with an
-/// error frame, not dropped.
+/// JSON sample frame; a binary frame with those flags, with bit 1 or with a
+/// reserved bit is refused with an error frame, not dropped.
 #[cfg(feature = "daemon")]
 #[allow(clippy::too_many_arguments)]
 fn handle_binary_sample(
     frame: &[u8],
     auto_topic: Option<&str>,
-    writers: &Arc<std::collections::BTreeMap<String, EntityId>>,
-    runtime: &Arc<DcpsRuntime>,
-    metrics: &BridgeMetrics,
+    core: &Core,
     security: &Arc<zerodds_bridge_security::LiveSecurity>,
     subject: &AuthSubject,
-    writer: &WsWriter,
+    writer: &WsOut,
+    dds_write: &mut Option<(u64, u64)>,
 ) -> Result<(), String> {
+    let (writers, runtime, metrics) = (&core.writers, &core.runtime, &core.metrics);
     let refuse = |code: u16, message: String| {
+        metrics.errors_total.inc();
         send_text_frame(writer, &json_frames::error(code, &message));
         Err(message)
     };
@@ -1482,14 +2778,16 @@ fn handle_binary_sample(
             "a binary frame needs a connection whose path names a topic".into(),
         );
     };
-    if !authorize(&security.current().acl, subject, AclOp::Write, topic) {
-        return refuse(
-            403,
-            alloc_format(format_args!(
-                "{}: write on {topic} is not granted",
-                subject.name
-            )),
-        );
+    if !core.allows(security, subject, AclOp::Write, topic) {
+        // §7.3, §8.2: an ACL refusal, counted in `auth_failures_total`
+        // and not in `errors_total`.
+        metrics.auth_failure(auth_reason::ACL);
+        let message = alloc_format(format_args!(
+            "{}: write on {topic} is not granted",
+            subject.name
+        ));
+        send_text_frame(writer, &json_frames::error(403, &message));
+        return Err(message);
     }
     let Some(eid) = writers.get(topic) else {
         return refuse(
@@ -1501,23 +2799,48 @@ fn handle_binary_sample(
         Ok(parts) => parts,
         Err(e) => return refuse(400, e),
     };
-    if flags & (FLAG_DISPOSE | FLAG_UNREGISTER) != 0 {
-        return refuse(
-            400,
-            alloc_format(format_args!(
-                "{topic}: a client disposes or unregisters with a JSON sample frame"
-            )),
-        );
+    if let Err(e) = check_client_flags(topic, flags) {
+        return refuse(400, e);
     }
-    // The writer's header names what the frame's header named.
+    // §4.3: the writer of a topic with `idl_file` offers XCDR2 alone, in
+    // the format of the type's extensibility (DDS-XTypes 1.3 §7.6.3.1.1,
+    // Table 60); a frame may name either byte order of that format.
+    if let Some(ty) = core.types.get(topic) {
+        let own = ty.identifier();
+        if identifier[0] != own[0] || identifier[1] & !0x01 != own[1] & !0x01 {
+            return refuse(
+                400,
+                alloc_format(format_args!(
+                    "{topic}: encapsulation {:#06x}: the writer of the topic offers {:#06x} or {:#06x}",
+                    u16::from_be_bytes(identifier),
+                    u16::from_be_bytes(own) & !0x01,
+                    u16::from_be_bytes(own) | 0x01
+                )),
+            );
+        }
+    }
+    // The writer's header names what the frame's header named; the writer
+    // is held from the first setter to the write.
     let (offer, extensibility, big_endian) = writer_form(identifier);
-    let _ = runtime.set_user_writer_data_rep_override(*eid, Some(vec![offer]));
-    let _ = runtime.set_user_writer_byte_order_override(*eid, big_endian);
-    let _ = runtime.set_user_writer_wire_extensibility(*eid, extensibility);
-    runtime
-        .write_user_sample(*eid, body.to_vec())
-        .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
-    metrics.dds_samples_in_total.inc();
+    let held = core.hold_writer(topic);
+    let written = runtime
+        .set_user_writer_data_rep_override(*eid, Some(vec![offer]))
+        .and_then(|()| runtime.set_user_writer_byte_order_override(*eid, big_endian))
+        .and_then(|()| runtime.set_user_writer_wire_extensibility(*eid, extensibility))
+        .map(|()| unix_ns())
+        .and_then(|started| {
+            runtime
+                .write_user_sample_borrowed(*eid, body)
+                .map(|()| started)
+        });
+    drop(held);
+    let started = match written {
+        Ok(started) => started,
+        // §4.4: 500, the DDS write failed.
+        Err(e) => return refuse(500, alloc_format(format_args!("{topic}: dds-write: {e:?}"))),
+    };
+    *dds_write = Some((started, unix_ns()));
+    metrics.dds_published(topic);
     Ok(())
 }
 
@@ -1526,6 +2849,57 @@ fn alloc_format(args: core::fmt::Arguments<'_>) -> String {
     let mut s = String::new();
     let _ = s.write_fmt(args);
     s
+}
+
+/// The settings in which `new` differs from the configuration the daemon
+/// `started` with and that a reload does not apply (Spec §9.2): they are
+/// read once, when the daemon starts, and wait for a restart. The names
+/// are the ones the reload logs.
+fn settings_that_need_a_restart(started: &DaemonConfig, new: &DaemonConfig) -> Vec<&'static str> {
+    let mut restart = Vec::new();
+    if new.tls_cert_file != started.tls_cert_file
+        || new.tls_key_file != started.tls_key_file
+        || new.tls_client_ca_file != started.tls_client_ca_file
+    {
+        restart.push("tls file paths");
+    }
+    if new.topics != started.topics {
+        restart.push("topics");
+    }
+    // §1 L6: the participants, their topics and their subjects; the ACL of
+    // a tenant's topics applies at once.
+    if new.tenants != started.tenants {
+        restart.push("tenants");
+    }
+    if new.listen != started.listen || new.domain != started.domain {
+        restart.push("listen/domain");
+    }
+    if new.metrics_enabled != started.metrics_enabled
+        || new.metrics_addr != started.metrics_addr
+        || new.metrics_path != started.metrics_path
+    {
+        restart.push("metrics");
+    }
+    if new.limits() != started.limits() {
+        restart.push("limits");
+    }
+    if new.origin_allowed != started.origin_allowed
+        || new.origin_required != started.origin_required
+    {
+        restart.push("origin");
+    }
+    if new.queue_limits() != started.queue_limits()
+        || new.ping_interval_ms != started.ping_interval_ms
+    {
+        restart.push("send queue/burst/ping");
+    }
+    if new.shutdown_drain_ms != started.shutdown_drain_ms {
+        restart.push("shutdown_drain_ms");
+    }
+    if new.catalog_on_connect != started.catalog_on_connect {
+        restart.push("catalog_on_connect");
+    }
+    restart
 }
 
 /// One SIGHUP reload (see [`start_with_reload`]).
@@ -1538,56 +2912,63 @@ fn reload(
     let new = match load.map(|l| l()) {
         Some(Ok(c)) => Some(c),
         Some(Err(e)) => {
-            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            log::event(Level::Warn, "reload_refused")
+                .field("reason", &e)
+                .emit();
             return;
         }
         None => None,
     };
-    let ctx = match new.as_ref().map(ctx_from_daemon_config) {
+    // `listen` waits for a restart: the security of the reload is checked
+    // against the address the daemon serves, not the one the file names
+    // now (Spec §7.2, `none` on loopback only).
+    let served = new.as_ref().map(|n| DaemonConfig {
+        listen: started.listen.clone(),
+        ..n.clone()
+    });
+    let ctx = match served.as_ref().map(ctx_from_daemon_config) {
         Some(Ok((ctx, _))) => Some(ctx),
         Some(Err(e)) => {
-            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            log::event(Level::Warn, "reload_refused")
+                .field("reason", &e.to_string())
+                .emit();
             return;
         }
         None => None,
     };
     if let Some(r) = rot {
         if let Err(e) = r.reload() {
-            eprintln!("[{SERVICE_NAME}] reload refused: TLS certificate: {e}");
+            log::event(Level::Warn, "reload_refused")
+                .field("reason", &format!("TLS certificate: {e}"))
+                .emit();
             return;
         }
     }
-    let mut restart: Vec<&str> = Vec::new();
-    if let Some(n) = &new {
-        if n.tls_cert_file != started.tls_cert_file
-            || n.tls_key_file != started.tls_key_file
-            || n.tls_client_ca_file != started.tls_client_ca_file
-        {
-            restart.push("tls file paths");
-        }
-        if n.topics != started.topics {
-            restart.push("topics");
-        }
-        if n.listen != started.listen || n.domain != started.domain {
-            restart.push("listen/domain");
-        }
-    }
+    let restart = new
+        .as_ref()
+        .map(|n| settings_that_need_a_restart(started, n))
+        .unwrap_or_default();
     if let Some(ctx) = ctx {
         live.replace(ctx);
     }
-    eprintln!(
-        "[{SERVICE_NAME}] reloaded: {}",
-        if new.is_some() {
-            "acl, auth, tls certificate"
-        } else {
-            "tls certificate"
-        }
-    );
+    // Spec §8.1: a reload applies a changed `log_level`.
+    if let Some(n) = &new {
+        log::set_level(&n.log_level);
+    }
+    log::event(Level::Info, "reload")
+        .field(
+            "applied",
+            if new.is_some() {
+                "acl, auth, tls certificate, log_level"
+            } else {
+                "tls certificate"
+            },
+        )
+        .emit();
     if !restart.is_empty() {
-        eprintln!(
-            "[{SERVICE_NAME}] reload needs a restart for: {}",
-            restart.join(", ")
-        );
+        log::event(Level::Warn, "reload_needs_restart")
+            .field("settings", &restart.join(", "))
+            .emit();
     }
 }
 
@@ -1595,6 +2976,26 @@ fn reload(
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// zerodds-ws-bridge-1.0 §8.3 with §6: a write the client does not take
+    /// within the write timeout (`WouldBlock` from `SO_SNDTIMEO`, or
+    /// `TimedOut`) and a socket error fail the connection's span with their
+    /// reason; a message not sent because a Close frame went out before
+    /// does not.
+    #[test]
+    fn wsbridge_8_3_a_failed_write_fails_the_connection_span() {
+        use std::io::{Error, ErrorKind};
+        for kind in [ErrorKind::WouldBlock, ErrorKind::TimedOut] {
+            assert_eq!(
+                write_failure(&Error::from(kind)).as_deref(),
+                Some("write timeout: the client took no frame within ping_interval_ms")
+            );
+        }
+        let reset = write_failure(&Error::from(ErrorKind::ConnectionReset)).unwrap();
+        assert!(reset.starts_with("write: "), "{reset}");
+        assert_eq!(write_failure(&Error::other(SendError::Closing)), None);
+        assert!(write_failure(&Error::other(SendError::Deflate)).is_some());
+    }
 
     /// zerodds-ws-bridge-1.0 §4.1 with RFC 6455 §4.1: each subprotocol a
     /// client names is a token, characters of RFC 7230 §3.2.6 `tchar`
@@ -1613,57 +3014,165 @@ mod tests {
         }
     }
 
-    /// zerodds-ws-bridge-1.0 §4.3 with DDS-XTypes 1.3 §7.6.3.1.2, Table 60:
-    /// a binary frame carries the encapsulation header the sample came
-    /// under. Before, it was built from the version and the byte order
-    /// alone, so a `PL_CDR2` or `D_CDR2` sample went out as `CDR2`
-    /// (OPEN-ITEMS 60).
-    #[test]
-    fn xtypes_7_6_3_1_2_a_binary_frame_carries_the_identifier_the_sample_came_under() {
-        for identifier in [[0x00, 0x01], [0x00, 0x03], [0x00, 0x08], [0x00, 0x0b]] {
-            let frame = binary_sample_frame(&DdsSample::alive(vec![1, 2, 3, 4], identifier));
-            assert_eq!(
-                frame[..9],
-                [
-                    b'Z',
-                    b'D',
-                    b'B',
-                    b'1',
-                    0,
-                    identifier[0],
-                    identifier[1],
-                    0,
-                    0
-                ]
-            );
-            let (flags, back, body) = split_binary_sample(&frame).unwrap();
-            assert_eq!((flags, back, body), (0, identifier, &[1u8, 2, 3, 4][..]));
-        }
-        // XML (`00 04`) is no CDR representation.
-        assert!(split_binary_sample(b"ZDB1\x00\x00\x04\x00\x00").is_err());
-    }
-
-    /// DDS-XTypes 1.3 Table 60: the identifier of a client's frame names the
-    /// data representation, the extensibility and the byte order the DDS
-    /// writer gives the body.
+    /// zerodds-ws-bridge-1.0 §4.2: a plain HTTP GET is told from an opening
+    /// handshake by the `Upgrade` field; its path is the target without
+    /// the query.
     #[cfg(feature = "daemon")]
     #[test]
-    fn xtypes_7_6_3_1_2_the_identifier_names_the_form_of_the_dds_writer() {
-        use zerodds_types::qos::ExtensibilityForRepr as Ext;
-        for (identifier, form) in [
-            ([0x00, 0x00], (0, Ext::Final, true)),
-            ([0x00, 0x01], (0, Ext::Final, false)),
-            ([0x00, 0x02], (0, Ext::Mutable, true)),
-            ([0x00, 0x03], (0, Ext::Mutable, false)),
-            ([0x00, 0x06], (2, Ext::Final, true)),
-            ([0x00, 0x07], (2, Ext::Final, false)),
-            ([0x00, 0x08], (2, Ext::Appendable, true)),
-            ([0x00, 0x09], (2, Ext::Appendable, false)),
-            ([0x00, 0x0a], (2, Ext::Mutable, true)),
-            ([0x00, 0x0b], (2, Ext::Mutable, false)),
+    fn wsbridge_4_2_a_plain_get_is_told_from_an_opening_handshake() {
+        assert_eq!(
+            plain_get_path("GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n"),
+            Some("/healthz")
+        );
+        assert_eq!(
+            plain_get_path("GET /topics/__catalog__?pretty=1 HTTP/1.1\r\nHost: x\r\n\r\n"),
+            Some("/topics/__catalog__")
+        );
+        assert_eq!(
+            plain_get_path("GET /healthz HTTP/1.0\r\n\r\n"),
+            Some("/healthz")
+        );
+        for request in [
+            "GET /healthz HTTP/1.1\r\nHost: x\r\nUPGRADE: websocket\r\n\r\n",
+            "POST /healthz HTTP/1.1\r\nHost: x\r\n\r\n",
+            "HEAD /healthz HTTP/1.1\r\nHost: x\r\n\r\n",
+            "GET /healthz\r\n\r\n",
+            "GET /healthz HTTP/1.1 extra\r\n\r\n",
+            "GET /healthz HTTP/2\r\n\r\n",
+            "",
         ] {
-            assert_eq!(writer_form(identifier), form, "{identifier:02x?}");
+            assert_eq!(plain_get_path(request), None, "{request:?}");
         }
+        // A field named in the body of the request is no header field.
+        assert_eq!(
+            plain_get_path("GET /healthz HTTP/1.1\r\nHost: x\r\n\r\nUpgrade: websocket\r\n"),
+            Some("/healthz")
+        );
+        assert_eq!(
+            origin_field(
+                "GET / HTTP/1.1\r\nOrigin: https://a.example\r\norigin: https://b.example\r\n\r\n"
+            )
+            .as_deref(),
+            Some("https://a.example https://b.example")
+        );
+        assert_eq!(origin_field("GET / HTTP/1.1\r\nHost: x\r\n\r\n"), None);
+    }
+
+    /// zerodds-ws-bridge-1.0 §9.2: a reload applies the ACL, the
+    /// authentication and the TLS certificate; a change of the topic map,
+    /// of `metrics`, of `limits`, of `origin`, of the TLS file paths, of
+    /// the listen address or of the domain waits for a restart, and the
+    /// reload names each of them.
+    #[test]
+    fn wsbridge_9_2_a_reload_names_the_changed_settings_that_need_a_restart() {
+        let started = DaemonConfig::default_for_dev();
+        let same = started.clone();
+        assert!(settings_that_need_a_restart(&started, &same).is_empty());
+
+        let change = |edit: &dyn Fn(&mut DaemonConfig)| {
+            let mut new = started.clone();
+            edit(&mut new);
+            settings_that_need_a_restart(&started, &new)
+        };
+        assert_eq!(
+            change(&|c| c.max_frame_size = started.max_frame_size / 2),
+            ["limits"]
+        );
+        assert_eq!(
+            change(&|c| c.max_message_size = started.max_message_size + 1),
+            ["limits"]
+        );
+        assert_eq!(
+            change(&|c| c.origin_allowed = vec!["https://app.example.org".to_string()]),
+            ["origin"]
+        );
+        assert_eq!(
+            change(&|c| c.origin_required = !started.origin_required),
+            ["origin"]
+        );
+        assert_eq!(
+            change(&|c| c.topics.push(TopicConfig {
+                name: "Added".to_string(),
+                ..Default::default()
+            })),
+            ["topics"]
+        );
+        // §1 L6: a tenant added; its topics' ACL changes no setting.
+        assert_eq!(
+            change(&|c| c.tenants.push(super::super::config::TenantConfig {
+                name: "plant-a".to_string(),
+                subjects: vec!["alice".to_string()],
+                ..Default::default()
+            })),
+            ["tenants"]
+        );
+        assert!(
+            change(&|c| {
+                c.topic_acl.insert(
+                    super::super::config::tenant_acl_topic("plant-a", "T"),
+                    (vec!["alice".to_string()], Vec::new()),
+                );
+            })
+            .is_empty()
+        );
+        assert_eq!(
+            change(&|c| c.tls_cert_file = "/other/cert.pem".to_string()),
+            ["tls file paths"]
+        );
+        assert_eq!(
+            change(&|c| c.tls_key_file = "/other/key.pem".to_string()),
+            ["tls file paths"]
+        );
+        assert_eq!(
+            change(&|c| c.tls_client_ca_file = "/other/ca.pem".to_string()),
+            ["tls file paths"]
+        );
+        assert_eq!(
+            change(&|c| c.listen = "127.0.0.1:1".to_string()),
+            ["listen/domain"]
+        );
+        assert_eq!(change(&|c| c.shutdown_drain_ms = 5), ["shutdown_drain_ms"]);
+        assert_eq!(
+            change(&|c| c.catalog_on_connect = true),
+            ["catalog_on_connect"]
+        );
+        assert_eq!(
+            change(&|c| c.domain = started.domain + 1),
+            ["listen/domain"]
+        );
+        assert_eq!(
+            change(&|c| c.metrics_path = "/internal/metrics".to_string()),
+            ["metrics"]
+        );
+        assert_eq!(change(&|c| c.metrics_enabled = true), ["metrics"]);
+        assert_eq!(
+            change(&|c| c.metrics_addr = "127.0.0.1:1".to_string()),
+            ["metrics"]
+        );
+        // The daemon-wide keys of §6.
+        assert_eq!(
+            change(&|c| c.max_send_queue_per_connection = 1),
+            ["send queue/burst/ping"]
+        );
+        assert_eq!(
+            change(&|c| c.max_burst_samples = 1),
+            ["send queue/burst/ping"]
+        );
+        assert_eq!(
+            change(&|c| c.ping_interval_ms = 0),
+            ["send queue/burst/ping"]
+        );
+        // What the reload applies is not in the list.
+        assert!(change(&|c| c.auth_mode = "bearer".to_string()).is_empty());
+        // Several changes are all named, in the order of the log line.
+        assert_eq!(
+            change(&|c| {
+                c.origin_required = !started.origin_required;
+                c.max_frame_size = started.max_frame_size / 2;
+                c.listen = "127.0.0.1:1".to_string();
+            }),
+            ["listen/domain", "limits", "origin"]
+        );
     }
 }
 

@@ -9,15 +9,16 @@
 //! end-to-end, which `compile_check_ami` only checks statically.
 
 use std::sync::{Arc, Mutex};
+use zerodds_corba_rust::marshaled_body;
 
 use zerodds_corba_interop::runtime::{AmiClient, CorbaServer, object_reference};
-use zerodds_corba_rust::{AsyncCorbaChannel, CorbaException, SkeletonResult};
-use zerodds_wire::{Endianness, Reader, Writer};
-
-const MARSHAL: CorbaException = CorbaException::SystemException {
-    minor: 0,
-    message: "CORBA MARSHAL: CDR error",
+use zerodds_corba_rust::{
+    AsyncCorbaChannel, CompletionStatus, CorbaException, SkeletonResult, SystemExceptionKind,
 };
+use zerodds_wire::{Endianness, Writer};
+
+const MARSHAL: CorbaException =
+    CorbaException::system(SystemExceptionKind::Marshal, 0, CompletionStatus::Yes);
 
 // --- generated pattern: ReplyHandler trait (callback model §22.5) ----------
 trait MathAmiHandler: Send + Sync {
@@ -34,7 +35,7 @@ struct MathAddPoller {
 impl MathAddPoller {
     fn get_reply(&self, ch: &mut dyn AsyncCorbaChannel) -> Result<i32, CorbaException> {
         let (b, e) = ch.get_reply(self.request_id)??;
-        let mut r = Reader::new(&b, e);
+        let mut r = b.reader(e);
         let __ret = r.read_i32().map_err(|_| MARSHAL)?;
         Ok(__ret)
     }
@@ -45,7 +46,7 @@ struct MathDivmodPoller {
 impl MathDivmodPoller {
     fn get_reply(&self, ch: &mut dyn AsyncCorbaChannel) -> Result<(i32, i32), CorbaException> {
         let (b, e) = ch.get_reply(self.request_id)??;
-        let mut r = Reader::new(&b, e);
+        let mut r = b.reader(e);
         let q = r.read_i32().map_err(|_| MARSHAL)?;
         let rr = r.read_i32().map_err(|_| MARSHAL)?;
         Ok((q, rr))
@@ -70,10 +71,10 @@ impl MathStub {
         w.write_i32(b);
         ch.send(
             "add",
-            &w.finish(),
+            &marshaled_body(&w.finish(), 0),
             Box::new(move |reply| match reply {
                 Ok((body, e)) => {
-                    let mut r = Reader::new(&body, e);
+                    let mut r = body.reader(e);
                     let __ret = match r.read_i32() {
                         Ok(v) => v,
                         Err(_) => {
@@ -100,10 +101,10 @@ impl MathStub {
         w.write_i32(b);
         ch.send(
             "divmod",
-            &w.finish(),
+            &marshaled_body(&w.finish(), 0),
             Box::new(move |reply| match reply {
                 Ok((body, e)) => {
-                    let mut r = Reader::new(&body, e);
+                    let mut r = body.reader(e);
                     let q = match r.read_i32() {
                         Ok(v) => v,
                         Err(_) => {
@@ -134,7 +135,7 @@ impl MathStub {
         let mut w = Writer::new(Endianness::Big);
         w.write_i32(a);
         w.write_i32(b);
-        let id = ch.send_poll("add", &w.finish())?;
+        let id = ch.send_poll("add", &marshaled_body(&w.finish(), 0))?;
         Ok(MathAddPoller { request_id: id })
     }
 
@@ -147,7 +148,7 @@ impl MathStub {
         let mut w = Writer::new(Endianness::Big);
         w.write_i32(a);
         w.write_i32(b);
-        let id = ch.send_poll("divmod", &w.finish())?;
+        let id = ch.send_poll("divmod", &marshaled_body(&w.finish(), 0))?;
         Ok(MathDivmodPoller { request_id: id })
     }
 }
@@ -156,7 +157,7 @@ impl MathStub {
 fn with_math<F: FnOnce(MathStub, AmiClient)>(f: F) {
     let server = CorbaServer::new();
     server.register(b"Math", |op, body, e| {
-        let mut r = Reader::new(body, e);
+        let mut r = body.reader(e);
         let a = r.read_u32().unwrap() as i32;
         let b = r.read_u32().unwrap() as i32;
         let mut w = Writer::new(e);

@@ -45,6 +45,6 @@ pub mod services;
 pub mod status;
 mod wire;
 
-pub use address_space::{AddressSpace, MethodOutcome};
+pub use address_space::{AddressSpace, MethodContext, MethodOutcome};
 pub use client::Client;
 pub use server::Server;

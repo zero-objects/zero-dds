@@ -42,6 +42,11 @@ fi
     cd "$TREE"
     cargo build --locked --release -p zerodds-c-api
     cargo build --locked --release -p zerodds-dcps --example zerodds_perf
+    # The loaned take's reader (row `zerodds-rust-loan`), where the tree
+    # has it: a release before it has no such example.
+    if [ -f crates/codec/examples/zerodds_perf_loan.rs ]; then
+        cargo build --locked --release -p zerodds-codec --example zerodds_perf_loan
+    fi
 )
 
 cmake -S "$HARNESS/tests/perf/dds-roundtrip-bench" -B "$OUT/bench" \

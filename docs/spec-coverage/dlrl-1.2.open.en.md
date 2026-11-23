@@ -5,26 +5,26 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
-## §8.1.6.2 DLRL entities
+## §8.1.3.1 DLRL objects
 
-**Status:** `partial` — complete by name (`DlrlEntityKind` with 17 values, `DlrlException` with 8), but as standalone types only the subset `ObjectCache`/`HomeFactory`/`HomeListener`/`ObjectListener`/`Query`. `CacheFactory`, `CacheBase`, `CacheAccess`, `Contract`, `Selection`, `SelectionCriterion`, `FilterCriterion`, `SelectionListener`, `Collection`/`List`/`Set`/`StrMap`/`IntMap` are missing as types — see the following `open` item.
+**Status:** `partial` — the model, local and shared attributes, type enforcement and the oid are built. Open: one memory cell per identity (a cache with `ObjectRoot` as shared handle, item §8.1.6.2 rest) and the call of `Model::check_value` from the `set_<attribute>` operations of the generated classes (item §8.1.6.3 rest).
 
-## §8.1.6.2 (rest) DLRL entity classes as standalone types
+## §8.1.3.2.1 Inheritance
 
-**Status:** `open` — the 13 classes do not exist as types of their own in `crates/dlrl`.
+**Status:** `partial` — inheritance in the model is built. Open: the generated classes (Track3D extends the generated class Track, item §8.2.2) and `ObjectHome` with `parent` and `children` (item §8.1.6.2 rest).
 
-## §8.1.6.3 Details on DLRL entities
+## §8.1.3.2.2 Associations
 
-**Status:** `partial` — the exception types and entity names are complete, the operations only a subset. Signature conformance for the tables §8.1.6.3.1-§8.1.6.3.17 is not established — see the following `open` item.
+**Status:** `partial` — relations, compositions and the two rules for inverses are built in the model. Open at run time: setting one end updates the other (1-1, 1-n, n-m), and `destroy` of a compound destroys its constituents (item §8.1.6.3 rest, `ObjectRoot` and the collections).
 
-## §8.1.6.3 (rest) Method signatures of the entity tables
+## §8.1.4.5 Mapping when DCPS model is fixed
 
-**Status:** `open` — the attributes and operations of tables §8.1.6.3.1 to §8.1.6.3.17 are not implemented as signatures.
+**Status:** `partial` — built and measured against Cyclone DDS 0.10.5: objects over a fixed DCPS model in both directions and the management of the association keys ↔ oid. Not measured: against OpenSplice (not on the Linux test host) and against Cyclone DDS 11.0.1 of the image in job `vendor-live-dcps`. Open: inheritance between application classes with a `NoOid` key. A derived class in the main topic of its base class is refused (`MappingError::ClassPartRequired`), because without a class field the class of a row is not in the topic; §8.1.4.5 calls such inheritance tricky but feasible, and the mapping supported. Restrictions of this implementation that the specification does not make: `ObjectHome::create_object` of a `NoOid` class gives `PreconditionNotMet`, because an object of `create_object` is registered and the identity fields of a registered object may not change any more (§8.1.6.3.7); it is made by `create_unregistered_object` and `register_object`. A to-1 relation to a `NoOid` class that designates no object is not written (`RowError::NoObjectInNoOidReference`), because the target's key fields have no value for "no object".
 
-## §8.2.1 Run-time entities
+## §8.1.4.6 How is this mapping indicated?
 
-**Status:** `partial` — the PSM names and repository IDs match and the run-time operations exist as a Rust API. The IDL interface definitions and the `DLRL_initialize` bootstrap are not emitted — see the following `open` item.
+**Status:** `partial` — the two inputs and the DCPS description are built. Open: the generator that produces from model description and model tags the native model description and the typed DLRL entities over `crates/dlrl/src/cache/` (item §8.2.2); `DDS::DLRLOid` in the array form of the PSM, once `zerodds-wire-codec` accepts an array as key member.
 
-## §8.2.1 (rest) IDL PSM emission + DLRL_initialize
+## §8.2.2 Generation process
 
-**Status:** `open` — the IDL interfaces of the entities and `DLRL_initialize` are not generated.
+**Status:** `partial` — built and green on the Linux test host: reading the model tags against the DTD of §8.2.2.3.1 and the generator that turns model description and model tags into model and mapping. Open: (1) `zerodds-idlc` makes model and mapping from the IDL valuetypes of the model description and the model tags (`--tags`); today `dlrl --lang idl` finds the valuetypes with base `DDS::ObjectRoot` only for the implied IDL (item §8.2.1 rest), the four languages read the pragma dialect, and `DLRL::ObjectRoot` and `#include "dlrl.idl"` as in §8.2.3.2 are not recognised. (2) Of the outputs of Figure 8.7 the DCPS description as IDL is missing; `dlrl --lang idl` writes the implied IDL, the DLRL entities as IDL are the file `crates/dlrl/idl/dds_dlrl.idl`. (3) The generated classes of §8.1.6.6 (`FooHome` with `create_object(access)`, `FooListener`, `FooSelection`, `FooSelectionListener`, `FooFilter`, `FooQuery`, typed collections) for Rust and the four languages; today's classes have a `delete_object` the specification does not have, and derive from `DLRL::ObjectRoot`, for which no runtime exists in C++, Java, C# and TypeScript (`tools/idlc/tests/dlrl_compiles.rs` compiles against stubs). (4) A runtime for C++, Java, C# and TypeScript through `crates/zerodds-c-api`.

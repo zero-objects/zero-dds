@@ -112,16 +112,12 @@ impl LocateReply {
         }
         w.write_u32(self.request_id);
         w.write_u32(self.locate_status.as_u32());
-        // Body (IOR for OBJECT_FORWARD*) only if present. For ObjectHere/
-        // UnknownObject it is empty → do NOT emit 8-byte align padding,
-        // otherwise trailing padding hangs after the last field and foreign ORBs
-        // (omniORB giopImpl12.cc) report "Garbage left at end of input message".
-        if !self.body.is_empty() {
-            if version.uses_v1_2_request_layout() {
-                w.align_to(8);
-            }
-            w.write_bytes(&self.body);
-        }
+        // Part 2 §9.4.6.2: "LocateReply bodies are marshaled immediately
+        // following the LocateReply header" — in every GIOP version, with
+        // no 8-octet alignment as the Request and Reply bodies of GIOP 1.2
+        // have. The header ends 4-aligned, which is all an IOR, a
+        // SystemExceptionReplyBody or an AddressingDisposition needs.
+        w.write_bytes(&self.body);
         Ok(())
     }
 
@@ -133,16 +129,8 @@ impl LocateReply {
         let request_id = r.read_u32()?;
         let status_raw = r.read_u32()?;
         let locate_status = LocateStatusType::from_u32(status_raw, version)?;
-        // Body only if more bytes follow (see encode: ObjectHere/
-        // UnknownObject have no body and no trailing padding).
-        let body = if r.remaining() > 0 {
-            if version.uses_v1_2_request_layout() {
-                r.align_to(8)?;
-            }
-            r.read_bytes(r.remaining())?.to_vec()
-        } else {
-            Vec::new()
-        };
+        // The body follows the header at once (§9.4.6.2).
+        let body = r.read_bytes(r.remaining())?.to_vec();
         Ok(Self {
             request_id,
             locate_status,
@@ -195,6 +183,23 @@ mod tests {
         let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = LocateReply::decode(Version::V1_2, &mut r).unwrap();
         assert_eq!(decoded, l);
+    }
+
+    #[test]
+    fn corba_p2_9_4_6_2_the_locate_reply_body_follows_the_header_without_padding() {
+        // GIOP 1.2 message: 12 octets of GIOP header, request_id and
+        // locate_status, then the IOR at offset 20, not at 24.
+        let m = crate::codec::Message::LocateReply(LocateReply {
+            request_id: 7,
+            locate_status: LocateStatusType::ObjectForward,
+            body: alloc::vec![0, 0, 0, 1, 0, 0, 0, 0],
+        });
+        let bytes =
+            crate::codec::encode_message(Version::V1_2, Endianness::Big, false, &m).unwrap();
+        assert_eq!(bytes.len(), 28);
+        assert_eq!(&bytes[20..], &[0, 0, 0, 1, 0, 0, 0, 0]);
+        let (decoded, _) = crate::codec::decode_message(&bytes).unwrap();
+        assert_eq!(decoded, m);
     }
 
     #[test]

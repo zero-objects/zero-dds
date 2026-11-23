@@ -1,43 +1,67 @@
-# L3 UDS-Filesystem Smoke: zwei Container mit geteiltem
-# Socket-Volume. Entspricht dem klassischen Docker-Pattern:
-# beide Container mounten ein named-volume als `base_dir`.
+# L3 UDS filesystem smoke test (zerodds-uds-transport-1.0 §5.1, §5.2): two
+# containers share a named volume as the transport's `base_dir`, each under
+# a UID of its own with the shared group 61042 as a supplementary group
+# (Kubernetes: `runAsUser` and `supplementalGroups`). `prepare` gives the
+# volume's root the group 61042 and the mode 3770, as an operator does; both
+# roles bind with `--socket-mode=660`. `ping` sends 20 datagrams, `echo`
+# sends each back. `:z` is the label both containers may use on an SELinux
+# host; without SELinux Docker ignores it.
 #
-# Unterschied zu uds-abstract: braucht shared filesystem path
-# statt shared netns. Funktioniert auch ueber Kubernetes
-# `emptyDir` + `sameNode` scheduling.
+# The test that runs this pattern and checks the socket files on the volume
+# is tools/isolation-smoke/tests/container_volume.rs.
 #
 # Run:
 #   docker compose -f docker-compose.uds.yml up --build \
-#          --abort-on-container-exit --exit-code-from sender
+#          --abort-on-container-exit --exit-code-from ping
 services:
-  receiver:
+  prepare:
+    image: debian:trixie-slim
+    user: "0:0"
+    network_mode: none
+    command: ["sh", "-c", "chgrp 61042 /run/zerodds-uds && chmod 3770 /run/zerodds-uds"]
+    volumes:
+      - uds-vol:/run/zerodds-uds:z
+
+  echo:
     build:
       context: ../../..
       dockerfile: testing/isolation/docker/Dockerfile
+    user: "61001:61001"
+    group_add: ["61042"]
+    network_mode: none
     command:
       - "--transport=uds"
-      - "--role=receiver"
+      - "--role=echo"
       - "--local-id=80"
       - "--base-dir=/run/zerodds-uds"
+      - "--socket-mode=660"
       - "--count=20"
     volumes:
-      - uds-vol:/run/zerodds-uds
+      - uds-vol:/run/zerodds-uds:z
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
 
-  sender:
+  ping:
     build:
       context: ../../..
       dockerfile: testing/isolation/docker/Dockerfile
+    user: "61002:61002"
+    group_add: ["61042"]
+    network_mode: none
     command:
       - "--transport=uds"
-      - "--role=sender"
+      - "--role=ping"
       - "--local-id=81"
       - "--peer-id=80"
       - "--base-dir=/run/zerodds-uds"
+      - "--socket-mode=660"
       - "--count=20"
     volumes:
-      - uds-vol:/run/zerodds-uds
+      - uds-vol:/run/zerodds-uds:z
     depends_on:
-      - receiver
+      prepare:
+        condition: service_completed_successfully
 
 volumes:
   uds-vol:

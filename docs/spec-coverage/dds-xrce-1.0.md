@@ -703,7 +703,9 @@ write, and so on."
 `Subject`, `Operation`); `crates/xrce-agent/src/daemon/session.rs`
 (`SessionEngine::permit`, `permits`, `deny_create_client`);
 `crates/xrce-agent/src/daemon/config.rs` (Schlüssel `authorized_client_keys`,
-`required_client_properties`, `access_rules`)
+`required_client_properties`, `access_rules`);
+`crates/xrce-agent/src/daemon/server.rs` (`check_routed_clients`);
+`man/man5/zerodds-xrce-agentd.yaml.5`
 
 **Tests:** `crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_a_controller_without_rules_restricts_nothing`,
 `crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_the_first_matching_rule_decides_and_no_match_denies`,
@@ -713,12 +715,22 @@ write, and so on."
 `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_without_permission_is_denied_and_stores_nothing`,
 `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`,
 `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_write_and_read_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_rule_can_limit_the_domains_a_client_joins`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_rule_can_limit_the_domains_a_client_joins`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_the_access_rules_of_the_upstream_agent_decide_for_a_routed_client`,
+`crates/xrce-agent/src/daemon/server.rs::tests::xrce_10_4_an_access_rule_that_covers_a_routed_client_is_refused_at_start`
 
 **Status:** `done` — Regeln je Client für Operation, ObjectKind, DDS-Domain und
 Topic; eine Operation ohne passende Regel wird mit `STATUS_ERR_DENIED`
 beantwortet, sobald eine Regel existiert, ohne Regeln beschränkt der Controller
-nichts (1c430db8a67, 5f7a8652d95).
+nichts (1c430db8a67, 5f7a8652d95). Für einen Client, der mit `upstream:` an
+einen oberen Agent weitergeleitet wird (§10.4), entscheidet der
+AccessController des oberen Agent: dort liegen die Objekte des Client, und der
+obere Agent sieht dessen ClientKey und properties; sein `STATUS_ERR_DENIED`
+erreicht den Client über diesen Agent. Die ClientKeys und properties dieses
+Agent gelten für jeden Client, weil er das CREATE_CLIENT beantwortet. Eine
+Regel in `access_rules`, die einen weitergeleiteten Client nennt, oder eine
+Regel ohne `client:`, solange ein Client weitergeleitet wird, verhindert den
+Start mit Fehler, statt gelesen und nicht angewendet zu werden.
 
 ### §7.4 DomainParticipant als Proxy
 
@@ -5175,33 +5187,43 @@ discarded."
 
 **Repo:** `crates/xrce/src/reliable.rs` (`recv_data`, `drain_in_order`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_message`,
-`take_best_effort`); `crates/xrce-client/src/lib.rs` (`ingest_message`)
+`take_best_effort`); `crates/xrce-client/src/lib.rs` (`ingest_message`,
+`send_on_stream`, `best_effort_out`)
 
 **Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_2_3_recv_data_reorders_out_of_order`,
 `crates/xrce/src/reliable.rs::tests::xrce_8_3_2_3_recv_data_drops_duplicates`,
 `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`,
 `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_best_effort_streams_drop_duplicates_and_older_messages`,
-`crates/xrce-client/src/lib.rs::tests::a_best_effort_stream_discards_duplicate_and_older_messages`
+`crates/xrce-client/src/lib.rs::tests::a_best_effort_stream_discards_duplicate_and_older_messages`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_3_2_3_a_best_effort_stream_numbers_the_messages_it_sends`
 
 **Status:** done — Reliable Streams ordnen und verwerfen Duplikate über `recv_data` und
 `drain_in_order`; Best-Effort-Streams verwerfen Duplikate und ältere
-Nachrichten im Agent und im Client (`d4aad7c50b6`, siehe das Item unten).
+Nachrichten im Agent und im Client (`d4aad7c50b6`, siehe das Item unten), und
+der Client nummeriert, was er auf einem Best-Effort-Stream sendet (siehe dort).
 
 ### §8.3.2.3 Reihenfolge und Duplikate auf Best-Effort-Streams
 
 **Spec:** §8.3.2.3, S. 60 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`take_best_effort`,
-`best_effort_in`, `SessionEvent::BestEffortMessageDiscarded`);
+`best_effort_in`, `SessionEvent::BestEffortMessageDiscarded`,
+`finalize_reliable_sequencing`: `best_effort_seq`);
 `crates/xrce-client/src/lib.rs` (`ingest_message`, `best_effort_in`,
-`ClientEvent::BestEffortMessageDiscarded`)
+`ClientEvent::BestEffortMessageDiscarded`, `send_on_stream`,
+`best_effort_out`)
 
 **Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_best_effort_streams_drop_duplicates_and_older_messages`,
-`crates/xrce-client/src/lib.rs::tests::a_best_effort_stream_discards_duplicate_and_older_messages`
+`crates/xrce-client/src/lib.rs::tests::a_best_effort_stream_discards_duplicate_and_older_messages`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_3_2_3_a_best_effort_stream_numbers_the_messages_it_sends`,
+`crates/xrce-client/src/lib.rs::tests::xrce_10_4_forward_sends_a_submessage_unchanged_and_hands_the_answer_over`
 
 **Status:** done — eine Nachricht, die nicht neuer ist als die letzte des Stream (RFC 1982,
 16 Bit, auch über den Zählerüberlauf), wird verworfen und als Ereignis
-gemeldet; jeder Stream zählt für sich (`d4aad7c50b6`).
+gemeldet; jeder Stream zählt für sich (`d4aad7c50b6`). Auf der Sendeseite
+gibt der Client jeder Nachricht eines Best-Effort-Stream die nächste Nummer
+dieses Stream; bis dahin gingen alle mit der Nummer 0 hinaus, und ein Agent,
+der nur neuere Nachrichten nimmt, verwarf alle außer der ersten.
 
 ### §8.3.2.3 Serial Number Arithmetic mit 16 Bit
 
@@ -6223,12 +6245,17 @@ gelesen: nächstes Sample ohne Zeitgrenze) ist die benannte Einstellung
 `crates/xrce-agent/src/daemon/session.rs` (`pump_read`)
 
 **Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_a_read_without_delivery_control_returns_the_cache_once`,
-`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_next_sample_waits_for_one_sample`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_next_sample_waits_for_one_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_a_read_without_delivery_control_on_a_reliable_stream_waits_for_room`
 
 **Status:** `done` — Commits `8bcb1d00161`. ohne `delivery_control` liefert der Agent
 alle Samples im Cache und beendet das Lesen; ein später eintreffendes Sample
 liefert er nicht (Vorgabe `once`). Mit `read_without_delivery_control:
-next-sample` liefert er das nächste eintreffende Sample.
+next-sample` liefert er das nächste eintreffende Sample. Auf einem
+zuverlässigen Strom nimmt der eine Lesevorgang so viele Samples, wie das
+Sendefenster Platz hat (§8.4.14.1); die übrigen bleiben im DataReader für das
+nächste READ_DATA. Ist das Fenster voll, wartet der Lesevorgang auf das
+ACKNACK des Client.
 
 ### §8.3.5.9 MIN_PACE_PERIOD_NONE
 
@@ -6443,10 +6470,19 @@ numbers 100, 103, and 114 are missing."
 `crates/xrce-client/src/lib.rs` (`XrceClient::handle_acknack`)
 
 **Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_end_to_end_sender_receiver_with_loss_recovery`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_an_acknack_acknowledges_only_the_messages_before_first_unacked`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_acknack_retransmit_of_lost_sample_across_wrap`,
 `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
 
 **Status:** done — Bit i steht für `first_unacked_seq_num + i`, `nack_bitmap[0]`
-für die Bits 0 bis 7. Die Spec legt nicht fest, welches Oktett von `octet[2]`
+für die Bits 0 bis 7. Ein gesetztes Bit löst die Wiederholung aus; ein nicht
+gesetztes Bit gilt dem Sender nicht als Bestätigung. Der Empfänger markiert
+nur die Lücken bis zur letzten Nummer des HEARTBEAT, auf den er antwortet
+(§8.4.14.2); eine danach gesendete Nachricht hat ein nicht gesetztes Bit, ohne
+angekommen zu sein. `recv_acknack` bestätigt deshalb nur die Nachrichten vor
+`first_unacked_seq_num`, wie die HighestAcknowledgedSequenceNumber von
+§8.4.14.1; vorher wurde eine solche Nachricht aus dem Fenster genommen und
+nach einem Verlust nie wiederholt. Die Spec legt nicht fest, welches Oktett von `octet[2]`
 die niedrigen Bits trägt; alle ACKNACK im Mitschnitt von eProsima haben
 `nack_bitmap = 0x0000` (mit einem Skript über die Datei gezählt), die
 Reihenfolge ist daran nicht prüfbar.
@@ -6483,11 +6519,39 @@ of HEARTBEAT messages. However, in general it is expected that it is the XRCE
 Agent will only send HEARTBEAT messages when it has some indication that the
 XRCE Client is active and not in a sleep cycle."
 
-**Repo:** —
+**Repo:** `crates/xrce-agent/src/daemon/session.rs` (`client_is_active`,
+`silent_streams`, `wake_heartbeats`, `tick`, `stream_activity`),
+`crates/xrce/src/reliable.rs` (`ReliableStreamState::wake`,
+`heartbeat_period`), `crates/xrce-agent/src/daemon/config.rs`
+(`heartbeat.period_ms`, `heartbeat.client_active_window_ms`,
+`heartbeat.silent_client`), `man/man5/zerodds-xrce-agentd.yaml.5`,
+`packaging/linux/configs/xrce-agentd.yaml.example`
 
-**Tests:** —
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_12_no_heartbeat_goes_to_a_client_silent_for_the_active_window`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_12_a_message_of_the_client_brings_the_heartbeat_back_at_once`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_12_a_new_message_on_the_stream_opens_the_window`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_12_heartbeat_silent_client_send_keeps_the_period`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_12_wake_makes_the_next_heartbeat_due`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_12_the_heartbeat_period_is_the_configured_one`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_8_3_5_12_the_heartbeat_keys_are_read`,
+`crates/xrce-agent/tests/heartbeat_silent_client.rs::xrce_8_3_5_12_a_silent_udp_client_gets_heartbeats_in_the_window_and_none_after_it`,
+`crates/xrce-agent/tests/heartbeat_silent_client.rs::xrce_8_3_5_12_a_silent_udp_client_that_speaks_again_gets_the_heartbeat_with_the_answer`
 
-**Status:** open — eine Erwartung, die das Produkt erfüllen kann. `crates/xrce/src/reliable.rs` sendet HEARTBEAT in `tick` alle `DEFAULT_HEARTBEAT_PERIOD` (500 ms), solange unbestätigte Nachrichten bestehen und die Sitzung nicht abgelaufen ist, ohne Rücksicht auf eine Ruhephase des Client.
+**Status:** done — der Agent sendet HEARTBEATs eines zuverlässigen Stroms nur,
+solange er den Client innerhalb von `heartbeat.client_active_window_ms`
+(Vorgabe 2000) gehört oder auf dem Strom eine neue Nachricht gesendet hat; eine
+neue Nachricht zählt, weil das READ_DATA des Client sie verlangt (§8.3.5.9),
+eine Wiederholung zählt nicht. Ein Client, der nach einer Pause wieder etwas
+sendet, bekommt die HEARTBEATs seiner Ströme mit unbestätigten Nachrichten mit
+der Antwort, nicht erst beim nächsten Takt. `heartbeat.period_ms` (Vorgabe 500)
+setzt die Periode; `heartbeat.silent_client: send` sendet auch an einen
+stillen Client. Über UDP: ein Client, der nach einem DATA nichts mehr
+bestätigt, bekommt im Fenster HEARTBEATs, danach 1,5 s lang kein Datagramm.
+Mit einer Periode von fünf Minuten sendet der Takt des Agent während des Tests
+höchstens den ersten HEARTBEAT des Stroms; nach dem TIMESTAMP des wieder
+sprechenden Client kommen die Antwort und genau ein HEARTBEAT binnen 2 s. Ohne
+den HEARTBEAT mit der Antwort (`wake_heartbeats` ausgeschaltet) schlägt dieser
+Test fehl, 2 von 2 Läufen. Auf dem Linux-Testrechner grün.
 
 ### §8.3.5.12 HEARTBEAT auf STREAMID_NONE
 
@@ -6583,13 +6647,19 @@ ob „all state“ sie meint, legt die Spec nicht fest.
 
 **Spec:** §8.3.5.13, S. 75 — wie oben.
 
-**Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_reset`)
+**Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_reset`);
+`crates/xrce-agent/src/daemon/federation.rs` (`Upstream::reset`,
+`XrceUpstream::reset`, `cancel_of`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_reset_of_a_routed_client_ends_its_reads_at_the_upstream_agent`
 
 **Status:** `done` — Commits `d4aad7c50b6`. `handle_reset` beendet laufende READ_DATA,
 leert den Rückstau und setzt die Zähler der Best-Effort-Streams zurück; der Test
-ruft RESET über die Sitzung.
+ruft RESET über die Sitzung. Für einen an einen oberen Agent weitergeleiteten
+Client (§10.4) laufen die Reads dort: RESET beendet sie mit je einem READ_DATA
+mit `max_samples` 0 auf ihrem Strom; ein DATA, das der obere Agent vorher
+gesendet hat, und Samples danach erreichen den Client nicht.
 
 ### §8.3.5.13 Flags und leerer Payload von RESET
 
@@ -7218,14 +7288,27 @@ updates the HiguestAcknowledgedSequenceNumber." Figure 20: "receive(ACKNACK)
 /save HigestAcknowledgedSeqNumber repair SequenceNumber in NACK".
 
 **Repo:** `crates/xrce/src/reliable.rs` (`submit`, `recv_acknack`);
-`crates/xrce-agent/src/daemon/session.rs` (`handle_acknack`)
+`crates/xrce-agent/src/daemon/session.rs` (`handle_acknack`, `refill`,
+`pump_read`, `stream_room`, `finalize_reliable_sequencing`)
 
 **Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_4_14_1_submit_assigns_monotonic_seqnrs`,
 `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_recv_acknack_clears_acked_seqnrs`,
-`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_4_14_1_a_slow_client_leaves_the_samples_in_the_data_reader`
 
 **Status:** done — der Sender hält die offenen Nachrichten statt zweier
 Zahlen; `window_base` entspricht der höchsten bestätigten Nummer plus eins.
+Höchstens 16 Nachrichten sind offen (`SENDER_WINDOW_CAP`). Ein Lesen auf
+einem zuverlässigen Strom nimmt ein Sample nur aus dem DataReader, solange
+das Fenster Platz hat; die übrigen Samples bleiben im DataReader unter seiner
+History-QoS. Nur die FRAGMENTs eines Samples über der MTU des Client warten
+über das Fenster hinaus. Ein ACKNACK, das Platz schafft, nimmt sofort die
+nächsten Samples. Vorher nahm der Agent jedes Sample und hielt die über dem
+Fenster ohne Grenze (`limits.max_pending_samples` begrenzte sie nicht; der
+Schlüssel wird jetzt abgewiesen). Gemessen: ein Client, der 100 Samples liest
+und 5 s nicht bestätigt, bekommt 16 DATA, 84 bleiben im DataReader; nach
+seinen ACKNACKs kommen alle einmal an, in Reihenfolge und mit fortlaufenden
+Nummern.
 
 ### §8.4.14.1 HEARTBEAT bis zur vollständigen Bestätigung
 
@@ -7258,13 +7341,16 @@ have been received). [...] Each time a HEARTBEAT is received the
 HighestAnnouncedSequenceNumber may be adjusted."
 
 **Repo:** `crates/xrce/src/reliable.rs` (`recv_data`, `drain_in_order`,
-`pending_acknack`)
+`next_in_order`, `has_in_order`, `pending_acknack`)
 
 **Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_4_14_2_recv_data_buffers_in_order`,
-`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_pending_acknack_marks_missing_slots`
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_pending_acknack_marks_missing_slots`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_2_next_in_order_takes_one_message_and_holds_the_rest`
 
 **Status:** done — die höchste angekündigte Nummer wird nicht gespeichert; sie
-geht als `hint_last_seen` in das ACKNACK auf den HEARTBEAT ein.
+geht als `hint_last_seen` in das ACKNACK auf den HEARTBEAT ein. Ein Empfänger,
+der seine Nachrichten einzeln nimmt (`next_in_order`), lässt die übrigen
+gepuffert und unbestätigt; der Sender behält sie im Fenster.
 
 ### §8.4.14.2 Client sendet ACKNACK, solange Nachrichten fehlen
 
@@ -7274,13 +7360,20 @@ HighestAnnouncedSequenceNumber, the received sends ACKNACK messages to request
 the messages corresponding to the missing sequence numbers. These ACKNACK
 messages may be periodic or optimized using on vendor specific mechanism."
 
-**Repo:** `crates/xrce-client/src/lib.rs` (`handle_heartbeat`)
+**Repo:** `crates/xrce-client/src/lib.rs` (`handle_heartbeat`, `poll_held`,
+`acknowledge`); `crates/xrce/src/reliable.rs` (`acknowledgement`)
 
-**Tests:** `crates/xrce-client/src/lib.rs::tests::heartbeat_is_answered_with_acknack`
+**Tests:** `crates/xrce-client/src/lib.rs::tests::heartbeat_is_answered_with_acknack`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_4_14_2_a_held_reliable_stream_hands_over_only_what_the_caller_takes`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_an_acknowledgement_asks_for_nothing_again`
 
 **Status:** done — der Client sendet ACKNACK auf jeden HEARTBEAT, nicht nach
 einem eigenen Takt (Figure 21: `NackPeriod`); der Agent sendet HEARTBEAT alle
-500 ms, solange Nachrichten offen sind.
+500 ms, solange Nachrichten offen sind. Ein Client, der Nachrichten hält
+(`poll_held`, das Relay von §10.4), nennt die erste gehaltene als erste
+unbestätigte Nachricht und fordert keine davon erneut an; gibt er sie weiter,
+sendet er sofort ein ACKNACK, das sie bestätigt, ohne auf den nächsten
+HEARTBEAT zu warten („optimized using on vendor specific mechanism“).
 
 ### §8.4.14.2 Agent sendet ACKNACK nur auf HEARTBEAT
 
@@ -7910,17 +8003,23 @@ different XRCE Clients, then the requiremen t to behave 'as if' each had its
 own separate entities requires that the local DDS DataWriter entities discover
 and match the local DDS DataReader entities in the same DomainParticipant."
 
-**Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`runtime_for` Z. 396:
-ein `DcpsRuntime` je Domain für alle Clients, ein weiterer je Domain und
-USER_DATA über `own_runtime_slot`; `create_writer` Z. 654, `create_reader` Z.
-716)
+**Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`runtime_for`: ein
+`DcpsRuntime` je Domain für alle Clients, ein weiterer je Domain und USER_DATA
+über `own_runtime_slot`; `create_writer`, `create_reader`; `delete` und
+`unregister_client` nehmen nur die Objekte des einen Client weg)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_two_large_samples_reach_a_default_reader_on_the_same_agent`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_two_large_samples_reach_a_default_reader_on_the_same_agent`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_1_a_participant_qos_is_applied_to_the_participant`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_10_3_deleting_one_clients_objects_leaves_the_other_clients_reader_and_writer_working`
 
-**Status:** `done` — der Writer eines Client erreicht den Reader eines anderen
-Client im selben `DcpsRuntime`. Eigene GUID und QoS des Participant sind je
-Client nicht geprüft; ein Participant mit eigenem USER_DATA bekommt nach dem
-Code einen eigenen `DcpsRuntime` (gelesen, nicht durch einen Test belegt).
+**Status:** `done` — zwei Clients teilen den `DcpsRuntime` ihrer Domain. Der
+Writer jedes Client erreicht den Reader des anderen und den eigenen, wie es
+zwei DomainParticipants täten. Das Löschen des Readers des einen Client und
+danach aller seiner Objekte lässt Writer und Reader des anderen Client im
+gemeinsamen `DcpsRuntime` arbeiten; vom gelöschten Client kommt nichts mehr an.
+Ein Participant mit eigenem USER_DATA bekommt einen eigenen `DcpsRuntime`,
+Participants mit gleichem USER_DATA teilen ihn (`xrce_7_1_…`). Auf dem
+Linux-Testrechner grün.
 
 ### §10.3 Abkürzung zwischen lokalem Writer und Reader
 
@@ -7944,11 +8043,148 @@ these deployments the XRCE Agent implementation must implement the client -side
 of the XRCE Protocol in addition to the server part. Supporting this kind of
 deployment is an implementation decision".
 
-**Repo:** —
+**Repo:** `crates/xrce-agent/src/daemon/federation.rs` (`Upstream`,
+`XrceUpstream`, `is_relayed`, `cancel_of`, `TcpLink`, `TCP_LINK_SEND_LIMIT`,
+`TCP_LINK_CLOSE_LIMIT`, `UpstreamLocator::max_message_size`),
+`crates/xrce-agent/src/daemon/session.rs`
+(`set_upstream`, `relay_upstream`, `poll_upstream`, `release_upstream`,
+`refill`, `stream_room`, `answer_refused`, `handle_reset`),
+`crates/xrce-agent/src/daemon/config.rs` (`upstream.*`, `read_upstream`),
+`crates/xrce-agent/src/daemon/server.rs` (`unapplied_changes`,
+`check_routed_clients`),
+`crates/xrce-client/src/lib.rs` (`forward`, `send_fragmented_on`,
+`drain_backlog`, `acknowledged_forwards`, `poll_held`, `holds_input`,
+`set_forward_replies`,
+`set_properties`, `set_session_id`, `reset_session`, `set_heartbeat_period`,
+`received_messages`, `ClientEvent::Forwarded`,
+`ClientEvent::ForwardAcknowledged`), `crates/xrce/src/reliable.rs`
+(`recv_acknack`, `next_in_order`, `has_in_order`, `acknowledgement`),
+`crates/xrce-client/src/discovery.rs` (`UdpTransport`),
+`man/man5/zerodds-xrce-agentd.yaml.5`, `man/man1/zerodds-xrce-agentd.1`,
+`packaging/linux/configs/xrce-agentd.yaml.example`,
+`ci/interop-omg-weekly.yml` (`vendor-live-xrce`)
 
-**Tests:** —
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_create_goes_upstream_unchanged_and_its_status_comes_back`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_requests_wait_while_the_upstream_is_unreachable_and_leave_in_order`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_lost_upstream_session_is_opened_again_with_its_objects`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_full_queue_answers_status_err_resources`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_refused_create_client_answers_the_waiting_requests`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_new_attempt_never_takes_the_session_id_of_the_open_session`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_new_link_replaces_a_session_the_upstream_agent_still_holds`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_reset_of_a_routed_client_ends_its_reads_at_the_upstream_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_relay_holds_the_upstream_stream_while_its_client_does_not_acknowledge`,
+`crates/xrce-agent/tests/contract_xrce_client.rs::xrce_8_4_14_2_a_held_stream_leaves_the_agents_window_full`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_4_14_2_a_held_reliable_stream_hands_over_only_what_the_caller_takes`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_3_5_14_a_held_stream_counts_a_fragment_run_once`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_write_data_above_the_upstream_mtu_goes_upstream_whole_beside_waiting_requests`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_write_data_of_more_fragments_than_the_window_goes_upstream_whole`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_a_best_effort_request_above_one_link_message_is_answered_and_holds_up_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_requests_in_flight_when_the_link_is_lost_reach_the_next_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_10_4_the_access_rules_of_the_upstream_agent_decide_for_a_routed_client`,
+`crates/xrce-agent/src/daemon/server.rs::tests::xrce_10_4_an_access_rule_that_covers_a_routed_client_is_refused_at_start`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_10_4_the_upstream_block_is_read`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_10_4_the_upstream_mtu_fits_one_message_of_the_link`,
+`crates/xrce-agent/src/daemon/server.rs::tests::a_reload_names_the_changed_keys_it_does_not_apply`,
+`crates/xrce-agent/tests/federation.rs::xrce_10_4_clients_of_federated_agents_exchange_a_sample_through_the_inner_agent`,
+`crates/xrce-agent/tests/federation.rs::xrce_10_4_requests_sent_before_the_inner_agent_starts_are_carried_out_after_it_starts`,
+`crates/xrce-agent/tests/federation.rs::xrce_10_4_an_upstream_agent_that_stops_reading_over_tcp_holds_up_no_other_client`,
+`crates/xrce-agent/tests/federation.rs::xrce_10_4_a_restarted_relay_replaces_the_session_the_inner_agent_still_holds`,
+`crates/xrce-agent/src/daemon/federation.rs::tests::xrce_10_4_a_dropped_tcp_link_writes_what_it_was_handed_before_it_ends_the_connection`,
+`crates/xrce-agent/src/daemon/federation.rs::tests::xrce_10_4_a_tcp_link_to_an_agent_that_reads_nothing_never_blocks`,
+`crates/xrce-agent/src/daemon/federation.rs::tests::xrce_10_4_a_tcp_link_that_cannot_connect_fails_without_waiting`,
+`crates/xrce-agent/src/daemon/federation.rs::tests::xrce_11_3_3_a_tcp_link_frames_each_message_with_its_length`,
+`crates/xrce-agent/tests/federation_foreign.rs::xrce_10_4_the_eprosima_agent_is_the_upstream_agent_of_a_zerodds_agent`,
+`crates/xrce-agent/tests/contract_xrce_client.rs::xrce_7_8_2_1_the_relay_session_carries_key_session_and_properties_and_forwards_unchanged`,
+`crates/xrce-client/src/lib.rs::tests::xrce_10_4_forward_sends_a_submessage_unchanged_and_hands_the_answer_over`,
+`crates/xrce-client/src/lib.rs::tests::xrce_10_4_the_create_client_carries_the_properties_and_reset_sends_nothing`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_3_5_14_a_fragment_run_above_the_free_window_goes_out_whole_as_acknacks_free_it`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_3_5_14_a_write_of_more_fragments_than_the_window_goes_out_whole`,
+`crates/xrce-client/src/lib.rs::tests::xrce_8_3_5_14_an_mtu_without_room_for_fragment_data_is_refused`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_an_acknack_acknowledges_only_the_messages_before_first_unacked`
 
-**Status:** open — eine optionale Bereitstellung, die eine Client-Seite im Agent verlangt; `crates/xrce-agent` hat keine Seite als Client.
+**Status:** partial — der Agent ist mit `upstream:` Client eines anderen
+Agent: je weitergeleitetem Client eine Sitzung dort mit dessen ClientKey,
+session_id und properties; CREATE, DELETE, WRITE_DATA, READ_DATA und GET_INFO
+gehen unverändert auf ihrem Strom hin, STATUS, INFO und DATA auf ihrem Strom
+zurück; der Agent selbst erzeugt für den Client keine DDS-Entität. Für die
+Objekte eines weitergeleiteten Client gelten die Grenzen des oberen Agent; von
+`limits` dieses Agent gilt nur `max_clients`. Die Antworten des oberen Agent
+auf einem zuverlässigen Strom gehen an den Client, soweit sein Sendefenster
+auf diesem Strom Platz hat (16 Nachrichten, §8.4.14.1); die übrigen nimmt
+dieser Agent nicht aus der Verbindung und bestätigt sie nicht, so dass sich
+das Sendefenster des oberen Agent füllt und dieser keine Samples mehr für
+den Client aus seinen DataReadern nimmt. Das ACKNACK des Client gibt weiter,
+was wartete, und bestätigt es dem oberen Agent sofort. Solange die
+Verbindung Antworten hält, geht kein Keepalive; die HEARTBEATs des oberen
+Agent für die gehaltenen Nachrichten halten die Verbindung am Leben. Gemessen
+mit 100 Samples und einem Client, der nicht bestätigt: der Client bekommt 16
+DATA, dieser Agent hält keine DATA über das Fenster hinaus, der obere Agent
+hat höchstens 32 Samples aus seiner Warteschlange genommen und hält keine
+DATA über sein Fenster hinaus; nach den ACKNACKs des Client kommen alle 100
+einmal und in Reihenfolge an. Über seine Operationen entscheiden die
+Zugriffsregeln des oberen Agent (§7.4); ein Eintrag in `access_rules` dieses
+Agent, der einen weitergeleiteten Client erfasst, verhindert den Start. Eine FRAGMENT-Folge geht ganz oder gar
+nicht hinaus; was im Sendefenster keinen Platz hat, folgt nach den ACKNACKs
+des oberen Agent, auch bei mehr als 16 FRAGMENTs. Eine Anfrage auf einem
+zuverlässigen Strom bleibt beim Agent, bis der obere Agent sie bestätigt
+(WRITE_DATA, READ_DATA) oder beantwortet hat (CREATE, DELETE, GET_INFO).
+Solange der obere Agent nicht erreichbar ist, warten die Anfragen
+(Store-and-forward); eine volle Warteschlange und eine Anfrage, die die MTU der
+Verbindung nicht tragen kann, werden mit `STATUS_ERR_RESOURCES` beantwortet,
+ebenso eine Anfrage auf einem Best-effort-Strom oder auf STREAMID_NONE, die
+größer ist als eine Nachricht der Verbindung (65 507 Oktette über UDP und IPv4,
+65 527 über UDP und IPv6, 65 535 über TCP): sie kann nicht in FRAGMENTs geteilt
+werden und hält die Anfragen hinter ihr nicht auf. `upstream.mtu` über einer
+Nachricht der Verbindung weist die Konfiguration ab.
+Eine verlorene Sitzung wird mit der anderen von zwei session_ids neu eröffnet
+(der des Client und der nächsten, nie mit der der zuletzt offenen Sitzung;
+§7.8.2.1 ersetzt eine noch gehaltene), dann werden Objekte und laufende Reads
+neu angelegt und die weder bestätigten noch beantworteten Anfragen in ihrer
+Reihenfolge erneut gesendet: keine geht verloren, eine Anfrage, deren
+Bestätigung mit der Verbindung verloren ging, kann zweimal ausgeführt werden.
+Die erste Sitzung einer Verbindung ersetzt jede Sitzung, die der obere Agent
+für den Client noch hält (von einem früheren Lauf dieses Agent, oder eine,
+deren DELETE verloren ging): erst ein CREATE_CLIENT mit der anderen
+session_id, nach dessen Antwort eines mit der des Client. Ein RESET des Client
+(§8.3.5.13) beendet seine Reads beim oberen Agent, je mit einem READ_DATA mit
+`max_samples` 0 auf ihrem Strom (§8.3.5.9.2); ein DATA davon, das noch
+unterwegs ist, erreicht den Client nicht, und eine neue Sitzung legt die Reads
+nicht wieder an.
+Eine Verbindung, die `link_timeout_ms` lang nichts hört, wird mit neuem
+Transport neu eröffnet. Eine Verbindung über `tcp://` wird von eigenen Threads
+aufgebaut, geschrieben und gelesen, nie unter der Sperre der Session-Engine:
+ein oberer Agent, der den Verbindungsaufbau verwirft oder nicht mehr liest,
+hält keinen anderen Client auf. Was er nicht liest, wartet bis 1 MiB jenseits
+des Sendepuffers des Sockets in der Verbindung, danach in der Warteschlange.
+Eine verbundene Verbindung, die aufgegeben wird, schreibt, was sie bekommen
+hat (das DELETE einer beendeten Sitzung), und beendet die Verbindung binnen
+1 s.
+Gemessen über einen Proxy, der nach dem Aufbau nicht mehr liest, während der
+weitergeleitete Client 1000 Best-effort-Samples zu 60 000 Oktetten schreibt:
+ein nicht weitergeleiteter Client desselben Agent bekommt jede Antwort binnen
+3 s, und die stumme Verbindung wird auf einer neuen TCP-Verbindung neu
+eröffnet.
+Über UDP: Clients zweier äußerer Agents tauschen ein Sample über den inneren
+Agent, auch über zwei verkettete Agents; die äußeren Agents können keine
+DDS-Laufzeit starten, und ein solcher Agent ohne `upstream:` weist den
+Participant ab. Anfragen vor dem Start des inneren Agent (sechs CREATE, ein
+READ_DATA, ein WRITE_DATA) werden danach je einmal in ihrer Reihenfolge
+beantwortet, und das vorher geschriebene Sample kommt an. Ein neuer äußerer
+Agent übernimmt den Client eines beendeten, dessen Sitzung der innere Agent
+noch hält; der Client öffnet dieselbe Sitzung wieder, seine CREATEs werden
+beantwortet, und sein Sample erreicht einen Reader am inneren Agent. Gegen den eProsima
+Micro-XRCE-DDS Agent 3.0.1 als oberen Agent: zwei Clients des Agent legen ihre
+Objekte dort an und tauschen ein Sample (Job `vendor-live-xrce`). Auf dem
+Linux-Testrechner grün; der eProsima-Test mit dem Agent aus seiner Superbuild
+und mit dem Agent, gebaut wie im Job gegen Fast DDS 3.6.1, je dreimal; mit
+der ersten Sitzung aus zwei CREATE_CLIENT erneut dreimal grün gegen den Agent
+aus seiner Superbuild (der Agent wie im Job gegen Fast DDS 3.6.1 nicht
+erneut). Der RESET eines weitergeleiteten Client, die Verbindung über
+`tcp://` und das Halten der Antworten bei vollem Sendefenster des Client sind
+gegen den eProsima Agent nicht geprüft; der eProsima-Test lief nach dem
+Halten der Antworten nicht erneut. Offen:
+die Verbindung nach oben über `tls://` und `dtls://` (die Listener haben sie;
+`upstream.locator` weist andere Schemata als `udp`, `tcp` mit Fehler ab).
 
 ### §10.5 Direkte Kommunikation zwischen Anwendungen
 
@@ -9533,7 +9769,7 @@ Flag beginnt den nächsten Rahmen.
 
 ## Audit-Status
 
-490 done / 0 partial / 2 open / 0 blocked / 77 n/a (informative).
+491 done / 1 partial / 0 open / 0 blocked / 77 n/a (informative).
 
 Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dds-xrce-1.0.md`):
 

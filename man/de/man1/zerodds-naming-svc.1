@@ -67,6 +67,10 @@ Der Host, der in jeder IOR steht, die dieser Daemon ausgibt, wenn
 .B \-\-bind
 eine Wildcard-Adresse ist. Standard:
 .IR 127.0.0.1 .
+Die IORs tragen IIOP-1.2-Profile; ein IPv6-Host, etwa der von
+.IR [::1]:2809 ,
+steht in einem IIOP-1.4-Profil, ohne die Klammern geschrieben
+(CORBA 3.3 Part 2 \(sc7.9).
 .TP
 .BR \-\-persist\-file =\fIDATEI\fR
 Wo der Namensgraph gespeichert wird. Ohne diese Option wird nichts
@@ -120,6 +124,6 @@ nennt.
 .SH STANDARDS
 OMG Naming Service 1.3
 .RI ( formal/2004-10-03 ),
-CORBA 3.4, GIOP 1.2, SSLIOP, CSIv2.
+CORBA 3.4, GIOP 1.0 bis 1.4, SSLIOP, CSIv2.
 .SH AUTOREN
 ZeroDDS Contributors.

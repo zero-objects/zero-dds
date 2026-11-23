@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use zerodds_amqp_endpoint::bridge_daemon::{self, DaemonConfig, DaemonError, ENV, is_key};
 use zerodds_amqp_endpoint::daemon_runtime::{
-    BridgeMetrics, CatalogSnapshot, CatalogTopic, SERVICE_NAME, install_signal_watcher,
-    otlp_config_from_env, serve_admin_endpoints, spawn_otlp_flush_loop,
+    BridgeMetrics, SERVICE_NAME, install_signal_watcher, otlp_config_from_env,
+    serve_admin_endpoints, spawn_otlp_flush_loop,
 };
 use zerodds_monitor::Registry;
 use zerodds_observability_otlp::OtlpExporter;
@@ -158,12 +158,19 @@ fn run() -> Result<(), DaemonError> {
         ));
     }
 
-    eprintln!(
-        "{{\"event\":\"startup\",\"broker\":\"{}\",\"container_id\":\"{}\",\"domain\":{},\"topics\":{}}}",
-        cfg.broker_url,
-        cfg.container_id,
-        cfg.domain,
-        cfg.topics.len(),
+    // The JSON log on stdout (spec §8.1), from the first line on.
+    bridge_daemon::set_log_level(&cfg.log_level);
+    bridge_daemon::log_event(
+        "startup",
+        &[
+            ("broker", &cfg.broker_url),
+            ("container_id", &cfg.container_id),
+        ],
+        &[
+            ("domain", u64::from(cfg.domain.unsigned_abs())),
+            ("topics", cfg.topics.len() as u64),
+            ("tenants", cfg.tenants.len() as u64),
+        ],
     );
 
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -175,27 +182,18 @@ fn run() -> Result<(), DaemonError> {
 
     // Signal watcher (§9.2 graceful shutdown).
     if let Err(e) = install_signal_watcher(Arc::clone(&shutdown), Arc::clone(&reload)) {
-        eprintln!("{{\"event\":\"signal_watcher_init_failed\",\"err\":\"{e}\"}}");
+        bridge_daemon::log_event(
+            "signal_watcher_init_failed",
+            &[("err", &e.to_string())],
+            &[],
+        );
     }
 
     // Admin endpoint (§5.2 catalog/healthz + §8.2 metrics).
     let admin_handle = if let Some(addr_s) = metrics_addr_for(&cfg) {
         match addr_s.parse::<std::net::SocketAddr>() {
             Ok(sa) => {
-                let topics: Vec<CatalogTopic> = cfg
-                    .topics
-                    .iter()
-                    .map(|t| CatalogTopic {
-                        dds_name: t.dds_name.clone(),
-                        amqp_address: t.amqp_address.clone(),
-                        direction: match t.direction {
-                            bridge_daemon::Direction::In => "in".to_string(),
-                            bridge_daemon::Direction::Out => "out".to_string(),
-                            bridge_daemon::Direction::Bidir => "bidir".to_string(),
-                        },
-                    })
-                    .collect();
-                let snap = Arc::new(CatalogSnapshot::new(topics));
+                let snap = Arc::new(bridge_daemon::admin_catalog(&cfg));
                 let healthy = Arc::new(AtomicBool::new(true));
                 let stop_admin = Arc::clone(&shutdown);
                 match serve_admin_endpoints(
@@ -206,11 +204,19 @@ fn run() -> Result<(), DaemonError> {
                     stop_admin,
                 ) {
                     Ok((h, bound)) => {
-                        eprintln!("{{\"event\":\"admin_endpoint\",\"addr\":\"{bound}\"}}");
+                        bridge_daemon::log_event(
+                            "admin_endpoint",
+                            &[("addr", &bound.to_string())],
+                            &[],
+                        );
                         Some((h, healthy))
                     }
                     Err(e) => {
-                        eprintln!("{{\"event\":\"admin_endpoint_bind_failed\",\"err\":\"{e}\"}}");
+                        bridge_daemon::log_event(
+                            "admin_endpoint_bind_failed",
+                            &[("err", &e.to_string())],
+                            &[],
+                        );
                         None
                     }
                 }
@@ -221,13 +227,19 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // OTLP exporter (§8.3).
-    let _otlp_handle = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
-        let exp = Arc::new(OtlpExporter::new(otlp_cfg));
-        spawn_otlp_flush_loop(exp, Arc::clone(&shutdown), Duration::from_secs(5)).ok()
-    } else {
-        None
-    };
+    // OTLP exporter (§8.3): the spans of every TRANSFER round trip, sent
+    // every 5 s and once more at the end.
+    let exporter = otlp_config_from_env(SERVICE_NAME).map(|c| Arc::new(OtlpExporter::new(c)));
+    let otlp_stop = Arc::new(AtomicBool::new(false));
+    let otlp_handle = exporter.as_ref().and_then(|exp| {
+        spawn_otlp_flush_loop(
+            Arc::clone(exp),
+            Arc::clone(&otlp_stop),
+            Duration::from_secs(5),
+        )
+        .ok()
+    });
+    let tracer = bridge_daemon::Tracer::new(exporter);
 
     let reload_load = move || -> Result<DaemonConfig, String> {
         let configured = zerodds_dcps::cli::Configured::from_command_line(
@@ -251,11 +263,19 @@ fn run() -> Result<(), DaemonError> {
             flag: Arc::clone(&reload),
             load: Box::new(reload_load),
         }),
+        tracer,
     );
-    // The stop watcher in `run_with_reload` may not get its turn before the
-    // process ends; STOPPING=1 again, synchronously (a repeat is harmless).
+    // `run_with_reload` has told STOPPING=1 for a stop during the run before
+    // it returned; a stop after it (an error, an ended `--once`) is told
+    // here before the process ends (a repeat is harmless).
     if shutdown.load(std::sync::atomic::Ordering::SeqCst) {
         zerodds_dcps::cli::notify_service_manager("STOPPING=1");
+    }
+
+    // The last spans go out before the process ends.
+    otlp_stop.store(true, Ordering::SeqCst);
+    if let Some(h) = otlp_handle {
+        let _ = h.join();
     }
 
     // /healthz answers 503 once the bridge stopped.
@@ -295,7 +315,8 @@ fn print_usage() {
     eprintln!("  --broker <URL>           AMQP broker URL (amqp://, amqps://)");
     eprintln!("  --container-id <ID>      AMQP container-id");
     eprintln!("  --domain <ID>            DDS Domain ID");
-    eprintln!("  --sasl-mechanism <NAME>  PLAIN|SCRAM-SHA-256|EXTERNAL|ANONYMOUS|XOAUTH2");
+    eprintln!("  --sasl-mechanism <NAME>  PLAIN|SCRAM-SHA-256|SCRAM-SHA-512|EXTERNAL|ANONYMOUS|");
+    eprintln!("                           XOAUTH2");
     eprintln!("  --user <USER>            SASL username");
     eprintln!("  --password <PASS>        SASL password");
     eprintln!("  --tls-ca <FILE>          TLS CA certificate");
@@ -307,7 +328,8 @@ fn print_usage() {
     eprintln!();
     eprintln!("  Each option above is `--set` of its file key (`--broker X` is");
     eprintln!("  `--set amqp.broker_url=X`); precedence: defaults < environment");
-    eprintln!("  ($AMQP_PASSWORD for amqp.sasl.password) < files < flags.");
+    eprintln!("  ($AMQP_PASSWORD for amqp.sasl.password, $AMQP_CBS_SECRET for");
+    eprintln!("  amqp.cbs.secret) < files < flags.");
     eprintln!();
     eprintln!("  Test hooks. Real options, listed because the program accepts");
     eprintln!("  them and an option nobody can find is one nobody maintains:");

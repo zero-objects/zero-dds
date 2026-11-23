@@ -49,6 +49,31 @@ fn mqttbridge_3_example_yaml_key_fields_match_intent() {
     assert_eq!(cfg.client_id, "zerodds-mqtt-bridge");
     assert_eq!(cfg.keep_alive_secs, 120);
     assert!(!cfg.clean_start);
+    // The keys of §4.1 and §9.1 the example names.
+    assert_eq!(
+        cfg.protocol_version,
+        zerodds_mqtt_bridge::version::ProtocolVersion::V5
+    );
+    assert_eq!(cfg.session_expiry_interval_secs, 3600);
+    assert_eq!(cfg.session_dir, "/var/lib/zerodds/mqtt-bridge");
+    assert_eq!(cfg.max_packet_size, 16_777_216);
+    assert_eq!(cfg.receive_maximum, 65_535);
+    assert_eq!(cfg.topic_alias_maximum, 100);
+    assert_eq!(cfg.connect_timeout_secs, 30);
+    assert_eq!(
+        (
+            cfg.reconnect.initial_delay_ms,
+            cfg.reconnect.max_delay_ms,
+            cfg.reconnect.factor
+        ),
+        (500, 30_000, 2.0)
+    );
+    assert_eq!(cfg.own_topic_prefix, "$zerodds");
+    assert_eq!(cfg.metrics_path, "/metrics");
+    assert!(
+        cfg.tenants.is_empty(),
+        "the example's tenant is commented out"
+    );
 
     // mqtt.tls — Spec §3 spells the client credentials `cert_file`/`key_file`.
     assert!(!cfg.broker_tls_enabled);
@@ -62,7 +87,10 @@ fn mqttbridge_3_example_yaml_key_fields_match_intent() {
         "/etc/zerodds/certs/mqtt-bridged.key"
     );
 
-    assert_eq!(cfg.auth_mode, "none");
+    assert_eq!(
+        cfg.auth_mode,
+        Some(zerodds_mqtt_bridge::daemon::auth::AuthKind::None)
+    );
 
     // metrics — endpoint off, but `metrics.listen` (Spec §3) must arrive;
     // the default is the empty string.
@@ -78,19 +106,34 @@ fn mqttbridge_11_example_yaml_topics_reach_the_daemon() {
     // The regression the old `routes:` schema caused: an empty topic list.
     assert_eq!(
         cfg.topics.len(),
-        1,
-        "example should show exactly one demo topic"
+        2,
+        "the example shows an out topic and an in topic with a filter"
     );
     let t = &cfg.topics[0];
     assert_eq!(t.dds_name, "Telemetry");
     assert_eq!(t.dds_type, "demo::Sensor::Reading");
-    assert_eq!(t.mqtt_topic, "factory/+/telemetry");
+    // Spec §5.1: an out topic publishes on a topic name, without wildcard.
+    assert_eq!(t.mqtt_topic, "factory/press-1/telemetry");
     assert_eq!(t.direction, "out");
-    assert_eq!(t.mqtt_qos, 1);
-    assert!(!t.retain);
+    assert_eq!(t.mqtt_qos, Some(1));
+    assert_eq!(t.retain, Some(false));
+    // Not set on the out topic: its DataReader accepts XCDR1 and XCDR2.
+    assert_eq!(t.data_representation, None);
     assert_eq!(t.reliability, "reliable");
     assert_eq!(t.durability, "volatile");
     assert_eq!(t.history_depth, 10);
+    assert_eq!(t.history_kind, "keep_last");
+    let c = &cfg.topics[1];
+    assert_eq!(
+        (
+            c.dds_name.as_str(),
+            c.mqtt_topic.as_str(),
+            c.direction.as_str()
+        ),
+        ("Command", "factory/+/command", "in")
+    );
+    // Spec §3: the in topic's DataWriter offers XCDR2 from its creation.
+    assert_eq!(c.data_representation.as_deref(), Some("xcdr2"));
 }
 
 #[test]
@@ -98,15 +141,17 @@ fn mqttbridge_7_3_example_yaml_acl_reaches_the_daemon() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
         .expect("example yaml must parse — see mqttbridge_3_example_yaml_parses_without_error");
 
-    // Spec §3/§7.3: subject-keyed rules, inverted into the topic-keyed map.
-    // `default_deny: false` deviates from the fail-closed default.
-    assert!(!cfg.acl_default_deny);
-    let (read, write) = cfg
-        .topic_acl
-        .get("factory/+/telemetry")
-        .expect("acl.rules must land in topic_acl");
-    assert_eq!(read, &vec!["service-account".to_string()]);
-    assert_eq!(write, &vec!["service-account".to_string()]);
+    // Spec §3/§7.3: the rules with their subject and topic filters;
+    // `default_deny: false` opens the topics no rule names.
+    assert_eq!(cfg.acl_default_deny, Some(false));
+    assert_eq!(
+        cfg.acl_rules,
+        vec![zerodds_mqtt_bridge::daemon::acl::AclRule {
+            subject: "service-account".into(),
+            allow_publish: vec!["factory/+/telemetry".into()],
+            allow_subscribe: vec!["factory/+/telemetry".into()],
+        }]
+    );
 }
 
 #[test]

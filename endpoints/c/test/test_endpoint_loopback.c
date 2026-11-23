@@ -66,15 +66,7 @@ int main(void)
     t.receive = lb_receive;
 
     /* endpoint side: fill + encode + hand the frame to the transport */
-    tx.id = 0xA1B2C3D4uL;
-    tx.kind = 0x1234u;
-    tx.flags = 0x5Au;
-    tx.value = 3.5f;
-    tx.stamp.hi = 0x01020304uL;
-    tx.stamp.lo = 0x05060708uL;
-    strcpy(tx.label, "bay-12");
-    tx.raw[0] = 0xDE; tx.raw[1] = 0xAD; tx.raw[2] = 0xBE; tx.raw[3] = 0xEF;
-    tx.raw_len = 4;
+    sensor_fill_golden(&tx);
 
     zdw_writer_init(&w, frame, sizeof(frame), ZDW_LE);
     if (sensor_encode(&w, &tx) != ZDW_OK) {

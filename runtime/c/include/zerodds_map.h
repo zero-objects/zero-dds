@@ -32,11 +32,23 @@
  *
  * - A key of the entry that is a string is stored as the pointer given
  *   and compared by its characters: the map does not own the characters,
- *   as no other string of this binding is owned by the structure that
- *   holds it.
- * - An entry removed by `erase` or `clear` is not finalized: an element is
- *   copied with memcpy or assignment, so the map owns no storage an
- *   element refers to.
+ *   as no collection of this binding owns a string that is its key or its
+ *   element. (The one string an aggregate owns is a member annotated
+ *   `@external`, which the `zd_fini_<T>` of the aggregate releases.)
+ * - The operations here do not finalize an element. `erase` and `clear`
+ *   drop the entry, `copy`, `insert` and `insert_or_assign` assign the
+ *   element, so a copy shares what the element points at, and `finalize`
+ *   frees the buffer and nothing an element refers to.
+ * - A map an `@external` member points at (XTypes 1.3 §7.5.1.2.3.1) is
+ *   released and copied with its elements by the generated functions of
+ *   the aggregate that holds the pointer: `zd_fini_<T>` calls the
+ *   `zd_fini_<V>` of each element in `[0, _length)` whose type has one and
+ *   frees the buffer where `_release` is set, and `zd_copy_<T>` copies the
+ *   elements with `zd_copy_with_<V>`. The operations here stay as they
+ *   are on such a map: an application that removes an entry with `erase`
+ *   or `clear` calls `zd_fini_<V>` on its element first, and one that
+ *   fills the map with `copy` holds elements that share their objects
+ *   with the source, which it separates before `zd_fini_<T>` runs.
  * - A key that is not in the map is `DDS_RETCODE_BAD_PARAMETER` for
  *   `erase`, as a key that is in it is for `insert` (§7.5.1.3.2.11).
  */

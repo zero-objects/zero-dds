@@ -335,6 +335,159 @@ fn dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_f
     assert!(!dr.is_enabled());
 }
 
+/// §2.2.3.20: ENTITY_FACTORY "is mutable. A change in the policy affects
+/// only the entities created after the change; not the previously created
+/// entities." On an enabled Publisher, Subscriber and DomainParticipant: the
+/// switch to TRUE leaves what was created under FALSE disabled and enables
+/// the next creation; the switch back to FALSE leaves the enabled ones
+/// enabled and creates the next one disabled.
+#[test]
+fn dcps_2_2_3_20_a_changed_entity_factory_affects_only_entities_created_afterwards() {
+    let p = make_participant();
+    let topic = p
+        .create_topic::<RawBytes>("Chatter", TopicQos::default())
+        .unwrap();
+
+    let mut pq = PublisherQos::default();
+    pq.entity_factory.autoenable_created_entities = false;
+    let publisher = p.create_publisher(pq.clone());
+    assert!(publisher.is_enabled());
+    let new_writer = || {
+        publisher
+            .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+            .unwrap()
+    };
+    let w1 = new_writer();
+    assert!(!w1.is_enabled());
+    pq.entity_factory.autoenable_created_entities = true;
+    publisher.set_qos(pq.clone()).unwrap();
+    assert!(
+        !w1.is_enabled(),
+        "the change to TRUE enabled an older writer"
+    );
+    let w2 = new_writer();
+    assert!(w2.is_enabled(), "a writer created after the change to TRUE");
+    pq.entity_factory.autoenable_created_entities = false;
+    publisher.set_qos(pq).unwrap();
+    assert!(w2.is_enabled());
+    let w3 = new_writer();
+    assert!(
+        !w3.is_enabled(),
+        "a writer created after the change to FALSE"
+    );
+    assert!(!w1.is_enabled());
+
+    let mut sq = SubscriberQos::default();
+    sq.entity_factory.autoenable_created_entities = false;
+    let subscriber = p.create_subscriber(sq.clone());
+    assert!(subscriber.is_enabled());
+    let new_reader = || {
+        subscriber
+            .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+            .unwrap()
+    };
+    let r1 = new_reader();
+    assert!(!r1.is_enabled());
+    sq.entity_factory.autoenable_created_entities = true;
+    subscriber.set_qos(sq.clone()).unwrap();
+    assert!(
+        !r1.is_enabled(),
+        "the change to TRUE enabled an older reader"
+    );
+    let r2 = new_reader();
+    assert!(r2.is_enabled(), "a reader created after the change to TRUE");
+    sq.entity_factory.autoenable_created_entities = false;
+    subscriber.set_qos(sq).unwrap();
+    assert!(r2.is_enabled());
+    let r3 = new_reader();
+    assert!(
+        !r3.is_enabled(),
+        "a reader created after the change to FALSE"
+    );
+    assert!(!r1.is_enabled());
+
+    // The DomainParticipant is the factory of publishers, subscribers and
+    // topics.
+    let q = make_participant();
+    let mut dq = q.get_qos();
+    dq.entity_factory.autoenable_created_entities = false;
+    q.set_qos(dq.clone()).unwrap();
+    let mut serial = 0_u32;
+    let mut create = || {
+        serial += 1;
+        let topic = q
+            .create_topic::<RawBytes>(&format!("Factory{serial}"), TopicQos::default())
+            .unwrap();
+        (
+            q.create_publisher(PublisherQos::default()),
+            q.create_subscriber(SubscriberQos::default()),
+            topic,
+        )
+    };
+    let (pub1, sub1, topic1) = create();
+    assert!(!pub1.is_enabled() && !sub1.is_enabled() && !topic1.is_enabled());
+    dq.entity_factory.autoenable_created_entities = true;
+    q.set_qos(dq.clone()).unwrap();
+    assert!(
+        !pub1.is_enabled() && !sub1.is_enabled() && !topic1.is_enabled(),
+        "the change to TRUE enabled an older publisher, subscriber or topic"
+    );
+    let (pub2, sub2, topic2) = create();
+    assert!(pub2.is_enabled() && sub2.is_enabled() && topic2.is_enabled());
+    dq.entity_factory.autoenable_created_entities = false;
+    q.set_qos(dq).unwrap();
+    assert!(pub2.is_enabled() && sub2.is_enabled() && topic2.is_enabled());
+    let (pub3, sub3, topic3) = create();
+    assert!(
+        !pub3.is_enabled() && !sub3.is_enabled() && !topic3.is_enabled(),
+        "a publisher, subscriber or topic created after the change to FALSE"
+    );
+    assert!(!pub1.is_enabled() && !sub1.is_enabled() && !topic1.is_enabled());
+}
+
+/// §2.2.2.1.1.7: "If the ENTITY_FACTORY Qos policy has
+/// autoenable_created_entities set to TRUE, the enable operation on the
+/// factory will automatically enable all entities created from the
+/// factory." The value the factory has at its `enable` decides, also for
+/// the entities it created before a change; the change itself enabled
+/// none of them (§2.2.3.20).
+#[test]
+fn dcps_2_2_3_20_the_enable_of_a_factory_follows_the_entity_factory_it_has_then() {
+    let manual = make_manual_participant();
+    let topic = manual
+        .create_topic::<RawBytes>("Chatter", TopicQos::default())
+        .unwrap();
+    topic.enable().unwrap();
+
+    // Created under FALSE, enabled by the factory's enable under TRUE.
+    let mut pq = PublisherQos::default();
+    pq.entity_factory.autoenable_created_entities = false;
+    let publisher = manual.create_publisher(pq.clone());
+    assert!(!publisher.is_enabled());
+    let writer = publisher
+        .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+        .unwrap();
+    pq.entity_factory.autoenable_created_entities = true;
+    publisher.set_qos(pq).unwrap();
+    assert!(!writer.is_enabled());
+    publisher.enable().unwrap();
+    assert!(writer.is_enabled());
+
+    // Created under TRUE, left disabled by the factory's enable under FALSE.
+    let subscriber = manual.create_subscriber(SubscriberQos::default());
+    assert!(!subscriber.is_enabled());
+    let reader = subscriber
+        .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+        .unwrap();
+    let mut sq = subscriber.get_qos();
+    sq.entity_factory.autoenable_created_entities = false;
+    subscriber.set_qos(sq).unwrap();
+    subscriber.enable().unwrap();
+    assert!(!reader.is_enabled());
+    reader.enable().unwrap();
+    assert!(reader.is_enabled());
+}
+
 /// §2.2.2.1.1.7: operations a disabled entity is not listed for return
 /// NOT_ENABLED; get_qos and set_qos are listed.
 #[test]

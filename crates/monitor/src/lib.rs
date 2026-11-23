@@ -25,6 +25,10 @@
 //!   spec metrics + 9 spec spans.
 //! - [`serve_prometheus`] (Feature `prometheus-server`) — Mini-HTTP-
 //!   `/metrics`-Endpoint.
+//! - [`admin`] (Feature `prometheus-server`) — the admin endpoints of a
+//!   daemon: `/catalog`, `/healthz`, the metrics path and `/`.
+//! - [`json`] — JSON string escaping and the RFC 3339 timestamp of a JSON
+//!   log line.
 //!
 //! ## Example
 //!
@@ -55,6 +59,7 @@ extern crate alloc;
 mod counter;
 mod gauge;
 mod histogram;
+pub mod json;
 mod labels;
 pub mod metric_names;
 mod prometheus;
@@ -62,6 +67,8 @@ mod registry;
 pub mod span_names;
 mod trace_context;
 
+#[cfg(feature = "prometheus-server")]
+pub mod admin;
 #[cfg(feature = "prometheus-server")]
 mod server;
 

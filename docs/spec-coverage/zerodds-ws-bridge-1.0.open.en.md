@@ -5,22 +5,14 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
-## §5.2 Type discovery catalog frame + /schema/<slug>
+## §6 DDS-QoS → WS-behavior map
 
-**Status:** `partial` — the catalog frame is covered; the IDL endpoint is carried as §5.2a `open`.
+**Status:** `partial` — the tests ran green on the Linux test host. Open: the daemon does not compute the KeyHash from the payload. The readers of a topic with key get no type support for the key (`zerodds-dcps` lacks the reader counterpart of `set_user_writer_key_support`, and the daemon would have to build a `SerializedTypeSupport` from the `idl_file`). A sample without `PID_KEY_HASH` on such a topic therefore names no instance: it reaches the clients, but it is not kept for later subscribers and starts no deadline; it is counted in `zerodds_ws_bridge_errors_total` and logged once per topic (specification §6). A topic without `idl_file` is a topic without key. Each drop counts in `zerodds_ws_bridge_send_queue_drops_total{connection_id}` (§8.2).
 
-## §5.2a `/schema/<slug>` IDL endpoint
+## §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
 
-**Status:** `open` — the part of §5.2 beyond the catalog frame. The tree has no `/schema` path.
+**Status:** `partial` — the tests ran green on the Linux test host. Open: on Windows nothing sets the shutdown flag (`install_signal_watcher` is an empty thread there; the console handler for Ctrl+C and the stop of the Windows service `ZeroDDSWSBridge` are missing). The Linux test host has no Windows target and there is no Windows runner; no unchecked code was written.
 
-## §8.1 Structured JSON logging
+## §11 Linux/macOS/Windows/Docker layout
 
-**Status:** `open` — `crates/websocket-bridge/src/daemon/cli.rs::tests` covers the flag splitting, but nothing tests the JSON log form or the effect of `--log-level`.
-
-## §8.3 OTLP spans
-
-**Status:** `partial` — the endpoint resolution is covered, the span emit is not.
-
-## §8.3a Frame roundtrip span
-
-**Status:** `open` — the emit half of §8.3.
+**Status:** `partial` — the tests ran green on the Linux test host; the Windows code was compiled there with `cargo clippy --target x86_64-pc-windows-gnu -p zerodds-websocket-bridge --all-targets -- -D warnings` and the same for `zerodds-dcps` (`--lib --tests`), not run. Missing: (1) the run of the service `ZeroDDSWSBridge` under `sc.exe` (start, `READY=1` as `SERVICE_RUNNING`, stop with the drain, `paramchange` as reload); it needs a Windows host with the service registered, which the Linux test host is not; the Windows job of `zerodds-dcps` (the Windows runner, user SYSTEM) runs the tests of `cli`, among them the console fallback of `run_as_service`, and has not run on this change. (2) No job starts the image `packaging/docker/ws-bridged/` and talks to it with a client; `release.yml` builds it only for a release, and on the measurement host (an unprivileged LXC container) `docker build` fails according to `ci/release-packaging-check.yml` (read, not measured).

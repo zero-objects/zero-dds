@@ -9,12 +9,14 @@
 
 #![allow(clippy::print_stderr)]
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use zerodds_monitor::admin::AdminEndpoints;
+use zerodds_monitor::json::push_escaped as push_json_str;
 use zerodds_monitor::{Counter, Gauge, Labels, Registry};
 use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
@@ -156,23 +158,6 @@ impl CatalogSnapshot {
     }
 }
 
-fn push_json_str(out: &mut String, s: &str) {
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                use std::fmt::Write as _;
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-}
-
 /// SIGTERM/SIGINT/SIGHUP watcher.
 #[cfg(unix)]
 pub fn install_signal_watcher(
@@ -206,115 +191,30 @@ pub fn serve_admin_endpoints(
     healthy: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<(JoinHandle<()>, SocketAddr)> {
-    let listener = TcpListener::bind(addr)?;
-    let bound = listener.local_addr()?;
-    listener.set_nonblocking(true)?;
-    let h = thread::Builder::new()
-        .name("zerodds-corba-admin".into())
-        .spawn(move || {
-            loop {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match listener.accept() {
-                    Ok((mut s, _peer)) => {
-                        let _ = s.set_nonblocking(false);
-                        let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-                        let _ = s.set_write_timeout(Some(Duration::from_secs(2)));
-                        admin_handle(&mut s, &catalog, &registry, &healthy);
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => thread::sleep(Duration::from_millis(100)),
-                }
-            }
-        })?;
-    Ok((h, bound))
-}
-
-fn admin_handle(
-    stream: &mut std::net::TcpStream,
-    catalog: &CatalogSnapshot,
-    registry: &Registry,
-    healthy: &AtomicBool,
-) {
-    use std::io::{Read, Write};
-    let mut buf = [0u8; 1024];
-    let n = match stream.read(&mut buf) {
-        Ok(n) => n,
-        Err(_) => return,
-    };
-    let req = String::from_utf8_lossy(&buf[..n]);
-    let first = req.lines().next().unwrap_or("");
-    let path = first
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .split('?')
-        .next()
-        .unwrap_or("/");
-    let (status, ctype, body) = match path {
-        "/catalog" => ("200 OK", "application/json", catalog.render_json()),
-        "/healthz" => {
-            if healthy.load(Ordering::SeqCst) {
-                ("200 OK", "text/plain; charset=utf-8", "OK\n".to_string())
-            } else {
-                (
-                    "503 Service Unavailable",
-                    "text/plain; charset=utf-8",
-                    "DOWN\n".to_string(),
-                )
-            }
-        }
-        "/metrics" => (
-            "200 OK",
-            "text/plain; version=0.0.4; charset=utf-8",
-            registry.render_prometheus(),
-        ),
-        "/" => (
-            "200 OK",
-            "text/plain; charset=utf-8",
-            format!("{SERVICE_NAME}\nendpoints: /catalog /healthz /metrics\n"),
-        ),
-        _ => ("404 Not Found", "text/plain; charset=utf-8", String::new()),
-    };
-    let resp = format!(
-        "HTTP/1.1 {status}\r\n\
-         Content-Type: {ctype}\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(resp.as_bytes());
+    zerodds_monitor::admin::serve_admin_endpoints(
+        addr,
+        "zerodds-corba-admin",
+        AdminEndpoints {
+            service_name: SERVICE_NAME.into(),
+            metrics_path: "/metrics".into(),
+            catalog: move || catalog.render_json(),
+            registry,
+            healthy,
+        },
+        stop,
+    )
 }
 
 /// Parse an endpoint string.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
-    let trimmed = raw
-        .strip_prefix("http://")
-        .or_else(|| raw.strip_prefix("https://"))
-        .unwrap_or(raw)
-        .trim_end_matches('/');
-    let (host, port) = match trimmed.rsplit_once(':') {
-        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(4318)),
-        None => (trimmed.to_string(), 4318),
-    };
-    OtlpConfig {
-        host,
-        port,
-        service_name: service_name.into(),
-        service_version: SERVICE_VERSION.into(),
-        timeout: Duration::from_secs(5),
-    }
+    OtlpConfig::from_endpoint(service_name, SERVICE_VERSION, raw)
 }
 
 /// From the environment.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
-    let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
-    Some(otlp_config_from_endpoint(service_name, &raw))
+    OtlpConfig::from_env(service_name, SERVICE_VERSION)
 }
 
 /// Periodic flush.
@@ -323,18 +223,13 @@ pub fn spawn_otlp_flush_loop(
     stop: Arc<AtomicBool>,
     interval: Duration,
 ) -> std::io::Result<JoinHandle<()>> {
-    thread::Builder::new()
-        .name("zerodds-corba-otlp".into())
-        .spawn(move || {
-            while !stop.load(Ordering::SeqCst) {
-                thread::sleep(interval);
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                let _ = exporter.flush();
-            }
-            let _ = exporter.flush();
-        })
+    zerodds_observability_otlp::spawn_flush_loop(
+        exporter,
+        stop,
+        interval,
+        interval,
+        "zerodds-corba-otlp",
+    )
 }
 
 /// Spec §7.1 — CORBA bridge SSLIOP TLS server configuration.

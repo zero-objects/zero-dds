@@ -30,7 +30,7 @@ use zerodds_ast_core::Id;
 
 use crate::emitter::Ctx;
 use crate::error::{CorbaRustError, Result};
-use crate::interface_emit::MARSHAL_EXC;
+use crate::interface_emit::{MARSHAL_EXC, MARSHAL_EXC_REPLY};
 use crate::type_map::{read_of, rust_type_for, write_of};
 
 /// Whether a node's CORBA facet carries `@ami`.
@@ -117,6 +117,20 @@ fn emit_in_marshal(
     Ok(())
 }
 
+/// Emits the closure `__args` that writes the `in` and `inout`
+/// arguments of `op` where the channel places the request body, and
+/// returns the expression a `send`/`send_poll` call passes:
+/// `&__args`, or `no_arguments` for an operation without them.
+fn emit_marshal_args(out: &mut String, ctx: &Ctx<'_>, op: &OperationNode) -> Result<&'static str> {
+    if !crate::interface_emit::has_request_arguments(ctx, op)? {
+        return Ok(crate::interface_emit::NO_ARGUMENTS);
+    }
+    crate::interface_emit::open_marshal_args(out, "        ", "zerodds_wire::Endianness::Big");
+    emit_in_marshal(out, ctx, op, "            ")?;
+    crate::interface_emit::close_marshal_args(out, "        ");
+    Ok("&__args")
+}
+
 /// Emits the AMI code for an interface, and nothing when it has none.
 pub fn emit_ami(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode>) -> Result<()> {
     let node = crate::interface_emit::interface_of(ctx, id)?;
@@ -184,7 +198,8 @@ pub fn emit_ami(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode>) -> Resul
             "    /// Fetches the reply (blocking until it arrives) and decodes it.\n    ///\n    /// # Errors\n    /// CORBA exception (system/user) or transport error.\n    pub fn get_reply(&self, __channel: &mut dyn zerodds_corba_rust::AsyncCorbaChannel) -> ::core::result::Result<{returns}, zerodds_corba_rust::CorbaException> {{\n"
         ));
         out.push_str("        let (__b, __re) = __channel.get_reply(self.request_id)??;\n");
-        out.push_str("        let mut __r = zerodds_wire::Reader::new(&__b, __re);\n");
+        // Part 2 §9.4.3: the body is read at its offset in the reply.
+        out.push_str("        let mut __r = __b.reader(__re);\n");
         emit_reply_decode(out, ctx, op, "        ", false)?;
         out.push_str(&format!(
             "        ::core::result::Result::Ok({})\n",
@@ -214,17 +229,13 @@ pub fn emit_ami(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode>) -> Resul
         out.push_str(&format!(
             "    pub fn sendc_{method}(&self, __channel: &mut dyn zerodds_corba_rust::AsyncCorbaChannel, __handler: ::std::sync::Arc<dyn {iface}AmiHandler>{inputs}) -> ::core::result::Result<u32, zerodds_corba_rust::CorbaException> {{\n"
         ));
-        out.push_str(
-            "        let mut __w = zerodds_wire::Writer::new(zerodds_wire::Endianness::Big);\n",
-        );
-        emit_in_marshal(out, ctx, op, "        ")?;
-        out.push_str("        let __body = __w.finish();\n");
+        let args = emit_marshal_args(out, ctx, op)?;
         out.push_str(&format!(
-            "        __channel.send(\"{method}\", &__body, ::std::boxed::Box::new(move |__reply| {{\n"
+            "        __channel.send(\"{method}\", {args}, ::std::boxed::Box::new(move |__reply| {{\n"
         ));
         out.push_str("            match __reply {\n");
         out.push_str("                ::core::result::Result::Ok((__b, __re)) => {\n");
-        out.push_str("                    let mut __r = zerodds_wire::Reader::new(&__b, __re);\n");
+        out.push_str("                    let mut __r = __b.reader(__re);\n");
         emit_reply_decode(out, ctx, op, "                    ", true)?;
         out.push_str(&format!(
             "                    __handler.{method}({});\n",
@@ -246,12 +257,9 @@ pub fn emit_ami(out: &mut String, ctx: &Ctx<'_>, id: Id<InterfaceNode>) -> Resul
         out.push_str(&format!(
             "    pub fn sendp_{method}(&self, __channel: &mut dyn zerodds_corba_rust::AsyncCorbaChannel{inputs}) -> ::core::result::Result<{poller}, zerodds_corba_rust::CorbaException> {{\n"
         ));
-        out.push_str(
-            "        let mut __w = zerodds_wire::Writer::new(zerodds_wire::Endianness::Big);\n",
-        );
-        emit_in_marshal(out, ctx, op, "        ")?;
+        let args = emit_marshal_args(out, ctx, op)?;
         out.push_str(&format!(
-            "        let __id = __channel.send_poll(\"{method}\", &__w.finish())?;\n        ::core::result::Result::Ok({poller} {{ request_id: __id }})\n    }}\n\n"
+            "        let __id = __channel.send_poll(\"{method}\", {args})?;\n        ::core::result::Result::Ok({poller} {{ request_id: __id }})\n    }}\n\n"
         ));
     }
     out.push_str("}\n\n");
@@ -270,9 +278,9 @@ fn emit_reply_decode(
 ) -> Result<()> {
     let method = &op.name;
     let on_error = if in_callback {
-        format!("{{ __handler.{method}_excep({MARSHAL_EXC}); return; }}")
+        format!("{{ __handler.{method}_excep({MARSHAL_EXC_REPLY}); return; }}")
     } else {
-        format!("return ::core::result::Result::Err({MARSHAL_EXC})")
+        format!("return ::core::result::Result::Err({MARSHAL_EXC_REPLY})")
     };
     if let Some(type_) = &op.return_type {
         let read = read_of(ctx.ast, type_, "__r")?;

@@ -16,7 +16,11 @@
 
 use std::io::{Read, Write};
 
-use zerodds_corba_giop::{GiopError, Message, Version, decode_message_ctx, encode_message};
+use zerodds_corba_giop::ziop::{ZiopCodec, ZiopSend, compress_message, decompress_message};
+use zerodds_corba_giop::{
+    GiopError, Magic, Message, MessageHeader, Version, ZIOP_MAGIC_BYTES, decode_message_ctx,
+    encode_message,
+};
 
 use crate::error::IiopError;
 use zerodds_wire::Endianness;
@@ -65,11 +69,52 @@ pub fn read_giop_message_ctx<R: Read + ?Sized>(
 pub fn read_giop_message_full<R: Read + ?Sized>(
     r: &mut R,
 ) -> Result<(Message, Endianness, Version), IiopError> {
+    read_giop_message_ziop(r, None)
+}
+
+/// Like [`read_giop_message_full`], and a ZIOP message (CORBA 3.3 Part 2
+/// §12.1, fragments included) is decompressed with `ziop` into the GIOP
+/// message it carries. Without `ziop` a ZIOP message is refused with
+/// `InvalidMagic("ZIOP")`: this side did not declare ZIOP, so no peer may
+/// send it one (§12.2).
+///
+/// # Errors
+/// `Closed` on a clean connection end; otherwise `Io`/`Giop`.
+pub fn read_giop_message_ziop<R: Read + ?Sized>(
+    r: &mut R,
+    ziop: Option<&dyn ZiopCodec>,
+) -> Result<(Message, Endianness, Version), IiopError> {
+    let (header, body) = read_frame(r, ziop)?;
+    let version = header.version;
+
+    // GIOP 1.2 fragmentation (§15.4.9): if the first message has the FRAGMENT flag,
+    // its body is only the first fragment. Follow-up `Fragment` messages (msgtype 7)
+    // carry a request_id header (4 bytes, GIOP 1.2) + continuation data;
+    // reassembly happens at the raw-byte level (the partial CDR is not decodable on
+    // its own) until a fragment without the FRAGMENT flag arrives.
+    if header.flags.has_more_fragments() {
+        let (msg, endianness) = reassemble_fragments(r, &header, body, ziop)?;
+        return Ok((msg, endianness, version));
+    }
+
+    // Full message bytes = header + body.
+    let mut hw = zerodds_wire::Writer::new(header.endianness());
+    header.encode(&mut hw)?;
+    let mut full = hw.finish();
+    full.extend_from_slice(&body);
+    let (msg, endianness, _) = decode_message_ctx(&full)?;
+    Ok((msg, endianness, version))
+}
+
+/// Reads one message off the stream — its header and `message_size` body
+/// octets — and, for a ZIOP message, the GIOP header and body it carries.
+fn read_frame<R: Read + ?Sized>(
+    r: &mut R,
+    ziop: Option<&dyn ZiopCodec>,
+) -> Result<(MessageHeader, alloc::vec::Vec<u8>), IiopError> {
     let mut header_bytes = [0u8; 12];
     read_exact_or_closed(r, &mut header_bytes)?;
-    // Parse the header, then read body_size from the header.
-    let (header, _rest) = zerodds_corba_giop::MessageHeader::decode(&header_bytes)?;
-    let version = header.version;
+    let (magic, header, _rest) = MessageHeader::decode_frame(&header_bytes)?;
     let body_size = header.message_size as usize;
     if body_size > MAX_GIOP_MESSAGE_SIZE {
         return Err(IiopError::Giop(GiopError::Malformed(alloc::format!(
@@ -78,23 +123,20 @@ pub fn read_giop_message_full<R: Read + ?Sized>(
     }
     let mut body = alloc::vec![0u8; body_size];
     r.read_exact(&mut body)?;
-
-    // GIOP 1.2 fragmentation (§15.4.9): if the first message has the FRAGMENT flag,
-    // its body is only the first fragment. Follow-up `Fragment` messages (msgtype 7)
-    // carry a request_id header (4 bytes, GIOP 1.2) + continuation data;
-    // reassembly happens at the raw-byte level (the partial CDR is not decodable on
-    // its own) until a fragment without the FRAGMENT flag arrives.
-    if header.flags.has_more_fragments() {
-        let (msg, endianness) = reassemble_fragments(r, &header, body)?;
-        return Ok((msg, endianness, version));
+    match magic {
+        Magic::Giop => Ok((header, body)),
+        Magic::Ziop => {
+            let Some(codec) = ziop else {
+                return Err(IiopError::Giop(GiopError::InvalidMagic(ZIOP_MAGIC_BYTES)));
+            };
+            let mut frame = header_bytes.to_vec();
+            frame.extend_from_slice(&body);
+            let mut giop = decompress_message(&frame, codec, MAX_GIOP_MESSAGE_SIZE)?;
+            let (giop_header, _) = MessageHeader::decode(&giop)?;
+            giop.drain(..12);
+            Ok((giop_header, giop))
+        }
     }
-
-    // Full message bytes = header + body.
-    let mut full = alloc::vec::Vec::with_capacity(12 + body_size);
-    full.extend_from_slice(&header_bytes);
-    full.extend_from_slice(&body);
-    let (msg, endianness, _) = decode_message_ctx(&full)?;
-    Ok((msg, endianness, version))
 }
 
 /// Reassembles a fragmented GIOP 1.2 message (§15.4.9). `first_body` is the body
@@ -102,25 +144,18 @@ pub fn read_giop_message_full<R: Read + ?Sized>(
 /// their continuation data (without the 4-byte request_id header) is appended
 /// until a fragment without the FRAGMENT flag arrives. Then the complete message
 /// (original header with total size + cleared FRAGMENT flag + body) is decoded.
+/// Each fragment may arrive as a ZIOP message of its own.
 fn reassemble_fragments<R: Read + ?Sized>(
     r: &mut R,
     first_header: &zerodds_corba_giop::MessageHeader,
     first_body: alloc::vec::Vec<u8>,
+    ziop: Option<&dyn ZiopCodec>,
 ) -> Result<(Message, Endianness), IiopError> {
     const FRAG_HEADER_LEN: usize = 4; // GIOP 1.2: request_id (uint32)
     let mut acc = first_body;
     loop {
-        let mut fh = [0u8; 12];
-        read_exact_or_closed(r, &mut fh)?;
-        let (frag_header, _) = zerodds_corba_giop::MessageHeader::decode(&fh)?;
-        let fsize = frag_header.message_size as usize;
-        if fsize > MAX_GIOP_MESSAGE_SIZE {
-            return Err(IiopError::Giop(GiopError::Malformed(alloc::format!(
-                "GIOP fragment message_size {fsize} exceeds MAX_GIOP_MESSAGE_SIZE ({MAX_GIOP_MESSAGE_SIZE})"
-            ))));
-        }
-        let mut fbody = alloc::vec![0u8; fsize];
-        r.read_exact(&mut fbody)?;
+        let (frag_header, fbody) = read_frame(r, ziop)?;
+        let fsize = fbody.len();
         if fsize < FRAG_HEADER_LEN {
             return Err(IiopError::Giop(GiopError::Malformed(
                 "fragment body shorter than request_id header".into(),
@@ -209,24 +244,78 @@ pub fn write_giop_message_fragmented<W: Write + ?Sized>(
     msg: &Message,
     max_fragment_payload: usize,
 ) -> Result<(), IiopError> {
+    for frame in encode_giop_frames(version, endianness, msg, Some(max_fragment_payload))? {
+        w.write_all(&frame)?;
+    }
+    w.flush()?;
+    Ok(())
+}
+
+/// Writes a GIOP message as ZIOP messages where `send` allows it (CORBA 3.3
+/// Part 2 §12.1): the message is fragmented as in
+/// [`write_giop_message_fragmented`] when `max_fragment_payload` is given,
+/// and each message on the wire — the whole message or each fragment — is
+/// compressed with the compressor of `send` unless its low value or minimum
+/// ratio keeps it a GIOP message
+/// ([`zerodds_corba_giop::ziop::compress_message`]). Returns how many of
+/// the written messages are ZIOP messages.
+///
+/// # Errors
+/// Encode/I/O error; `Giop(Malformed)` when the compressor fails.
+pub fn write_giop_message_ziop<W: Write + ?Sized>(
+    w: &mut W,
+    version: Version,
+    endianness: Endianness,
+    msg: &Message,
+    max_fragment_payload: Option<usize>,
+    send: &ZiopSend,
+    codec: &dyn ZiopCodec,
+) -> Result<usize, IiopError> {
+    let mut compressed = 0;
+    for frame in encode_giop_frames(version, endianness, msg, max_fragment_payload)? {
+        match compress_message(&frame, send, codec)? {
+            Some(z) => {
+                compressed += 1;
+                w.write_all(&z)?;
+            }
+            None => w.write_all(&frame)?,
+        }
+    }
+    w.flush()?;
+    Ok(compressed)
+}
+
+/// The GIOP messages that carry `msg`: one, or the fragments of
+/// [`write_giop_message_fragmented`] when `max_fragment_payload` is given
+/// and the message is fragmentable and longer.
+fn encode_giop_frames(
+    version: Version,
+    endianness: Endianness,
+    msg: &Message,
+    max_fragment_payload: Option<usize>,
+) -> Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, IiopError> {
     let full = encode_message(version, endianness, false, msg)?;
+    let Some(max_fragment_payload) = max_fragment_payload else {
+        return Ok(alloc::vec![full]);
+    };
     let body = &full[12..];
     // 8-aligned fragment size (except the last); round the threshold down to a multiple of 8.
     let frag = max_fragment_payload & !7;
     let req_id = message_request_id(msg);
 
     // No splitting: too small, not fragmentable, not 1.2, or threshold < 8.
-    if frag == 0 || req_id.is_none() || !version.supports_fragments() || body.len() <= frag {
-        w.write_all(&full)?;
-        w.flush()?;
-        return Ok(());
+    let Some(req_id) = req_id else {
+        return Ok(alloc::vec![full]);
+    };
+    if frag == 0 || !version.supports_fragments() || body.len() <= frag {
+        return Ok(alloc::vec![full]);
     }
-    let req_id = req_id.unwrap_or(0);
 
     let header = &full[..12];
     let (header_struct, _) = zerodds_corba_giop::MessageHeader::decode(header)?;
     let msg_type = header_struct.message_type;
 
+    let mut frames = alloc::vec::Vec::new();
     let mut off = 0usize;
     let mut first = true;
     while off < body.len() {
@@ -234,6 +323,7 @@ pub fn write_giop_message_fragmented<W: Write + ?Sized>(
         let is_last = remaining <= frag;
         let chunk_len = if is_last { remaining } else { frag };
         let chunk = &body[off..off + chunk_len];
+        let mut out = alloc::vec::Vec::new();
 
         if first {
             // First frame: original type + FRAGMENT flag (if more follows).
@@ -243,8 +333,8 @@ pub fn write_giop_message_fragmented<W: Write + ?Sized>(
                 msg_type,
                 u32::try_from(chunk_len).map_err(|_| overflow())?,
             );
-            write_header(w, &h, endianness)?;
-            w.write_all(chunk)?;
+            write_header(&mut out, &h, endianness)?;
+            out.extend_from_slice(chunk);
             first = false;
         } else {
             // Follow-up fragment: msgtype Fragment, body = request_id(4) + data.
@@ -255,16 +345,16 @@ pub fn write_giop_message_fragmented<W: Write + ?Sized>(
                 zerodds_corba_giop::MessageType::Fragment,
                 u32::try_from(payload_len).map_err(|_| overflow())?,
             );
-            write_header(w, &h, endianness)?;
+            write_header(&mut out, &h, endianness)?;
             let mut idw = zerodds_wire::Writer::new(endianness);
             idw.write_u32(req_id);
-            w.write_all(&idw.finish())?;
-            w.write_all(chunk)?;
+            out.extend_from_slice(&idw.finish());
+            out.extend_from_slice(chunk);
         }
+        frames.push(out);
         off += chunk_len;
     }
-    w.flush()?;
-    Ok(())
+    Ok(frames)
 }
 
 fn write_header<W: Write + ?Sized>(
@@ -686,5 +776,188 @@ mod tests {
             read_giop_message(&mut r).unwrap_err(),
             IiopError::Closed
         ));
+    }
+
+    /// A run-length "compressor" under zlib's id for the framing tests:
+    /// (count, octet) pairs. The zlib of CORBA 3.3 Part 1 §18 is tested in
+    /// zerodds-corba-ccm and through the ORB in zerodds-corba-interop.
+    struct Rle;
+
+    impl ZiopCodec for Rle {
+        fn supports(&self, compressor: u16) -> bool {
+            compressor == 4
+        }
+        fn compress(
+            &self,
+            _: zerodds_corba_giop::ziop::CompressorIdLevel,
+            body: &[u8],
+        ) -> Result<alloc::vec::Vec<u8>, zerodds_corba_giop::ziop::ZiopError> {
+            let mut out = alloc::vec::Vec::new();
+            let mut i = 0;
+            while i < body.len() {
+                let b = body[i];
+                let mut n = 1usize;
+                while i + n < body.len() && body[i + n] == b && n < 255 {
+                    n += 1;
+                }
+                out.push(n as u8);
+                out.push(b);
+                i += n;
+            }
+            Ok(out)
+        }
+        fn decompress(
+            &self,
+            _: u16,
+            data: &[u8],
+            _: u32,
+        ) -> Result<alloc::vec::Vec<u8>, zerodds_corba_giop::ziop::ZiopError> {
+            let mut out = alloc::vec::Vec::new();
+            for pair in data.chunks(2) {
+                out.extend(core::iter::repeat_n(pair[1], pair[0] as usize));
+            }
+            Ok(out)
+        }
+    }
+
+    fn zeros_request(payload: usize) -> Message {
+        Message::Request(Request {
+            request_id: 42,
+            response_flags: ResponseFlags::SYNC_WITH_TARGET,
+            target: TargetAddress::Key(alloc::vec![0x01, 0x02, 0x03, 0x04]),
+            operation: "big_op".into(),
+            requesting_principal: None,
+            service_context: ServiceContextList::default(),
+            body: alloc::vec![0; payload],
+        })
+    }
+
+    fn zlib_send() -> ZiopSend {
+        ZiopSend {
+            compressor: zerodds_corba_giop::ziop::DEFAULT_COMPRESSOR,
+            low_value: 0,
+            min_ratio: None,
+        }
+    }
+
+    /// The magics of the messages in `wire`, in order.
+    fn magics(wire: &[u8]) -> alloc::vec::Vec<[u8; 4]> {
+        let mut out = alloc::vec::Vec::new();
+        let mut off = 0;
+        while off < wire.len() {
+            let (_, h, _) = MessageHeader::decode_frame(&wire[off..]).unwrap();
+            out.push([wire[off], wire[off + 1], wire[off + 2], wire[off + 3]]);
+            off += 12 + h.message_size as usize;
+        }
+        out
+    }
+
+    #[test]
+    fn corba_p2_12_1_a_ziop_request_is_read_back_as_its_giop_message() {
+        for endian in [Endianness::Big, Endianness::Little] {
+            let msg = zeros_request(4096);
+            let mut wire = alloc::vec::Vec::new();
+            let n = write_giop_message_ziop(
+                &mut wire,
+                Version::V1_2,
+                endian,
+                &msg,
+                None,
+                &zlib_send(),
+                &Rle,
+            )
+            .unwrap();
+            assert_eq!(n, 1);
+            assert_eq!(magics(&wire), alloc::vec![*b"ZIOP"]);
+            assert!(wire.len() < 200, "{} octets", wire.len());
+            let (decoded, e, v) =
+                read_giop_message_ziop(&mut Cursor::new(&wire), Some(&Rle)).unwrap();
+            assert_eq!(decoded, msg);
+            assert_eq!(e, endian);
+            assert_eq!(v, Version::V1_2);
+        }
+    }
+
+    #[test]
+    fn corba_p2_12_1_each_fragment_is_a_ziop_message_of_its_own() {
+        let msg = zeros_request(4096);
+        let mut wire = alloc::vec::Vec::new();
+        let n = write_giop_message_ziop(
+            &mut wire,
+            Version::V1_2,
+            Endianness::Little,
+            &msg,
+            Some(1024),
+            &zlib_send(),
+            &Rle,
+        )
+        .unwrap();
+        let m = magics(&wire);
+        assert!(m.len() > 3, "{} messages", m.len());
+        assert_eq!(n, m.len());
+        assert!(m.iter().all(|x| x == b"ZIOP"));
+        let (decoded, _, _) = read_giop_message_ziop(&mut Cursor::new(&wire), Some(&Rle)).unwrap();
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn corba_p2_12_1_a_fragment_the_low_value_keeps_giop_is_mixed_with_ziop_ones() {
+        // 4096 octets in fragments of 1024: the last fragment is short.
+        let msg = zeros_request(4096);
+        let send = ZiopSend {
+            low_value: 1000,
+            ..zlib_send()
+        };
+        let mut wire = alloc::vec::Vec::new();
+        let n = write_giop_message_ziop(
+            &mut wire,
+            Version::V1_2,
+            Endianness::Big,
+            &msg,
+            Some(1024),
+            &send,
+            &Rle,
+        )
+        .unwrap();
+        let m = magics(&wire);
+        assert_eq!(m.last(), Some(b"GIOP"));
+        assert_eq!(n, m.iter().filter(|x| *x == b"ZIOP").count());
+        assert!(n >= 1);
+        let (decoded, _, _) = read_giop_message_ziop(&mut Cursor::new(&wire), Some(&Rle)).unwrap();
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn corba_p2_12_2_a_ziop_message_without_a_codec_is_refused() {
+        let mut wire = alloc::vec::Vec::new();
+        write_giop_message_ziop(
+            &mut wire,
+            Version::V1_2,
+            Endianness::Big,
+            &zeros_request(4096),
+            None,
+            &zlib_send(),
+            &Rle,
+        )
+        .unwrap();
+        let err = read_giop_message_ziop(&mut Cursor::new(&wire), None).unwrap_err();
+        assert!(
+            matches!(err, IiopError::Giop(GiopError::InvalidMagic(m)) if m == *b"ZIOP"),
+            "{err:?}"
+        );
+        // GIOP 1.1 is never compressed.
+        let mut v11 = alloc::vec::Vec::new();
+        let n = write_giop_message_ziop(
+            &mut v11,
+            Version::V1_1,
+            Endianness::Big,
+            &zeros_request(4096),
+            None,
+            &zlib_send(),
+            &Rle,
+        )
+        .unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(magics(&v11), alloc::vec![*b"GIOP"]);
     }
 }

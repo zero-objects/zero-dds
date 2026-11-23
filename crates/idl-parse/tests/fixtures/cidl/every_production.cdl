@@ -1,0 +1,124 @@
+// Every production of the CIDL grammar, CORBA 3.3 Part 3 §8.3 (1) to
+// (34), and of the PSDL declarations CIDL contains, Persistent State
+// Service 2.0 §3.2.3 (1) to (48).
+
+// (1): <import>* <cidl_definition>+
+import ::Bank;
+
+// (2) and (3): IDL definitions inside a CIDL module.
+module Bank {
+    typedef string AccountNo;
+    const long LIMIT = 10;
+    exception Overdrawn { long by; };
+    interface Teller { void serve(); };
+    valuetype AccountKey { public string accno; };
+    eventtype Moved { public long amount; };
+    typeid Teller "IDL:Bank/Teller:1.0";
+    typeprefix Bank "example.org";
+    component Account {
+        provides Teller teller;
+        provides Teller audit;
+        attribute long balance;
+        uses Teller backup;
+        emits Moved moved;
+    };
+    home AccountHome manages Account primarykey AccountKey {
+        factory open(in string accno);
+        void close_all();
+    };
+};
+
+module Store {
+    // PSDL (5) to (15): abstract storage types, forward and defined.
+    abstract storagetype Ledger;
+    abstract storagetype LedgerBase {
+        state long version;
+    };
+    abstract storagetype Ledger : LedgerBase {
+        state string accno;
+        readonly state long balance, limit;
+        state strong ref<LedgerBase> previous;
+        state ref<LedgerBase> next;
+        long total(in long since) raises (Bank::Overdrawn) const;
+        void reset();
+    };
+
+    // PSDL (16) to (25), (47), (48): abstract storage homes.
+    abstract storagehome LedgerHome;
+    abstract storagehome LedgerHomeBase of LedgerBase {
+        key version;
+    };
+    abstract storagehome LedgerHome of Ledger : LedgerHomeBase {
+        key accno;
+        key both(accno, balance);
+        factory create(accno, balance);
+        factory empty();
+        void close_all();
+    };
+
+    // PSDL (26) to (39): storage types.
+    storagetype LedgerImpl;
+    storagetype LedgerImplBase implements LedgerBase {
+    };
+    storagetype LedgerImpl : LedgerImplBase implements Ledger ref(accno) {
+        stores previous as ref<LedgerImplBase> scope LedgerStore;
+        stores next as LedgerImplBase;
+        long audit_count() const;
+    };
+
+    // PSDL (40) to (46): storage homes.
+    storagehome LedgerStoreBase of LedgerImplBase {
+    };
+    storagehome LedgerStore of LedgerImpl : LedgerStoreBase implements LedgerHome primary key accno {
+        key accno;
+        factory make(accno);
+    };
+    storagehome RefStore of LedgerImpl primary key ref {
+    };
+};
+
+module Impl {
+    // (4) to (34).
+    composition entity AccountImpl {
+        home executor AccountHomeImpl {
+            implements Bank::AccountHome;
+            bindsTo Store::LedgerHome;
+            storedOn Store::LedgerHome;
+            manages AccountExec {
+                segment Audit {
+                    storedOn Store::LedgerHome;
+                    provides facet audit;
+                }
+                segment Backup {
+                    provides facet teller, backup;
+                }
+                delegatesTo storage (balance : balance, moved : version)
+            };
+            delegatesTo abstract storagehome (open : create, close_all);
+            delegatesTo executor (open : open_account);
+            abstract (find_by_primary_key);
+        };
+        proxy home AccountProxy {
+            delegatesTo home (close_all);
+            abstract (open);
+        };
+    };
+    composition process Batch {
+        home executor BatchHome {
+            implements Bank::AccountHome;
+            manages BatchExec;
+        };
+    };
+    composition service Lookup {
+        home executor LookupHome {
+            implements Bank::AccountHome;
+            manages LookupExec;
+        };
+    };
+    composition session Desk {
+        home executor DeskHome {
+            implements Bank::AccountHome;
+            manages DeskExec;
+        };
+    };
+};

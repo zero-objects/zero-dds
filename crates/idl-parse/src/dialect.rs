@@ -32,6 +32,18 @@ pub struct Dialect {
     /// Cyclone DDS does. A file that needs it is not OMG IDL, and no
     /// vendor flag turns it on.
     pub case_sensitive: bool,
+    /// The file is OMG CIDL: CORBA 3.3 Part 3 §8.
+    ///
+    /// CIDL is IDL plus the PSDL declarations of Persistent State
+    /// Service 2.0 §3.2 (`abstract storagetype`, `abstract storagehome`,
+    /// `storagetype`, `storagehome`) plus the `composition`. §8.2.1
+    /// reserves the words of Table 8.2 and of PSDL's Table 3-2 as
+    /// keywords; with this set, an identifier spelled exactly like one of
+    /// them ([`zerodds_idl_cst::CIDL_KEYWORDS`]) is that keyword, and
+    /// only the escaped form `_state` is the identifier `state`. Off, an
+    /// IDL file keeps these words as identifiers. A `.cdl` file is read
+    /// with it on (§8.1). Not a vendor dialect: it is OMG's own language.
+    pub cidl: bool,
 }
 
 impl Dialect {
@@ -46,6 +58,7 @@ impl Dialect {
         open_dds: false,
         ros2: false,
         case_sensitive: false,
+        cidl: false,
     };
 
     /// Every vendor dialect at once.
@@ -56,6 +69,7 @@ impl Dialect {
         open_dds: true,
         ros2: false,
         case_sensitive: false,
+        cidl: false,
     };
 
     /// Whether any vendor extension is admitted.

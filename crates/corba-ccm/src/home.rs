@@ -241,10 +241,22 @@ impl ComponentHomeFinder {
             .map(|(_, home)| home)
             .ok_or(HomeNotFound)
     }
+
+    /// Every home bound to `home_name`, in the order of registration
+    /// (§6.8 lets a name have several bindings).
+    #[must_use]
+    pub fn homes_by_name(&self, home_name: &str) -> Vec<&HomeDef> {
+        self.homes
+            .iter()
+            .filter(|(name, _)| name.as_deref() == Some(home_name))
+            .map(|(_, home)| home)
+            .collect()
+    }
 }
 
 /// HomeFinder — spec §6.7.1.
 #[cfg(feature = "std")]
+#[derive(Debug)]
 pub struct HomeFinder {
     /// Active component instances by `(repo_id, primary_key_bytes)`.
     instances: Mutex<BTreeMap<(String, Vec<u8>), ComponentRef>>,

@@ -122,9 +122,9 @@ impl Gen<'_> {
     /// constant declaration in the IDL interface body". Under the CORBA
     /// platform each nested type's `_tc_` constant is a static member and
     /// its `Any` operators are friends; what C++ takes only outside the
-    /// class — the definitions of those constants before C++17 and of an
-    /// exception's `_insert_into` — goes to `after`, written after the
-    /// enclosing class by the caller.
+    /// class — the definitions of those constants and of an exception's
+    /// `_insert_into` — goes to `after`, written after the enclosing class
+    /// by the caller.
     pub(super) fn embedded_declarations(
         &self,
         w: &mut Writer,
@@ -137,20 +137,16 @@ impl Gen<'_> {
         let embedded = self.embedded(module, scope);
         let tc_type = "::omg::types::ref_type<::CORBA::TypeCode>";
         let nested = |w: &mut Writer, extras: &super::corba::Extras, after: &mut Vec<String>| {
-            w.line("#if __cplusplus >= 201703L");
-            w.line(&format!(
-                "static inline const {tc_type} {} = {};",
-                extras.name, extras.typecode
-            ));
-            w.line("#else");
+            // One definition after the class, an inline variable from
+            // C++17 on (`OMG_CORBA_INLINE_VARIABLE`, omg/corba.hpp): the
+            // TypeCode is written once for every standard.
             w.line(&format!("static const {tc_type} {};", extras.name));
-            w.line("#endif");
             // `ref_type<TypeCode> ::M::I::_tc_T` would read as a name in
             // `ref_type<TypeCode>`; the definition stands in the
             // namespace of the class, where the name without the leading
             // `::` resolves.
             after.push(format!(
-                "#if __cplusplus < 201703L\nconst {tc_type} {}::{} = {};\n#endif",
+                "OMG_CORBA_INLINE_VARIABLE const {tc_type} {}::{} = {};",
                 owner.trim_start_matches("::"),
                 extras.name,
                 extras.typecode

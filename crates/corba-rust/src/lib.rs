@@ -65,9 +65,10 @@ pub mod valuetype_emit;
 pub use emitter::{CorbaRustGenOptions, Ctx, generate_corba_rust_module};
 pub use error::{CorbaRustError, Result};
 pub use runtime::{
-    AsyncCorbaChannel, AsyncReply, AsyncReplyCallback, ComponentHome, ComponentServant,
-    CorbaConnection, CorbaException, IdAssignmentPolicy, IdUniquenessPolicy,
-    ImplicitActivationPolicy, LifespanPolicy, ObjectReference, PoaBuilder, RequestProcessingPolicy,
-    Servant, ServantRetentionPolicy, SkeletonResult, ThreadPolicy, TypeCode, ValueBase,
-    ValueStreamReader, ValueStreamWriter, ValueTagHeader,
+    AlignedBody, AsyncCorbaChannel, AsyncReply, AsyncReplyCallback, CompletionStatus,
+    ComponentHome, ComponentServant, CorbaConnection, CorbaException, IdAssignmentPolicy,
+    IdUniquenessPolicy, ImplicitActivationPolicy, LifespanPolicy, MarshalArgs, ObjectReference,
+    PoaBuilder, RequestProcessingPolicy, Servant, ServantRetentionPolicy, SkeletonResult,
+    SystemException, SystemExceptionKind, ThreadPolicy, TypeCode, ValueBase, ValueStreamReader,
+    ValueStreamWriter, ValueTagHeader, marshaled_body, no_arguments,
 };

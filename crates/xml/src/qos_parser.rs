@@ -9,9 +9,19 @@
 //! # Spec-conformant boolean semantics
 //!
 //! DDS-XML 1.0 §7.1.4 requires the case-sensitive spellings `true`/`false`
-//! (and `1`/`0`). The local [`parse_bool_strict`] helper is the reader used
-//! throughout this module; the foundation [`crate::types::parse_bool`] uses
-//! the same rule.
+//! (and `1`/`0`). The local [`parse_bool_strict`] helper reads them; the
+//! foundation [`crate::types::parse_bool`] uses the same rule.
+//!
+//! # The forms of DDS for Lightweight CCM 1.1 §7.4.2.1 Table 7.1
+//!
+//! DDS4CCM gives a Boolean the further forms `yes`, `no`, `BOOLEAN_TRUE` and
+//! `BOOLEAN_FALSE`, all eight "not case-sensitive", and a Long or
+//! UnsignedLong the hexadecimal form also in the fields whose DDS-XML 1.0
+//! pattern has decimal digits only (the resource limits, the two fields of
+//! a duration). These are read as vendor forms: refused with
+//! [`XmlError::VendorForm`] by default, read with a diagnostic under
+//! [`VendorForms::Accept`](crate::VendorForms::Accept), the reading of a
+//! DDS4CCM profile document.
 //!
 //! # Single-QoS shortcut (§7.3.2.4.4)
 //!
@@ -600,6 +610,113 @@ pub fn parse_bool_strict(s: &str) -> Result<bool, XmlError> {
     }
 }
 
+/// The Boolean of a QoS policy field (`coherent_access`, `ordered_access`,
+/// `autoenable_created_entities`, `autodispose_unregistered_instances`).
+///
+/// The four forms of DDS-XML 1.0 §7.1.4 ([`parse_bool_strict`]) are read
+/// under every reading. The further forms of DDS for Lightweight CCM 1.1
+/// §7.4.2.1 Table 7.1 (`yes`, `no`, `BOOLEAN_TRUE`, `BOOLEAN_FALSE`, and
+/// every case of the eight, [`crate::types::parse_bool_dds4ccm`]) are
+/// vendor forms: refused with [`XmlError::VendorForm`] by default, read with
+/// a diagnostic under [`VendorForms::Accept`](crate::VendorForms::Accept).
+///
+/// # Errors
+/// [`XmlError::ValueOutOfRange`] for a text that is none of the forms,
+/// [`XmlError::VendorForm`] as above.
+fn bool_value(ctx: &mut Ctx, el: &XmlElement) -> Result<bool, XmlError> {
+    let strict = match parse_bool_strict(&el.text) {
+        Ok(v) => return Ok(v),
+        Err(e) => e,
+    };
+    let Ok(v) = crate::types::parse_bool_dds4ccm(&el.text) else {
+        return Err(strict);
+    };
+    ctx.vendor_form(
+        &el.path,
+        &format!(
+            "the Boolean `{}` (DDS4CCM 1.1 §7.4.2.1 Table 7.1)",
+            el.text.trim()
+        ),
+        "`true`, `1`, `false` or `0` (§7.1.4)",
+    )?;
+    Ok(v)
+}
+
+/// The hexadecimal form `0x…` that Table 7.1 of DDS-XML 1.0 §7.1.4 and of
+/// DDS for Lightweight CCM 1.1 §7.4.2.1 gives a Long and an UnsignedLong, in
+/// a QoS field whose schema type in DDS-XML 1.0 has decimal digits only:
+/// `positiveInteger_UNLIMITED`, `nonNegativeInteger_Duration_SEC` and
+/// `_NSEC` of §7.2.2.1, `xs:positiveInteger` and `xs:nonNegativeInteger`.
+/// That is every numeric field of a QoS policy. `None` when `t` does not
+/// begin with `0x` or `0X`; otherwise the 32 bits of the number. The text
+/// and the schema disagree, the default reading follows the schema: refused
+/// with [`XmlError::VendorForm`] by default, read with a diagnostic under
+/// [`VendorForms::Accept`](crate::VendorForms::Accept).
+///
+/// # Errors
+/// [`XmlError::ValueOutOfRange`] when the digits are not 1 to 8 hexadecimal
+/// digits, [`XmlError::VendorForm`] under the default reading.
+fn table_7_1_hex(
+    ctx: &mut Ctx,
+    el: &XmlElement,
+    t: &str,
+    schema_form: &str,
+) -> Result<Option<u32>, XmlError> {
+    let Some(digits) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) else {
+        return Ok(None);
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(XmlError::ValueOutOfRange(format!(
+            "hexadecimal number `{t}`: hexadecimal digits expected after 0x"
+        )));
+    }
+    let v = u32::from_str_radix(digits, 16).map_err(|e| {
+        XmlError::ValueOutOfRange(format!("hexadecimal number `{t}`: {e} (32 bits at most)"))
+    })?;
+    ctx.table_7_1_form_outside_schema(
+        &el.path,
+        &format!("the hexadecimal number `{t}`"),
+        schema_form,
+    )?;
+    Ok(Some(v))
+}
+
+/// The child `name` of `el` with its trimmed text, or `None` when the
+/// child is absent or empty (see [`numeric_text`]).
+fn numeric_child<'a>(el: &'a XmlElement, name: &str) -> Option<(&'a XmlElement, &'a str)> {
+    el.child(name)
+        .map(|c| (c, c.text.trim()))
+        .filter(|(_, t)| !t.is_empty())
+}
+
+/// A limit of `resourceLimitsQosPolicy` or `durabilityServiceQosPolicy`
+/// (`max_samples`, `max_instances`, `max_samples_per_instance`), or `None`
+/// when the child is absent or empty.
+///
+/// DDS-XML 1.0 §7.2.2.1 types it `positiveInteger_UNLIMITED`: decimal 1 and
+/// up, or `LENGTH_UNLIMITED`. The field is a `long` of the DDS IDL, which
+/// Table 7.1 also writes in hexadecimal; that form is read as a vendor form
+/// ([`table_7_1_hex`]) and takes the same values (1 to 0x7fffffff).
+fn limit_value(ctx: &mut Ctx, el: &XmlElement, name: &str) -> Result<Option<i32>, XmlError> {
+    let Some((child, t)) = numeric_child(el, name) else {
+        return Ok(None);
+    };
+    match table_7_1_hex(
+        ctx,
+        child,
+        t,
+        "decimal digits or LENGTH_UNLIMITED (positiveInteger_UNLIMITED, §7.2.2.1)",
+    )? {
+        Some(v) => match i32::try_from(v) {
+            Ok(v) if v >= 1 => Ok(Some(v)),
+            _ => Err(XmlError::ValueOutOfRange(format!(
+                "{name} `{t}`: a resource limit is 1 to 0x7fffffff or LENGTH_UNLIMITED"
+            ))),
+        },
+        None => parse_positive_long_unlimited(t).map(Some),
+    }
+}
+
 // ============================================================================
 // Duration-Helper: XML-`<sec>/<nanosec>` ↔ `zerodds_qos::Duration`
 // ============================================================================
@@ -635,15 +752,36 @@ fn parse_duration_element(ctx: &mut Ctx, el: &XmlElement) -> Result<QosDuration,
 
     // §7.2.6 marks both `sec` and `nanosec` `minOccurs="0"`; an absent
     // field takes the DDS default of 0.
-    let sec = if let Some(t) = numeric_text(el, "sec") {
-        parse_duration_sec(t)?
+    // A hexadecimal number (Table 7.1, Duration_t::sec is a long) is a
+    // vendor form and takes the values of the decimal one.
+    let sec = if let Some((c, t)) = numeric_child(el, "sec") {
+        match table_7_1_hex(
+            ctx,
+            c,
+            t,
+            "decimal digits or a name of §7.2.2.1 (nonNegativeInteger_Duration_SEC)",
+        )? {
+            Some(v) => i32::try_from(v).map_err(|_| {
+                XmlError::ValueOutOfRange(format!("duration_sec `{t}` outside 0..=0x7FFFFFFF"))
+            })?,
+            None => parse_duration_sec(t)?,
+        }
     } else {
         DURATION_ZERO_SEC
     };
 
-    // nanosec optional; default 0.
-    let nsec = if let Some(t) = numeric_text(el, "nanosec") {
-        parse_duration_nsec(t)?
+    // nanosec optional; default 0. Hexadecimal: as `sec`
+    // (Duration_t::nanosec is an unsigned long).
+    let nsec = if let Some((c, t)) = numeric_child(el, "nanosec") {
+        match table_7_1_hex(
+            ctx,
+            c,
+            t,
+            "decimal digits or a name of §7.2.2.1 (nonNegativeInteger_Duration_NSEC)",
+        )? {
+            Some(v) => v,
+            None => parse_duration_nsec(t)?,
+        }
     } else {
         0
     };
@@ -778,14 +916,47 @@ fn parse_durability(ctx: &mut Ctx, el: &XmlElement) -> Result<DurabilityQosPolic
     Ok(policy)
 }
 
-/// A `long` that the schema types as `xs:positiveInteger` (`min` 1) or
-/// `xs:nonNegativeInteger` (`min` 0).
-fn at_least(t: &str, min: i32, what: &str) -> Result<i32, XmlError> {
-    let v = parse_long(t)?;
-    if v < min {
+/// A `long` of the DDS IDL that the schema of DDS-XML 1.0 types as
+/// `xs:positiveInteger` (`history/depth`, `durability_service/history_depth`,
+/// `resource_limits/initial_samples` and `initial_instances`). The
+/// hexadecimal form of Table 7.1 is a vendor form ([`table_7_1_hex`]) and
+/// takes the same values.
+fn positive_long(ctx: &mut Ctx, el: &XmlElement, t: &str, what: &str) -> Result<i32, XmlError> {
+    let v = match table_7_1_hex(ctx, el, t, "decimal digits 1 and up (xs:positiveInteger)")? {
+        // The bits of a Long (Table 7.1: 0x80000000 is -2147483648).
+        Some(bits) => i32::from_ne_bytes(bits.to_ne_bytes()),
+        None => parse_long(t)?,
+    };
+    if v < 1 {
         return Err(XmlError::ValueOutOfRange(format!(
-            "{what} `{t}`: the schema's type takes {min} and up"
+            "{what} `{t}`: the schema's type takes 1 and up"
         )));
+    }
+    Ok(v)
+}
+
+/// The `value` of `ownership_strength` or `transport_priority`: a `long` of
+/// the DDS IDL, which the schemas of DDS-XML 1.0 and of DDS4CCM 1.1
+/// Annex C type `xs:nonNegativeInteger`. Table 7.1 of DDS-XML 1.0 §7.1.4
+/// and of DDS4CCM 1.1 §7.4.2.1 gives a Long "-2147483648 to 2147483647 or
+/// 0x80000000 to 0x7fffffff or LENGTH_UNLIMITED", and DDS4CCM 1.1
+/// §7.4.2.2.1 maps the fields "1-to-1" from the IDL. The forms the schema
+/// type leaves out (the hexadecimal number, a negative decimal one,
+/// `LENGTH_UNLIMITED`) are vendor forms, one report per element.
+fn idl_long_value(ctx: &mut Ctx, el: &XmlElement, t: &str) -> Result<i32, XmlError> {
+    const SCHEMA_FORM: &str = "decimal digits 0 and up (xs:nonNegativeInteger)";
+    if let Some(bits) = table_7_1_hex(ctx, el, t, SCHEMA_FORM)? {
+        // The bits of a Long (Table 7.1: 0x80000000 is -2147483648).
+        return Ok(i32::from_ne_bytes(bits.to_ne_bytes()));
+    }
+    let v = parse_long(t)?;
+    if v < 0 {
+        let found = if t == "LENGTH_UNLIMITED" {
+            format!("the Long `{t}` (-1)")
+        } else {
+            format!("the negative Long `{t}`")
+        };
+        ctx.table_7_1_form_outside_schema(&el.path, &found, SCHEMA_FORM)?;
     }
     Ok(v)
 }
@@ -799,8 +970,8 @@ fn parse_history(ctx: &mut Ctx, el: &XmlElement) -> Result<HistoryQosPolicy, Xml
         Some("KEEP_ALL_HISTORY_QOS") => HistoryKind::KeepAll,
         Some(other) => return Err(XmlError::BadEnum(other.to_string())),
     };
-    let depth = if let Some(t) = numeric_text(el, "depth") {
-        at_least(t, 1, "history depth")?
+    let depth = if let Some((c, t)) = numeric_child(el, "depth") {
+        positive_long(ctx, c, t, "history depth")?
     } else {
         // Spec-Default §2.2.3.18: 1.
         1
@@ -936,8 +1107,8 @@ fn parse_ownership_strength(
 ) -> Result<OwnershipStrengthQosPolicy, XmlError> {
     only_children(ctx, el, &["value"])?;
     let mut policy = OwnershipStrengthQosPolicy::default();
-    if let Some(t) = numeric_text(el, "value") {
-        policy.value = at_least(t, 0, "ownership_strength value")?;
+    if let Some((c, t)) = numeric_child(el, "value") {
+        policy.value = idl_long_value(ctx, c, t)?;
     }
     Ok(policy)
 }
@@ -948,8 +1119,8 @@ fn parse_transport_priority(
 ) -> Result<TransportPriorityQosPolicy, XmlError> {
     only_children(ctx, el, &["value"])?;
     let mut policy = TransportPriorityQosPolicy::default();
-    if let Some(t) = numeric_text(el, "value") {
-        policy.value = at_least(t, 0, "transport_priority value")?;
+    if let Some((c, t)) = numeric_child(el, "value") {
+        policy.value = idl_long_value(ctx, c, t)?;
     }
     Ok(policy)
 }
@@ -972,12 +1143,12 @@ fn parse_presentation(ctx: &mut Ctx, el: &XmlElement) -> Result<PresentationQosP
         PresentationAccessScope::Instance
     };
     let coherent_access = if let Some(c) = el.child("coherent_access") {
-        parse_bool_strict(&c.text)?
+        bool_value(ctx, c)?
     } else {
         false
     };
     let ordered_access = if let Some(o) = el.child("ordered_access") {
-        parse_bool_strict(&o.text)?
+        bool_value(ctx, o)?
     } else {
         false
     };
@@ -1008,10 +1179,35 @@ fn parse_partition(ctx: &mut Ctx, el: &XmlElement) -> Result<PartitionQosPolicy,
         no_text(name_el)?;
         check_known_children(ctx, name_el, &["element"])?;
         for item in name_el.children_named("element") {
-            names.push(item.text.clone());
+            names.push(partition_name(ctx, item)?);
         }
     }
     Ok(PartitionQosPolicy { names })
+}
+
+/// One partition name.
+///
+/// DDS-XML 1.0 §7.1.4 Table 7.1: the whitespace of a string is part of its
+/// value, so the default reading keeps the name as written. DDS for
+/// Lightweight CCM 1.1 §7.4.2.1: "All leading and trailing spaces are
+/// removed from the string before it is processed"; the reading under
+/// [`VendorForms::Accept`](crate::VendorForms::Accept) (the reading of a
+/// DDS4CCM profile document) removes them and reports it.
+fn partition_name(ctx: &mut Ctx, item: &XmlElement) -> Result<String, XmlError> {
+    let trimmed = item.text.trim();
+    if trimmed.len() == item.text.len() || !ctx.accepts_vendor_forms() {
+        return Ok(item.text.clone());
+    }
+    ctx.vendor_form(
+        &item.path,
+        &format!(
+            "the name `{}` with leading or trailing spaces, read as `{trimmed}` \
+             (DDS4CCM 1.1 §7.4.2.1)",
+            item.text
+        ),
+        "the spaces as part of the string (§7.1.4)",
+    )?;
+    Ok(trimmed.to_string())
 }
 
 /// `resourceLimitsQosPolicy` of the schema: the three limits of DDS 1.4
@@ -1032,22 +1228,21 @@ fn parse_resource_limits(
             "initial_instances",
         ],
     )?;
-    // `positiveInteger_UNLIMITED` (§7.2.2.1): 1 or more, or the name.
-    let limit = |name: &str| -> Result<i32, XmlError> {
-        match numeric_text(el, name) {
-            Some(t) => parse_positive_long_unlimited(t),
-            None => Ok(LENGTH_UNLIMITED),
-        }
-    };
-    let initial = |name: &str| -> Result<Option<i32>, XmlError> {
-        numeric_text(el, name)
-            .map(|t| at_least(t, 1, name))
-            .transpose()
+    // `positiveInteger_UNLIMITED` (§7.2.2.1): 1 or more, or the name; an
+    // absent limit is unlimited.
+    let mut limit = |name: &str| -> Result<i32, XmlError> {
+        Ok(limit_value(ctx, el, name)?.unwrap_or(LENGTH_UNLIMITED))
     };
     let policy = ResourceLimitsQosPolicy {
         max_samples: limit("max_samples")?,
         max_instances: limit("max_instances")?,
         max_samples_per_instance: limit("max_samples_per_instance")?,
+    };
+    // `xs:positiveInteger`; an absent value stays absent.
+    let mut initial = |name: &str| -> Result<Option<i32>, XmlError> {
+        numeric_child(el, name)
+            .map(|(c, t)| positive_long(ctx, c, t, name))
+            .transpose()
     };
     let initial_samples = initial("initial_samples")?;
     let initial_instances = initial("initial_instances")?;
@@ -1067,7 +1262,7 @@ fn parse_entity_factory(
     only_children(ctx, el, &["autoenable_created_entities"])?;
     let mut policy = EntityFactoryQosPolicy::default();
     if let Some(auto) = el.child("autoenable_created_entities") {
-        policy.autoenable_created_entities = parse_bool_strict(&auto.text)?;
+        policy.autoenable_created_entities = bool_value(ctx, auto)?;
     }
     Ok(policy)
 }
@@ -1079,7 +1274,7 @@ fn parse_writer_data_lifecycle(
     only_children(ctx, el, &["autodispose_unregistered_instances"])?;
     let mut policy = WriterDataLifecycleQosPolicy::default();
     if let Some(auto) = el.child("autodispose_unregistered_instances") {
-        policy.autodispose_unregistered_instances = parse_bool_strict(&auto.text)?;
+        policy.autodispose_unregistered_instances = bool_value(ctx, auto)?;
     }
     Ok(policy)
 }
@@ -1140,17 +1335,17 @@ fn parse_durability_service(
             other => return Err(XmlError::BadEnum(other.to_string())),
         };
     }
-    if let Some(t) = numeric_text(el, "history_depth") {
-        p.history_depth = at_least(t, 1, "history_depth")?;
+    if let Some((c, t)) = numeric_child(el, "history_depth") {
+        p.history_depth = positive_long(ctx, c, t, "history_depth")?;
     }
-    if let Some(t) = numeric_text(el, "max_samples") {
-        p.max_samples = parse_positive_long_unlimited(t)?;
+    if let Some(v) = limit_value(ctx, el, "max_samples")? {
+        p.max_samples = v;
     }
-    if let Some(t) = numeric_text(el, "max_instances") {
-        p.max_instances = parse_positive_long_unlimited(t)?;
+    if let Some(v) = limit_value(ctx, el, "max_instances")? {
+        p.max_instances = v;
     }
-    if let Some(t) = numeric_text(el, "max_samples_per_instance") {
-        p.max_samples_per_instance = parse_positive_long_unlimited(t)?;
+    if let Some(v) = limit_value(ctx, el, "max_samples_per_instance")? {
+        p.max_samples_per_instance = v;
     }
     Ok(p)
 }
@@ -1595,8 +1790,16 @@ mod tests {
             <entity_factory><autoenable_created_entities>True</autoenable_created_entities></entity_factory>
           </domain_participant_qos>
         </qos_profile></qos_library></dds>"#;
+        // `True` is a form of DDS4CCM 1.1 Table 7.1, not of DDS-XML 1.0: the
+        // default reading refuses it and names the form.
         let err = parse_qos_libraries(xml).expect_err("strict-bool");
-        assert!(matches!(err, XmlError::ValueOutOfRange(_)));
+        assert!(
+            matches!(&err, XmlError::VendorForm(m) if m.contains("the Boolean `True`")),
+            "{err:?}"
+        );
+        // A text that is no form of either is out of range.
+        let err = parse_qos_libraries(&xml.replace("True", "on")).expect_err("on");
+        assert!(matches!(err, XmlError::ValueOutOfRange(_)), "{err:?}");
     }
 
     #[test]

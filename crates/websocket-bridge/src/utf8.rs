@@ -132,13 +132,20 @@ pub fn validate(bytes: &[u8]) -> Result<(), Utf8Error> {
 ///
 /// WebSocket spec §6.2 may split text frames into multiple DATA frames
 /// (FIN=0) — the UTF-8 stream may be interrupted in the middle of a
-/// multi-byte sequence. This validator maintains a small internal
-/// buffer for the codepoint that has been started.
-#[derive(Debug, Default)]
+/// multi-byte sequence. The validator keeps the state of the code point
+/// that has been started and reports a stream as malformed with the octet
+/// that makes it so: the second octet of a surrogate, of an overlong form
+/// or of a code point above U+10FFFF, not the end of its sequence.
+#[derive(Debug, Default, Clone)]
 pub struct StreamingValidator {
-    pending: [u8; 4],
-    pending_len: usize,
-    needed: usize,
+    /// The lead octet of the code point in progress; meaningful while
+    /// `needed` is not zero.
+    lead: u8,
+    /// The continuation octets the code point in progress still lacks.
+    needed: u8,
+    /// The next octet is the first one behind the lead octet, whose range
+    /// depends on the lead (RFC 3629 §4).
+    second: bool,
 }
 
 impl StreamingValidator {
@@ -154,44 +161,40 @@ impl StreamingValidator {
     /// # Errors
     /// See [`Utf8Error`].
     pub fn feed(&mut self, chunk: &[u8]) -> Result<(), Utf8Error> {
-        let mut buf: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
-        buf.extend_from_slice(&self.pending[..self.pending_len]);
-        buf.extend_from_slice(chunk);
-        self.pending_len = 0;
-        self.needed = 0;
-
-        let mut i = 0;
-        while i < buf.len() {
-            let b0 = buf[i];
-            let needed = match b0 {
-                0x00..=0x7F => 0,
-                0xC0..=0xC1 => return Err(Utf8Error::OverlongEncoding),
-                0xC2..=0xDF => 1,
-                0xE0..=0xEF => 2,
-                0xF0..=0xF4 => 3,
-                0xF5..=0xFF => return Err(Utf8Error::InvalidLeadByte),
-                0x80..=0xBF => return Err(Utf8Error::UnexpectedContinuation),
-            };
-
-            if needed == 0 {
-                i += 1;
+        for &octet in chunk {
+            if self.needed == 0 {
+                self.needed = match octet {
+                    0x00..=0x7F => 0,
+                    0xC0..=0xC1 => return Err(Utf8Error::OverlongEncoding),
+                    0xC2..=0xDF => 1,
+                    0xE0..=0xEF => 2,
+                    0xF0..=0xF4 => 3,
+                    0xF5..=0xFF => return Err(Utf8Error::InvalidLeadByte),
+                    0x80..=0xBF => return Err(Utf8Error::UnexpectedContinuation),
+                };
+                self.lead = octet;
+                self.second = true;
                 continue;
             }
-
-            if i + needed >= buf.len() {
-                // Stash partial codepoint for next chunk.
-                let remaining = buf.len() - i;
-                self.pending_len = remaining;
-                self.pending[..remaining].copy_from_slice(&buf[i..]);
-                self.needed = needed - (remaining - 1);
-                return Ok(());
+            if (octet & 0b1100_0000) != 0b1000_0000 {
+                return Err(Utf8Error::InvalidContinuation);
             }
-
-            // Have full codepoint — validate it.
-            validate(&buf[i..i + 1 + needed])?;
-            i += 1 + needed;
+            if self.second {
+                // RFC 3629 §4: the second octet of a sequence decides
+                // whether the form is the shortest one, a surrogate, or
+                // above U+10FFFF.
+                match (self.lead, octet) {
+                    (0xE0, 0x80..=0x9F) | (0xF0, 0x80..=0x8F) => {
+                        return Err(Utf8Error::OverlongEncoding);
+                    }
+                    (0xED, 0xA0..=0xBF) => return Err(Utf8Error::SurrogateCodepoint),
+                    (0xF4, 0x90..=0xBF) => return Err(Utf8Error::CodepointOutOfRange),
+                    _ => {}
+                }
+                self.second = false;
+            }
+            self.needed -= 1;
         }
-
         Ok(())
     }
 
@@ -202,7 +205,7 @@ impl StreamingValidator {
     /// # Errors
     /// `Utf8Error::Truncated` if pending bytes remain.
     pub fn finalize(self) -> Result<(), Utf8Error> {
-        if self.pending_len == 0 {
+        if self.needed == 0 {
             Ok(())
         } else {
             Err(Utf8Error::Truncated)
@@ -304,6 +307,73 @@ mod tests {
         assert!(v.feed(&[0xE2]).is_ok());
         assert!(v.feed(&[0x82, 0xAC]).is_ok());
         assert!(v.finalize().is_ok());
+    }
+
+    #[test]
+    fn ws_8_1_streaming_agrees_with_validate_at_every_split() {
+        // Every one- to four-octet sequence class of RFC 3629 §4, valid
+        // and malformed: fed whole, octet by octet and cut at each
+        // position, the stream is valid exactly when `validate` says so,
+        // with the same error.
+        let samples: [&[u8]; 22] = [
+            b"plain",
+            &[0xc2, 0x80],
+            &[0xdf, 0xbf],
+            &[0xe0, 0xa0, 0x80],
+            &[0xed, 0x9f, 0xbf],
+            &[0xee, 0x80, 0x80],
+            &[0xef, 0xbf, 0xbf],
+            &[0xf0, 0x90, 0x80, 0x80],
+            &[0xf4, 0x8f, 0xbf, 0xbf],
+            &[b'a', 0xe2, 0x82, 0xac, b'b', 0xf0, 0x9f, 0x98, 0x80],
+            &[0xc0, 0x80],
+            &[0xc1, 0xbf],
+            &[0xe0, 0x9f, 0xbf],
+            &[0xed, 0xa0, 0x80],
+            &[0xed, 0xbf, 0xbf],
+            &[0xf0, 0x8f, 0xbf, 0xbf],
+            &[0xf4, 0x90, 0x80, 0x80],
+            &[0xf5, 0x80, 0x80, 0x80],
+            &[0x80],
+            &[0xc2, 0x41],
+            &[0xe2, 0x82, 0x41],
+            &[0xf0, 0x9f, 0x98, 0x41],
+        ];
+        for sample in samples {
+            let expected = validate(sample);
+            for cut in 0..=sample.len() {
+                let mut v = StreamingValidator::new();
+                let got = v
+                    .feed(&sample[..cut])
+                    .and_then(|()| v.feed(&sample[cut..]))
+                    .and_then(|()| v.finalize());
+                assert_eq!(got, expected, "{sample:02x?} cut at {cut}");
+            }
+        }
+    }
+
+    #[test]
+    fn ws_8_1_streaming_fails_with_the_octet_that_makes_the_stream_malformed() {
+        // The second octet decides: no valid sequence begins with these
+        // pairs, so the stream is malformed before the sequence is
+        // complete.
+        for (pair, error) in [
+            ([0xe0u8, 0x9f], Utf8Error::OverlongEncoding),
+            ([0xed, 0xa0], Utf8Error::SurrogateCodepoint),
+            ([0xf0, 0x8f], Utf8Error::OverlongEncoding),
+            ([0xf4, 0x90], Utf8Error::CodepointOutOfRange),
+        ] {
+            let mut v = StreamingValidator::new();
+            assert_eq!(v.feed(&pair[..1]), Ok(()));
+            assert_eq!(v.feed(&pair[1..]), Err(error), "{pair:02x?}");
+        }
+        // The pairs at the edges of the valid ranges are the start of a
+        // code point.
+        for pair in [[0xe0u8, 0xa0], [0xed, 0x9f], [0xf0, 0x90], [0xf4, 0x8f]] {
+            let mut v = StreamingValidator::new();
+            assert_eq!(v.feed(&pair), Ok(()), "{pair:02x?}");
+            assert_eq!(v.finalize(), Err(Utf8Error::Truncated));
+        }
     }
 
     #[test]

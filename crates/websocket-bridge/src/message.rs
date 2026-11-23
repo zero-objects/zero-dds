@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 
 use crate::close::CloseCode;
 use crate::frame::{Frame, Opcode};
+use crate::masking::MaskingKeyProvider;
 use crate::utf8::{StreamingValidator, Utf8Error};
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,19 @@ pub enum SendError {
     InvalidFrameLimit,
     /// The text message is not valid UTF-8 (Spec §6.1).
     InvalidUtf8,
+    /// The masking key source delivered no key (Spec §5.3): the frame is
+    /// not sent.
+    Entropy,
+    /// A Close frame was sent or the connection is closed (Spec §5.5.1:
+    /// "after sending a Close frame, an endpoint MUST NOT send any more
+    /// data frames").
+    Closing,
+    /// A control frame with more than 125 octets of payload (Spec §5.5).
+    ControlFrameTooLong,
+    /// A status code that must not be sent in a Close frame (Spec §7.4).
+    StatusNotAllowed,
+    /// The message could not be compressed (RFC 7692 §7.2.1).
+    Deflate,
 }
 
 impl core::fmt::Display for SendError {
@@ -31,6 +45,11 @@ impl core::fmt::Display for SendError {
         match self {
             Self::InvalidFrameLimit => write!(f, "InvalidFrameLimit"),
             Self::InvalidUtf8 => write!(f, "InvalidUtf8"),
+            Self::Entropy => write!(f, "Entropy"),
+            Self::Closing => write!(f, "Closing"),
+            Self::ControlFrameTooLong => write!(f, "ControlFrameTooLong"),
+            Self::StatusNotAllowed => write!(f, "StatusNotAllowed"),
+            Self::Deflate => write!(f, "Deflate"),
         }
     }
 }
@@ -52,9 +71,10 @@ impl std::error::Error for SendError {}
 /// `max_frame_payload` = 0 is rejected as `InvalidFrameLimit`;
 /// `usize::MAX` effectively disables splitting.
 ///
-/// `mask` (4-byte) is applied to each frame if non-zero
-/// (client path). The server path passes `[0;4]` as the mask or
-/// `apply_mask=false` (handled via the empty mask).
+/// `keys` is the client's masking key source: with `Some`, every frame is
+/// masked with a key of its own, drawn for it (Spec §5.3, §10.3: "Clients
+/// MUST choose a new masking key for each frame"); `None` is the server,
+/// whose frames carry no mask (Spec §5.1).
 ///
 /// # Errors
 /// See [`SendError`].
@@ -62,67 +82,56 @@ pub fn fragment_message(
     is_text: bool,
     payload: &[u8],
     max_frame_payload: usize,
-    mask: [u8; 4],
+    keys: Option<&mut dyn MaskingKeyProvider>,
+) -> Result<Vec<Frame>, SendError> {
+    if is_text {
+        crate::utf8::validate(payload).map_err(|_| SendError::InvalidUtf8)?;
+    }
+    let opcode = if is_text {
+        Opcode::Text
+    } else {
+        Opcode::Binary
+    };
+    split_into_frames(opcode, false, payload, max_frame_payload, keys)
+}
+
+/// The frames of one message: `opcode` and `rsv1` on the first, the
+/// continuation opcode on the others, FIN on the last, a masking key of
+/// its own on each when `keys` is given. An empty payload is one frame
+/// (Spec §5.6).
+pub(crate) fn split_into_frames(
+    opcode: Opcode,
+    rsv1: bool,
+    payload: &[u8],
+    max_frame_payload: usize,
+    mut keys: Option<&mut dyn MaskingKeyProvider>,
 ) -> Result<Vec<Frame>, SendError> {
     if max_frame_payload == 0 {
         return Err(SendError::InvalidFrameLimit);
     }
-    if is_text {
-        crate::utf8::validate(payload).map_err(|_| SendError::InvalidUtf8)?;
-    }
-
-    if payload.is_empty() {
-        // Spec §5.6 allows empty text/binary messages → one frame
-        // with FIN=1, empty payload.
-        return Ok(alloc::vec![Frame {
-            fin: true,
-            rsv1: false,
-            rsv2: false,
-            rsv3: false,
-            opcode: if is_text {
-                Opcode::Text
-            } else {
-                Opcode::Binary
-            },
-            masking_key: if mask == [0; 4] { None } else { Some(mask) },
-            payload: alloc::vec![],
-        }]);
-    }
-
-    let mut frames = Vec::new();
-    let mut offset = 0;
-    let mut first = true;
-
-    while offset < payload.len() {
-        let chunk_end = (offset + max_frame_payload).min(payload.len());
-        let chunk = &payload[offset..chunk_end];
-        let is_last = chunk_end == payload.len();
-
-        let opcode = if first {
-            if is_text {
-                Opcode::Text
-            } else {
-                Opcode::Binary
-            }
-        } else {
-            Opcode::Continuation
+    let mut frames = Vec::with_capacity(payload.len() / max_frame_payload + 1);
+    let mut offset = 0usize;
+    loop {
+        let chunk_end = offset.saturating_add(max_frame_payload).min(payload.len());
+        let first = offset == 0;
+        let masking_key = match keys.as_mut() {
+            Some(k) => Some(k.next_key().map_err(|_| SendError::Entropy)?),
+            None => None,
         };
-
         frames.push(Frame {
-            fin: is_last,
-            rsv1: false,
+            fin: chunk_end == payload.len(),
+            rsv1: rsv1 && first,
             rsv2: false,
             rsv3: false,
-            opcode,
-            masking_key: if mask == [0; 4] { None } else { Some(mask) },
-            payload: chunk.to_vec(),
+            opcode: if first { opcode } else { Opcode::Continuation },
+            masking_key,
+            payload: payload[offset..chunk_end].to_vec(),
         });
-
         offset = chunk_end;
-        first = false;
+        if offset == payload.len() {
+            return Ok(frames);
+        }
     }
-
-    Ok(frames)
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +333,22 @@ impl Reassembler {
         }
     }
 
+    /// The UTF-8 state of the text message in progress, after the frames
+    /// fed so far; `None` when no text message is in progress. A receiver
+    /// continues it over the octets of a frame that is not complete yet.
+    pub(crate) fn text_state(&self) -> Option<StreamingValidator> {
+        self.pending
+            .as_ref()
+            .filter(|p| p.is_text)
+            .map(|p| p.utf8.clone())
+    }
+
+    /// The octets of the message in progress that are buffered.
+    #[must_use]
+    pub fn pending_len(&self) -> usize {
+        self.pending.as_ref().map_or(0, |p| p.buffer.len())
+    }
+
     /// `true` if a continuation sequence is active (a reassembly
     /// that is not yet complete).
     #[must_use]
@@ -340,10 +365,11 @@ impl Reassembler {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::masking::EntropyError;
 
     #[test]
     fn ws_6_1_fragment_empty_message_yields_one_frame() {
-        let f = fragment_message(true, b"", 100, [0; 4]).expect("ok");
+        let f = fragment_message(true, b"", 100, None).expect("ok");
         assert_eq!(f.len(), 1);
         assert!(f[0].fin);
         assert_eq!(f[0].opcode, Opcode::Text);
@@ -351,7 +377,7 @@ mod tests {
 
     #[test]
     fn ws_6_1_fragment_message_within_limit_single_frame() {
-        let f = fragment_message(false, b"hello", 100, [0; 4]).expect("ok");
+        let f = fragment_message(false, b"hello", 100, None).expect("ok");
         assert_eq!(f.len(), 1);
         assert!(f[0].fin);
         assert_eq!(f[0].opcode, Opcode::Binary);
@@ -359,7 +385,7 @@ mod tests {
 
     #[test]
     fn ws_6_1_fragment_message_splits_into_text_plus_continuations() {
-        let f = fragment_message(true, b"abcdefghij", 3, [0; 4]).expect("ok");
+        let f = fragment_message(true, b"abcdefghij", 3, None).expect("ok");
         assert_eq!(f.len(), 4);
         assert_eq!(f[0].opcode, Opcode::Text);
         assert!(!f[0].fin);
@@ -373,7 +399,7 @@ mod tests {
     fn ws_6_1_fragment_text_rejects_invalid_utf8() {
         let bad = [0xff, 0xfe];
         assert_eq!(
-            fragment_message(true, &bad, 100, [0; 4]),
+            fragment_message(true, &bad, 100, None),
             Err(SendError::InvalidUtf8)
         );
     }
@@ -381,15 +407,69 @@ mod tests {
     #[test]
     fn ws_6_1_fragment_zero_limit_rejected() {
         assert_eq!(
-            fragment_message(false, b"x", 0, [0; 4]),
+            fragment_message(false, b"x", 0, None),
             Err(SendError::InvalidFrameLimit)
         );
     }
 
+    /// A key source that counts: key `n` is the number `n`.
+    fn counting_keys()
+    -> crate::masking::ClosureMaskingKeyProvider<impl FnMut() -> Result<[u8; 4], EntropyError>>
+    {
+        let mut n = 0u32;
+        crate::masking::ClosureMaskingKeyProvider(move || {
+            let key = n.to_be_bytes();
+            n += 1;
+            Ok(key)
+        })
+    }
+
     #[test]
     fn ws_6_1_fragment_with_mask_sets_mask_field() {
-        let f = fragment_message(false, b"x", 100, [1, 2, 3, 4]).expect("ok");
+        let mut keys = crate::masking::ClosureMaskingKeyProvider(|| Ok([1, 2, 3, 4]));
+        let f = fragment_message(false, b"x", 100, Some(&mut keys)).expect("ok");
         assert_eq!(f[0].masking_key, Some([1, 2, 3, 4]));
+        // The server's frames carry none (§5.1).
+        let f = fragment_message(false, b"x", 100, None).expect("ok");
+        assert_eq!(f[0].masking_key, None);
+    }
+
+    #[test]
+    fn ws_10_3_each_frame_of_a_fragmented_message_has_its_own_key() {
+        // §10.3: "Clients MUST choose a new masking key for each frame".
+        // Four frames, four draws, four keys.
+        let mut keys = counting_keys();
+        let f = fragment_message(true, b"abcdefghij", 3, Some(&mut keys)).expect("ok");
+        let drawn: Vec<Option<[u8; 4]>> = f.iter().map(|f| f.masking_key).collect();
+        assert_eq!(
+            drawn,
+            [
+                Some([0, 0, 0, 0]),
+                Some([0, 0, 0, 1]),
+                Some([0, 0, 0, 2]),
+                Some([0, 0, 0, 3])
+            ]
+        );
+    }
+
+    #[test]
+    fn ws_10_3_a_zero_key_still_sets_the_mask_bit() {
+        // The key 00 00 00 00 is a key like any other: the frame goes out
+        // with MASK set and the four key octets (§5.2), not unmasked.
+        let mut keys = counting_keys();
+        let f = fragment_message(false, b"x", 100, Some(&mut keys)).expect("ok");
+        assert_eq!(f[0].masking_key, Some([0; 4]));
+        let wire = crate::codec::encode(&f[0]).expect("encode");
+        assert_eq!(wire, [0x82, 0x81, 0, 0, 0, 0, b'x']);
+    }
+
+    #[test]
+    fn ws_5_3_without_a_key_no_frame_is_built() {
+        let mut keys = crate::masking::ClosureMaskingKeyProvider(|| Err(EntropyError));
+        assert_eq!(
+            fragment_message(false, b"x", 100, Some(&mut keys)),
+            Err(SendError::Entropy)
+        );
     }
 
     fn binary_frame(fin: bool, opcode: Opcode, payload: Vec<u8>) -> Frame {
@@ -491,7 +571,7 @@ mod tests {
     #[test]
     fn ws_6_2_fragment_send_then_reassemble_round_trip() {
         let original = b"the quick brown fox jumps";
-        let frames = fragment_message(true, original, 4, [0; 4]).expect("ok");
+        let frames = fragment_message(true, original, 4, None).expect("ok");
         let mut r = Reassembler::new();
         let mut completed: Option<Message> = None;
         for f in &frames {

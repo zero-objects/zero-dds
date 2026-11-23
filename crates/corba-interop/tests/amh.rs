@@ -11,19 +11,27 @@
 //! Client side is the `AmiClient` (request_id demux).
 
 use std::net::TcpListener;
+use zerodds_corba_rust::marshaled_body;
 
 use zerodds_corba_iiop::Connection;
 use zerodds_corba_interop::runtime::{AmhEndpoint, AmiClient, object_reference};
-use zerodds_corba_rust::CorbaException;
-use zerodds_wire::{Endianness, Reader, Writer};
+use zerodds_corba_rust::{
+    AlignedBody, CompletionStatus, CorbaException, SystemException, SystemExceptionKind,
+};
+use zerodds_wire::{Endianness, Writer};
 
 fn u32_body(v: u32) -> Vec<u8> {
     let mut w = Writer::new(Endianness::Big);
     w.write_u32(v);
     w.finish()
 }
-fn read_u32(b: &[u8], e: Endianness) -> u32 {
-    Reader::new(b, e).read_u32().unwrap()
+/// The `unsigned long` of a reply body, read at its offset in the reply.
+fn read_u32(b: &zerodds_corba_rust::AlignedBody, e: Endianness) -> u32 {
+    b.reader(e).read_u32().unwrap()
+}
+/// The `unsigned long` argument of a request, read at the body's offset.
+fn read_u32_arg(b: &zerodds_corba_rust::AlignedBody, e: Endianness) -> u32 {
+    b.reader(e).read_u32().unwrap()
 }
 
 /// Connects an `AmiClient` (client) to an `AmhEndpoint` (server) over a real
@@ -44,8 +52,12 @@ fn pair() -> (AmiClient, AmhEndpoint) {
 fn corbarust_6_amh_deferred_out_of_order_replies() {
     let (mut client, server) = pair();
 
-    let id_slow = client.send_poll("slow", &u32_body(1)).unwrap();
-    let id_fast = client.send_poll("fast", &u32_body(2)).unwrap();
+    let id_slow = client
+        .send_poll("slow", &marshaled_body(&u32_body(1), 0))
+        .unwrap();
+    let id_fast = client
+        .send_poll("fast", &marshaled_body(&u32_body(2), 0))
+        .unwrap();
 
     // Server accepts BOTH before sending any reply (= core of AMH).
     let req1 = server.accept_request().unwrap().unwrap();
@@ -55,10 +67,10 @@ fn corbarust_6_amh_deferred_out_of_order_replies() {
 
     // Reply deferred + out-of-order: second request first, then the first.
     req2.handler
-        .send_reply(u32_body(read_u32(&req2.body, req2.endianness) * 10))
+        .send_reply(u32_body(read_u32_arg(&req2.body, req2.endianness) * 10))
         .unwrap();
     req1.handler
-        .send_reply(u32_body(read_u32(&req1.body, req1.endianness) * 10))
+        .send_reply(u32_body(read_u32_arg(&req1.body, req1.endianness) * 10))
         .unwrap();
 
     // Client collects both, correctly correlated.
@@ -72,16 +84,66 @@ fn corbarust_6_amh_deferred_out_of_order_replies() {
 #[test]
 fn corbarust_6_amh_deferred_exception() {
     let (mut client, server) = pair();
-    let id = client.send_poll("boom", &u32_body(0)).unwrap();
+    let id = client
+        .send_poll("boom", &marshaled_body(&u32_body(0), 0))
+        .unwrap();
     let req = server.accept_request().unwrap().unwrap();
     req.handler
-        .send_exception(CorbaException::SystemException {
-            minor: 7,
-            message: "CORBA INTERNAL: boom",
+        .send_exception(CorbaException::system(
+            SystemExceptionKind::Internal,
+            7,
+            CompletionStatus::Yes,
+        ))
+        .unwrap();
+    // The exception crosses with its identity, minor code and completion
+    // status (CORBA 3.3 Part 1 §8.12).
+    assert_eq!(
+        client.get_reply(id).unwrap(),
+        Err(CorbaException::System(SystemException::new(
+            SystemExceptionKind::Internal,
+            7,
+            CompletionStatus::Yes
+        ))),
+    );
+}
+
+/// CORBA 3.3 Part 2 §9.4.1, §9.4.3: a parked request answered with a user
+/// exception the servant received in the other byte order than the
+/// request's. Its body cannot be read in another byte order: the
+/// `AmhResponseHandler` writes the reply in the exception's byte order, and
+/// the client reads the repository id and the member.
+#[test]
+fn corba_p2_9_4_3_an_amh_user_exception_goes_out_in_its_own_byte_order() {
+    let (mut client, server) = pair();
+    let id = client
+        .send_poll("boom", &marshaled_body(&u32_body(0), 0))
+        .unwrap();
+    let req = server.accept_request().unwrap().unwrap();
+    let other = match req.endianness {
+        Endianness::Big => Endianness::Little,
+        Endianness::Little => Endianness::Big,
+    };
+    let mut w = Writer::new(other);
+    w.write_string("IDL:Boom:1.0");
+    w.write_u32(7);
+    req.handler
+        .send_exception(CorbaException::UserException {
+            repository_id: "IDL:Boom:1.0".into(),
+            body: AlignedBody::new(&w.finish(), 0),
+            endianness: other,
         })
         .unwrap();
-    assert!(
-        client.get_reply(id).unwrap().is_err(),
-        "exception must arrive as Err"
-    );
+    let Err(CorbaException::UserException {
+        repository_id,
+        body,
+        endianness,
+    }) = client.get_reply(id).unwrap()
+    else {
+        panic!("a user exception");
+    };
+    assert_eq!(repository_id, "IDL:Boom:1.0");
+    assert_eq!(endianness, other);
+    let mut r = body.reader(endianness);
+    assert_eq!(r.read_string().unwrap(), "IDL:Boom:1.0");
+    assert_eq!(r.read_u32().unwrap(), 7);
 }

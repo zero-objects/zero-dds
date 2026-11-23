@@ -20,10 +20,19 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+# The merge lane also runs the crate with `time-service` (the audit sink of
+# the OMG Time Service administration, src/time_audit.rs).
+[package.metadata.crate-tier]
+feature-runs = ["time-service"]
+
 [features]
 safety = []  # empty marker for safe-profile lints (docs/architecture/04_safety_by_architecture.md §3)
 default = ["std"]
 std = []
+# `JsonLinesLoggingPlugin` as the `AuditSink` of an administered OMG Time
+# Service (Time Service 1.1 App. B.1), module `time_audit`.
+time-service = ["std", "dep:zerodds-time-service"]
 
 [dependencies]
 zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
+zerodds-time-service = { version = "1.0.0-rc.7", path = "../time-service", default-features = false, features = ["std"], optional = true }

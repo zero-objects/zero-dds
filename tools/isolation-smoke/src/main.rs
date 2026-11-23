@@ -18,7 +18,27 @@
 //!
 //! isolation-smoke --transport=uds --role=receiver \
 //!     --local-id=01020304 --base-dir=/tmp/zds-test --count=10
+//!
+//! isolation-smoke --transport=uds --role=echo --local-id=80 \
+//!     --base-dir=/run/zerodds-uds --socket-mode=660 --count=50
+//!
+//! isolation-smoke --transport=uds --role=ping --local-id=81 --peer-id=80 \
+//!     --base-dir=/run/zerodds-uds --socket-mode=660 --count=50
 //! ```
+//!
+//! # Roles
+//! - `sender` / `receiver`: one direction, `--count` frames.
+//! - `echo`: receives `--count` datagrams and sends each back to the
+//!   locator it came from.
+//! - `ping`: sends `--count` datagrams to `--peer-id`/`--peer`, one at a
+//!   time, and checks that each comes back unchanged from that peer; the
+//!   first send waits up to 10 s for the peer's socket to appear. Together
+//!   with `echo` this carries datagrams in both directions
+//!   (zerodds-uds-transport-1.0 §5.2).
+//!
+//! `--socket-mode=OCTAL` (UDS only) sets the mode of the socket file;
+//! `--hold-ms=N` keeps the transport bound N ms after a successful run, so
+//! that an observer can see the socket file.
 //!
 //! # Return-Codes
 //! - `0`: success (all expected frames passed through).
@@ -71,6 +91,8 @@ const PAYLOAD_PREFIX: &[u8] = b"zerodds-iso-";
 enum Role {
     Sender,
     Receiver,
+    Echo,
+    Ping,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +142,8 @@ struct Cfg {
     peer_id: Option<[u8; 16]>,
     base_dir: Option<PathBuf>,
     abstract_prefix: Option<String>,
+    socket_mode: Option<u32>,
+    hold: Duration,
 }
 
 #[cfg(unix)]
@@ -135,6 +159,8 @@ fn parse_args(args: &[String]) -> Result<Cfg, String> {
         peer_id: None,
         base_dir: None,
         abstract_prefix: None,
+        socket_mode: None,
+        hold: Duration::ZERO,
     };
     for arg in args.iter().skip(1) {
         let Some((k, v)) = arg.strip_prefix("--").and_then(|a| a.split_once('=')) else {
@@ -155,6 +181,8 @@ fn parse_args(args: &[String]) -> Result<Cfg, String> {
                 cfg.role = match v {
                     "sender" => Role::Sender,
                     "receiver" => Role::Receiver,
+                    "echo" => Role::Echo,
+                    "ping" => Role::Ping,
                     _ => return Err(format!("bad role: {v}")),
                 };
             }
@@ -168,8 +196,26 @@ fn parse_args(args: &[String]) -> Result<Cfg, String> {
             "peer-id" => cfg.peer_id = Some(parse_hex_id(v)?),
             "base-dir" => cfg.base_dir = Some(validate_base_dir(v)?),
             "abstract-prefix" => cfg.abstract_prefix = Some(v.to_string()),
+            "socket-mode" => {
+                let mode = u32::from_str_radix(v, 8)
+                    .map_err(|e| format!("socket-mode: {v:?} is no octal mode: {e}"))?;
+                cfg.socket_mode = Some(mode);
+            }
+            "hold-ms" => {
+                cfg.hold = Duration::from_millis(v.parse().map_err(|e| format!("hold-ms: {e}"))?);
+            }
             _ => return Err(format!("unknown flag: {k}")),
         }
+    }
+    if cfg.socket_mode.is_some() && cfg.transport != TransportKind::Uds {
+        return Err("--socket-mode applies to --transport=uds only".to_string());
+    }
+    if matches!(cfg.role, Role::Echo | Role::Ping) && cfg.transport == TransportKind::Shm {
+        return Err(
+            "--role=echo and --role=ping need a transport that answers the source \
+                    locator; shm opens one ring per direction"
+                .to_string(),
+        );
     }
     Ok(cfg)
 }
@@ -280,25 +326,29 @@ fn run_udp(cfg: &Cfg) -> Result<(), u8> {
     )
     .map_err(|e| err(&e, 1))?;
     let t = UdpTransport::bind_v4(lip, lport).map_err(|e| err(&format!("{e}"), 2))?;
-    let t = if cfg.role == Role::Receiver {
+    let t = if cfg.role == Role::Sender {
+        t
+    } else {
         t.with_timeout(Some(Duration::from_secs(10)))
             .map_err(|e| err(&format!("{e}"), 2))?
-    } else {
-        t
+    };
+    let peer = || -> Result<Locator, u8> {
+        let (pip, pport) = parse_socket(
+            cfg.peer_addr
+                .as_ref()
+                .ok_or_else(|| err("udp sender and ping need --peer=ip:port", 1))?,
+        )
+        .map_err(|e| err(&e, 1))?;
+        Ok(Locator::udp_v4(pip.octets(), u32::from(pport)))
     };
     match cfg.role {
         Role::Receiver => recv_loop(&t, cfg),
-        Role::Sender => {
-            let (pip, pport) = parse_socket(
-                cfg.peer_addr
-                    .as_ref()
-                    .ok_or_else(|| err("udp sender needs --peer=ip:port", 1))?,
-            )
-            .map_err(|e| err(&e, 1))?;
-            let peer = Locator::udp_v4(pip.octets(), u32::from(pport));
-            send_loop(&t, &peer, cfg)
-        }
-    }
+        Role::Sender => send_loop(&t, &peer()?, cfg),
+        Role::Echo => echo_loop(&t, cfg),
+        Role::Ping => ping_loop(&t, &peer()?, cfg),
+    }?;
+    hold(cfg);
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -342,6 +392,8 @@ fn run_shm(cfg: &Cfg) -> Result<(), u8> {
             thread::sleep(Duration::from_millis(200));
             send_loop(&t, &peer, cfg)
         }
+        // parse_args refuses these roles for shm.
+        Role::Echo | Role::Ping => Err(err("shm has no echo or ping role", 1)),
     }
 }
 
@@ -358,18 +410,23 @@ fn run_uds(cfg: &Cfg) -> Result<(), u8> {
         base_dir: base,
         max_datagram: 8192,
         recv_timeout: Some(Duration::from_secs(10)),
+        socket_mode: cfg.socket_mode,
+        ..UdsConfig::default()
     };
     let t = UdsTransport::bind(local_id, uds_cfg).map_err(|e| err(&format!("{e}"), 2))?;
+    let peer = || -> Result<Locator, u8> {
+        cfg.peer_id
+            .map(Locator::uds)
+            .ok_or_else(|| err("uds sender and ping need --peer-id=HEX", 1))
+    };
     match cfg.role {
         Role::Receiver => recv_loop(&t, cfg),
-        Role::Sender => {
-            let peer_id = cfg
-                .peer_id
-                .ok_or_else(|| err("uds sender needs --peer-id=HEX", 1))?;
-            let peer = Locator::uds(peer_id);
-            send_loop(&t, &peer, cfg)
-        }
-    }
+        Role::Sender => send_loop(&t, &peer()?, cfg),
+        Role::Echo => echo_loop(&t, cfg),
+        Role::Ping => ping_loop(&t, &peer()?, cfg),
+    }?;
+    hold(cfg);
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -387,33 +444,33 @@ fn run_uds_abstract(cfg: &Cfg) -> Result<(), u8> {
         .unwrap_or_else(|| "zerodds".to_string());
     let abs_cfg = AbstractDgramConfig {
         address: UdsAddress::Abstract { prefix },
-        recv_buf: 8192,
+        max_datagram: 8192,
         recv_timeout: Some(Duration::from_secs(10)),
+        ..AbstractDgramConfig::default()
     };
     let t =
         UdsAbstractDgramTransport::bind(local_id, abs_cfg).map_err(|e| err(&format!("{e}"), 2))?;
+    let peer = || -> Result<Locator, u8> {
+        cfg.peer_id
+            .map(Locator::uds)
+            .ok_or_else(|| err("uds-abstract sender and ping need --peer-id=HEX", 1))
+    };
     match cfg.role {
         Role::Receiver => recv_loop(&t, cfg),
-        Role::Sender => {
-            let peer_id = cfg
-                .peer_id
-                .ok_or_else(|| err("uds-abstract sender needs --peer-id=HEX", 1))?;
-            let peer = Locator::uds(peer_id);
-            send_loop(&t, &peer, cfg)
-        }
-    }
+        Role::Sender => send_loop(&t, &peer()?, cfg),
+        Role::Echo => echo_loop(&t, cfg),
+        Role::Ping => ping_loop(&t, &peer()?, cfg),
+    }?;
+    hold(cfg);
+    Ok(())
 }
 
 #[cfg(unix)]
 fn send_loop<T: Transport>(t: &T, peer: &Locator, cfg: &Cfg) -> Result<(), u8> {
     // Brief delay so the receiver has time to bind.
     thread::sleep(Duration::from_millis(100));
-    let pad = vec![0xAB; cfg.payload_size.saturating_sub(PAYLOAD_PREFIX.len() + 4)];
     for i in 0u32..(cfg.count as u32) {
-        let mut buf = Vec::with_capacity(cfg.payload_size);
-        buf.extend_from_slice(PAYLOAD_PREFIX);
-        buf.extend_from_slice(&i.to_be_bytes());
-        buf.extend_from_slice(&pad);
+        let buf = frame(i, cfg);
         if let Err(e) = t.send(peer, &buf) {
             eprintln!("send[{i}] failed: {e}");
             return Err(3);
@@ -447,6 +504,119 @@ fn recv_loop<T: Transport>(t: &T, cfg: &Cfg) -> Result<(), u8> {
     }
     eprintln!("receiver: {got} frames got");
     Ok(())
+}
+
+/// The payload of frame `i`: the prefix, `i` big endian, padding up to
+/// `--payload-size`.
+#[cfg(unix)]
+fn frame(i: u32, cfg: &Cfg) -> Vec<u8> {
+    let pad = vec![0xAB; cfg.payload_size.saturating_sub(PAYLOAD_PREFIX.len() + 4)];
+    let mut buf = Vec::with_capacity(cfg.payload_size);
+    buf.extend_from_slice(PAYLOAD_PREFIX);
+    buf.extend_from_slice(&i.to_be_bytes());
+    buf.extend_from_slice(&pad);
+    buf
+}
+
+/// The locator as `kind:hex-address`, for the log lines.
+#[cfg(unix)]
+fn locator_text(l: &Locator) -> String {
+    let hex: String = l.address.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{:?}:{hex}", l.kind)
+}
+
+/// Receives `--count` datagrams and sends each back to the locator it came
+/// from. A datagram without a source locator cannot be answered and fails
+/// the run.
+#[cfg(unix)]
+fn echo_loop<T: Transport>(t: &T, cfg: &Cfg) -> Result<(), u8> {
+    let mut last = Locator::INVALID;
+    for i in 0..cfg.count {
+        let dg = t
+            .recv()
+            .map_err(|e| err(&format!("echo recv[{i}] failed: {e}"), 3))?;
+        if dg.source == Locator::INVALID {
+            return Err(err(
+                &format!("echo recv[{i}]: datagram without a source locator"),
+                3,
+            ));
+        }
+        t.send(&dg.source, &dg.data)
+            .map_err(|e| err(&format!("echo send[{i}] failed: {e}"), 3))?;
+        last = dg.source;
+    }
+    eprintln!(
+        "echo: {} datagrams echoed to {}",
+        cfg.count,
+        locator_text(&last)
+    );
+    Ok(())
+}
+
+/// How long the first send of `ping` waits for the peer's socket.
+#[cfg(unix)]
+const PEER_WAIT: Duration = Duration::from_secs(10);
+
+/// Sends `--count` datagrams to `peer`, one at a time, and checks that each
+/// comes back unchanged from `peer`. The first send is repeated while the
+/// peer's socket is missing, at most [`PEER_WAIT`]; every other error ends
+/// the run with its message.
+#[cfg(unix)]
+fn ping_loop<T: Transport>(t: &T, peer: &Locator, cfg: &Cfg) -> Result<(), u8> {
+    for i in 0..(cfg.count as u32) {
+        let buf = frame(i, cfg);
+        let start = std::time::Instant::now();
+        loop {
+            match t.send(peer, &buf) {
+                Ok(()) => break,
+                Err(zerodds_transport::SendError::Io { message })
+                    if i == 0
+                        && message == "uds: destination socket missing"
+                        && start.elapsed() < PEER_WAIT =>
+                {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => return Err(err(&format!("ping send[{i}] failed: {e}"), 3)),
+            }
+        }
+        let dg = t
+            .recv()
+            .map_err(|e| err(&format!("ping recv[{i}] failed: {e}"), 3))?;
+        if dg.source != *peer {
+            return Err(err(
+                &format!(
+                    "ping recv[{i}]: echo from {}, expected {}",
+                    locator_text(&dg.source),
+                    locator_text(peer)
+                ),
+                4,
+            ));
+        }
+        if dg.data[..] != buf[..] {
+            return Err(err(
+                &format!(
+                    "ping recv[{i}]: echo of {} bytes differs from the {} bytes sent",
+                    dg.data.len(),
+                    buf.len()
+                ),
+                4,
+            ));
+        }
+    }
+    eprintln!(
+        "ping: {} echoes received from {}",
+        cfg.count,
+        locator_text(peer)
+    );
+    Ok(())
+}
+
+/// Keeps the transport bound `--hold-ms` after a successful run.
+#[cfg(unix)]
+fn hold(cfg: &Cfg) {
+    if !cfg.hold.is_zero() {
+        thread::sleep(cfg.hold);
+    }
 }
 
 #[cfg(unix)]

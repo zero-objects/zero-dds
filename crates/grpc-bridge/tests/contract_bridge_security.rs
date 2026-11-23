@@ -3,7 +3,7 @@
 //! Contract of `zerodds-grpc-bridge` with `zerodds-bridge-security`
 //! (internal/release/rc8-test-suite.md, "Crate tier").
 //!
-//! What this crate uses of `zerodds-bridge-security`: `authenticate`, `LiveSecurity`, `RotatingTlsConfig`, `serve_tls_handshake` and `tls_provider` (`src/bin/zerodds-grpc-bridged.rs`, `src/bridge_security.rs`).
+//! What this crate uses of `zerodds-bridge-security`: `authenticate`, `LiveSecurity`, `RotatingTlsConfig`, `serve_tls_handshake` and `tls_provider` (`src/bridge_daemon/`, `src/bridge_security.rs`).
 //!
 //! Oracles: RFC 6750 §2.1 (`Authorization: Bearer <token>`) with RFC 7235 §2.1 (the scheme is case-insensitive); the bridge specification §7.3 (read and write per topic, deny by default); RFC 8446 §9.1 (TLS_AES_128_GCM_SHA256 must be implemented); RFC 7468 §5, with a certificate and key made by `openssl req`.
 #![allow(clippy::unwrap_used, clippy::panic)]

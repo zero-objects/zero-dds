@@ -273,8 +273,11 @@ cd "${repo_root}"
 # The Rust run reads every Rust file in one CPD pass. Measured on 2323
 # files: a 2 GiB heap ends in OutOfMemoryError, 3 GiB and 4 GiB complete,
 # and the JVM's default (a quarter of the memory the container shows) ended
-# in OutOfMemoryError on the CI runner. A caller's own PMD_JAVA_OPTS wins.
-export PMD_JAVA_OPTS="${PMD_JAVA_OPTS:--Xmx4g}"
+# in OutOfMemoryError on the CI runner. On 3308 files (what the GitHub
+# mirror holds of the tree) and on 3385 (the whole tree) 4 GiB ends in
+# OutOfMemoryError as well; 6 GiB and 8 GiB complete on 3385. A caller's
+# own PMD_JAVA_OPTS wins.
+export PMD_JAVA_OPTS="${PMD_JAVA_OPTS:--Xmx8g}"
 
 PMD="$(resolve_pmd)"
 if [ ! -x "${PMD}" ] && ! command -v "${PMD}" >/dev/null 2>&1; then

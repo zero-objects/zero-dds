@@ -86,9 +86,9 @@ Implementation:
 
 **Spec:** §5 — `@ami` → `<Iface>AmiHandler` + `sendc_<op>` (Callback) + `sendp_<op>`/Poller (Polling) über `AsyncCorbaChannel`.
 
-**Repo:** `crates/corba-rust/src/ami_emit.rs::emit_ami`; `crates/corba-rust/src/runtime.rs::AsyncCorbaChannel`.
+**Repo:** `crates/corba-rust/src/ami_emit.rs::emit_ami`; `crates/corba-rust/src/runtime.rs::AsyncCorbaChannel`; Callback und Poller lesen den Body der `AsyncReply` an seinem Offset in der Antwort (`AlignedBody::reader`, CORBA 3.3 Part 2 §9.4.3).
 
-**Tests:** `crates/corba-rust/tests/codegen_mapping.rs::{corbarust_5_ami_emits_the_handler_sendc_sendp_and_the_poller, corbarust_5_no_ami_without_the_annotation}`; `crates/corba-rust/tests/compile_check.rs::corbarust_3_the_generated_code_compiles_with_the_data_column`; `crates/corba-interop/tests/ami.rs::{corbarust_5_ami_callback_multiple_outstanding, corbarust_5_ami_polling_get_reply, corbarust_5_ami_mixed_callback_and_polling, corbarust_5_ami_exception_path, corbarust_5_ami_get_reply_unknown_id_errors}`, `crates/corba-interop/tests/ami_generated.rs`; gegen den Bench-Server von omniORB `crates/corba-interop/tests/omniorb_cross_orb.rs::corbarust_5_the_ami_client_calls_an_omniorb_server_by_callback_and_by_polling` (`#[ignore]`, Job `integration-bridges-vendor-corba`).
+**Tests:** `crates/corba-rust/tests/codegen_mapping.rs::{corbarust_5_ami_emits_the_handler_sendc_sendp_and_the_poller, corbarust_5_no_ami_without_the_annotation}`; `crates/corba-rust/tests/compile_check.rs::corbarust_3_the_generated_code_compiles_with_the_data_column`; `crates/corba-interop/tests/ami.rs::{corbarust_5_ami_callback_multiple_outstanding, corbarust_5_ami_polling_get_reply, corbarust_5_ami_mixed_callback_and_polling, corbarust_5_ami_exception_path, corbarust_5_ami_get_reply_unknown_id_errors}`, `crates/corba-interop/tests/ami_generated.rs`, die generierten Stubs einer `@ami`-Operation gegen die GIOP-1.0/1.1-Antwort eines anderen ORB, deren Body auf 4 modulo 8 beginnt, `crates/corba-interop/tests/giop_body_offset.rs::corba_p2_9_4_3_an_ami_reply_of_another_orb_on_four_modulo_eight_is_read_at_its_offset`; gegen den Bench-Server von omniORB `crates/corba-interop/tests/omniorb_cross_orb.rs::corbarust_5_the_ami_client_calls_an_omniorb_server_by_callback_and_by_polling` (`#[ignore]`, Job `integration-bridges-vendor-corba`).
 
 **Status:** done
 
@@ -122,9 +122,9 @@ Implementation:
 
 **Spec:** §8 — `RequestInfo` (SC add/get, forward_reference), benannte Points, `ServiceContextInjector`.
 
-**Repo:** `crates/corba-ccm/src/orb_extensions.rs::RequestInfo`, `InterceptorRegistry`, `ServiceContextInjector`.
+**Repo:** `crates/corba-ccm/src/portable_interceptor.rs::RequestInfo`, `InterceptorRegistry`, `ServiceContextInjector` (re-exported in `crates/corba-ccm/src/orb_extensions.rs`); `crates/corba-interop/src/runtime.rs::{IiopCorbaConnection::with_orb, CorbaServer::set_orb}`.
 
-**Tests:** `crates/corba-ccm/tests/pi_service_contexts.rs::{ots_and_csiv2_service_contexts_route_through_pi, forward_reference_via_receive_other, reply_service_context_injection}`.
+**Tests:** `crates/corba-ccm/tests/pi_service_contexts.rs::{corba_p1_16_4_ots_and_csiv2_service_contexts_route_through_interceptors, corba_p1_16_4_9_server_reply_and_forward_from_send_exception, corba_p1_16_4_13_request_info_validity_and_service_context_rules}`; `crates/corba-interop/tests/portable_interceptors.rs::corba_p1_16_4_interceptors_run_in_the_iiop_request_path`.
 
 **Status:** done
 

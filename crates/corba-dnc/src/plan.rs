@@ -10,6 +10,9 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use crate::connector::ComponentInterfaceDescription;
+use crate::property::Property;
+
 /// `ImplementationDescription` (IDD) — D&C §6.4.
 ///
 /// Describes a concrete component implementation: which artifact,
@@ -60,7 +63,7 @@ pub struct PackagedComponentImplementation {
 ///
 /// Bundle description for a component plus all of its
 /// implementations.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ComponentPackageDescription {
     /// Unique label.
     pub label: String,
@@ -68,6 +71,9 @@ pub struct ComponentPackageDescription {
     pub uuid: String,
     /// Repository ID of the component.
     pub component_id: String,
+    /// The component's interface with its ports (CORBA 3.3 Part 3
+    /// §7.6.2.4), which planning connects.
+    pub realizes: ComponentInterfaceDescription,
     /// Implementations (with selection requirements).
     pub implementations: Vec<ImplementationDescription>,
 }
@@ -76,7 +82,7 @@ pub struct ComponentPackageDescription {
 ///
 /// A package that has already been selected (implementation selection
 /// complete).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PackageConfiguration {
     /// Unique label.
     pub label: String,
@@ -91,7 +97,7 @@ pub struct PackageConfiguration {
 /// `InstanceDeploymentDescription` (IDD instance) — D&C §7.5.
 ///
 /// A concrete instance of a component, with node assignment.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct InstanceDeploymentDescription {
     /// Instance name.
     pub name: String,
@@ -99,8 +105,9 @@ pub struct InstanceDeploymentDescription {
     pub implementation: String,
     /// Target node name.
     pub node: String,
-    /// Configured properties (D&C §7.5 `configProperty`).
-    pub config_props: BTreeMap<String, String>,
+    /// Configured properties (D&C §7.5 `configProperty`), typed (CORBA
+    /// 3.3 Part 3 §7.6.4).
+    pub config_props: Vec<Property>,
     /// Co-location constraint (spec D&C §7.7) — list of other
     /// instance names that this instance must run in the same process
     /// as.
@@ -108,7 +115,7 @@ pub struct InstanceDeploymentDescription {
 }
 
 /// `DeploymentPlan` (DPD) — D&C §7.4.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeploymentPlan {
     /// Unique label.
     pub label: String,
@@ -233,7 +240,7 @@ mod tests {
                 name: "echo1".into(),
                 implementation: "EchoImpl".into(),
                 node: "Node1".into(),
-                config_props: BTreeMap::new(),
+                config_props: Vec::new(),
                 co_locate_with: alloc::vec![],
             }],
             connections: alloc::vec![],

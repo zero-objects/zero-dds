@@ -36,7 +36,7 @@ use zerodds_security::token::DataHolder;
 use zerodds_security_permissions::{
     Governance, Permissions, PermissionsAccessControl, ProtectionKind, minor_code,
 };
-use zerodds_security_rtps::{RTPS_HEADER_LEN, SRTPS_PREFIX};
+use zerodds_security_rtps::{RTPS_HEADER_LEN, is_secured_rtps_message};
 
 use crate::gate::SecurityGateError;
 use crate::gate_crypto::{CryptoLayer, LocalParams};
@@ -2579,7 +2579,7 @@ impl SharedSecurityGate {
         peer_key: &PeerKey,
         wire: &[u8],
     ) -> Result<Vec<u8>, SecurityGateError> {
-        let looks_secured = wire.len() > RTPS_HEADER_LEN && wire[RTPS_HEADER_LEN] == SRTPS_PREFIX;
+        let looks_secured = is_secured_rtps_message(wire);
         let kind = self.message_protection()?;
         if !looks_secured {
             // Passthrough or policy violation — same logic as in the
@@ -2774,7 +2774,7 @@ impl SharedSecurityGate {
         let mut peer_key = [0u8; 12];
         peer_key.copy_from_slice(&bytes[8..20]);
 
-        let looks_secured = bytes.len() > RTPS_HEADER_LEN && bytes[RTPS_HEADER_LEN] == SRTPS_PREFIX;
+        let looks_secured = is_secured_rtps_message(bytes);
         let kind = match self.message_protection() {
             Ok(k) => k,
             Err(e) => {
@@ -2813,6 +2813,28 @@ impl SharedSecurityGate {
         InboundVerdict::LegacyBlocked
     }
 
+    /// Whether `bytes` is an RTPS message protected as a whole: an
+    /// SRTPS_PREFIX follows its RTPS Header or the HeaderExtension behind
+    /// it (DDS-Security 1.2 §10.5.3.3.1 Table 80; a message sent over a
+    /// stream carries its length in a HeaderExtension, DDSI-RTPS 2.5
+    /// §8.3.3).
+    #[must_use]
+    pub fn is_message_protected(bytes: &[u8]) -> bool {
+        is_secured_rtps_message(bytes)
+    }
+
+    /// Whether `bytes` is a protected RTPS message whose tag covers the
+    /// RTPS Header and the HeaderExtension (the flag A of its
+    /// SRTPS_PREFIX, §7.4.6.6) and that has no HeaderExtension. One added
+    /// to such a message would not be the one the sender authenticated,
+    /// and the receiver's check of the tag fails.
+    #[must_use]
+    pub fn authenticates_header_without_extension(bytes: &[u8]) -> bool {
+        zerodds_security_rtps::srtps_prefix_offset(bytes) == Some(RTPS_HEADER_LEN)
+            && zerodds_security_rtps::srtps_prefix_flags(bytes)
+                .is_some_and(|flags| flags & 0x02 != 0)
+    }
+
     /// Inbound message: unwrap if SRTPS_PREFIX is detected, otherwise
     /// passthrough or PolicyViolation.
     ///
@@ -2826,7 +2848,7 @@ impl SharedSecurityGate {
         remote_slot: CryptoHandle,
         wire: &[u8],
     ) -> Result<Vec<u8>, SecurityGateError> {
-        let looks_secured = wire.len() > RTPS_HEADER_LEN && wire[RTPS_HEADER_LEN] == SRTPS_PREFIX;
+        let looks_secured = is_secured_rtps_message(wire);
         let kind = self.message_protection()?;
         match (kind, looks_secured) {
             (ProtectionKind::None, false) => Ok(wire.to_vec()),
@@ -2846,6 +2868,7 @@ mod tests {
     use zerodds_security::logging::{TOPIC_LOG_TOPIC, TOPIC_LOG_TOPIC_V2};
     use zerodds_security_crypto::AesGcmCryptoPlugin;
     use zerodds_security_permissions::parse_governance_xml;
+    use zerodds_security_rtps::SRTPS_PREFIX;
 
     const GOV_RTPS: &str = r#"
 <dds><domain_access_rules>
@@ -4158,6 +4181,80 @@ mod tests {
             InboundVerdict::Accept(_) => {}
             other => panic!("expected Accept, got {other:?}"),
         }
+    }
+
+    /// DDS-Security 1.2 §10.5.3.3.1 Table 80 and DDSI-RTPS 2.5 §8.3.3: the
+    /// SRTPS_PREFIX of a message follows its RTPS Header or the
+    /// HeaderExtension behind it. A message protected in the form without
+    /// AAD that a stream leg gave a HeaderExtension with its length is
+    /// found protected and decoded; what is accepted is the message the
+    /// sender protected, without the HeaderExtension, which no tag covers.
+    /// A timestamp put into that HeaderExtension on the way does not reach
+    /// the receiver. The gate looked for the SRTPS_PREFIX at offset 20
+    /// only: it took such a message as plain and blocked it on a domain
+    /// that requires protection. A plain message with a HeaderExtension is
+    /// blocked there still.
+    #[test]
+    fn security_10_5_3_3_1_classify_inbound_finds_srtps_behind_a_header_extension() {
+        let (alice, bob) = build_pair();
+        let alice_prefix: PeerKey = [0xAA; 12];
+        bob.register_remote_by_guid(
+            alice_prefix,
+            IdentityHandle(1),
+            SharedSecretHandle(1),
+            &alice.local_token().unwrap(),
+        )
+        .unwrap();
+        let mut msg = Vec::new();
+        msg.extend_from_slice(b"RTPS\x02\x05\x01\x02");
+        msg.extend_from_slice(&alice_prefix);
+        // INFO_TS.
+        msg.extend_from_slice(&[0x09, 0x01, 0x08, 0x00, 1, 2, 3, 4, 5, 6, 7, 8]);
+        let wire = alice.transform_outbound(&msg).unwrap();
+        assert_eq!(wire[RTPS_HEADER_LEN], SRTPS_PREFIX);
+
+        let with_extension = |extension: &[u8], rest: &[u8]| {
+            let mut out = wire[..RTPS_HEADER_LEN].to_vec();
+            out.extend_from_slice(extension);
+            out.extend_from_slice(rest);
+            out
+        };
+        // E | L: the messageLength alone.
+        let total = u32::try_from(wire.len() + 8).unwrap().to_le_bytes();
+        let mut extension = alloc::vec![0x00, 0x03, 4, 0];
+        extension.extend_from_slice(&total);
+        let stated = with_extension(&extension, &wire[RTPS_HEADER_LEN..]);
+        assert_eq!(stated[RTPS_HEADER_LEN], 0x00);
+        assert_eq!(stated[RTPS_HEADER_LEN + 8], SRTPS_PREFIX);
+        match bob.classify_inbound(&stated, &NetInterface::Wan) {
+            InboundVerdict::Accept(clear) => assert_eq!(clear, msg),
+            other => panic!("expected Accept, got {other:?}"),
+        }
+        assert_eq!(
+            bob.transform_inbound_from(&alice_prefix, &stated).unwrap(),
+            msg
+        );
+
+        // E | L | T: a timestamp nobody authenticated.
+        let total = u32::try_from(wire.len() + 16).unwrap().to_le_bytes();
+        let mut extension = alloc::vec![0x00, 0x07, 12, 0];
+        extension.extend_from_slice(&total);
+        extension.extend_from_slice(&[0x77; 8]);
+        let stamped = with_extension(&extension, &wire[RTPS_HEADER_LEN..]);
+        match bob.classify_inbound(&stamped, &NetInterface::Wan) {
+            InboundVerdict::Accept(clear) => assert_eq!(clear, msg),
+            other => panic!("expected Accept, got {other:?}"),
+        }
+
+        // Plain behind a HeaderExtension: the domain requires protection.
+        let total = u32::try_from(msg.len() + 8).unwrap().to_le_bytes();
+        let mut extension = alloc::vec![0x00, 0x03, 4, 0];
+        extension.extend_from_slice(&total);
+        let plain = with_extension(&extension, &msg[RTPS_HEADER_LEN..]);
+        assert!(matches!(
+            bob.classify_inbound(&plain, &NetInterface::Wan),
+            InboundVerdict::LegacyBlocked
+        ));
     }
 
     #[test]

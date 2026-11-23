@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-dtls-openssl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DTLS 1.2 (RFC 6347) over UDP on OpenSSL 3.2 or later: pre-shared keys, X.509 certificates and raw public keys (RFC 7250) with RFC 6920 identifiers, as RFC 7252 §9 asks for CoAP."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-dtls-openssl"
+readme = "README.md"
+keywords = ["dtls", "openssl", "coap", "rfc7250", "dds"]
+categories = ["network-programming", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[features]
+# OpenSSL built from source (`openssl-src`) and linked statically, for a
+# host without OpenSSL 3.2 or later.
+vendored = ["openssl/vendored"]
+
+[dependencies]
+# The SSL_CTX/SSL/X509/EVP_PKEY handles, PSK and verify callbacks, DTLS
+# over a custom datagram I/O. RFC 7250 and the security callback are not
+# bound by openssl-sys 0.9.118; `src/ffi.rs` declares them.
+openssl = "0.10.82"
+openssl-sys = "0.9.118"
+foreign-types = "0.3"

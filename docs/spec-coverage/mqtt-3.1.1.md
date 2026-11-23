@@ -7,7 +7,7 @@ Framing (§2.1) mit MQTT 5.0, unterscheidet sich aber im Variable Header /
 Payload: **keine Property-Blocks** (in 5.0 eingeführt), 2-Byte-CONNACK,
 UNSUBACK ohne Reason-Codes, leerer DISCONNECT-Body, kein AUTH-Packet. ZeroDDS
 implementiert 3.1.1 als version-aware Pfad im selben `crates/mqtt-bridge`-Codec
-(`ProtocolVersion::V311`); der Broker (`crates/mqtt-bridge/src/server.rs`) und Client (`net.rs`)
+(`ProtocolVersion::V311`); der Broker (`crates/mqtt-bridge/src/server/`) und Client (`net.rs`)
 handeln die Version pro Verbindung aus dem CONNECT-Protocol-Level aus. Jedes
 Item ist mit Repo + Test belegt; Interop ist live gegen Eclipse Mosquitto 2.0
 (`-V mqttv311`) bewiesen, in beide Richtungen und in beiden Rollen
@@ -16,7 +16,7 @@ Item ist mit Repo + Test belegt; Interop ist live gegen Eclipse Mosquitto 2.0
 Implementation:
 
 - `crates/mqtt-bridge/` — version-aware 3.1.1-Codec (`ProtocolVersion::V311`)
-  + Broker (`crates/mqtt-bridge/src/server.rs`) + Client (`net.rs`); 165 lib-Tests + 6 Broker-E2E +
+  + Broker (`crates/mqtt-bridge/src/server/`) + Client (`net.rs`); 165 lib-Tests + 6 Broker-E2E +
   5 Mosquitto-Live grün.
 
 ---
@@ -29,7 +29,7 @@ Server akzeptiert/verweigert anhand des Levels.
 **Repo:** `crates/mqtt-bridge/src/version.rs::ProtocolVersion` (`V311`/`V5`,
 `level`/`from_level`/`has_properties`/`protocol_name`). Der Broker liest das
 Level aus dem CONNECT-Body und antwortet im passenden Dialekt
-(`crates/mqtt-bridge/src/server.rs::handle_connection`).
+(`crates/mqtt-bridge/src/server/conn.rs::Connection::open`).
 
 **Tests:** `version::tests::{mqtt311_3_1_2_2_level_round_trip, mqtt311_3_1_2_2_unsupported_levels_rejected,
 mqtt311_3_1_2_2_only_v5_has_properties}`.
@@ -91,7 +91,7 @@ Code, keine Properties).
 
 **Repo:** `control_packets::{encode_ack_body_v, decode_ack_body}` (`V311`
 emittiert nur den Packet-Identifier; der gemeinsame Decoder liest die
-Short-Form). QoS-2-Flow im Broker: `crates/mqtt-bridge/src/server.rs` (PUBREC→PUBREL→PUBCOMP).
+Short-Form). QoS-2-Flow im Broker: `crates/mqtt-bridge/src/server/conn.rs` (PUBREC→PUBREL→PUBCOMP).
 
 **Tests:** `control_packets::tests::mqtt311_3_4_v311_ack_is_packet_id_only`; In-Process
 `broker_server_e2e::mqtt5_4_qos2_exactly_once_delivery`.
@@ -142,7 +142,7 @@ decode_unsubscribe_body_v, encode_unsuback_body_v, decode_unsuback_body_v}`.
 
 **Spec:** §3.12-§3.13 — body-lose Keep-Alive-Packets. Identisch zu 5.0.
 
-**Repo:** `crates/mqtt-bridge/src/server.rs` (PINGREQ → PINGRESP, Body-los), `crates/mqtt-bridge/src/net.rs::MqttClient::ping` (sendet PINGREQ und prüft die Antwort gegen §3.13), Wire-Konstanten in `crates/mqtt-bridge/src/packet.rs::ControlPacketType`, Keep-Alive-Regel in `crates/mqtt-bridge/src/keep_alive.rs::KeepAliveTracker`.
+**Repo:** `crates/mqtt-bridge/src/server/conn.rs` (PINGREQ → PINGRESP, Body-los), `crates/mqtt-bridge/src/net.rs::MqttClient::ping` (sendet PINGREQ und prüft die Antwort gegen §3.13), Wire-Konstanten in `crates/mqtt-bridge/src/packet.rs::ControlPacketType`, Keep-Alive-Regel in `crates/mqtt-bridge/src/keep_alive.rs::KeepAliveTracker`.
 
 **Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::mqtt5_4_pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive` — vier PINGREQ je Protokoll-Version (3.1.1 und 5.0) bei angekündigtem Keep Alive von 1 s; jede Antwort muss ein PINGRESP mit leerem Body und Null-Flags sein und innerhalb der Periode zurückkommen. Die 1,5-fache Ablauf-Regel selbst: `crates/mqtt-bridge/src/keep_alive.rs::tests::mqtt5_4_1_small_keep_alive_expires_after_1_5x`, `crates/mqtt-bridge/src/keep_alive.rs::tests::mqtt5_4_1_record_packet_resets_timer`, `crates/mqtt-bridge/src/keep_alive.rs::tests::mqtt5_4_1_keep_alive_zero_is_disabled`.
 
@@ -165,7 +165,7 @@ das Fixed-Header-Paar `0xE0 0x00` ist das ganze Packet.
 **Spec:** §4 — Session-State, Subscriptions, QoS-Flow, Retained, Will. Identische
 Semantik zu 5.0; nur das Wire-Encoding der Replies ist 3.1.1.
 
-**Repo:** `crates/mqtt-bridge/src/server.rs::MqttBrokerServer` + `net.rs::MqttClient` (beide
+**Repo:** `crates/mqtt-bridge/src/server/mod.rs::MqttBrokerServer` + `net.rs::MqttClient` (beide
 version-aware) über der gemeinsamen `crates/mqtt-bridge/src/broker.rs`-Engine.
 
 **Tests:** In-Process `broker_server_e2e::{mqtt5_4_cross_version_v5_publishes_v311_subscribes,

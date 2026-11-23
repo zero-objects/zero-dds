@@ -1,0 +1,40 @@
+# packaging/docker/ws-bridged/ws-bridged.yaml
+# The configuration the zerodds/ws-bridged image carries
+# (/etc/zerodds/ws-bridged.yaml). Spec: zerodds-ws-bridge-1.0 §3, §7.2, §11.
+#
+# A published port (`docker run -p 8080:8080`) reaches the container from
+# outside its loopback, so the daemon listens on 0.0.0.0, and `auth.mode:
+# none` is served on a loopback address only (§7.2). The image therefore
+# runs `bearer` with the token from the environment:
+#
+#   docker run -e WS_BRIDGE_TOKEN=<secret> -p 8080:8080 zerodds/ws-bridged:1.0
+#
+# Without WS_BRIDGE_TOKEN the token is empty and the daemon does not start
+# (exit 1). For other topics, TLS, `jwt` or `mtls`, mount a configuration
+# of your own over this file (all keys: packaging/linux/configs/ws-bridged.yaml.example,
+# man 5 zerodds-ws-bridged.yaml).
+
+listen: "0.0.0.0:8080"
+domain: 0
+log_level: info
+
+auth:
+  mode: "bearer"
+  bearer_token: "${WS_BRIDGE_TOKEN}"
+  bearer_subject: "service-account"
+
+metrics:
+  enabled: false
+  listen: "0.0.0.0:9091"
+  path: "/metrics"
+
+topics:
+  - name: "Chat::Message"
+    direction: "bidir"
+    ws_path: "/chat"
+    qos:
+      reliability: "reliable"
+      durability: "volatile"
+    acl:
+      read: ["service-account"]
+      write: ["service-account"]

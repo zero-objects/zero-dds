@@ -7,11 +7,12 @@
 //! calls over the UDS transport. Vendor spec: `docs/specs/zerodds-uiop-transport-1.0.md`.
 
 use std::time::Duration;
+use zerodds_corba_interop::string_argument;
 
+use zerodds_corba_interop::decode_string_body;
 use zerodds_corba_interop::runtime::{
     CorbaServer, IiopCorbaConnection, object_reference_from_ior, stringify_object_ref_uds,
 };
-use zerodds_corba_interop::{decode_string_body, encode_string_body};
 use zerodds_corba_rust::CorbaConnection;
 use zerodds_wire::Endianness;
 
@@ -31,7 +32,7 @@ fn uiop_echo_roundtrip() {
     let server = CorbaServer::new();
     server.register(b"Echo", |op, body, _e| {
         if op == "ping" {
-            zerodds_corba_rust::SkeletonResult::Reply(body.to_vec())
+            zerodds_corba_rust::SkeletonResult::Reply(body.bytes().to_vec())
         } else {
             zerodds_corba_rust::SkeletonResult::BadOperation
         }
@@ -55,7 +56,7 @@ fn uiop_echo_roundtrip() {
     // Multiple calls over the SAME (pooled) UDS connection.
     for _ in 0..5 {
         let (reply, _e) = conn
-            .invoke(&obj, "ping", Endianness::Big, &encode_string_body("hi-uds"))
+            .invoke(&obj, "ping", Endianness::Big, &string_argument("hi-uds"))
             .unwrap();
         assert_eq!(decode_string_body(&reply).unwrap(), "hi-uds");
     }

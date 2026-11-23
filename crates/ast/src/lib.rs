@@ -29,6 +29,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub mod cidl;
 mod decimal;
 pub mod edit;
 pub mod error;

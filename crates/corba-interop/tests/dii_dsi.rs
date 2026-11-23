@@ -26,7 +26,7 @@ fn dii_invoke_add_returns_sum() {
     let server = CorbaServer::new();
     server.register(b"Bench", |op, body, e| {
         if op == "add" {
-            let mut r = Reader::new(body, e);
+            let mut r = body.reader(e);
             let a = r.read_u32().unwrap() as i32;
             let b = r.read_u32().unwrap() as i32;
             let mut w = Writer::new(e);

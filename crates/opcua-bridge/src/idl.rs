@@ -15,7 +15,7 @@ use zerodds_dcps::serialized_type::SerializedTypeSupport;
 use zerodds_idl_compose::PathLoader;
 use zerodds_types::TypeObject;
 use zerodds_types::dynamic::DynamicType;
-use zerodds_types::from_ast::complete_type_object;
+use zerodds_types::from_ast::{complete_type_object, dependency_type_objects};
 
 /// An IDL file failed to compile, or a config-named type is not in it.
 #[derive(Debug, Clone)]
@@ -160,12 +160,29 @@ pub fn type_support_for(
             });
         }
     };
-    SerializedTypeSupport::from_type_object(type_name, &bytes, keyed, extensibility).map_err(|e| {
-        IdlError::TypeObject {
+    // The TypeObjects of the types the type refers to by hash (a
+    // structure, a union or an enumeration as a member): without them the
+    // type support cannot rebuild the type.
+    let dependencies = dependency_type_objects(dt.ast(), dt.id())
+        .map_err(|e| IdlError::TypeObject {
+            name: type_name.to_string(),
+            message: format!("{e:?}"),
+        })?
+        .into_iter()
+        .map(|object| {
+            TypeObject::Complete(object)
+                .to_bytes_le()
+                .map_err(|e| IdlError::TypeObject {
+                    name: type_name.to_string(),
+                    message: format!("{e:?}"),
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    SerializedTypeSupport::from_type_objects(type_name, &bytes, &dependencies, keyed, extensibility)
+        .map_err(|e| IdlError::TypeObject {
             name: type_name.to_string(),
             message: e,
-        }
-    })
+        })
 }
 
 /// Whether `ty` has one or more `@key` fields — the same test
@@ -202,6 +219,24 @@ mod tests {
         let ast = compile(&path, &[]).expect("compile");
         let support = type_support_for(&[ast], "Point").expect("type support");
         assert!(support.is_keyed());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn opcuabridge_5_1_a_type_with_struct_enum_and_union_members_has_its_type_support() {
+        let dir = std::env::temp_dir().join(format!("zd-opcua-idl-test3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = write_idl(
+            &dir,
+            "nested.idl",
+            "@final struct Point { long x; long y; };
+             enum ModeKind { OFF, ON };
+             union Choice switch (long) { case 1: long a; case 2: Point p; };
+             struct Track { Point at; ModeKind mode; Choice pick; };",
+        );
+        let ast = compile(&path, &[]).expect("compile");
+        let support = type_support_for(&[ast], "Track").expect("type support");
+        assert!(!support.is_keyed());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

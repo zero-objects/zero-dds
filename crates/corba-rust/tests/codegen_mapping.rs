@@ -113,7 +113,10 @@ fn corbarust_3_an_interface_is_a_trait_a_stub_and_a_dispatch_function() {
     );
     has(&code, "pub struct CalculatorStub");
     has(&code, "impl Calculator for CalculatorStub");
-    has(&code, "self.connection.invoke(&self.object_ref, \"add\"");
+    has(
+        &code,
+        "self.connection.invoke_aligned(&self.object_ref, \"add\"",
+    );
     has(&code, "pub fn dispatch_calculator(servant: &dyn Calculator");
 }
 
@@ -352,5 +355,38 @@ fn ccm_6_9_a_component_trait_carries_the_configuration_complete_lifecycle_operat
     assert!(
         out.contains("TRADER_REPOSITORY_ID"),
         "the component keeps no repository identifier:\n{out}"
+    );
+}
+
+/// §4.1 and CORBA 3.3 Part 1 Annex A.6: a `factory` initialiser whose
+/// value the binding does not build raises `NO_IMPLEMENT` with standard
+/// minor code 1 ("Missing local value implementation"), `COMPLETED_NO`.
+#[test]
+fn corbarust_4_1_a_factory_initialiser_raises_no_implement_minor_1() {
+    let code = run("valuetype Point { public long x; factory make(in long x); };");
+    let init = from(&code, "pub fn point_init_make(x: i32)");
+    has(
+        init,
+        "zerodds_corba_rust::CorbaException::omg(zerodds_corba_rust::SystemExceptionKind::NoImplement, 1, zerodds_corba_rust::CompletionStatus::No)",
+    );
+}
+
+/// §3.1 and CORBA 3.3 Part 1 §8.12.3.1: the skeleton answers a user
+/// exception the operation does not declare with `UNKNOWN`, standard
+/// minor code 1, `COMPLETED_YES`; arguments that do not unmarshal with
+/// `MARSHAL` `COMPLETED_NO`.
+#[test]
+fn corbarust_3_1_an_undeclared_user_exception_is_unknown_minor_1_completed_yes() {
+    let code = run("exception A { long a; }; exception B { long b; };
+         interface I { void f(in long x) raises(A); void g() raises(B); };");
+    let arm = from(&code, "\"f\" => {");
+    let arm = &arm[..arm.find("\"g\" => {").expect("the arm of g")];
+    has(
+        arm,
+        "zerodds_corba_rust::CorbaException::omg(zerodds_corba_rust::SystemExceptionKind::Unknown, 1u32, zerodds_corba_rust::CompletionStatus::Yes)",
+    );
+    has(
+        arm,
+        "zerodds_corba_rust::CorbaException::system(zerodds_corba_rust::SystemExceptionKind::Marshal, 0u32, zerodds_corba_rust::CompletionStatus::No)",
     );
 }

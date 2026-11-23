@@ -18,14 +18,6 @@
 #include "zerodds_endpoint.h"
 #include "sample_sensor.h"
 
-static void fill(sensor_reading *s)
-{
-    s->id = 0xA1B2C3D4uL; s->kind = 0x1234u; s->flags = 0x5Au; s->value = 3.5f;
-    s->stamp.hi = 0x01020304uL; s->stamp.lo = 0x05060708uL;
-    strcpy(s->label, "bay-12");
-    s->raw[0] = 0xDE; s->raw[1] = 0xAD; s->raw[2] = 0xBE; s->raw[3] = 0xEF; s->raw_len = 4;
-}
-
 static int stuffing_selfcheck(void)
 {
     /* 0x7E -> 0x7D 0x5E, 0x7D -> 0x7D 0x5D, also in the addresses. */
@@ -91,7 +83,7 @@ int main(int argc, char **argv)
     if (stuffing_selfcheck() != 0 || integrity_selfcheck() != 0) { return 1; }
 
     /* endpoint: sample -> XRCE frame -> serial (HDLC) frame */
-    fill(&tx);
+    sensor_fill_golden(&tx);
     zdw_writer_init(&w, body, sizeof(body), ZDW_LE);
     if (sensor_encode(&w, &tx) != ZDW_OK) { fprintf(stderr, "encode\n"); return 1; }
     blen = w.len;

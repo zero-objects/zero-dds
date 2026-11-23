@@ -323,59 +323,86 @@ fn decode_code_set_component(r: &mut Reader<'_>) -> Result<CodeSetComponent, Cdr
 /// Well-known `CodeSetId` fallbacks for the negotiation (OSF registry).
 const CS_UTF_8: u32 = 0x0501_0001;
 const CS_UTF_16: u32 = 0x0001_0109;
+const CS_ISO_8859_1: u32 = 0x0001_0001;
 
 impl CodeSetComponent {
-    /// Selects the transmission codeset between client and server for *one*
-    /// codeset axis (char OR wchar), per the algorithm from spec §13.10.2.6:
+    /// Selects the transmission code set between client and server for
+    /// *one* axis (char or wchar), the algorithm of CORBA 3.3 Part 2
+    /// §7.10.2.6:
     ///
-    /// 1. Native match → native (no conversion).
-    /// 2. Server-native ∈ client conversion → server-native (client converts).
-    /// 3. Client-native ∈ server conversion → client-native (server converts).
-    /// 4. Common conversion codeset → that one.
-    /// 5. `fallback` (e.g. UTF-8/UTF-16) supported by both → `fallback`.
-    /// 6. otherwise incompatible → `None` (caller throws `CODESET_INCOMPATIBLE`).
+    /// 1. `CNCS == SNCS` → the native code set (no conversion).
+    /// 2. `SNCS ∈ CCCS` → `SNCS` (the client converts).
+    /// 3. `CNCS ∈ SCCS` → `CNCS` (the server converts).
+    /// 4. `CCCS ∩ SCCS` not empty → the common code set "most preferable to
+    ///    the server": the first of the server's conversion code sets,
+    ///    which the component lists "in order of preference" (§7.10.2.4).
+    /// 5. `compatible(CNCS, SNCS)` → `fallback` (UTF-8 for char, UTF-16 for
+    ///    wchar), whether or not either side lists it.
+    /// 6. Otherwise `None`: the caller raises `CODESET_INCOMPATIBLE` with
+    ///    minor code 1.
     ///
-    /// `self` = client component, `server` = server component (from its IOR).
+    /// `self` is the client's component, `server` the one from the IOR;
+    /// [`zerodds_corba_giop::code_set_registry::compatible`] is the test of
+    /// step 5. A null native code set (0) matches nothing.
     #[must_use]
     pub fn negotiate(&self, server: &CodeSetComponent, fallback: u32) -> Option<u32> {
         let cn = self.native_code_set;
         let sn = server.native_code_set;
-        let supports = |c: &CodeSetComponent, id: u32| {
-            id != 0 && (c.native_code_set == id || c.conversion_code_sets.contains(&id))
-        };
-        // 1. Native match.
         if cn != 0 && cn == sn {
             return Some(cn);
         }
-        // 2. Client can convert to server-native.
         if sn != 0 && self.conversion_code_sets.contains(&sn) {
             return Some(sn);
         }
-        // 3. Server can convert to client-native.
         if cn != 0 && server.conversion_code_sets.contains(&cn) {
             return Some(cn);
         }
-        // 4. Common conversion codeset.
-        if let Some(common) = self
+        if let Some(common) = server
             .conversion_code_sets
             .iter()
-            .find(|id| server.conversion_code_sets.contains(id))
+            .find(|id| **id != 0 && self.conversion_code_sets.contains(id))
         {
             return Some(*common);
         }
-        // 5. Universal fallback, if both carry it (as native OR conversion).
-        if supports(self, fallback) && supports(server, fallback) {
-            return Some(fallback);
+        zerodds_corba_giop::code_set_registry::compatible(cn, sn).then_some(fallback)
+    }
+}
+
+/// The transmission code sets for a connection (Part 2 §7.10.2.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransmissionCodeSets {
+    /// TCS-C, the code set of `char` and `string` data.
+    pub char_data: u32,
+    /// TCS-W, the code set of `wchar` and `wstring` data; `None` when the
+    /// server names no wchar code set (§7.10.2.4: "there is no default
+    /// wchar code set"), see [`Self::wchar_or_exception_minor`].
+    pub wchar_data: Option<u32>,
+    /// Whether the IOR carried the code set component.
+    pub from_component: bool,
+}
+
+impl TransmissionCodeSets {
+    /// The TCS-W for wide data, or the minor code of the `INV_OBJREF`
+    /// the client raises when it has to marshal wide data (§7.10.2.4,
+    /// §7.10.2.6): 2 when the reference has no code set component, 1 when
+    /// the component names no wchar code set.
+    ///
+    /// # Errors
+    /// The `INV_OBJREF` minor code.
+    pub fn wchar_or_exception_minor(&self) -> Result<u32, u32> {
+        match (self.wchar_data, self.from_component) {
+            (Some(tcs), _) => Ok(tcs),
+            (None, false) => Err(2),
+            (None, true) => Err(1),
         }
-        None
     }
 }
 
 impl CodeSetComponentInfo {
     /// Negotiates both axes (char + wchar) against the server component from
     /// its IOR. `self` = client capabilities. Returns `(TCSC, TCSW)` or
-    /// `None` if one of the axes is incompatible (→ `CODESET_INCOMPATIBLE`).
-    /// Fallbacks: UTF-8 for `char`, UTF-16 for `wchar`.
+    /// `None` if one of the axes is incompatible (→ `CODESET_INCOMPATIBLE`
+    /// minor 1). Fallbacks: UTF-8 for `char`, UTF-16 for `wchar`.
     #[must_use]
     pub fn negotiate(&self, server: &CodeSetComponentInfo) -> Option<(u32, u32)> {
         let tcsc = self
@@ -385,6 +412,64 @@ impl CodeSetComponentInfo {
             .for_wchar_data
             .negotiate(&server.for_wchar_data, CS_UTF_16)?;
         Some((tcsc, tcsw))
+    }
+
+    /// The transmission code sets for a reference whose IIOP profile
+    /// carries `server` as its `TAG_CODE_SETS` component, or none
+    /// (Part 2 §7.10.2.4, §7.10.2.6): without the component the server
+    /// supports ISO 8859-1 for char data and no wchar data; a server that
+    /// names no native wchar code set (null) has no TCS-W, also when it
+    /// lists wchar conversion code sets — §7.10.2.6 requires a server
+    /// with wide character data to specify its native wchar code set, "if
+    /// one is not specified, then the client-side ORB raises exception
+    /// INV_OBJREF, with standard minor code set to 1"
+    /// ([`TransmissionCodeSets::wchar_or_exception_minor`]). The null
+    /// native set "possibly with ... conversion code sets" of §7.10.2.4
+    /// is taken for char data, where §7.10.2.6 reads it as ISO 8859-1.
+    ///
+    /// # Errors
+    /// `CODESET_INCOMPATIBLE` minor 1 (returned as `1`) when an axis has
+    /// no transmission code set.
+    pub fn transmission_code_sets(
+        &self,
+        server: Option<&CodeSetComponentInfo>,
+    ) -> Result<TransmissionCodeSets, u32> {
+        let Some(server) = server else {
+            let latin1 = CodeSetComponent {
+                native_code_set: CS_ISO_8859_1,
+                conversion_code_sets: Vec::new(),
+            };
+            return Ok(TransmissionCodeSets {
+                char_data: self
+                    .for_char_data
+                    .negotiate(&latin1, CS_UTF_8)
+                    .ok_or(1u32)?,
+                wchar_data: None,
+                from_component: false,
+            });
+        };
+        // §7.10.2.6: "If a server's native char code set is not specified
+        // in the IOR multi-component profile, then it is considered to be
+        // ISO 8859-1".
+        let mut server_char = server.for_char_data.clone();
+        if server_char.native_code_set == 0 {
+            server_char.native_code_set = CS_ISO_8859_1;
+        }
+        let char_data = self
+            .for_char_data
+            .negotiate(&server_char, CS_UTF_8)
+            .ok_or(1u32)?;
+        let w = &server.for_wchar_data;
+        let wchar_data = if w.native_code_set == 0 {
+            None
+        } else {
+            Some(self.for_wchar_data.negotiate(w, CS_UTF_16).ok_or(1u32)?)
+        };
+        Ok(TransmissionCodeSets {
+            char_data,
+            wchar_data,
+            from_component: true,
+        })
     }
 }
 
@@ -551,6 +636,90 @@ mod tests {
             for_wchar_data: cs(0x0001_0003, &[]),
         };
         assert_eq!(client.negotiate(&server), None);
+    }
+
+    /// §7.10.2.6 step 4: of several common conversion code sets the one
+    /// "most preferable to the server", its conversion code sets being
+    /// "listed in order of preference" (§7.10.2.4).
+    #[test]
+    fn corba_p2_7_10_2_6_intermediate_set_is_the_servers_most_preferred() {
+        let client = cs(0x0003_0001, &[0x0001_0001, CS_UTF_8]);
+        let server = cs(0x0003_0010, &[CS_UTF_8, 0x0001_0001]);
+        assert_eq!(client.negotiate(&server, CS_UTF_8), Some(CS_UTF_8));
+        let server = cs(0x0003_0010, &[0x0001_0001, CS_UTF_8]);
+        assert_eq!(client.negotiate(&server, CS_UTF_8), Some(0x0001_0001));
+    }
+
+    /// §7.10.2.6 step 5: the fallback is taken when the native code sets
+    /// are compatible, whether or not either side lists it; UCS-2 and
+    /// UTF-16 encode the same character set.
+    #[test]
+    fn corba_p2_7_10_2_6_the_fallback_needs_compatible_natives() {
+        let client = cs(0x0001_0100, &[]);
+        let server = cs(0x0001_0104, &[]);
+        assert_eq!(client.negotiate(&server, CS_UTF_16), Some(CS_UTF_16));
+    }
+
+    /// §7.10.2.6: native code sets of different character sets and no
+    /// conversion in common: `CODESET_INCOMPATIBLE` minor 1 (`None`).
+    #[test]
+    fn corba_p2_7_10_2_6_incompatible_character_sets_raise_codeset_incompatible_1() {
+        let client = cs(0x0001_0001, &[]);
+        let server = cs(CS_UTF_8, &[]);
+        assert_eq!(client.negotiate(&server, CS_UTF_8), None);
+        let info = |c: CodeSetComponent| CodeSetComponentInfo {
+            for_char_data: c,
+            for_wchar_data: cs(CS_UTF_16, &[]),
+        };
+        let server = info(cs(CS_UTF_8, &[]));
+        assert_eq!(
+            info(cs(0x0001_0001, &[])).transmission_code_sets(Some(&server)),
+            Err(1)
+        );
+    }
+
+    /// §7.10.2.4, §7.10.2.6: without the code set component the server
+    /// takes ISO 8859-1 for char data and no wchar data (`INV_OBJREF`
+    /// minor 2 for wide data); a null native char code set is ISO 8859-1;
+    /// a component without wchar code sets gives no TCS-W (`INV_OBJREF`
+    /// minor 1 for wide data).
+    #[test]
+    fn corba_p2_7_10_2_4_defaults_without_the_component_or_a_wchar_set() {
+        let client = CodeSetComponentInfo {
+            for_char_data: cs(CS_UTF_8, &[0x0001_0001]),
+            for_wchar_data: cs(CS_UTF_16, &[]),
+        };
+        let tcs = client.transmission_code_sets(None).unwrap();
+        assert_eq!(tcs.char_data, 0x0001_0001);
+        assert_eq!(tcs.wchar_or_exception_minor(), Err(2));
+        let server = CodeSetComponentInfo {
+            for_char_data: cs(0, &[]),
+            for_wchar_data: cs(0, &[]),
+        };
+        let tcs = client.transmission_code_sets(Some(&server)).unwrap();
+        assert_eq!(tcs.char_data, 0x0001_0001);
+        assert_eq!(tcs.wchar_or_exception_minor(), Err(1));
+        // §7.10.2.6: no native wchar code set is INV_OBJREF minor 1, also
+        // with wchar conversion code sets, one of them the client's
+        // native set or UTF-16; never CODESET_INCOMPATIBLE.
+        for conversions in [&[CS_UTF_16][..], &[0x0001_0100, CS_UTF_16]] {
+            let server = CodeSetComponentInfo {
+                for_char_data: cs(CS_UTF_8, &[]),
+                for_wchar_data: cs(0, conversions),
+            };
+            let tcs = client.transmission_code_sets(Some(&server)).unwrap();
+            assert_eq!(tcs.char_data, CS_UTF_8);
+            assert_eq!(tcs.wchar_or_exception_minor(), Err(1), "{conversions:?}");
+        }
+        let server = CodeSetComponentInfo {
+            for_char_data: cs(CS_UTF_8, &[]),
+            for_wchar_data: cs(CS_UTF_16, &[]),
+        };
+        let tcs = client.transmission_code_sets(Some(&server)).unwrap();
+        assert_eq!(
+            (tcs.char_data, tcs.wchar_or_exception_minor()),
+            (CS_UTF_8, Ok(CS_UTF_16))
+        );
     }
 
     #[test]

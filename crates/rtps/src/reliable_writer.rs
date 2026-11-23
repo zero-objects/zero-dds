@@ -66,13 +66,24 @@ pub const DEFAULT_HEARTBEAT_PERIOD: Duration = Duration::from_millis(100);
 const MAX_REMEMBERED_GSNS: usize = 4096;
 
 /// Default flow-control window of a writer with reliable readers: octets
-/// of serialized payload written and not yet acknowledged by every one of
-/// them ([`ReliableWriter::set_unacked_window`]). Cyclone DDS holds its
-/// writers to 500 kB unacknowledged (`WhcHigh`). Without a window a
+/// of serialized payload written, still in the writer's history and not yet
+/// acknowledged by every one of them ([`ReliableWriter::set_unacked_window`]).
+/// A change KEEP_LAST replaced leaves the window with the history (DDS 1.4
+/// §2.2.3.18: the service keeps the latest `depth` values and discards the
+/// older ones), so the window holds a KEEP_ALL writer and a KEEP_LAST writer
+/// only as far as its history reaches. Without a window a
 /// KEEP_ALL writer of 100 000 1 kB samples put up to 100 MB on its way to a
 /// reader with a 1 MB receive buffer, and the reader's kernel dropped tens
 /// of thousands of datagrams per 15 s on the Linux test host.
-pub const DEFAULT_UNACKED_WINDOW: usize = 512 * 1024;
+///
+/// With the specification's `heartbeatResponseDelay` of 500 ms a reader
+/// acknowledges twice a second, so a writer moves one window per 500 ms.
+/// 8 MiB is the largest of five sizes measured on the Linux test host
+/// (`net.core.rmem_max` 4 MiB) at which the reader's kernel dropped no
+/// datagram in a RELIABLE cell of 64 octets, 1 KiB or 64 KiB; from 16 MiB
+/// on it dropped datagrams of the 64 KiB samples. Cyclone DDS holds its
+/// writers to 500 kB (`WhcHigh`) and has its readers answer at once.
+pub const DEFAULT_UNACKED_WINDOW: usize = 8 * 1024 * 1024;
 
 /// §8.4.7.1 "Default Timing-Related Values":
 /// `nackResponseDelay.nanosec = 200 * 1000 * 1000`, 200 ms, "used as the
@@ -256,8 +267,9 @@ pub struct ReliableWriter {
     unacked_window: usize,
     /// The changes written that some reliable reader has not acknowledged
     /// yet, oldest first, with the length of each payload. A change
-    /// evicted from the history before it was acknowledged stays here
-    /// until it is: it went out and holds room on the way to the reader.
+    /// KEEP_LAST replaced in the history leaves here with it: the writer
+    /// cannot send it again, and a KEEP_LAST writer does not wait for
+    /// values it no longer keeps.
     unacked: alloc::collections::VecDeque<(SequenceNumber, usize)>,
     /// The sum of the lengths in `unacked`.
     unacked_bytes: usize,
@@ -267,6 +279,9 @@ pub struct ReliableWriter {
     /// The readers the next change staged is addressed to; see
     /// [`Self::set_next_destination_readers`].
     next_destination_readers: Option<alloc::sync::Arc<[Guid]>>,
+    /// What the content filters made of the next change a write stages;
+    /// see [`Self::set_next_filter_outcomes`].
+    next_filter_outcomes: Option<alloc::sync::Arc<[crate::content_filter_info::FilterOutcome]>>,
 }
 
 /// Configuration at creation.
@@ -354,7 +369,7 @@ impl ReliableWriter {
         let filtered_readers = cfg
             .reader_proxies
             .iter()
-            .filter(|p| p.filter().is_some())
+            .filter(|p| p.is_filtered())
             .count();
         let proxy_targets = cfg.reader_proxies.iter().map(proxy_targets_of).collect();
         Self {
@@ -394,12 +409,13 @@ impl ReliableWriter {
             unacked_bytes: 0,
             ack_requested: false,
             next_destination_readers: None,
+            next_filter_outcomes: None,
         }
     }
 
     /// Sets the flow-control window: how many octets of serialized
-    /// payload may be written and not yet acknowledged by every reliable
-    /// reader before [`Self::window_full`] says so. `0` sets none. The
+    /// payload may be in the history and not yet acknowledged by every
+    /// reliable reader before [`Self::window_full`] says so. `0` sets none. The
     /// window counts only while the writer has a reliable reader; a
     /// BEST_EFFORT reader acknowledges nothing.
     pub fn set_unacked_window(&mut self, octets: usize) {
@@ -455,6 +471,15 @@ impl ReliableWriter {
     pub fn request_heartbeat(&mut self) {
         self.ack_requested = true;
         self.last_heartbeat = None;
+    }
+
+    /// Takes off `unacked` the change KEEP_LAST replaced in the history.
+    fn release_replaced_from_window(&mut self, sn: SequenceNumber) {
+        if let Ok(index) = self.unacked.binary_search_by_key(&sn, |&(at, _)| at)
+            && let Some((_, len)) = self.unacked.remove(index)
+        {
+            self.unacked_bytes = self.unacked_bytes.saturating_sub(len);
+        }
     }
 
     /// Takes off `unacked` what every reliable reader has acknowledged.
@@ -916,7 +941,8 @@ impl ReliableWriter {
     /// longer than [`Self::fragment_size_for`].
     #[must_use]
     fn needs_fragmentation(&self, sn: SequenceNumber, peer: Guid, payload: &[u8]) -> bool {
-        if payload.is_empty() {
+        // A filter notice goes without the payload.
+        if payload.is_empty() || self.is_filter_notice(sn, peer) {
             return false;
         }
         let len = u32::try_from(payload.len()).unwrap_or(u32::MAX);
@@ -1067,7 +1093,7 @@ impl ReliableWriter {
         if proxy.expects_inline_qos() {
             self.inline_qos_readers += 1;
         }
-        if proxy.filter().is_some() {
+        if proxy.is_filtered() {
             self.filtered_readers += 1;
         }
         if let Some(idx) = self
@@ -1078,7 +1104,7 @@ impl ReliableWriter {
             if self.reader_proxies[idx].expects_inline_qos() {
                 self.inline_qos_readers -= 1;
             }
-            if self.reader_proxies[idx].filter().is_some() {
+            if self.reader_proxies[idx].is_filtered() {
                 self.filtered_readers -= 1;
             }
             self.proxy_targets[idx] = proxy_targets_of(&proxy);
@@ -1103,7 +1129,7 @@ impl ReliableWriter {
         if proxy.expects_inline_qos() {
             self.inline_qos_readers -= 1;
         }
-        if proxy.filter().is_some() {
+        if proxy.is_filtered() {
             self.filtered_readers -= 1;
         }
         // What only it had left to acknowledge holds no room any more.
@@ -1208,6 +1234,45 @@ impl ReliableWriter {
     /// was, so a caller sets it before the write and clears it after.
     pub fn set_next_destination_readers(&mut self, readers: Option<Vec<Guid>>) {
         self.next_destination_readers = readers.map(alloc::sync::Arc::from);
+    }
+
+    /// Hands the next sample this writer stages the outcomes of the
+    /// content filters applied to it (see
+    /// [`CacheChange::filter_outcomes`]); used up by the next write, like
+    /// [`Self::set_next_destination_readers`]. A dispose or an unregister
+    /// takes none: it goes to every reader (DDSI-RTPS 2.5 §8.7.4).
+    pub fn set_next_filter_outcomes(
+        &mut self,
+        outcomes: Option<Vec<crate::content_filter_info::FilterOutcome>>,
+    ) {
+        self.next_filter_outcomes = outcomes
+            .filter(|o| !o.is_empty())
+            .map(alloc::sync::Arc::from);
+    }
+
+    /// Sets the signature of the content filter this writer applies for
+    /// the matched reader `reader` (DDSI-RTPS 2.5 §8.7.3), `None` when it
+    /// applies none. `false` when no such reader is matched.
+    pub fn set_reader_filter_signature(
+        &mut self,
+        reader: Guid,
+        signature: Option<crate::content_filter_info::FilterSignature>,
+    ) -> bool {
+        let Some(proxy) = self
+            .reader_proxies
+            .iter_mut()
+            .find(|p| p.remote_reader_guid == reader)
+        else {
+            return false;
+        };
+        let was = proxy.is_filtered();
+        proxy.set_filter_signature(signature);
+        match (was, proxy.is_filtered()) {
+            (false, true) => self.filtered_readers += 1,
+            (true, false) => self.filtered_readers -= 1,
+            _ => {}
+        }
+        true
     }
 
     fn write_staged(
@@ -1472,6 +1537,7 @@ impl ReliableWriter {
         // Taken first, so that a write that fails after this point does not
         // leave its addressees for the next one.
         let destination_readers = self.next_destination_readers.take();
+        let filter_outcomes = self.next_filter_outcomes.take();
         let sn_value = self
             .next_sn
             .checked_add(1)
@@ -1531,7 +1597,8 @@ impl ReliableWriter {
                     .with_group(group)
                     .with_non_standard_payload(non_standard)
                     .with_destination(destination)
-                    .with_destination_readers(destination_readers),
+                    .with_destination_readers(destination_readers)
+                    .with_filter_outcomes(filter_outcomes),
             )
             .map_err(|_| {
                 // The number belongs to a change that does not exist: give it
@@ -1542,12 +1609,13 @@ impl ReliableWriter {
                     message: "history cache full or duplicate",
                 }
             })?;
-        if let Some(evicted_change) = evicted
-            && self.payload_pool.len() < self.payload_pool_cap
-        {
-            self.payload_pool.push(evicted_change.payload);
+        if let Some(evicted_change) = evicted {
+            self.release_replaced_from_window(evicted_change.sequence_number);
+            // Pool full (typically not in steady state): the Arc drops.
+            if self.payload_pool.len() < self.payload_pool_cap {
+                self.payload_pool.push(evicted_change.payload);
+            }
         }
-        // otherwise drop (pool full — typically not in steady state).
         if self.unacked_window > 0 && self.reader_proxies.iter().any(|p| p.is_reliable) {
             self.unacked.push_back((sn, payload.len()));
             self.unacked_bytes = self.unacked_bytes.saturating_add(payload.len());
@@ -1924,6 +1992,14 @@ impl ReliableWriter {
             self.cache.is_empty(),
             self.heartbeat_period,
         );
+        // A reader cannot acknowledge what this writer never wrote. A base
+        // beyond the last SN written comes from a reader that matched another
+        // writer of the same GUID (two participants of one prefix, or one
+        // before a restart). Taken as it is, it made this writer's next
+        // HEARTBEAT announce firstSN beyond lastSN + 1, which DDSI-RTPS 2.5
+        // §8.3.7.5 does not allow (see `append_heartbeat`). What lies beyond
+        // the last SN written is not acknowledged.
+        let base = base.min(SequenceNumber(self.last_written_sn().0.saturating_add(1)));
         self.reader_proxies[idx].acked_changes_set(base);
         self.release_acknowledged_window();
         self.reader_proxies[idx].requested_changes_set(requested);
@@ -2011,14 +2087,67 @@ impl ReliableWriter {
     /// or is an end-of-coherent-set DATA and the peer takes that as a GAP
     /// (`crate::dialect::EndOfSetForm`); then `peer` gets a GAP for the
     /// number instead. A number the cache no longer holds is a GAP anyway.
+    /// A change that did not pass the content filter the writer applies
+    /// for `peer` is a GAP too, unless the reader is to be told of it
+    /// ([`Self::is_filter_notice`]).
     fn is_relevant(&self, sn: SequenceNumber, peer: Guid) -> bool {
         self.cache.get(sn).is_none_or(|c| {
             c.is_relevant_to(peer)
                 && self.passes_dds_filter(c, peer)
+                && self
+                    .filter_outcome(c, peer)
+                    .is_none_or(|o| o.passed || o.announce)
                 && !(c.coherent_set_end
                     && self.behaviour.for_peer(peer).end_of_set_form
                         == crate::dialect::EndOfSetForm::Gap)
         })
+    }
+
+    /// What the content filter this writer applies for `peer` made of
+    /// `change`; `None` when it applies none for that reader or did not
+    /// apply it to this change (the reader filters then, §8.7.3.4).
+    fn filter_outcome(
+        &self,
+        change: &CacheChange,
+        peer: Guid,
+    ) -> Option<crate::content_filter_info::FilterOutcome> {
+        if self.filtered_readers == 0 {
+            return None;
+        }
+        let outcomes = change.filter_outcomes.as_ref()?;
+        let signature = self
+            .reader_proxies
+            .iter()
+            .find(|p| p.remote_reader_guid == peer)?
+            .filter_signature()?;
+        outcomes.iter().find(|o| &o.signature == signature).copied()
+    }
+
+    /// Whether change `sn` goes to `peer` as a DATA without a payload and
+    /// with the FilteredFlag (DDSI-RTPS 2.5 §8.7.3.2): it did not pass the
+    /// reader's filter and the previous sample of its instance did, so the
+    /// reader has to learn of it to take the instance to ALIVE_FILTERED
+    /// (§8.7.3.4).
+    fn is_filter_notice(&self, sn: SequenceNumber, peer: Guid) -> bool {
+        self.cache.get(sn).is_some_and(|c| {
+            self.filter_outcome(c, peer)
+                .is_some_and(|o| !o.passed && o.announce)
+        })
+    }
+
+    /// The payload change `sn` is sent to `peer` with: none for a filter
+    /// notice.
+    fn payload_for(
+        &self,
+        sn: SequenceNumber,
+        peer: Guid,
+        payload: &alloc::sync::Arc<[u8]>,
+    ) -> (bool, alloc::sync::Arc<[u8]>) {
+        if self.is_filter_notice(sn, peer) {
+            (true, alloc::sync::Arc::from(&[][..]))
+        } else {
+            (false, alloc::sync::Arc::clone(payload))
+        }
     }
 
     /// `DDS_FILTER(the_reader_proxy, a_change)` (DDSI-RTPS 2.5 §8.4.9.1 T4):
@@ -2070,18 +2199,17 @@ impl ReliableWriter {
         // builds it.
         let Some((prefix, flags)) = self.compact_data_prefix(sn, peer) else {
             let is_ecs = self.cache.get(sn).is_some_and(|c| c.coherent_set_end);
+            let (notice, payload) = self.payload_for(sn, peer, payload);
             let data = DataSubmessage {
                 extra_flags: 0,
                 reader_id,
                 writer_id: self.guid.entity_id,
                 writer_sn: sn,
                 inline_qos: self.sample_inline_qos(sn, peer).map(Into::into),
-                data_flag: !is_ecs,
+                data_flag: !is_ecs && !notice,
                 key_flag: false,
                 non_standard_flag: self.cache.get(sn).is_some_and(|c| c.non_standard_payload),
-                serialized_payload: crate::payload::Payload::whole(alloc::sync::Arc::clone(
-                    payload,
-                )),
+                serialized_payload: crate::payload::Payload::whole(payload),
             };
             let (body, flags) = data.write_body(true);
             return self.append_submessage(
@@ -2150,6 +2278,7 @@ impl ReliableWriter {
             || change.coherent_set_sn.is_some()
             || change.coherent_set_end
             || change.group.is_some()
+            || (self.filtered_readers > 0 && change.filter_outcomes.is_some())
         {
             return None;
         }
@@ -2486,17 +2615,18 @@ impl ReliableWriter {
         // inline QoS instead of shipping a set member without its marker.
         let is_ecs = self.cache.get(sn).is_some_and(|c| c.coherent_set_end);
         let inline_qos = self.sample_inline_qos(sn, peer);
+        let (notice, payload) = self.payload_for(sn, peer, payload);
         let data = DataSubmessage {
             extra_flags: 0,
             reader_id,
             writer_id: self.guid.entity_id,
             writer_sn: sn,
-            // WP 2.0a: Arc::clone instead of to_vec — zero-copy into the wire path.
+            // WP 2.0a: the Arc, not a copy — zero-copy into the wire path.
             inline_qos: inline_qos.map(Into::into),
-            data_flag: !is_ecs,
+            data_flag: !is_ecs && !notice,
             key_flag: false,
             non_standard_flag: self.cache.get(sn).is_some_and(|c| c.non_standard_payload),
-            serialized_payload: crate::payload::Payload::whole(alloc::sync::Arc::clone(payload)),
+            serialized_payload: crate::payload::Payload::whole(payload),
         };
         let (body, flags) = data.write_body(true);
         builder
@@ -3104,6 +3234,10 @@ impl ReliableWriter {
         if !self.is_relevant(sn, peer) {
             return self.build_gap_datagram(sn, peer, targets);
         }
+        if self.is_filter_notice(sn, peer) {
+            // The notice has no payload to send a fragment of.
+            return self.build_single_data_datagram(sn, full_payload, peer, targets);
+        }
         let frag_size = self.fragment_size_for(sn) as usize;
         if frag.0 == 0 {
             return Err(WireError::ValueOutOfRange {
@@ -3253,6 +3387,29 @@ impl ReliableWriter {
                     crate::parameter_list::pid::KEY_HASH,
                     key,
                 ));
+        }
+        if let Some(outcomes) = change.filter_outcomes.as_ref() {
+            // DDSI-RTPS 2.5 §8.7.3.3: a sample that is sent says which
+            // filters were applied and with what result; §8.7.3.2: one that
+            // did not pass is a DATA without payload and with the
+            // FilteredFlag. For no peer in particular the longer of the two.
+            let outcome = peer.map(|p| self.filter_outcome(change, p));
+            let parameter = match outcome {
+                Some(None) => None,
+                Some(Some(o)) if !o.passed => Some(crate::inline_qos::status_info_param(
+                    crate::inline_qos::status_info::FILTERED,
+                )),
+                Some(Some(_)) | None => {
+                    Some(crate::content_filter_info::content_filter_info_param(
+                        &crate::content_filter_info::ContentFilterInfo::of(outcomes),
+                        true,
+                    ))
+                }
+            };
+            if let Some(parameter) = parameter {
+                qos.get_or_insert_with(crate::parameter_list::ParameterList::new)
+                    .push(parameter);
+            }
         }
         qos
     }
@@ -5411,6 +5568,47 @@ mod tests {
         assert_eq!(first_proxy(&w).pending_requested_count(), 2);
     }
 
+    /// DDS 1.4 §2.2.3.18: a KEEP_LAST writer keeps the latest `depth`
+    /// values and discards the older ones. What it replaced leaves the
+    /// flow-control window, so the window never holds more than the history.
+    #[test]
+    fn a_change_keep_last_replaced_leaves_the_unacked_window() {
+        let writer_guid = Guid::new(
+            GuidPrefix::from_bytes([1; 12]),
+            EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
+        );
+        let reader_proxy = ReaderProxy::new(
+            reader_guid(),
+            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7410)],
+            alloc::vec![],
+            true,
+        );
+        let mut w = fast_writer(ReliableWriterConfig {
+            guid: writer_guid,
+            vendor_id: VendorId::ZERODDS,
+            reader_proxies: alloc::vec![reader_proxy],
+            max_samples: 3,
+            history_kind: HistoryKind::KeepLast { depth: 3 },
+            heartbeat_period: Duration::from_secs(10),
+            fragment_size: DEFAULT_FRAGMENT_SIZE,
+            mtu: DEFAULT_MTU,
+        });
+        w.set_unacked_window(4000);
+        let sample = alloc::vec![0u8; 1000];
+        for written in 1..=10usize {
+            let _ = w.write(&sample).expect("keep_last never fails");
+            assert_eq!(w.unacked_bytes(), 1000 * written.min(3));
+            assert!(
+                !w.window_full(),
+                "three samples of 1000 in a window of 4000"
+            );
+        }
+        assert_eq!(w.cache().min_sn(), Some(sn(8)));
+        // The reader acknowledges up to SN 8: SN 9 and 10 still count.
+        w.handle_acknack(reader_guid(), sn(9), []);
+        assert_eq!(w.unacked_bytes(), 2000);
+    }
+
     #[test]
     fn keep_last_evicts_oldest_on_overflow() {
         let writer_guid = Guid::new(
@@ -6635,6 +6833,129 @@ mod tests {
             .collect()
     }
 
+    /// §8.7.3.3, §8.7.3.2 and §8.7.3.4: a sample that passed the reader's
+    /// content filter is a DATA with `PID_CONTENT_FILTER_INFO`; the first
+    /// one of an instance that does not pass after one that did is a DATA
+    /// without payload and with the FilteredFlag; the next that does not
+    /// pass is a GAP with `filteredCount` 1. A reader without a filter gets
+    /// every sample, without the parameter. A repair repeats the form.
+    #[test]
+    fn rtps_8_7_3_a_content_filtered_reader_gets_data_with_info_a_notice_or_a_gap() {
+        use crate::content_filter_info::{FilterOutcome, find_content_filter_info};
+        let mut w = make_writer(10, Duration::from_secs(10));
+        w.remove_reader_proxy(reader_guid());
+        let filtered_reader = Guid::new(
+            GuidPrefix::from_bytes([6; 12]),
+            EntityId::user_reader_with_key([0xA6, 0xB6, 0xC6]),
+        );
+        let other_reader = Guid::new(
+            GuidPrefix::from_bytes([7; 12]),
+            EntityId::user_reader_with_key([0xA7, 0xB7, 0xC7]),
+        );
+        let proxy = |guid, port| {
+            ReaderProxy::new(
+                guid,
+                alloc::vec![Locator::udp_v4([127, 0, 0, 1], port)],
+                alloc::vec![],
+                true,
+            )
+        };
+        w.add_reader_proxy(proxy(filtered_reader, 7430));
+        w.add_reader_proxy(proxy(other_reader, 7431));
+        let signature = [0x5A; 16];
+        assert!(w.set_reader_filter_signature(filtered_reader, Some(signature)));
+        assert!(!w.set_reader_filter_signature(reader_guid(), Some(signature)));
+        let outcome = |passed, announce| {
+            Some(alloc::vec![FilterOutcome {
+                signature,
+                passed,
+                announce,
+            }])
+        };
+        // (kind, sn, filteredCount, has a payload, FilteredFlag, filter info)
+        type Seen = (&'static str, i64, Option<u64>, bool, bool, Option<bool>);
+        let seen = |out: &[OutboundDatagram], port: u32| -> alloc::vec::Vec<Seen> {
+            out.iter()
+                .filter(|d| d.targets.iter().any(|l| l.port == port))
+                .flat_map(|dg| {
+                    decode_datagram(&dg.bytes)
+                        .unwrap()
+                        .contents()
+                        .filter_map(|sub| match sub {
+                            ParsedSubmessage::Data(d) => {
+                                let list = d.inline_qos.as_ref().map(|q| q.to_list());
+                                let filtered = list
+                                    .as_ref()
+                                    .and_then(crate::inline_qos::find_status_info)
+                                    .is_some_and(|bits| {
+                                        bits & crate::inline_qos::status_info::FILTERED != 0
+                                    });
+                                let info = list
+                                    .as_ref()
+                                    .and_then(|l| find_content_filter_info(l, true))
+                                    .and_then(|i| i.result_for(&signature));
+                                Some(("DATA", d.writer_sn.0, None, d.data_flag, filtered, info))
+                            }
+                            ParsedSubmessage::Gap(g) => {
+                                Some(("GAP", g.gap_start.0, g.filtered_count, false, false, None))
+                            }
+                            _ => None,
+                        })
+                        .collect::<alloc::vec::Vec<_>>()
+                })
+                .collect()
+        };
+        w.set_next_filter_outcomes(outcome(true, false));
+        let out1 = w.write(&alloc::vec![1; 8]).unwrap();
+        w.set_next_filter_outcomes(outcome(false, true));
+        let out2 = w.write(&alloc::vec![2; 8]).unwrap();
+        w.set_next_filter_outcomes(outcome(false, false));
+        let out3 = w.write(&alloc::vec![3; 8]).unwrap();
+        // The outcomes are used up: the fourth sample has none.
+        let out4 = w.write(&alloc::vec![4; 8]).unwrap();
+        let all = [out1, out2, out3, out4].concat();
+        assert_eq!(
+            seen(&all, 7430),
+            alloc::vec![
+                ("DATA", 1, None, true, false, Some(true)),
+                ("DATA", 2, None, false, true, None),
+                ("GAP", 3, Some(1), false, false, None),
+                ("DATA", 4, None, true, false, None),
+            ]
+        );
+        assert_eq!(
+            seen(&all, 7431),
+            alloc::vec![
+                ("DATA", 1, None, true, false, None),
+                ("DATA", 2, None, true, false, None),
+                ("DATA", 3, None, true, false, None),
+                ("DATA", 4, None, true, false, None),
+            ]
+        );
+        // A repair repeats what the reader was sent.
+        w.handle_acknack(filtered_reader, sn(1), [sn(1), sn(2), sn(3)]);
+        let repair = w.tick(Duration::from_millis(1)).unwrap();
+        assert_eq!(
+            seen(&repair, 7430),
+            alloc::vec![
+                ("DATA", 1, None, true, false, Some(true)),
+                ("DATA", 2, None, false, true, None),
+                ("GAP", 3, Some(1), false, false, None),
+            ]
+        );
+        // Without the signature the writer applies no filter for the reader.
+        assert!(w.set_reader_filter_signature(filtered_reader, None));
+        w.handle_acknack(filtered_reader, sn(1), [sn(2), sn(3)]);
+        let repair = w.tick(Duration::from_millis(2)).unwrap();
+        assert_eq!(
+            seen(&repair, 7430),
+            alloc::vec![
+                ("DATA", 2, None, true, false, None),
+                ("DATA", 3, None, true, false, None),
+            ]
+        );
+    }
+
     /// §8.4.9.1 T4 and §8.4.9.2 T4: `DDS_FILTER(the_reader_proxy, a_change)`
     /// false sends `GAP(a_change.sequenceNumber)` with `filteredCount := 1`
     /// instead of the DATA; a change that passes is a DATA; the reader of
@@ -6731,6 +7052,32 @@ mod tests {
     /// §8.4.9.1 T4: "These changes do not appear counted in the GAP message
     /// filteredCount": a number the cache does not hold is announced with
     /// `filteredCount` 0.
+    /// An ACKNACK that acknowledges more than the writer wrote (a reader
+    /// of an earlier writer of the same GUID) acknowledges what was
+    /// written; the HEARTBEAT keeps firstSN <= lastSN + 1 (§8.3.7.5).
+    #[test]
+    fn an_acknack_beyond_the_last_sn_written_acknowledges_what_was_written() {
+        let mut w = make_writer(10, Duration::from_millis(1));
+        w.handle_acknack(reader_guid(), sn(3), []);
+        assert_eq!(
+            w.reader_proxies()[0].highest_acked_sn(),
+            SequenceNumber(0),
+            "nothing written, nothing acknowledged"
+        );
+        // The tick that follows sends a HEARTBEAT; its first is 1, its last 0.
+        let out = w.tick(Duration::from_millis(5)).unwrap();
+        for dg in &out {
+            for sub in decode_datagram(&dg.bytes).unwrap().contents() {
+                if let ParsedSubmessage::Heartbeat(hb) = sub {
+                    assert!(hb.first_sn.0 <= hb.last_sn.0 + 1, "{hb:?}");
+                }
+            }
+        }
+        let _ = w.write(&alloc::vec![1]).unwrap();
+        w.handle_acknack(reader_guid(), sn(9), []);
+        assert_eq!(w.reader_proxies()[0].highest_acked_sn(), SequenceNumber(1));
+    }
+
     #[test]
     fn a_gap_for_a_number_the_cache_no_longer_holds_has_filtered_count_zero() {
         let mut w = make_writer(10, Duration::from_secs(10));

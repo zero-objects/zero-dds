@@ -11,6 +11,9 @@
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
+    <!-- Above grpc.drain_secs (default 30, zerodds-grpc-bridge-1.0 §9.2);
+         launchd sends SIGKILL after 20 s otherwise. -->
+    <key>ExitTimeOut</key><integer>40</integer>
     <key>StandardOutPath</key><string>/usr/local/var/log/zerodds/grpc-bridged.log</string>
     <key>StandardErrorPath</key><string>/usr/local/var/log/zerodds/grpc-bridged.err</string>
     <key>UserName</key><string>_zerodds</string>

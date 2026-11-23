@@ -298,6 +298,60 @@ pub enum TokenKind {
     Wchar,
     /// `wstring`
     Wstring,
+
+    // -- CIDL and PSDL keywords ------------------------------------------
+    //
+    // Never produced by `lex`: an IDL file may use these words as
+    // identifiers. A parse under `Dialect::cidl` re-kinds an identifier
+    // spelled exactly like one of them ([`CIDL_KEYWORDS`]).
+    /// `as` (PSDL)
+    As,
+    /// `bindsTo` (CIDL)
+    BindsTo,
+    /// `composition` (CIDL)
+    Composition,
+    /// `delegatesTo` (CIDL)
+    DelegatesTo,
+    /// `entity` (CIDL)
+    Entity,
+    /// `executor` (CIDL)
+    Executor,
+    /// `facet` (CIDL)
+    Facet,
+    /// `implements` (CIDL and PSDL)
+    Implements,
+    /// `key` (PSDL)
+    Key,
+    /// `of` (PSDL)
+    Of,
+    /// `primary` (PSDL)
+    Primary,
+    /// `process` (CIDL)
+    Process,
+    /// `proxy` (CIDL)
+    Proxy,
+    /// `ref` (PSDL)
+    Ref,
+    /// `scope` (PSDL)
+    Scope,
+    /// `segment` (CIDL)
+    Segment,
+    /// `service` (CIDL)
+    Service,
+    /// `session` (CIDL)
+    Session,
+    /// `state` (PSDL)
+    State,
+    /// `storagehome` (CIDL and PSDL)
+    Storagehome,
+    /// `storagetype` (PSDL)
+    Storagetype,
+    /// `storedOn` (CIDL)
+    StoredOn,
+    /// `stores` (PSDL)
+    Stores,
+    /// `strong` (PSDL)
+    Strong,
 }
 
 impl TokenKind {
@@ -451,6 +505,65 @@ pub const KEYWORDS: &[(&str, TokenKind)] = &[
     ("wchar", TokenKind::Wchar),
     ("wstring", TokenKind::Wstring),
 ];
+
+/// The keywords CIDL adds to IDL: CORBA 3.3 Part 3 §8.2.1, Table 8.2,
+/// and the PSDL keywords of Persistent State Service 2.0 §3.2.2, Table
+/// 3-2, which §8.2.1 reserves in CIDL as well.
+///
+/// `factory` of Table 3-2 is an IDL keyword already and is not repeated.
+/// The spelling is the tables', exactly: `bindsTo`, `delegatesTo` and
+/// `storedOn` are written with an upper-case letter.
+///
+/// `lex` does not use this table. An IDL file may name a struct `State`
+/// or a member `key`; only a parse under `Dialect::cidl` turns an
+/// identifier spelled like one of these into its keyword.
+pub const CIDL_KEYWORDS: &[(&str, TokenKind)] = &[
+    ("as", TokenKind::As),
+    ("bindsTo", TokenKind::BindsTo),
+    ("composition", TokenKind::Composition),
+    ("delegatesTo", TokenKind::DelegatesTo),
+    ("entity", TokenKind::Entity),
+    ("executor", TokenKind::Executor),
+    ("facet", TokenKind::Facet),
+    ("implements", TokenKind::Implements),
+    ("key", TokenKind::Key),
+    ("of", TokenKind::Of),
+    ("primary", TokenKind::Primary),
+    ("process", TokenKind::Process),
+    ("proxy", TokenKind::Proxy),
+    ("ref", TokenKind::Ref),
+    ("scope", TokenKind::Scope),
+    ("segment", TokenKind::Segment),
+    ("service", TokenKind::Service),
+    ("session", TokenKind::Session),
+    ("state", TokenKind::State),
+    ("storagehome", TokenKind::Storagehome),
+    ("storagetype", TokenKind::Storagetype),
+    ("storedOn", TokenKind::StoredOn),
+    ("stores", TokenKind::Stores),
+    ("strong", TokenKind::Strong),
+];
+
+/// The CIDL or PSDL keyword `word` is spelled as, exactly.
+#[must_use]
+pub fn cidl_keyword(word: &str) -> Option<TokenKind> {
+    CIDL_KEYWORDS
+        .iter()
+        .find(|(keyword, _)| *keyword == word)
+        .map(|(_, kind)| *kind)
+}
+
+/// The CIDL or PSDL keyword an identifier collides with, differing from
+/// it only in case. The counterpart of [`keyword_collision`] for a CIDL
+/// file, where CORBA 3.3 Part 3 §8.2 applies the IDL rule of §7.2.3 and
+/// §7.2.4 to the keywords of [`CIDL_KEYWORDS`] as well.
+#[must_use]
+pub fn cidl_keyword_collision(word: &str) -> Option<&'static str> {
+    CIDL_KEYWORDS
+        .iter()
+        .find(|(keyword, _)| *keyword != word && keyword.eq_ignore_ascii_case(word))
+        .map(|(keyword, _)| *keyword)
+}
 
 /// The keyword an identifier collides with, differing from it only in
 /// case.

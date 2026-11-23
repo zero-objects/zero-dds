@@ -248,6 +248,7 @@ fn push_lifecycle(
     if let Ok(mut guard) = sink.lock() {
         guard.push(crate::runtime::UserSample::Lifecycle {
             key_hash: guid.to_bytes(),
+            key_hash_unavailable: false,
             kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
             // Builtin-topic entities have no XTypes-registered
             // CompleteTypeObject and no instance key beyond the entity

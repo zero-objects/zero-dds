@@ -1698,6 +1698,7 @@ fn apply_lost_writers(drr: &ZeroDdsDataReader) {
             // so the entry fits the same `read_cache` shape as a real sample.
             let placeholder = UserSample::Lifecycle {
                 key_hash: KEYLESS_KEY_HASH,
+                key_hash_unavailable: false,
                 kind: zerodds_rtps::history_cache::ChangeKind::NotAliveUnregistered,
                 key_holder: None,
                 source_timestamp: None,
@@ -2807,6 +2808,7 @@ mod tests {
         };
         let lifecycle = UserSample::Lifecycle {
             key_hash: [0; 16],
+            key_hash_unavailable: false,
             kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
             key_holder: None,
             source_timestamp: None,
@@ -3270,6 +3272,7 @@ mod tests {
             keyed(vec![3], [0; 16]),
             UserSample::Lifecycle {
                 key_hash: key_a,
+                key_hash_unavailable: false,
                 kind: ChangeKind::NotAliveDisposed,
                 key_holder: None,
                 source_timestamp: None,
@@ -3729,6 +3732,7 @@ mod tests {
         let kh_a = payload_key_hash(&inst_a);
         tx.send(UserSample::Lifecycle {
             key_hash: kh_a,
+            key_hash_unavailable: false,
             kind: ChangeKind::NotAliveDisposed,
             key_holder: None,
             source_timestamp: None,
@@ -3863,6 +3867,7 @@ mod tests {
         tx.send(alive(vec![1, 2, 3, 4], 0x01, 0)).expect("send");
         tx.send(UserSample::Lifecycle {
             key_hash: [0xAB; 16],
+            key_hash_unavailable: false,
             kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
             key_holder: None,
             source_timestamp: None,

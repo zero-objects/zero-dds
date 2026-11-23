@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ZeroDDS-Unix-Domain-Socket-Transport — Container-IPC via SOCK_DGRAM, Abstract-Namespace-Support (Linux)."
+description = "ZeroDDS-Unix-Domain-Socket-Transport — Container-IPC via SOCK_DGRAM or length-prefixed SOCK_STREAM (the mode Windows has), Abstract-Namespace-Support (Linux)."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-transport-uds"
@@ -28,12 +28,28 @@ alloc = []
 [dependencies]
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
 zerodds-transport = { version = "1.0.0-rc.7", path = "../transport" }
-# socket2 for SOCK_SEQPACKET + raw sockaddr_un construction
-# (abstract namespace, macOS fallback to DGRAM).
+# socket2 for the raw sockaddr_un construction (abstract namespace), the
+# receive with MSG_TRUNC and the AF_UNIX stream sockets of the stream mode,
+# which it offers on Unix and on Windows.
 socket2 = { workspace = true }
-# libc only for sockaddr_un layout constants. shared_memory brings
-# it in transitively, we declare it explicitly.
+
+# libc for the socket flags (MSG_TRUNC, MSG_DONTWAIT, MSG_NOSIGNAL), geteuid
+# and fchmodat.
+[target.'cfg(unix)'.dependencies]
 libc = { workspace = true, features = ["std"] }
+
+# Windows (zerodds-uds-transport-1.0 §6.2): the user SID of the process and
+# CreateDirectoryW with an access control list for a created base_dir, the
+# WSAENOBUFS code of a send.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+  "Win32_Foundation",
+  "Win32_Networking_WinSock",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3"

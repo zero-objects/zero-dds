@@ -105,6 +105,7 @@ fn marker(r: &DataReader<Rec>, writer: [u8; 16], kind: zerodds_rtps::history_cac
         .unwrap()
         .push(UserSample::Lifecycle {
             key_hash: hash,
+            key_hash_unavailable: false,
             kind,
             key_holder: Some(key),
             source_timestamp: None,
@@ -257,6 +258,7 @@ fn dcps_2_2_2_5_5_a_dispose_marker_names_its_writer_and_its_source_time() {
         .unwrap()
         .push(UserSample::Lifecycle {
             key_hash: hash,
+            key_hash_unavailable: false,
             kind: ChangeKind::NotAliveDisposed,
             key_holder: Some(key),
             source_timestamp: Some(source),
@@ -300,6 +302,7 @@ fn dcps_2_2_2_5_5_an_unregister_marker_names_its_writer_and_its_source_time() {
         .unwrap()
         .push(UserSample::Lifecycle {
             key_hash: hash,
+            key_hash_unavailable: false,
             kind: ChangeKind::NotAliveUnregistered,
             key_holder: Some(key),
             source_timestamp: Some(source),

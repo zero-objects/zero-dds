@@ -1,0 +1,9 @@
+// The fixed DCPS model of tests/cyclone_fixed_model.rs (DDS 1.2 §8.1.4.5):
+// a topic keyed by SITE and NUM, without class and oid field.
+module Legacy {
+    @final struct StationType {
+        @key string SITE;
+        @key long NUM;
+        double LEVEL;
+    };
+};

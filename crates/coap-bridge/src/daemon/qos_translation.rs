@@ -1,162 +1,149 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §6 — DDS QoS → CoAP behavior translation.
+//! §6 — DDS QoS → CoAP behavior.
 //!
-//! Mapping per Spec `zerodds-coap-bridge-1.0.md` §6:
+//! The table of spec `zerodds-coap-bridge-1.0.md` §6, from a topic's
+//! `qos:`:
 //!
-//! * `Reliability::Reliable`        → CON (Confirmable; ACK + retransmit).
-//! * `Reliability::BestEffort`      → NON (Non-confirmable).
-//! * `Durability::Volatile`         → no observe replay cache.
-//! * `Durability::TransientLocal+`  → observe replay cache active.
-//! * `Deadline::period`             → CoAP option `Max-Age` (RFC 7252 §5.10.5).
+//! * Reliability `RELIABLE` → notifications are Confirmable and
+//!   retransmitted; `BEST_EFFORT` → Non-confirmable.
+//! * Durability `VOLATILE` → a new observer gets no sample in the first
+//!   response; `TRANSIENT_LOCAL` and above → the last sample, with
+//!   History `KEEP_LAST(N)` the last N (the first in the response, the
+//!   others as notifications), with `KEEP_ALL` the last
+//!   `KEEP_ALL_WINDOW` (1024) samples of the observe module.
+//! * Lifespan → the Max-Age of a representation, what is left of it.
+//! * Deadline → `5.03 Service Unavailable` with Max-Age 0 once the topic
+//!   has gone longer without a sample.
+//! * Liveliness → the daemon's CoAP ping every `coap.keep_alive_secs`
+//!   (`super::observe`); the lease goes to the topic's DDS endpoints.
+//! * Partition → the partitions of the topic's DDS endpoints: a sample of
+//!   another partition does not reach the daemon, so no observer.
 
-use zerodds_qos::{DurabilityKind, HistoryKind, ReaderQos, ReliabilityKind, WriterQos};
+use std::time::Duration;
 
-/// CoAP message type (RFC 7252 §3).
+use super::config::TopicConfig;
+
+/// CoAP message type of a notification (RFC 7252 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoapMessageType {
-    /// Confirmable (CON) — peer acks each message.
+    /// Confirmable (CON): acknowledged, retransmitted.
     Confirmable,
-    /// Non-confirmable (NON) — fire-and-forget.
+    /// Non-confirmable (NON).
     NonConfirmable,
 }
 
-/// Behavior for a topic.
+/// The CoAP behavior of a topic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoapBehavior {
-    /// Default type for outgoing notify frames.
-    pub message_type: CoapMessageType,
-    /// `Max-Age` option in seconds (None = default 60s).
-    pub max_age_secs: Option<u32>,
-    /// Replay cache depth for newly subscribing observers (0 = none).
-    pub replay_depth: u32,
-}
-
-impl Default for CoapBehavior {
-    fn default() -> Self {
-        Self {
-            message_type: CoapMessageType::Confirmable,
-            max_age_secs: Some(60),
-            replay_depth: 0,
-        }
-    }
+    /// Whether notifications are Confirmable.
+    pub confirmable: bool,
+    /// How many of the last samples a new observer is given; 0 = none.
+    pub replay_depth: usize,
+    /// The lifespan of a sample: the Max-Age of its representation.
+    pub lifespan: Option<Duration>,
+    /// The longest the topic goes without a sample.
+    pub deadline: Option<Duration>,
 }
 
 impl CoapBehavior {
-    /// Derive spec-compliant defaults from `WriterQos::default()`.
+    /// The message type of a notification.
     #[must_use]
-    pub fn default_for_topic() -> Self {
-        let w = WriterQos::default();
-        let r = ReaderQos::default();
-        dds_qos_to_coap_behavior(&w, &r)
-    }
-}
-
-/// Main function.
-#[must_use]
-pub fn dds_qos_to_coap_behavior(writer: &WriterQos, reader: &ReaderQos) -> CoapBehavior {
-    let message_type = match (writer.reliability.kind, reader.reliability.kind) {
-        (ReliabilityKind::Reliable, _) | (_, ReliabilityKind::Reliable) => {
+    pub const fn message_type(&self) -> CoapMessageType {
+        if self.confirmable {
             CoapMessageType::Confirmable
+        } else {
+            CoapMessageType::NonConfirmable
         }
-        _ => CoapMessageType::NonConfirmable,
-    };
-    let replay_depth = match writer.durability.kind {
-        DurabilityKind::Volatile => 0,
-        DurabilityKind::TransientLocal => match writer.history.kind {
-            HistoryKind::KeepLast => writer.history.depth.max(1) as u32,
-            HistoryKind::KeepAll => 1024,
-        },
-        DurabilityKind::Transient | DurabilityKind::Persistent => 1024,
-    };
-    let max_age_secs = max_age_for(&writer.deadline);
-    CoapBehavior {
-        message_type,
-        max_age_secs,
-        replay_depth,
     }
 }
 
-fn max_age_for(d: &zerodds_qos::DeadlineQosPolicy) -> Option<u32> {
-    if d.period == zerodds_qos::Duration::INFINITE || d.period == zerodds_qos::Duration::ZERO {
-        return None;
+/// The behavior of `topic` (spec §6).
+#[must_use]
+pub fn topic_behavior(topic: &TopicConfig) -> CoapBehavior {
+    let confirmable = topic.reliability != "best_effort";
+    let replay_depth = match topic.durability.as_str() {
+        "transient_local" | "transient" | "persistent" => {
+            if topic.history_kind == "keep_all" {
+                super::observe::KEEP_ALL_WINDOW
+            } else {
+                usize::try_from(topic.history_depth.max(1)).unwrap_or(1)
+            }
+        }
+        _ => 0,
+    };
+    CoapBehavior {
+        confirmable,
+        replay_depth,
+        lifespan: topic.lifespan_ms.map(Duration::from_millis),
+        deadline: topic.deadline_ms.map(Duration::from_millis),
     }
-    if d.period.seconds <= 0 {
-        return Some(1);
-    }
-    Some(d.period.seconds as u32)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zerodds_qos::{Duration, ReliabilityQosPolicy};
 
-    #[test]
-    fn reliable_yields_con() {
-        let w = WriterQos::default();
-        let r = ReaderQos::default();
-        let b = dds_qos_to_coap_behavior(&w, &r);
-        assert_eq!(b.message_type, CoapMessageType::Confirmable);
+    fn topic(reliability: &str, durability: &str) -> TopicConfig {
+        TopicConfig {
+            dds_name: "T".into(),
+            reliability: reliability.into(),
+            durability: durability.into(),
+            history_depth: 10,
+            history_kind: "keep_last".into(),
+            ..TopicConfig::default()
+        }
     }
 
+    /// Spec §6: RELIABLE → Confirmable notifications, BEST_EFFORT →
+    /// Non-confirmable; RELIABLE is the default.
     #[test]
-    fn best_effort_yields_non() {
-        let mut w = WriterQos::default();
-        w.reliability = ReliabilityQosPolicy {
-            kind: ReliabilityKind::BestEffort,
-            ..w.reliability
-        };
-        let mut r = ReaderQos::default();
-        r.reliability = ReliabilityQosPolicy {
-            kind: ReliabilityKind::BestEffort,
-            ..r.reliability
-        };
-        let b = dds_qos_to_coap_behavior(&w, &r);
-        assert_eq!(b.message_type, CoapMessageType::NonConfirmable);
+    fn coapbridge_6_reliability_picks_the_message_type() {
+        assert_eq!(
+            topic_behavior(&topic("reliable", "volatile")).message_type(),
+            CoapMessageType::Confirmable
+        );
+        assert_eq!(
+            topic_behavior(&topic("best_effort", "volatile")).message_type(),
+            CoapMessageType::NonConfirmable
+        );
+        assert!(topic_behavior(&topic("", "")).confirmable);
     }
 
+    /// Spec §6: VOLATILE gives a new observer nothing, TRANSIENT_LOCAL with
+    /// KEEP_LAST(N) the last N, KEEP_ALL the window.
     #[test]
-    fn transient_local_keep_last_replay_depth() {
-        let mut w = WriterQos::default();
-        w.durability.kind = DurabilityKind::TransientLocal;
-        w.history.kind = HistoryKind::KeepLast;
-        w.history.depth = 5;
-        let r = ReaderQos::default();
-        let b = dds_qos_to_coap_behavior(&w, &r);
-        assert_eq!(b.replay_depth, 5);
+    fn coapbridge_6_durability_and_history_set_the_replay() {
+        assert_eq!(
+            topic_behavior(&topic("reliable", "volatile")).replay_depth,
+            0
+        );
+        assert_eq!(topic_behavior(&topic("reliable", "")).replay_depth, 0);
+        assert_eq!(
+            topic_behavior(&topic("reliable", "transient_local")).replay_depth,
+            10
+        );
+        let mut all = topic("reliable", "transient_local");
+        all.history_kind = "keep_all".into();
+        assert_eq!(
+            topic_behavior(&all).replay_depth,
+            super::super::observe::KEEP_ALL_WINDOW
+        );
     }
 
+    /// Spec §6: the lifespan and the deadline of the topic.
     #[test]
-    fn volatile_no_replay() {
-        let w = WriterQos::default();
-        let r = ReaderQos::default();
-        let b = dds_qos_to_coap_behavior(&w, &r);
-        assert_eq!(b.replay_depth, 0);
-    }
-
-    #[test]
-    fn deadline_set_yields_max_age() {
-        let mut w = WriterQos::default();
-        w.deadline.period = Duration::from_secs(10);
-        let r = ReaderQos::default();
-        let b = dds_qos_to_coap_behavior(&w, &r);
-        assert_eq!(b.max_age_secs, Some(10));
-    }
-
-    #[test]
-    fn deadline_infinite_no_max_age() {
-        let w = WriterQos::default();
-        let r = ReaderQos::default();
-        let b = dds_qos_to_coap_behavior(&w, &r);
-        assert_eq!(b.max_age_secs, None);
-    }
-
-    #[test]
-    fn default_behavior_is_reliable_no_replay() {
-        let b = CoapBehavior::default_for_topic();
-        assert_eq!(b.message_type, CoapMessageType::Confirmable);
-        assert_eq!(b.replay_depth, 0);
+    fn coapbridge_6_lifespan_and_deadline() {
+        let mut t = topic("reliable", "volatile");
+        assert_eq!(topic_behavior(&t).lifespan, None);
+        assert_eq!(topic_behavior(&t).deadline, None);
+        t.lifespan_ms = Some(2500);
+        t.deadline_ms = Some(1000);
+        assert_eq!(
+            topic_behavior(&t).lifespan,
+            Some(Duration::from_millis(2500))
+        );
+        assert_eq!(topic_behavior(&t).deadline, Some(Duration::from_secs(1)));
     }
 }

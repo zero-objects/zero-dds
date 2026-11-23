@@ -11,7 +11,7 @@ the parser that reads it is
 .IR crates/websocket-bridge/src/daemon/config.rs::load_from_str .
 .PP
 Top-level keys:
-.BR listen ", " domain ", " log_level ", " tls ", " auth ", " metrics ", " topics .
+.BR listen ", " domain ", " log_level ", " tls ", " auth ", " metrics ", " limits ", " origin ", " max_send_queue_per_connection ", " max_burst_samples ", " ping_interval_ms ", " shutdown_drain_ms ", " catalog_on_connect ", " topics ", " tenants .
 .PP
 An unknown top-level key is
 .I not
@@ -25,8 +25,13 @@ are substituted from the environment before the document is parsed.
 .SS Top level
 .TP
 .B listen
-WebSocket listen address, e.g.
-.IR "0.0.0.0:8080" .
+WebSocket listen address. Default
+.IR "127.0.0.1:8080" .
+Besides the topic endpoints it answers a plain HTTP GET of
+.I /healthz
+(200 while the DDS runtime runs, 503 otherwise, no credentials) and of
+.I /topics/__catalog__
+(the catalog of the topics the client may read or write).
 .TP
 .B domain
 Integer DDS domain ID. Default
@@ -37,6 +42,66 @@ Integer DDS domain ID. Default
 A
 .B \-\-log\-level
 on the command line wins over this key.
+.TP
+.B max_send_queue_per_connection
+The samples that wait at most in the send queue of one connection
+(\(sc6). On a full queue a
+.I reliable
+topic waits until the client has taken one, a
+.I best_effort
+topic drops the oldest queued sample of a
+.I best_effort
+topic, or its own new sample when the queue holds samples of
+.I reliable
+topics only (each drop counted in
+.IR "zerodds_ws_bridge_send_queue_drops_total{connection_id}" ).
+At least
+.IR 1 .
+Default
+.IR 1024 .
+.TP
+.B max_burst_samples
+The samples a topic with a durability other than
+.I volatile
+keeps at most and sends to a connection when it subscribes, before its
+live samples (\(sc6). At least
+.IR 1 .
+Default
+.IR 1000 .
+.TP
+.B ping_interval_ms
+The interval of the daemon's WebSocket Ping on every connection (\(sc6).
+A connection that has not answered a Ping with a Pong when the next is due
+is closed with status 1011; a connection that takes no octet of a frame for
+this interval is closed as well, which bounds the time a
+.I reliable
+topic waits for one client.
+.I 0
+sends no Ping; another value is at least
+.IR 100 .
+Default
+.IR 30000 .
+.TP
+.B shutdown_drain_ms
+The bound of the drain of a shutdown (SIGTERM, SIGINT; \(sc9.2): the
+samples the DataReaders hold reach the clients, every connection gets
+.I {"op":"shutdown"}
+and a Close frame with status 1001. When the bound passes, the connections
+still open are closed without the samples they did not take. Milliseconds,
+at least
+.IR 1 .
+Default
+.IR 30000 .
+.TP
+.B catalog_on_connect
+Boolean. When true, every WebSocket connection gets the catalog of the
+topics its client may read or write as its first text frame (\(sc5.2), not
+only a connection of
+.IR /topics/__catalog__ .
+Default
+.IR false .
+.PP
+A change of these five keys needs a restart; SIGHUP logs that.
 .SS tls
 .TP
 .B enabled
@@ -57,6 +122,21 @@ Trust anchor for client certificates. Setting it turns on mTLS.
 .TP
 .B mode
 .IR none " | " bearer " | " jwt " | " mtls " (\(sc7.2)."
+.I none
+is served on a loopback
+.B listen
+address only (127.0.0.0/8,
+.IR ::1 ,
+or a name such as
+.I localhost
+that resolves to loopback addresses alone); on any other address the daemon
+does not start (exit 1),
+.B \-\-check\-config
+reports the configuration invalid (exit 1), and a SIGHUP reload to
+.I none
+is refused. The reload is checked against the address the daemon serves:
+.B listen
+waits for a restart.
 For
 .IR mtls ,
 .B tls.enabled
@@ -74,6 +154,9 @@ header when
 .B mode
 is
 .IR bearer .
+Required for that mode: without it, or with an empty value (an unset
+.I ${VAR}
+expands to nothing), the daemon does not start (exit 1).
 .TP
 .B bearer_subject
 Subject every connection authenticated by that single token runs as.
@@ -82,7 +165,10 @@ Subject every connection authenticated by that single token runs as.
 Sub-map for
 .BR jwt :
 .B public_key
-(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+(PEM file: an RSA key, PKCS#1 or SubjectPublicKeyInfo, for RS256; a P-256
+SubjectPublicKeyInfo for ES256; the token's
+.I alg
+has to be the key's algorithm),
 .BR issuer ,
 .BR audience ,
 .B required_claim
@@ -104,8 +190,10 @@ is single-subject; for per-user identities use
 .SS metrics
 .TP
 .B enabled
-Boolean. Turns on the admin endpoint serving
-.IR /metrics ", " /catalog " and " /healthz .
+Boolean. Turns on the admin endpoint serving the metrics at
+.BR path ,
+and
+.IR /catalog " and " /healthz .
 .TP
 .B listen
 Admin listen address. Default
@@ -118,6 +206,108 @@ The key is
 .BR listen ,
 not
 .IR address .
+.TP
+.B path
+The path of the Prometheus metrics on the admin endpoint. Default
+.IR /metrics .
+It begins with
+.I /
+and is not
+.IR / ", " /catalog " or " /healthz ;
+another value does not start the daemon (exit 1). A change of a
+.B metrics
+key needs a restart; SIGHUP logs that.
+.IP
+The families (zerodds-ws-bridge-1.0 \(sc8.2):
+.IR zerodds_ws_bridge_connections_total ,
+.IR zerodds_ws_bridge_connections_active ,
+.IR zerodds_ws_bridge_frames_in_total ,
+.IR zerodds_ws_bridge_bytes_in_total ,
+.IR zerodds_ws_bridge_frames_out_total ,
+.I zerodds_ws_bridge_bytes_out_total
+(labels
+.IR topic ,
+.IR direction ;
+both empty for a message of no topic and for a sample frame of a topic that
+is not configured),
+.I zerodds_ws_bridge_send_queue_drops_total
+.RI ( connection_id ),
+.I zerodds_ws_bridge_dds_samples_received
+and
+.I zerodds_ws_bridge_dds_samples_published
+.RI ( topic ),
+.I zerodds_ws_bridge_auth_failures_total
+.RI ( reason :
+.IR missing ,
+.IR rejected ,
+.IR scope ,
+.IR acl ),
+.IR zerodds_ws_bridge_errors_total .
+.SS limits
+What the daemon takes from a client (RFC 6455 \(sc10.4). A client that
+exceeds a limit is closed with status 1009.
+.TP
+.B max_frame_size
+The largest payload of one frame, in octets. A frame over it is refused when
+its header has arrived, before its payload is read. At least
+.IR 125 ,
+the largest control frame. Default
+.IR 16777216 " (16 MiB)."
+.TP
+.B max_message_size
+The largest message after reassembly of its fragments and after
+decompression, in octets. At least
+.IR 1 .
+Default
+.IR 16777216 " (16 MiB)."
+.PP
+A value outside its range does not start the daemon (exit 1). A change needs
+a restart; SIGHUP logs that.
+.SS origin
+The check of the
+.I Origin
+header field of the opening handshake (RFC 6455 \(sc10.2). A browser names
+there the origin of the page whose script opens the connection.
+.TP
+.B allowed
+List of the origins the daemon expects. An entry is an origin in its ASCII
+form
+.IR scheme://host[:port]
+without a path (a host with characters outside ASCII in its
+.I xn\-\-
+form),
+.I null
+(the origin a browser names for a page without one), or
+.I *
+for every origin.
+.I *
+is an entry of its own and no pattern: an entry with
+.I *
+inside a host
+.RI ( https://*.example.org )
+is no origin and does not start the daemon; each origin is named. Scheme and
+host are compared without case; the default port
+of
+.IR http ", " https ", " ws " and " wss
+and no port are the same. A handshake whose
+.I Origin
+names an origin outside the list is answered with HTTP 403 and the connection
+is closed; the check comes before the authentication. An empty or missing
+list: the origin is not checked. An entry that is no origin does not start
+the daemon (exit 1).
+.TP
+.B required
+Boolean. When true, a handshake without
+.I Origin
+gets HTTP 403 as well. Default
+.IR false :
+a client outside a browser may leave the field out. Needs
+.BR allowed .
+.PP
+The check is no authentication: a client outside a browser sends any
+.IR Origin .
+It keeps the script of a foreign page in a user's browser from using the
+daemon. A change needs a restart; SIGHUP logs that.
 .SS topics (list)
 Each entry maps one DDS topic to one WebSocket path.
 .TP
@@ -137,7 +327,18 @@ frames of the
 subprotocol, and keys the topic's reader and writer when the type has a key
 member. The daemon does not start when the file does not compile or does not
 declare the type. Without it a JSON-mode client of the topic gets an error
-frame (code 415).
+frame (code 415). With it a plain HTTP GET of
+.I /schema/<slug>
+or
+.I /schema/<slug>.idl
+on the WebSocket listener returns the file's IDL with its includes in place,
+and
+.I /schema/<slug>.xml
+the XML type representation of the type (\(sc5.2);
+.I <slug>
+is the slug of the topic's name (\(sc5.1,
+.I Chat::Message
+\(-> chat/message).
 .TP
 .B direction
 .IR in " | " out " | " bidir .
@@ -158,6 +359,27 @@ names the topic and the direction).
 .B ws_path
 HTTP path clients connect to. Defaults to
 .IR /topics/<slug-of-name> .
+The topic is served at this path alone. It begins with
+.IR / ,
+carries no whitespace,
+.I ?
+or
+.IR # ,
+is not
+.I /topics/__catalog__
+or
+.IR /healthz ,
+and no two topics share one; otherwise the daemon does not start (exit 1).
+A bare entry
+.I NAME:WS_PATH
+(the single
+.I :
+that is not part of a
+.IR :: )
+is the entry with
+.B name
+and
+.BR ws_path .
 .TP
 .B qos
 Sub-map with
@@ -168,7 +390,40 @@ Sub-map with
 and
 .B history
 carrying
-.BR depth .
+.B kind
+.RI ( keep_last " | " keep_all ,
+default
+.IR keep_last )
+and
+.B depth
+(the N of
+.IR keep_last ,
+default
+.IR 10 ,
+at least
+.IR 1 ),
+.B deadline_ms
+(a missed deadline of an instance is the frame
+.I {"op":"deadline_missed","topic":...}
+to the subscribers, once per period),
+.B liveliness_lease_ms
+(the lease of the AUTOMATIC liveliness of the daemon's DataWriter and
+DataReader) and
+.B partition
+(a list of partition names of the daemon's DataWriter and DataReader). The
+durations are milliseconds from 1 to 2147483647. A topic with a
+.B durability
+other than
+.I volatile
+keeps the last
+.B depth
+samples of each instance
+.RI ( keep_last )
+or all
+.RI ( keep_all ),
+at most
+.BR max_burst_samples ,
+for connections that subscribe later.
 .TP
 .B acl
 Per-topic access control, sub-map with the subject lists
@@ -189,6 +444,65 @@ When
 is not
 .IR none ,
 a topic without an ACL rejects every connection.
+.SS tenants (list)
+Participants beside the one of
+.B domain
+(\(sc1 L6). Each entry is a DomainParticipant of its own with its own
+topics. A WebSocket connection whose authenticated subject (the bearer
+subject, the JWT
+.I sub
+claim, the client certificate's subject DN or its
+.I mtls:<SHA-256 hex>
+fingerprint,
+.I anonymous
+under
+.BR "auth.mode: none" )
+an entry's
+.B subjects
+names is bound to that tenant for its life: its paths, subscriptions,
+samples, catalog and
+.I /schema
+requests are the tenant's alone. Every other connection uses the top-level
+.BR domain " and " topics .
+The admin endpoint's
+.I /catalog
+lists the top-level topics.
+.TP
+.B name
+Unique, without
+.IR / .
+It is in the log line
+.I connection_open
+.RI ( tenant ),
+the span attribute
+.IR ws.tenant ,
+and the
+.I topic
+label of the tenant's metrics,
+.IR <tenant>/<topic> .
+.TP
+.B domain
+DDS domain of the tenant's participant. Default: the top-level
+.BR domain .
+.TP
+.B subjects
+List of the subjects bound to the tenant, at least one. A subject in two
+tenants prevents the start (exit 1).
+.TP
+.B topics
+List in the form of the top-level
+.BR topics .
+The
+.B acl
+of a tenant's topic is its own, also when a top-level topic or another
+tenant's has its name.
+.PP
+Another key in an entry prevents the start (exit 1). A change of
+.B tenants
+other than the
+.B acl
+of a tenant's topic needs a restart; SIGHUP logs that, and applies the
+.BR acl .
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/ws-bridged.yaml.example .

@@ -34,7 +34,7 @@ Components::* core types, Lightweight CCM Profile (§13).
   AST to the LwCCM subset (Spec §13).
 - **`validate`** — `validate_primary_key`, `apply_factory_finder_body`,
   `InitOp` for the Spec §6.4.1 constraints.
-- **`dds4ccm`** — DDS4CCM-specific Equivalent-IDL extensions.
+- **`dds4ccm`** — DDS4CCM data model: the basic port interfaces, the six port types with their basic ports, the four connectors with their attributes and mirror ports, the levels of the threading policy. The connector fragments, the IDL of Annex A and the QoS profiles of the two patterns are in `zerodds-dds4ccm`.
 
 ## What's not covered
 

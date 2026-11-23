@@ -7,8 +7,60 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §0.2 Conformance
 
-**Status:** `partial` — protocol negotiation, parts 1–3 and part 5 (SASL) are implemented (items of parts 1–3 and 5); part 4 (Transactions) is missing, own item.
+**Status:** `partial` — built are the protocol negotiation (§2.2), Part 1, Part 2 on the answering side and as a client, Part 3, Part 4 and Part 5 with SASL and TLS from the start of the connection; the items of the Parts state each section. Missing: what the items §2.5.1 to §2.5.3, §2.6.1, §2.6.3, §2.6.7 to §2.6.10, §2.6.13, §2.8.14, §3.3, §3.4.1, §3.4.5, §3.5.1/§3.5.2, §3.5.3, §3.5.5/§3.5.6, §3.5.9 to §3.5.13, §5.2 name as missing; SCRAM-SHA-1 (§0.2: "SHOULD support the PLAIN [RFC4616] and SCRAM-SHA1 [RFC5802] mechanisms"; PLAIN and SCRAM-SHA-256 are built); Part 4 (Transactions) has items of its own, §4.1 to §4.5.8.
 
-## §0.2 Conformance — Part 4 Transactions
+## §2.5.1 to §2.5.3 Establishing and ending a session
 
-**Status:** `open` — no transaction code in `crates/amqp-bridge` or `crates/amqp-endpoint`; the text of part 4 is not in the standards cache.
+**Status:** `partial` — each side has one role only: `Peer` begins no session itself and closes on a `begin` with `remote-channel` with `amqp:not-allowed`; the client (`broker.rs`) does not answer a `begin` the broker initiates and reports a protocol error.
+
+## §2.6.1, §2.6.2 Naming a link, link handles
+
+**Status:** `partial` — `stolen` holds within one connection; a link of the same name the same container attaches over a second connection leaves the first in place (the connections of a listener share no link registry).
+
+## §2.6.3 Establishing or resuming a link
+
+**Status:** `partial` — establishing is built. Resuming: the listener keeps no terminus past the end of a link (it reports `expiry-policy` `link-detach`), so its `unsettled` map is always empty; the client never sends `attach.unsettled` and cannot resume a link.
+
+## §2.6.7 to §2.6.10 Flow control, synchronous get, asynchronous notification, stopping a link
+
+**Status:** `partial` — the answering side is built on both sides: the listener (`Peer`), the daemon's links (topic links and `$cbs`) and the links of the transaction controller drain on `drain` and answer `echo`, with and without a handle. Open: no client sets `flow.echo`, so a stop with confirmation (§2.6.10) is not possible on the client side; only `TxnClient::receive` sets `flow.drain` (a get with a time limit, §2.6.8), the daemon's receiving links never ask for it. Against a broker that sends `drain` or `echo` itself, the behaviour is measured with the scripted broker only, not against another vendor's broker.
+
+## §2.6.13 Resuming deliveries
+
+**Status:** `partial` — neither side keeps unsettled deliveries past a link: the listener hands them back to the node when the link ends (default outcome `released`), the client sends neither `attach.unsettled` nor `transfer.resume`. Reconciling two non-empty maps and `incomplete-unsettled` are not built.
+
+## §2.8.14 Error
+
+**Status:** `partial` — `info` is neither read nor written; `AmqpError` has no field for it.
+
+## §3.3 Distribution nodes
+
+**Status:** `partial` — built are AVAILABLE and ACQUIRED at a queue that hands each message to one link (`move`). The state ARCHIVED is missing: there is no kind of node that keeps a message after it was handed out (`copy`, §3.5.2).
+
+## §3.4.1, §3.4.6 Received, resuming deliveries using delivery states
+
+**Status:** `partial` — the codec only. No endpoint sends `received`, and none continues a transfer at a reported point (see §2.6.13).
+
+## §3.4.2 to §3.4.5 Accepted, rejected, released, modified
+
+**Status:** `partial` — `modified.message-annotations` is neither read nor written (`Outcome::Modified` has no field for it); everything else is built.
+
+## §3.5.1, §3.5.2, §3.5.7, §3.5.8 Filtering, distribution modes, filter set
+
+**Status:** `partial` — built are the codec and `move` without a filter, reported as such. Missing: the distribution mode `copy` (a kind of node that keeps messages after they were handed out, with the state ARCHIVED of §3.3) and any evaluation of a filter; a requested filter and `copy` are not granted (the test `amqp10_2_6_12_…` requests both and checks that `move` and no filter are reported).
+
+## §3.5.3, §3.5.4 Source, target
+
+**Status:** `partial` — the client (`broker.rs::LinkSpec`) sends only `address` and `durable` of source and target; it cannot ask for `expiry-policy`, `timeout`, `dynamic`, `distribution-mode`, `filter`, `default-outcome`, `outcomes` and `capabilities` and does not read them from the broker's answer.
+
+## §3.5.5, §3.5.6 Terminus durability, terminus expiry policy
+
+**Status:** `partial` — built are the codec and the non-durable terminus that ends with its link (`durable` `none`, `expiry-policy` `link-detach`, `timeout` 0, reported as such). Missing at the listener: `durable` `configuration` and `unsettled-state`, the expiry policies `session-end`, `connection-close` and `never`, and `timeout`; for them a terminus would have to outlive its link, which also carries the resumption of §2.6.3 and §2.6.13. The client can request `durable` only (§3.5.3).
+
+## §3.5.9 to §3.5.13 Node properties, lifetime policies
+
+**Status:** `partial` — only `delete-on-close` is built; a request for one of the other three lifetimes gets `delete-on-close` reported. `supported-dist-modes` is not reported.
+
+## §5.2 TLS
+
+**Status:** `open` — the header with protocol id 2 is built on neither side: the listener answers it like any other unsupported protocol id with its own header and closes (§2.2), the client never sends it. TLS exists from the start of the connection only (§5.2.1).

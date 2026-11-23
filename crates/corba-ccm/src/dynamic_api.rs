@@ -19,10 +19,10 @@
 //!   `corba_giop::Request` wire frame.
 //! * §12 DSI — the [`DsiServant`] trait gives servants a generic
 //!   server-side dispatch path without a compiled skeleton.
-//! * §13 DynAny — [`DynAny::from_type_code`] / [`DynAny::to_cdr`]
-//!   walk a `corba_ir::TypeCode` over CDR `any` bytes.
+//! * §13 DynAny — re-exported from `zerodds_corba_rt::dyn_any`
+//!   ([`DynAny`], [`DynAnyFactory`]).
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 
 // ---------------------------------------------------------------------------
@@ -121,8 +121,16 @@ pub struct Request {
     pub operation: String,
     /// Argument list (in/out/inout).
     pub arguments: NvList,
-    /// Return value (post-invoke).
+    /// Return value (post-invoke): the reply body.
     pub result: Option<NamedValue>,
+    /// Where the octets of [`Self::result`] begin in the reply message,
+    /// counted from its first octet: CDR aligns the result from there
+    /// (CORBA 3.3 Part 2 §9.4), and a GIOP 1.0/1.1 reply body follows the
+    /// reply header without padding (§9.4.3). 0 before [`Self::invoke`].
+    pub result_offset: usize,
+    /// The byte order of [`Self::result`]: the reply message's, which
+    /// the server chooses (§9.4.1). Big-endian before [`Self::invoke`].
+    pub result_endianness: zerodds_wire::Endianness,
     /// User exception IDs the server is allowed to raise.
     pub user_exceptions: Vec<String>,
 }
@@ -135,8 +143,20 @@ impl Request {
             operation: operation.into(),
             arguments: NvList::new(),
             result: None,
+            result_offset: 0,
+            result_endianness: zerodds_wire::Endianness::Big,
             user_exceptions: Vec::new(),
         }
+    }
+
+    /// The reply body at its offset in the reply message: read it with
+    /// `result_body().reader(request.result_endianness)`, which aligns
+    /// from the message start. `None` before [`Self::invoke`].
+    #[must_use]
+    pub fn result_body(&self) -> Option<zerodds_corba_giop::AlignedBody> {
+        self.result
+            .as_ref()
+            .map(|nv| zerodds_corba_giop::AlignedBody::new(&nv.value, self.result_offset))
     }
 
     /// `add_in_arg(name, value)`.
@@ -190,7 +210,10 @@ impl Request {
     /// Spec §7.2 — DII **live invoke**: sends the in/inout args as a real
     /// GIOP request through the [`zerodds_corba_rust::CorbaConnection`]
     /// abstraction (transport-agnostic: IIOP/SSLIOP/UIOP) and stores the
-    /// NoException reply body as the return value in [`Request::result`].
+    /// NoException reply body as the return value in [`Request::result`],
+    /// its offset in the reply message in [`Request::result_offset`] and
+    /// the reply's byte order in [`Request::result_endianness`]
+    /// ([`Request::result_body`] reads it there, Part 2 §9.4.3).
     /// Server-side `UserException`/`SystemException` come back as `Err`.
     ///
     /// Out/inout args with their own reply position require a
@@ -215,12 +238,21 @@ impl Request {
                 payload.extend_from_slice(&nv.value);
             }
         }
-        let (reply_body, _reply_e) = conn.invoke(target, &self.operation, endianness, &payload)?;
+        // The concatenated values were written from offset 0; they go
+        // out only where the body starts at a multiple of 8.
+        let (reply_body, reply_e) = conn.invoke_aligned(
+            target,
+            &self.operation,
+            endianness,
+            &zerodds_corba_rust::marshaled_body(&payload, 0),
+        )?;
         self.result = Some(NamedValue {
             name: String::from("return"),
-            value: reply_body,
+            value: reply_body.bytes().to_vec(),
             flags: ArgFlag::Out,
         });
+        self.result_offset = reply_body.offset();
+        self.result_endianness = reply_e;
         Ok(())
     }
 }
@@ -254,6 +286,15 @@ pub struct ServerRequest {
     pub operation: String,
     /// Received arguments.
     pub arguments: NvList,
+    /// Where the octets of [`Self::input_body`] begin in the GIOP
+    /// message, counted from its first octet: CDR aligns the arguments
+    /// from there (CORBA 3.3 Part 2 §9.4), and a GIOP 1.0/1.1 request
+    /// body follows the header without padding (§9.4.2.1). 0 for a
+    /// request built by [`Self::new`].
+    pub arguments_offset: usize,
+    /// The byte order of the arguments: the request message's (§9.4.1).
+    /// Big-endian for a request built by [`Self::new`].
+    pub endianness: zerodds_wire::Endianness,
     /// Reply value (set by the servant before `set_result`).
     pub reply: Option<NamedValue>,
     /// Exception reply (alternative to `reply`).
@@ -261,15 +302,44 @@ pub struct ServerRequest {
 }
 
 impl ServerRequest {
-    /// Constructor (typically from the DSI stub).
+    /// Constructor (typically from the DSI stub): arguments written from
+    /// offset 0, big-endian.
     #[must_use]
     pub fn new(operation: impl Into<String>, arguments: NvList) -> Self {
         Self {
             operation: operation.into(),
             arguments,
+            arguments_offset: 0,
+            endianness: zerodds_wire::Endianness::Big,
             reply: None,
             exception: None,
         }
+    }
+
+    /// The request a server received: the body as the single in-argument
+    /// `body`, with its offset in the message and the message's byte
+    /// order.
+    #[must_use]
+    pub fn received(
+        operation: impl Into<String>,
+        body: &zerodds_corba_giop::AlignedBody,
+        endianness: zerodds_wire::Endianness,
+    ) -> Self {
+        let mut arguments = NvList::new();
+        arguments.add_value("body", body.bytes().to_vec(), ArgFlag::In);
+        Self {
+            arguments_offset: body.offset(),
+            endianness,
+            ..Self::new(operation, arguments)
+        }
+    }
+
+    /// The in and inout arguments at their offset in the message: read
+    /// them with `input().reader(request.endianness)`, which aligns from
+    /// the message start.
+    #[must_use]
+    pub fn input(&self) -> zerodds_corba_giop::AlignedBody {
+        zerodds_corba_giop::AlignedBody::new(&self.input_body(), self.arguments_offset)
     }
 
     /// Spec §12.1 — `set_result(value)`.
@@ -292,7 +362,9 @@ impl ServerRequest {
 
     /// Concatenates in/inout bytes into a flat body — used by the
     /// default `DsiServant` adapter to map the DSI path onto the
-    /// classic `Servant::invoke(operation, body)` path.
+    /// classic `Servant::invoke(operation, body)` path. The octets stand
+    /// at [`Self::arguments_offset`] in the message; [`Self::input`]
+    /// reads them there.
     #[must_use]
     pub fn input_body(&self) -> Vec<u8> {
         let mut body = Vec::new();
@@ -355,7 +427,7 @@ pub trait DsiServant {
 pub fn dispatch_dsi(
     servant: &dyn DsiServant,
     operation: &str,
-    body: &[u8],
+    body: &zerodds_corba_rust::AlignedBody,
     endianness: zerodds_wire::Endianness,
 ) -> zerodds_corba_rust::SkeletonResult {
     use zerodds_corba_rust::{CorbaException, SkeletonResult};
@@ -372,14 +444,15 @@ pub fn dispatch_dsi(
     ) {
         return result;
     }
-    let mut args = NvList::new();
-    args.add_value("body", body.to_vec(), ArgFlag::In);
-    let mut req = ServerRequest::new(operation, args);
+    // CORBA 3.3 Part 2 §9.4.2.1: the servant reads the arguments at
+    // their offset in the message.
+    let mut req = ServerRequest::received(operation, body, endianness);
     servant.dynamic_invoke(&mut req);
     if let Some(exc) = req.exception {
+        // The servant wrote the exception from its first octet.
         return SkeletonResult::Exception(CorbaException::UserException {
             repository_id: exc.name,
-            body: exc.value,
+            body: zerodds_corba_rust::AlignedBody::new(&exc.value, 0),
             endianness,
         });
     }
@@ -393,210 +466,12 @@ pub fn dispatch_dsi(
 // §13 Dynamic Management of Any Values (DynAny)
 // ---------------------------------------------------------------------------
 
-/// Spec §13.1 — `DynAny` type discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DynAnyKind {
-    /// `DynBoolean` etc.
-    Primitive,
-    /// `DynStruct`.
-    Struct,
-    /// `DynUnion`.
-    Union,
-    /// `DynEnum`.
-    Enum,
-    /// `DynSequence`.
-    Sequence,
-    /// `DynArray`.
-    Array,
-    /// `DynFixed`.
-    Fixed,
-    /// `DynValue`.
-    Value,
-    /// `DynValueBox`.
-    ValueBox,
-}
-
-/// Spec §13.2 — `DynAny`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DynAny {
-    /// Type kind (spec §13.1 discriminator).
-    pub kind: DynAnyKind,
-    /// Repository ID of the type (e.g. `IDL:demo/MyStruct:1.0`).
-    pub repository_id: String,
-    /// CDR-encoded value.
-    pub value: Vec<u8>,
-}
-
-/// Error during the TypeCode-driven DynAny walk.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DynAnyError {
-    /// CDR decode error while walking a primitive value.
-    Decode(zerodds_wire::WireError),
-    /// `tk_kind` is not yet covered by the DynAny walker
-    /// (e.g. custom-marshal valuetypes).
-    UnsupportedKind(zerodds_corba_ir::TcKind),
-}
-
-impl core::fmt::Display for DynAnyError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Decode(e) => write!(f, "DynAny decode: {e}"),
-            Self::UnsupportedKind(k) => write!(f, "DynAny unsupported kind: {k:?}"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for DynAnyError {}
-
-impl From<zerodds_wire::WireError> for DynAnyError {
-    fn from(e: zerodds_wire::WireError) -> Self {
-        Self::Decode(e)
-    }
-}
-
-impl DynAny {
-    /// Constructor.
-    #[must_use]
-    pub fn new(kind: DynAnyKind, repository_id: impl Into<String>, value: Vec<u8>) -> Self {
-        Self {
-            kind,
-            repository_id: repository_id.into(),
-            value,
-        }
-    }
-
-    /// Spec §13.2 — `equal(other)` with type + value comparison.
-    #[must_use]
-    pub fn equal(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    /// Spec §13.2 — `from_any(any_bytes)`.
-    #[must_use]
-    pub fn from_any(
-        kind: DynAnyKind,
-        repository_id: impl Into<String>,
-        any_bytes: Vec<u8>,
-    ) -> Self {
-        Self::new(kind, repository_id, any_bytes)
-    }
-
-    /// Spec §13.2 — `to_any()`.
-    #[must_use]
-    pub fn to_any(&self) -> Vec<u8> {
-        self.value.clone()
-    }
-
-    /// Spec §13.1 — TypeCode-driven `any` inspection.
-    ///
-    /// Walks the `TypeCode` over the `raw` buffer (CDR bytes of the
-    /// `any` payload, endianness marker in the stream). For primitive
-    /// types (`Long` / `ULong` / `Boolean` / ...) the value is checked
-    /// (decode errors are propagated); for complex types (`Struct`/
-    /// `Sequence`/`Array`) the raw bytes are preserved as an opaque payload
-    /// — the caller can evaluate the sub-DynAny via re-entry with
-    /// the member TypeCode.
-    ///
-    /// # Errors
-    /// [`DynAnyError::Decode`] on CDR inconsistencies,
-    /// [`DynAnyError::UnsupportedKind`] for custom-marshaling paths.
-    pub fn from_type_code(
-        tc: &zerodds_corba_ir::TypeCode,
-        raw: &[u8],
-    ) -> Result<Self, DynAnyError> {
-        let kind = map_kind(tc.kind);
-        let repository_id = tc.id().unwrap_or("").to_string();
-        // Sanity walk for primitive types (catch decoding errors early).
-        if matches!(kind, DynAnyKind::Primitive) {
-            let mut r = zerodds_wire::Reader::new(raw, zerodds_wire::Endianness::Little);
-            walk_primitive(&mut r, tc.kind)?;
-        }
-        Ok(Self::new(kind, repository_id, raw.to_vec()))
-    }
-
-    /// Projects the DynAny back onto CDR `any` bytes (raw payload,
-    /// no type-tag prefix — the caller is responsible for `tk_kind`
-    /// encoding if an `Any` wrapper is needed).
-    #[must_use]
-    pub fn to_cdr(&self) -> Vec<u8> {
-        self.value.clone()
-    }
-}
-
-/// Mapping `TcKind` → `DynAnyKind` (spec §13.1 Table 13-1).
-fn map_kind(k: zerodds_corba_ir::TcKind) -> DynAnyKind {
-    use zerodds_corba_ir::TcKind as K;
-    match k {
-        K::Null
-        | K::Void
-        | K::Short
-        | K::Long
-        | K::UShort
-        | K::ULong
-        | K::Float
-        | K::Double
-        | K::Boolean
-        | K::Char
-        | K::Octet
-        | K::LongLong
-        | K::ULongLong
-        | K::LongDouble
-        | K::WChar
-        | K::String
-        | K::WString
-        | K::TypeCode
-        | K::Principal
-        | K::Any => DynAnyKind::Primitive,
-        K::Struct | K::Except => DynAnyKind::Struct,
-        K::Union => DynAnyKind::Union,
-        K::Enum => DynAnyKind::Enum,
-        K::Sequence => DynAnyKind::Sequence,
-        K::Array => DynAnyKind::Array,
-        K::Fixed => DynAnyKind::Fixed,
-        K::Value => DynAnyKind::Value,
-        K::ValueBox => DynAnyKind::ValueBox,
-        K::Alias | K::ObjRef | K::Native | K::AbstractInterface | K::LocalInterface => {
-            DynAnyKind::Primitive
-        }
-    }
-}
-
-/// Walk function for primitive TypeCodes — verifies that the CDR
-/// buffer can hold at least the primitive layout.
-fn walk_primitive(
-    r: &mut zerodds_wire::Reader<'_>,
-    k: zerodds_corba_ir::TcKind,
-) -> Result<(), DynAnyError> {
-    use zerodds_corba_ir::TcKind as K;
-    match k {
-        K::Null | K::Void => Ok(()),
-        K::Boolean | K::Char | K::Octet => {
-            let _ = r.read_u8()?;
-            Ok(())
-        }
-        K::Short | K::UShort | K::WChar => {
-            let _ = r.read_u16()?;
-            Ok(())
-        }
-        K::Long | K::ULong | K::Float => {
-            let _ = r.read_u32()?;
-            Ok(())
-        }
-        K::LongLong | K::ULongLong | K::Double => {
-            let _ = r.read_u64()?;
-            Ok(())
-        }
-        K::String | K::WString => {
-            // length-prefix + bytes; validate length only.
-            let _ = r.read_u32()?;
-            Ok(())
-        }
-        // LongDouble + TypeCode + Principal + Any: format-specific —
-        // we accept the raw bytes without a deeper walk.
-        _ => Ok(()),
-    }
-}
+// `DynAny` and `DynAnyFactory` live in `zerodds_corba_rt::dyn_any`, on the
+// TypeCode and `any` of the CORBA runtime; the ORB hands the factory out
+// as the initial reference `DynAnyFactory`.
+pub use zerodds_corba_rt::dyn_any::{
+    DynAny, DynAnyError, DynAnyFactory, DynResult, InconsistentTypeCode, equivalent,
+};
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic)]
@@ -745,6 +620,60 @@ mod tests {
         assert_eq!(reply.value, alloc::vec![0xde, 0xad, 0xbe, 0xef]);
     }
 
+    /// CORBA 3.3 Part 2 §9.4.2.1: a GIOP 1.0/1.1 request body follows
+    /// the header without padding, and CDR aligns an 8-octet argument
+    /// from the message start. `dispatch_dsi` hands the servant the
+    /// body's offset and byte order: an octet and a `long long` read
+    /// with `input()` come out as written; read from the first octet of
+    /// the arguments they do not.
+    #[test]
+    fn corba_p2_9_4_2_1_a_dsi_servant_reads_its_arguments_at_their_offset() {
+        use zerodds_corba_rust::SkeletonResult;
+        const VALUE: i64 = 0x0102_0304_0506_0708;
+        struct AfterOctet;
+        impl DsiServant for AfterOctet {
+            fn dynamic_invoke(&self, req: &mut ServerRequest) {
+                let input = req.input();
+                let mut r = input.reader(req.endianness);
+                let mut w = zerodds_wire::Writer::new(req.endianness);
+                if let (Ok(tag), Ok(value)) = (r.read_u8(), r.read_i64()) {
+                    w.write_u8(tag);
+                    w.write_i64(value);
+                }
+                req.set_result(w.finish());
+            }
+            fn primary_interface(&self) -> String {
+                "IDL:demo/Aligned:1.0".into()
+            }
+        }
+        for e in [
+            zerodds_wire::Endianness::Big,
+            zerodds_wire::Endianness::Little,
+        ] {
+            for offset in [8usize, 12, 13, 15] {
+                let mut w = zerodds_corba_giop::body_writer(offset, e);
+                w.write_u8(0x5a);
+                w.write_i64(VALUE);
+                let bytes = zerodds_corba_giop::finish_body(w, offset);
+                let body = zerodds_corba_rust::AlignedBody::new(&bytes, offset);
+                let SkeletonResult::Reply(reply) =
+                    dispatch_dsi(&AfterOctet, "after_octet", &body, e)
+                else {
+                    panic!("offset {offset}: no reply");
+                };
+                let mut r = zerodds_wire::Reader::new(&reply, e);
+                assert_eq!(r.read_u8().expect("tag"), 0x5a, "offset {offset}");
+                assert_eq!(r.read_i64().expect("value"), VALUE, "offset {offset}");
+                // The same octets from the first octet of the arguments.
+                let input = ServerRequest::received("after_octet", &body, e).input_body();
+                let mut from_zero = zerodds_wire::Reader::new(&input, e);
+                let misread =
+                    from_zero.read_u8().is_ok() && from_zero.read_i64().is_ok_and(|v| v == VALUE);
+                assert_eq!(misread, offset % 8 == 0, "offset {offset}");
+            }
+        }
+    }
+
     /// `_is_a` and `_non_existent` reach a DSI servant through
     /// `dispatch_dsi` like any object: answered from its interfaces, never
     /// passed to `dynamic_invoke` (which here would echo the request body
@@ -769,7 +698,8 @@ mod tests {
         let is_a = |id: &str| {
             let mut w = zerodds_wire::Writer::new(e);
             w.write_string(id);
-            match dispatch_dsi(&EchoDsi, "_is_a", &w.finish(), e) {
+            let body = zerodds_corba_rust::AlignedBody::new(&w.finish(), 0);
+            match dispatch_dsi(&EchoDsi, "_is_a", &body, e) {
                 SkeletonResult::Reply(b) => b,
                 other => panic!("_is_a: {other:?}"),
             }
@@ -779,106 +709,22 @@ mod tests {
         assert_eq!(is_a("IDL:omg.org/CORBA/Object:1.0"), alloc::vec![1]);
         assert_eq!(is_a("IDL:demo/Other:1.0"), alloc::vec![0]);
         assert!(matches!(
-            dispatch_dsi(&EchoDsi, "_non_existent", &[], e),
+            dispatch_dsi(
+                &EchoDsi,
+                "_non_existent",
+                &zerodds_corba_rust::AlignedBody::new(&[], 0),
+                e
+            ),
             SkeletonResult::Reply(b) if b == alloc::vec![0]
         ));
         assert!(matches!(
-            dispatch_dsi(&EchoDsi, "ping", &[7, 8], e),
+            dispatch_dsi(
+                &EchoDsi,
+                "ping",
+                &zerodds_corba_rust::AlignedBody::new(&[7, 8], 0),
+                e
+            ),
             SkeletonResult::Reply(b) if b == alloc::vec![7, 8]
         ));
-    }
-
-    // §13 DynAny
-    #[test]
-    fn dyn_any_round_trip() {
-        let d = DynAny::new(DynAnyKind::Struct, "IDL:demo/S:1.0", alloc::vec![1, 2, 3]);
-        assert_eq!(d.to_any(), alloc::vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn dyn_any_equal_same_value() {
-        let a = DynAny::new(DynAnyKind::Primitive, "long", alloc::vec![1]);
-        let b = DynAny::new(DynAnyKind::Primitive, "long", alloc::vec![1]);
-        assert!(a.equal(&b));
-    }
-
-    #[test]
-    fn dyn_any_not_equal_different_kind() {
-        let a = DynAny::new(DynAnyKind::Primitive, "long", alloc::vec![1]);
-        let b = DynAny::new(DynAnyKind::Struct, "long", alloc::vec![1]);
-        assert!(!a.equal(&b));
-    }
-
-    #[test]
-    fn dyn_any_from_any_round_trip() {
-        let d = DynAny::from_any(DynAnyKind::Sequence, "seq<long>", alloc::vec![0xde, 0xad]);
-        assert_eq!(d.to_any(), alloc::vec![0xde, 0xad]);
-    }
-
-    #[test]
-    fn dyn_any_kind_variants_are_distinct() {
-        assert_ne!(DynAnyKind::Primitive, DynAnyKind::Struct);
-        assert_ne!(DynAnyKind::Sequence, DynAnyKind::Array);
-    }
-
-    // §13 DynAny — Wire-up
-
-    #[test]
-    fn dyn_any_from_type_code_long_round_trip() {
-        let tc = zerodds_corba_ir::TypeCode::primitive(zerodds_corba_ir::TcKind::Long);
-        // Little-endian encoding of a `long` value 0x12345678.
-        let raw = alloc::vec![0x78, 0x56, 0x34, 0x12];
-        let dyn_any = DynAny::from_type_code(&tc, &raw).expect("walk ok");
-        assert_eq!(dyn_any.kind, DynAnyKind::Primitive);
-        assert_eq!(dyn_any.to_cdr(), raw);
-    }
-
-    #[test]
-    fn dyn_any_from_type_code_long_rejects_truncated_buffer() {
-        let tc = zerodds_corba_ir::TypeCode::primitive(zerodds_corba_ir::TcKind::Long);
-        // Only 3 bytes — long requires 4.
-        let raw = alloc::vec![0x01, 0x02, 0x03];
-        let err = DynAny::from_type_code(&tc, &raw).expect_err("must fail");
-        assert!(matches!(err, DynAnyError::Decode(_)));
-    }
-
-    #[test]
-    fn dyn_any_from_type_code_sequence_preserves_bytes() {
-        let tc = zerodds_corba_ir::TypeCode::sequence(
-            zerodds_corba_ir::TypeCode::primitive(zerodds_corba_ir::TcKind::Long),
-            10,
-        );
-        // Complex type → no primitive validation, raw bytes preserved.
-        let raw = alloc::vec![0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa];
-        let dyn_any = DynAny::from_type_code(&tc, &raw).expect("walk ok");
-        assert_eq!(dyn_any.kind, DynAnyKind::Sequence);
-        assert_eq!(dyn_any.to_cdr(), raw);
-    }
-
-    #[test]
-    fn dyn_any_from_type_code_struct_preserves_bytes_and_id() {
-        let tc = zerodds_corba_ir::TypeCode::r#struct(
-            "IDL:demo/Pair:1.0".into(),
-            "Pair".into(),
-            alloc::vec![
-                zerodds_corba_ir::type_code::StructMember {
-                    name: "a".into(),
-                    type_code: zerodds_corba_ir::TypeCode::primitive(
-                        zerodds_corba_ir::TcKind::Long,
-                    ),
-                },
-                zerodds_corba_ir::type_code::StructMember {
-                    name: "b".into(),
-                    type_code: zerodds_corba_ir::TypeCode::primitive(
-                        zerodds_corba_ir::TcKind::Long,
-                    ),
-                },
-            ],
-        );
-        let raw = alloc::vec![0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00];
-        let d = DynAny::from_type_code(&tc, &raw).expect("walk ok");
-        assert_eq!(d.kind, DynAnyKind::Struct);
-        assert_eq!(d.repository_id, "IDL:demo/Pair:1.0");
-        assert_eq!(d.to_cdr(), raw);
     }
 }

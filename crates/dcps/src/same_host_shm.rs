@@ -99,7 +99,7 @@ fn pair_config(
 /// A segment that changed more recently than this is left to a later
 /// sweep: what it covers, the gap between a segment's creation and its
 /// creator's lock, is microseconds.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const ORPHAN_MIN_AGE: Duration = Duration::from_secs(60);
 
 /// Unlinks the segments no process holds any more and files what it
@@ -108,10 +108,13 @@ const ORPHAN_MIN_AGE: Duration = Duration::from_secs(60);
 /// process over `/dev/shm`
 /// (`zerodds_transport_shm::posix::sweep_orphaned_segments`); elsewhere
 /// once per flink directory, which is per host and domain
-/// (`sweep_orphaned_flinks`), since macOS lists no shared-memory objects.
-/// Then, once per flink directory on every Unix, the `.lock` files and
-/// stale flinks the pairs left (`sweep_stale_pair_files`).
-#[cfg(unix)]
+/// (`sweep_orphaned_flinks`), since macOS lists no shared-memory objects,
+/// and once per process the pair directory (`sweep_pair_dir`), whose hold
+/// files name the segments whose flink went, on Windows with the backing
+/// files of the rings. Then, once per flink directory, the `.lock` files
+/// and stale flinks the pairs left (`sweep_stale_pair_files`). Before,
+/// Windows swept nothing.
+#[cfg(any(unix, windows))]
 pub fn sweep_orphaned_segments_once(
     sink: &zerodds_foundation::observability::SharedSink,
     local_prefix: GuidPrefix,
@@ -145,8 +148,21 @@ pub fn sweep_orphaned_segments_once(
         result
     };
     #[cfg(not(target_os = "linux"))]
-    let segments: Option<std::io::Result<SweepReport>> = first_in_dir
-        .then(|| zerodds_transport_shm::posix::sweep_orphaned_flinks(&dir, ORPHAN_MIN_AGE));
+    let segments: Option<std::io::Result<SweepReport>> = {
+        use zerodds_transport_shm::posix;
+        // The pair directory is the user's, not the domain's: once per
+        // process, as `/dev/shm` on Linux. It finds the orphaned segments
+        // whose flink went.
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        let mut pairs = None;
+        ONCE.call_once(|| pairs = Some(posix::sweep_pair_dir(ORPHAN_MIN_AGE)));
+        let flinks = first_in_dir.then(|| posix::sweep_orphaned_flinks(&dir, ORPHAN_MIN_AGE));
+        match (pairs, flinks) {
+            (None, None) => None,
+            (Some(r), None) | (None, Some(r)) => Some(r),
+            (Some(a), Some(b)) => Some(a.and_then(|a| b.map(|b| a.and(b)))),
+        }
+    };
     // After the segments: the `.lock` files (and on Linux the flinks) of
     // the pairs whose segments are gone.
     let pair_files = first_in_dir

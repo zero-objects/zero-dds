@@ -7,8 +7,8 @@
 //! - `src/bin/zerodds-mqtt-bridged.rs`: `cli::Configured::from_command_line`
 //!   with the flags `zerodds_config::CommandLine::extract` took out and the
 //!   daemon's convenience flags pushed as `--set` entries, the base name
-//!   `config::CONFIG_STEM`, the key predicate `config::is_key` (its `KEYS`
-//!   and every entry under `auth.sasl_users`) and the daemon's own
+//!   `config::CONFIG_STEM`, the key predicate `config::is_key` (its `KEYS`)
+//!   and the daemon's own
 //!   environment name `config::ENV` (`MQTT_PASSWORD` for `mqtt.password`);
 //!   `configured.source.tree()` for `DaemonConfig::from_config`,
 //!   `checking`, `check_config` and `configured.runtime`; `cli::HELP` in the
@@ -28,7 +28,7 @@
 //! the daemon's own file, keys and environment name, the runtime keys in that
 //! file, the rank of a `--set`, the refusal of an unknown `--set` path and of
 //! an invalid runtime value, the warning on an unknown file key, the
-//! `auth.sasl_users` map passing the unknown-key check, `--check-config` and
+//! unknown-key check of the removed `auth.sasl_users`, `--check-config` and
 //! its report without the secrets; the GUID prefix of the bridge; the
 //! policies the bridge leaves at `Default`.
 //!
@@ -191,15 +191,14 @@ fn an_unknown_key_in_the_daemon_file_warns_at_start_and_fails_the_check() {
 }
 
 #[test]
-fn the_sasl_user_map_passes_the_unknown_key_check() {
-    // The entries of a map with user names for keys come back as dotted
-    // paths, which `is_key` accepts by their prefix.
-    let file = daemon_file(
-        "sasl-users",
-        "auth:\n  sasl_users:\n    alice: pw-alice\n    bob: pw-bob\n",
-    );
+fn the_removed_sasl_user_map_is_an_unknown_key() {
+    // A client has no users to check: `auth.sasl_users` is no key of the
+    // daemon (Spec §3), and its entries come back as unknown dotted paths.
+    let file = daemon_file("sasl-users", "auth:\n  sasl_users:\n    alice: pw-alice\n");
     let configured = configured(&file, &[]).unwrap();
-    assert!(configured.source.unknown_keys(&is_key).is_empty());
+    let unknown = configured.source.unknown_keys(&is_key);
+    assert_eq!(unknown.len(), 1, "{unknown:?}");
+    assert!(unknown[0].0.starts_with("auth.sasl_users"), "{unknown:?}");
     let _ = std::fs::remove_file(file);
 }
 
@@ -219,7 +218,7 @@ fn the_file_the_config_flag_names_must_exist() {
 fn the_check_config_report_hides_the_secrets() {
     let file = daemon_file(
         "secret",
-        "mqtt:\n  password: pw-93c1e7\nauth:\n  sasl_users:\n    alice: pw-5be0a2\n",
+        "mqtt:\n  password: pw-93c1e7\nauth:\n  bearer_token: pw-5be0a2\n",
     );
     let configured = configured(&file, &[]).unwrap();
     // `Ok` holds the report of a valid configuration, `Err` the one with

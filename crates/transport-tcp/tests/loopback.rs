@@ -17,8 +17,9 @@
 )]
 
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zerodds_rtps::wire_types::Locator;
 use zerodds_transport::Transport;
@@ -59,27 +60,100 @@ fn tcp_1_2_loopback_single_frame_end_to_end() {
     assert_eq!(&frames[1].data[..], b"payload-two");
 }
 
+/// Runs `serve` of a transport bound to loopback on `port` (0: chosen by
+/// the system) on a thread of its own.
+fn serving_peer(port: u16) -> (Arc<TcpTransport>, thread::JoinHandle<()>) {
+    // The port of a peer that has just gone is free again once its
+    // listener is closed; until then the bind is tried again.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let peer = loop {
+        match TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, port) {
+            Ok(peer) => break Arc::new(peer),
+            Err(e) => {
+                assert!(Instant::now() < deadline, "bind to port {port}: {e}");
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    };
+    let serving = {
+        let peer = Arc::clone(&peer);
+        thread::spawn(move || peer.serve())
+    };
+    (peer, serving)
+}
+
+/// The next frame of the inbound queue within `bound`.
+fn frame_within(t: &TcpTransport, bound: Duration) -> Option<Vec<u8>> {
+    let deadline = Instant::now() + bound;
+    loop {
+        if let Ok(dg) = t.try_recv() {
+            return Some(dg.data.to_vec());
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// §5.1: the peer goes away (its connections close, its port is free)
+/// and comes back on the same address. The client, which held a
+/// connection to the first life, connects anew: a frame sent after the
+/// restart arrives at the second life within the backoff the failed
+/// attempts in between have built up.
 #[test]
 fn tcp_5_1_reconnect_after_peer_restart() {
-    // We start a server, send, the server closes (via accept_one
-    // return), then we start a second server on the *same* address
-    // and expect a new send to succeed (a new connect attempt).
-    let server1 = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind1");
-    let addr1 = server1.local_locator();
-
-    // Server thread: one accept round, then drop.
-    let s1_handle = thread::spawn(move || {
-        server1.accept_one().expect("accept_one srv1");
-    });
-    thread::sleep(Duration::from_millis(30));
+    let (first_life, serving) = serving_peer(0);
+    let port = u16::try_from(first_life.local_locator().port).expect("port");
+    let dest = Locator::tcp_v4([127, 0, 0, 1], u32::from(port));
 
     let client = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("client bind");
-    let dest = Locator::tcp_v4([127, 0, 0, 1], addr1.port);
-    Transport::send(&client, &dest, b"first").expect("first send");
-    Transport::send(&client, &dest, b"second").expect("second send");
+    Transport::send(&client, &dest, b"to-the-first-life").expect("send to the first life");
+    assert_eq!(
+        frame_within(&first_life, Duration::from_secs(5)).as_deref(),
+        Some(&b"to-the-first-life"[..])
+    );
 
-    drop(client);
-    s1_handle.join().expect("s1 thread");
+    // The peer ends: connection closed, listener gone.
+    first_life.close();
+    serving.join().expect("serve of the first life");
+    drop(first_life);
+    // Sent while the peer is away: lost or refused, never delivered.
+    let _ = Transport::send(&client, &dest, b"while-away");
+
+    let (second_life, serving) = serving_peer(port);
+    let restarted = Instant::now();
+    // The client sends numbered frames until one arrives.
+    let mut number = 0u32;
+    let arrived = loop {
+        let _ = Transport::send(&client, &dest, &number.to_be_bytes());
+        if let Some(frame) = frame_within(&second_life, Duration::from_millis(20)) {
+            break frame;
+        }
+        assert!(
+            restarted.elapsed() < Duration::from_secs(2),
+            "no frame reached the restarted peer; {number} sent"
+        );
+        number += 1;
+    };
+    assert_eq!(
+        arrived.len(),
+        4,
+        "a frame sent after the restart: {arrived:?}"
+    );
+    let arrived_number = u32::from_be_bytes([arrived[0], arrived[1], arrived[2], arrived[3]]);
+    assert!(arrived_number <= number);
+    // From here on the connection is in use again: the next frame is the
+    // next one in the queue.
+    Transport::send(&client, &dest, b"after").expect("send on the new connection");
+    let mut later = frame_within(&second_life, Duration::from_secs(5)).expect("a later frame");
+    while later.len() == 4 {
+        later = frame_within(&second_life, Duration::from_secs(5)).expect("the frame `after`");
+    }
+    assert_eq!(later, b"after");
+
+    second_life.close();
+    serving.join().expect("serve of the second life");
 }
 
 #[test]

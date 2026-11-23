@@ -542,19 +542,38 @@ fn numbers_outside_the_schemas_types_are_refused() {
     for body in [
         "<resource_limits><max_samples>0</max_samples></resource_limits>",
         "<resource_limits><max_instances>-1</max_instances></resource_limits>",
-        "<resource_limits><max_samples_per_instance>0x10</max_samples_per_instance></resource_limits>",
         "<resource_limits><initial_samples>0</initial_samples></resource_limits>",
         "<durability_service><max_samples>0</max_samples></durability_service>",
         "<durability_service><history_depth>0</history_depth></durability_service>",
         "<history><depth>0</depth></history>",
-        "<ownership_strength><value>-1</value></ownership_strength>",
-        "<transport_priority><value>-1</value></transport_priority>",
     ] {
         let err = parse_qos_libraries(&writer(body)).unwrap_err();
         assert!(
             matches!(err, XmlError::ValueOutOfRange(_)),
             "{body}: {err:?}"
         );
+    }
+    // Table 7.1 (§7.1.4) gives a Long the hexadecimal form and the negative
+    // half; the schema types these fields with decimal digits only
+    // (positiveInteger_UNLIMITED, xs:positiveInteger) or 0 and up
+    // (xs:nonNegativeInteger). The default reading follows the schema and
+    // refuses those forms as vendor forms, in every numeric field.
+    for body in [
+        "<resource_limits><max_samples_per_instance>0x10</max_samples_per_instance></resource_limits>",
+        "<resource_limits><initial_samples>0x10</initial_samples></resource_limits>",
+        "<resource_limits><initial_instances>0x10</initial_instances></resource_limits>",
+        "<durability_service><history_depth>0x10</history_depth></durability_service>",
+        "<durability_service><max_instances>0x10</max_instances></durability_service>",
+        "<history><depth>0x10</depth></history>",
+        "<deadline><period><sec>0x10</sec></period></deadline>",
+        "<ownership_strength><value>0x10</value></ownership_strength>",
+        "<transport_priority><value>0x0</value></transport_priority>",
+        "<ownership_strength><value>-1</value></ownership_strength>",
+        "<transport_priority><value>-1</value></transport_priority>",
+        "<transport_priority><value>LENGTH_UNLIMITED</value></transport_priority>",
+    ] {
+        let err = parse_qos_libraries(&writer(body)).unwrap_err();
+        assert!(matches!(err, XmlError::VendorForm(_)), "{body}: {err:?}");
     }
     let q = writer_qos(
         "<resource_limits><max_samples>5</max_samples>\

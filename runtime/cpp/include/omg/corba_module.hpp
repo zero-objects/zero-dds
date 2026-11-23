@@ -168,11 +168,7 @@ namespace CORBA {
             private:
             std::string what_;
         };
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_NoPossiblePollable = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PollableSet/NoPossiblePollable:1.0", "NoPossiblePollable", {});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_NoPossiblePollable;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::PollableSet::NoPossiblePollable& value) { any._insert<::CORBA::PollableSet::NoPossiblePollable>(value, _tc_NoPossiblePollable); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::PollableSet::NoPossiblePollable&& value) { any._insert<::CORBA::PollableSet::NoPossiblePollable>(std::move(value), _tc_NoPossiblePollable); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::PollableSet::NoPossiblePollable& value) { return any._extract<::CORBA::PollableSet::NoPossiblePollable>(value); }
@@ -197,11 +193,7 @@ namespace CORBA {
             private:
             std::string what_;
         };
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_UnknownPollable = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PollableSet/UnknownPollable:1.0", "UnknownPollable", {});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_UnknownPollable;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::PollableSet::UnknownPollable& value) { any._insert<::CORBA::PollableSet::UnknownPollable>(value, _tc_UnknownPollable); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::PollableSet::UnknownPollable&& value) { any._insert<::CORBA::PollableSet::UnknownPollable>(std::move(value), _tc_UnknownPollable); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::PollableSet::UnknownPollable& value) { return any._extract<::CORBA::PollableSet::UnknownPollable>(value); }
@@ -222,13 +214,9 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/PollableSet:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/PollableSet:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::PollableSet::_tc_NoPossiblePollable = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PollableSet/NoPossiblePollable:1.0", "NoPossiblePollable", {});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::PollableSet::_tc_NoPossiblePollable = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PollableSet/NoPossiblePollable:1.0", "NoPossiblePollable", {});
     inline void ::CORBA::PollableSet::NoPossiblePollable::_insert_into(::CORBA::Any& any) const { any <<= *this; }
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::PollableSet::_tc_UnknownPollable = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PollableSet/UnknownPollable:1.0", "UnknownPollable", {});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::PollableSet::_tc_UnknownPollable = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PollableSet/UnknownPollable:1.0", "UnknownPollable", {});
     inline void ::CORBA::PollableSet::UnknownPollable::_insert_into(::CORBA::Any& any) const { any <<= *this; }
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_PollableSet = ::CORBA::TypeCode::create_local_interface_tc("IDL:omg.org/CORBA/PollableSet:1.0", "PollableSet");
@@ -497,11 +485,7 @@ namespace CORBA {
             swap(a.kind, b.kind);
             swap(a.value, b.value);
         }
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Description = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Contained/Description:1.0", "Description", {::CORBA::TypeCode::Member{"kind", ::CORBA::_tc_DefinitionKind, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"value", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Description;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::Contained::Description& value) { any._insert<::CORBA::Contained::Description>(value, _tc_Description); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::Contained::Description&& value) { any._insert<::CORBA::Contained::Description>(std::move(value), _tc_Description); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::Contained::Description& value) { return any._extract<::CORBA::Contained::Description>(value); }
@@ -531,9 +515,7 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/Contained:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/Contained:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::Contained::_tc_Description = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Contained/Description:1.0", "Description", {::CORBA::TypeCode::Member{"kind", ::CORBA::_tc_DefinitionKind, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"value", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::Contained::_tc_Description = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Contained/Description:1.0", "Description", {{"kind", ::CORBA::_tc_DefinitionKind}, {"value", ::CORBA::_tc_any}});
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Contained = ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/Contained:1.0", "Contained");
     inline void operator<<=(::CORBA::Any& any, ::omg::types::ref_type<::CORBA::Contained> value) { any._insert<::omg::types::ref_type<::CORBA::Object>>(std::move(value), _tc_Contained); }
@@ -588,21 +570,13 @@ namespace CORBA {
             swap(a.kind, b.kind);
             swap(a.value, b.value);
         }
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Description = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Container/Description:1.0", "Description", {::CORBA::TypeCode::Member{"contained_object", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/Contained:1.0", "Contained"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"kind", ::CORBA::_tc_DefinitionKind, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"value", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Description;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::Container::Description& value) { any._insert<::CORBA::Container::Description>(value, _tc_Description); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::Container::Description&& value) { any._insert<::CORBA::Container::Description>(std::move(value), _tc_Description); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::Container::Description& value) { return any._extract<::CORBA::Container::Description>(value); }
 
         using DescriptionSeq = ::omg::types::sequence<::CORBA::Container::Description>;
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_DescriptionSeq = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/Container/DescriptionSeq:1.0", "DescriptionSeq", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::Container::_tc_Description));
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_DescriptionSeq;
-        #endif
 
         virtual ~Container() = default;
 
@@ -646,12 +620,8 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/Container:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/Container:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::Container::_tc_Description = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Container/Description:1.0", "Description", {::CORBA::TypeCode::Member{"contained_object", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/Contained:1.0", "Contained"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"kind", ::CORBA::_tc_DefinitionKind, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"value", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}});
-    #endif
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::Container::_tc_DescriptionSeq = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/Container/DescriptionSeq:1.0", "DescriptionSeq", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::Container::_tc_Description));
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::Container::_tc_Description = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Container/Description:1.0", "Description", {{"contained_object", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/Contained:1.0", "Contained")}, {"kind", ::CORBA::_tc_DefinitionKind}, {"value", ::CORBA::_tc_any}});
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::Container::_tc_DescriptionSeq = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/Container/DescriptionSeq:1.0", "DescriptionSeq", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::Container::_tc_Description));
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Container = ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/Container:1.0", "Container");
     inline void operator<<=(::CORBA::Any& any, ::omg::types::ref_type<::CORBA::Container> value) { any._insert<::omg::types::ref_type<::CORBA::Object>>(std::move(value), _tc_Container); }
@@ -752,11 +722,7 @@ namespace CORBA {
             swap(a.type, b.type);
             swap(a.is_abstract, b.is_abstract);
         }
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_FullInterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceDef/FullInterfaceDescription:1.0", "FullInterfaceDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_AttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_FullInterfaceDescription;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::InterfaceDef::FullInterfaceDescription& value) { any._insert<::CORBA::InterfaceDef::FullInterfaceDescription>(value, _tc_FullInterfaceDescription); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::InterfaceDef::FullInterfaceDescription&& value) { any._insert<::CORBA::InterfaceDef::FullInterfaceDescription>(std::move(value), _tc_FullInterfaceDescription); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::InterfaceDef::FullInterfaceDescription& value) { return any._extract<::CORBA::InterfaceDef::FullInterfaceDescription>(value); }
@@ -781,9 +747,7 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/InterfaceDef:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/InterfaceDef:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::InterfaceDef::_tc_FullInterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceDef/FullInterfaceDescription:1.0", "FullInterfaceDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_AttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::InterfaceDef::_tc_FullInterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceDef/FullInterfaceDescription:1.0", "FullInterfaceDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"operations", ::CORBA::_tc_OpDescriptionSeq}, {"attributes", ::CORBA::_tc_AttrDescriptionSeq}, {"base_interfaces", ::CORBA::_tc_RepositoryIdSeq}, {"type", ::CORBA::_tc_TypeCode}, {"is_abstract", ::CORBA::_tc_boolean}});
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InterfaceDef = ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/InterfaceDef:1.0", "InterfaceDef");
     inline void operator<<=(::CORBA::Any& any, ::omg::types::ref_type<::CORBA::InterfaceDef> value) { any._insert<::omg::types::ref_type<::CORBA::Object>>(std::move(value), _tc_InterfaceDef); }
@@ -976,11 +940,7 @@ namespace CORBA {
             swap(a.base_interfaces, b.base_interfaces);
             swap(a.type, b.type);
         }
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtFullInterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceAttrExtension/ExtFullInterfaceDescription:1.0", "ExtFullInterfaceDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_ExtAttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtFullInterfaceDescription;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::InterfaceAttrExtension::ExtFullInterfaceDescription& value) { any._insert<::CORBA::InterfaceAttrExtension::ExtFullInterfaceDescription>(value, _tc_ExtFullInterfaceDescription); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::InterfaceAttrExtension::ExtFullInterfaceDescription&& value) { any._insert<::CORBA::InterfaceAttrExtension::ExtFullInterfaceDescription>(std::move(value), _tc_ExtFullInterfaceDescription); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::InterfaceAttrExtension::ExtFullInterfaceDescription& value) { return any._extract<::CORBA::InterfaceAttrExtension::ExtFullInterfaceDescription>(value); }
@@ -995,9 +955,7 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/InterfaceAttrExtension:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/InterfaceAttrExtension:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::InterfaceAttrExtension::_tc_ExtFullInterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceAttrExtension/ExtFullInterfaceDescription:1.0", "ExtFullInterfaceDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_ExtAttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::InterfaceAttrExtension::_tc_ExtFullInterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceAttrExtension/ExtFullInterfaceDescription:1.0", "ExtFullInterfaceDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"operations", ::CORBA::_tc_OpDescriptionSeq}, {"attributes", ::CORBA::_tc_ExtAttrDescriptionSeq}, {"base_interfaces", ::CORBA::_tc_RepositoryIdSeq}, {"type", ::CORBA::_tc_TypeCode}});
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InterfaceAttrExtension = ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/InterfaceAttrExtension:1.0", "InterfaceAttrExtension");
     inline void operator<<=(::CORBA::Any& any, ::omg::types::ref_type<::CORBA::InterfaceAttrExtension> value) { any._insert<::omg::types::ref_type<::CORBA::Object>>(std::move(value), _tc_InterfaceAttrExtension); }
@@ -1078,11 +1036,7 @@ namespace CORBA {
             swap(a.base_value, b.base_value);
             swap(a.type, b.type);
         }
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_FullValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueDef/FullValueDescription:1.0", "FullValueDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_custom", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_AttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"members", ::CORBA::_tc_ValueMemberSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"initializers", ::CORBA::_tc_InitializerSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_truncatable", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_value", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_FullValueDescription;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::ValueDef::FullValueDescription& value) { any._insert<::CORBA::ValueDef::FullValueDescription>(value, _tc_FullValueDescription); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::ValueDef::FullValueDescription&& value) { any._insert<::CORBA::ValueDef::FullValueDescription>(std::move(value), _tc_FullValueDescription); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::ValueDef::FullValueDescription& value) { return any._extract<::CORBA::ValueDef::FullValueDescription>(value); }
@@ -1124,9 +1078,7 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/ValueDef:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/ValueDef:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ValueDef::_tc_FullValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueDef/FullValueDescription:1.0", "FullValueDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_custom", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_AttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"members", ::CORBA::_tc_ValueMemberSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"initializers", ::CORBA::_tc_InitializerSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_truncatable", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_value", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ValueDef::_tc_FullValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueDef/FullValueDescription:1.0", "FullValueDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"is_abstract", ::CORBA::_tc_boolean}, {"is_custom", ::CORBA::_tc_boolean}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"operations", ::CORBA::_tc_OpDescriptionSeq}, {"attributes", ::CORBA::_tc_AttrDescriptionSeq}, {"members", ::CORBA::_tc_ValueMemberSeq}, {"initializers", ::CORBA::_tc_InitializerSeq}, {"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq}, {"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq}, {"is_truncatable", ::CORBA::_tc_boolean}, {"base_value", ::CORBA::_tc_RepositoryId}, {"type", ::CORBA::_tc_TypeCode}});
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ValueDef = ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/ValueDef:1.0", "ValueDef");
     inline void operator<<=(::CORBA::Any& any, ::omg::types::ref_type<::CORBA::ValueDef> value) { any._insert<::omg::types::ref_type<::CORBA::Object>>(std::move(value), _tc_ValueDef); }
@@ -1190,11 +1142,7 @@ namespace CORBA {
             swap(a.base_value, b.base_value);
             swap(a.type, b.type);
         }
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtFullValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtValueDef/ExtFullValueDescription:1.0", "ExtFullValueDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_custom", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_ExtAttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"members", ::CORBA::_tc_ValueMemberSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"initializers", ::CORBA::_tc_ExtInitializerSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_truncatable", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_value", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtFullValueDescription;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::ExtValueDef::ExtFullValueDescription& value) { any._insert<::CORBA::ExtValueDef::ExtFullValueDescription>(value, _tc_ExtFullValueDescription); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::ExtValueDef::ExtFullValueDescription&& value) { any._insert<::CORBA::ExtValueDef::ExtFullValueDescription>(std::move(value), _tc_ExtFullValueDescription); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::ExtValueDef::ExtFullValueDescription& value) { return any._extract<::CORBA::ExtValueDef::ExtFullValueDescription>(value); }
@@ -1212,9 +1160,7 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/ExtValueDef:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/ExtValueDef:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ExtValueDef::_tc_ExtFullValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtValueDef/ExtFullValueDescription:1.0", "ExtFullValueDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_custom", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"operations", ::CORBA::_tc_OpDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"attributes", ::CORBA::_tc_ExtAttrDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"members", ::CORBA::_tc_ValueMemberSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"initializers", ::CORBA::_tc_ExtInitializerSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_truncatable", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_value", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ExtValueDef::_tc_ExtFullValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtValueDef/ExtFullValueDescription:1.0", "ExtFullValueDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"is_abstract", ::CORBA::_tc_boolean}, {"is_custom", ::CORBA::_tc_boolean}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"operations", ::CORBA::_tc_OpDescriptionSeq}, {"attributes", ::CORBA::_tc_ExtAttrDescriptionSeq}, {"members", ::CORBA::_tc_ValueMemberSeq}, {"initializers", ::CORBA::_tc_ExtInitializerSeq}, {"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq}, {"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq}, {"is_truncatable", ::CORBA::_tc_boolean}, {"base_value", ::CORBA::_tc_RepositoryId}, {"type", ::CORBA::_tc_TypeCode}});
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtValueDef = ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/ExtValueDef:1.0", "ExtValueDef");
     inline void operator<<=(::CORBA::Any& any, ::omg::types::ref_type<::CORBA::ExtValueDef> value) { any._insert<::omg::types::ref_type<::CORBA::Object>>(std::move(value), _tc_ExtValueDef); }
@@ -1596,7 +1542,7 @@ namespace CORBA {
         std::string what_;
     };
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_PolicyError = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PolicyError:1.0", "PolicyError", {::CORBA::TypeCode::Member{"reason", ::CORBA::_tc_PolicyErrorCode, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_PolicyError = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/PolicyError:1.0", "PolicyError", {{"reason", ::CORBA::_tc_PolicyErrorCode}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::PolicyError& value) { any._insert<::CORBA::PolicyError>(value, _tc_PolicyError); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::PolicyError&& value) { any._insert<::CORBA::PolicyError>(std::move(value), _tc_PolicyError); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::PolicyError& value) { return any._extract<::CORBA::PolicyError>(value); }
@@ -1647,7 +1593,7 @@ namespace CORBA {
         std::string what_;
     };
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InvalidPolicies = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/InvalidPolicies:1.0", "InvalidPolicies", {::CORBA::TypeCode::Member{"indicies", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::_tc_ushort), nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InvalidPolicies = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/InvalidPolicies:1.0", "InvalidPolicies", {{"indicies", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::_tc_ushort)}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::InvalidPolicies& value) { any._insert<::CORBA::InvalidPolicies>(value, _tc_InvalidPolicies); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::InvalidPolicies&& value) { any._insert<::CORBA::InvalidPolicies>(std::move(value), _tc_InvalidPolicies); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::InvalidPolicies& value) { return any._extract<::CORBA::InvalidPolicies>(value); }
@@ -1763,7 +1709,7 @@ namespace CORBA {
         swap(a.type_def, b.type_def);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_StructMember = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/StructMember:1.0", "StructMember", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType"), nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_StructMember = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/StructMember:1.0", "StructMember", {{"name", ::CORBA::_tc_Identifier}, {"type", ::CORBA::_tc_TypeCode}, {"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType")}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::StructMember& value) { any._insert<::CORBA::StructMember>(value, _tc_StructMember); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::StructMember&& value) { any._insert<::CORBA::StructMember>(std::move(value), _tc_StructMember); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::StructMember& value) { return any._extract<::CORBA::StructMember>(value); }
@@ -1785,7 +1731,7 @@ namespace CORBA {
         swap(a.name, b.name);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Initializer = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Initializer:1.0", "Initializer", {::CORBA::TypeCode::Member{"members", ::CORBA::_tc_StructMemberSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_Initializer = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/Initializer:1.0", "Initializer", {{"members", ::CORBA::_tc_StructMemberSeq}, {"name", ::CORBA::_tc_Identifier}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::Initializer& value) { any._insert<::CORBA::Initializer>(value, _tc_Initializer); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::Initializer&& value) { any._insert<::CORBA::Initializer>(std::move(value), _tc_Initializer); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::Initializer& value) { return any._extract<::CORBA::Initializer>(value); }
@@ -1813,7 +1759,7 @@ namespace CORBA {
         swap(a.type_def, b.type_def);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_UnionMember = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/UnionMember:1.0", "UnionMember", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"label", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType"), nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_UnionMember = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/UnionMember:1.0", "UnionMember", {{"name", ::CORBA::_tc_Identifier}, {"label", ::CORBA::_tc_any}, {"type", ::CORBA::_tc_TypeCode}, {"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType")}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::UnionMember& value) { any._insert<::CORBA::UnionMember>(value, _tc_UnionMember); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::UnionMember&& value) { any._insert<::CORBA::UnionMember>(std::move(value), _tc_UnionMember); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::UnionMember& value) { return any._extract<::CORBA::UnionMember>(value); }
@@ -1844,7 +1790,7 @@ namespace CORBA {
         swap(a.type, b.type);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExceptionDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExceptionDescription:1.0", "ExceptionDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExceptionDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExceptionDescription:1.0", "ExceptionDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"type", ::CORBA::_tc_TypeCode}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ExceptionDescription& value) { any._insert<::CORBA::ExceptionDescription>(value, _tc_ExceptionDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ExceptionDescription&& value) { any._insert<::CORBA::ExceptionDescription>(std::move(value), _tc_ExceptionDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ExceptionDescription& value) { return any._extract<::CORBA::ExceptionDescription>(value); }
@@ -1872,7 +1818,7 @@ namespace CORBA {
         swap(a.name, b.name);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtInitializer = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtInitializer:1.0", "ExtInitializer", {::CORBA::TypeCode::Member{"members", ::CORBA::_tc_StructMemberSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"exceptions", ::CORBA::_tc_ExcDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtInitializer = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtInitializer:1.0", "ExtInitializer", {{"members", ::CORBA::_tc_StructMemberSeq}, {"exceptions", ::CORBA::_tc_ExcDescriptionSeq}, {"name", ::CORBA::_tc_Identifier}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ExtInitializer& value) { any._insert<::CORBA::ExtInitializer>(value, _tc_ExtInitializer); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ExtInitializer&& value) { any._insert<::CORBA::ExtInitializer>(std::move(value), _tc_ExtInitializer); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ExtInitializer& value) { return any._extract<::CORBA::ExtInitializer>(value); }
@@ -1900,7 +1846,7 @@ namespace CORBA {
         swap(a.version, b.version);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ModuleDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ModuleDescription:1.0", "ModuleDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ModuleDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ModuleDescription:1.0", "ModuleDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ModuleDescription& value) { any._insert<::CORBA::ModuleDescription>(value, _tc_ModuleDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ModuleDescription&& value) { any._insert<::CORBA::ModuleDescription>(std::move(value), _tc_ModuleDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ModuleDescription& value) { return any._extract<::CORBA::ModuleDescription>(value); }
@@ -1934,7 +1880,7 @@ namespace CORBA {
         swap(a.value, b.value);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ConstantDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ConstantDescription:1.0", "ConstantDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"value", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ConstantDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ConstantDescription:1.0", "ConstantDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"type", ::CORBA::_tc_TypeCode}, {"value", ::CORBA::_tc_any}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ConstantDescription& value) { any._insert<::CORBA::ConstantDescription>(value, _tc_ConstantDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ConstantDescription&& value) { any._insert<::CORBA::ConstantDescription>(std::move(value), _tc_ConstantDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ConstantDescription& value) { return any._extract<::CORBA::ConstantDescription>(value); }
@@ -1965,7 +1911,7 @@ namespace CORBA {
         swap(a.type, b.type);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_TypeDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/TypeDescription:1.0", "TypeDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_TypeDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/TypeDescription:1.0", "TypeDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"type", ::CORBA::_tc_TypeCode}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::TypeDescription& value) { any._insert<::CORBA::TypeDescription>(value, _tc_TypeDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::TypeDescription&& value) { any._insert<::CORBA::TypeDescription>(std::move(value), _tc_TypeDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::TypeDescription& value) { return any._extract<::CORBA::TypeDescription>(value); }
@@ -1999,7 +1945,7 @@ namespace CORBA {
         swap(a.mode, b.mode);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_AttributeDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/AttributeDescription:1.0", "AttributeDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"mode", ::CORBA::_tc_AttributeMode, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_AttributeDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/AttributeDescription:1.0", "AttributeDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"type", ::CORBA::_tc_TypeCode}, {"mode", ::CORBA::_tc_AttributeMode}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::AttributeDescription& value) { any._insert<::CORBA::AttributeDescription>(value, _tc_AttributeDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::AttributeDescription&& value) { any._insert<::CORBA::AttributeDescription>(std::move(value), _tc_AttributeDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::AttributeDescription& value) { return any._extract<::CORBA::AttributeDescription>(value); }
@@ -2039,7 +1985,7 @@ namespace CORBA {
         swap(a.put_exceptions, b.put_exceptions);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtAttributeDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtAttributeDescription:1.0", "ExtAttributeDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"mode", ::CORBA::_tc_AttributeMode, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"get_exceptions", ::CORBA::_tc_ExcDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"put_exceptions", ::CORBA::_tc_ExcDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ExtAttributeDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ExtAttributeDescription:1.0", "ExtAttributeDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"type", ::CORBA::_tc_TypeCode}, {"mode", ::CORBA::_tc_AttributeMode}, {"get_exceptions", ::CORBA::_tc_ExcDescriptionSeq}, {"put_exceptions", ::CORBA::_tc_ExcDescriptionSeq}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ExtAttributeDescription& value) { any._insert<::CORBA::ExtAttributeDescription>(value, _tc_ExtAttributeDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ExtAttributeDescription&& value) { any._insert<::CORBA::ExtAttributeDescription>(std::move(value), _tc_ExtAttributeDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ExtAttributeDescription& value) { return any._extract<::CORBA::ExtAttributeDescription>(value); }
@@ -2099,7 +2045,7 @@ namespace CORBA {
         swap(a.mode, b.mode);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ParameterDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ParameterDescription:1.0", "ParameterDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"mode", ::CORBA::_tc_ParameterMode, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ParameterDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ParameterDescription:1.0", "ParameterDescription", {{"name", ::CORBA::_tc_Identifier}, {"type", ::CORBA::_tc_TypeCode}, {"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType")}, {"mode", ::CORBA::_tc_ParameterMode}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ParameterDescription& value) { any._insert<::CORBA::ParameterDescription>(value, _tc_ParameterDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ParameterDescription&& value) { any._insert<::CORBA::ParameterDescription>(std::move(value), _tc_ParameterDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ParameterDescription& value) { return any._extract<::CORBA::ParameterDescription>(value); }
@@ -2142,7 +2088,7 @@ namespace CORBA {
         swap(a.exceptions, b.exceptions);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_OperationDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/OperationDescription:1.0", "OperationDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"result", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"mode", ::CORBA::_tc_OperationMode, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"contexts", ::CORBA::_tc_ContextIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"parameters", ::CORBA::_tc_ParDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"exceptions", ::CORBA::_tc_ExcDescriptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_OperationDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/OperationDescription:1.0", "OperationDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"result", ::CORBA::_tc_TypeCode}, {"mode", ::CORBA::_tc_OperationMode}, {"contexts", ::CORBA::_tc_ContextIdSeq}, {"parameters", ::CORBA::_tc_ParDescriptionSeq}, {"exceptions", ::CORBA::_tc_ExcDescriptionSeq}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::OperationDescription& value) { any._insert<::CORBA::OperationDescription>(value, _tc_OperationDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::OperationDescription&& value) { any._insert<::CORBA::OperationDescription>(std::move(value), _tc_OperationDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::OperationDescription& value) { return any._extract<::CORBA::OperationDescription>(value); }
@@ -2176,7 +2122,7 @@ namespace CORBA {
         swap(a.is_abstract, b.is_abstract);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceDescription:1.0", "InterfaceDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InterfaceDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/InterfaceDescription:1.0", "InterfaceDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"base_interfaces", ::CORBA::_tc_RepositoryIdSeq}, {"is_abstract", ::CORBA::_tc_boolean}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::InterfaceDescription& value) { any._insert<::CORBA::InterfaceDescription>(value, _tc_InterfaceDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::InterfaceDescription&& value) { any._insert<::CORBA::InterfaceDescription>(std::move(value), _tc_InterfaceDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::InterfaceDescription& value) { return any._extract<::CORBA::InterfaceDescription>(value); }
@@ -2213,7 +2159,7 @@ namespace CORBA {
         swap(a.access, b.access);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ValueMember = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueMember:1.0", "ValueMember", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/TypeCode:1.0", "TypeCode"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType"), nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"access", ::CORBA::TypeCode::create_recursive_tc("IDL:omg.org/CORBA/Visibility:1.0"), nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ValueMember = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueMember:1.0", "ValueMember", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"type", ::CORBA::_tc_TypeCode}, {"type_def", ::CORBA::TypeCode::create_interface_tc("IDL:omg.org/CORBA/IDLType:1.0", "IDLType")}, {"access", ::CORBA::TypeCode::create_recursive_tc("IDL:omg.org/CORBA/Visibility:1.0")}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ValueMember& value) { any._insert<::CORBA::ValueMember>(value, _tc_ValueMember); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ValueMember&& value) { any._insert<::CORBA::ValueMember>(std::move(value), _tc_ValueMember); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ValueMember& value) { return any._extract<::CORBA::ValueMember>(value); }
@@ -2259,7 +2205,7 @@ namespace CORBA {
         swap(a.base_value, b.base_value);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueDescription:1.0", "ValueDescription", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"id", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_abstract", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_custom", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"defined_in", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"version", ::CORBA::_tc_VersionSpec, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"is_truncatable", ::CORBA::_tc_boolean, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"base_value", ::CORBA::_tc_RepositoryId, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ValueDescription = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ValueDescription:1.0", "ValueDescription", {{"name", ::CORBA::_tc_Identifier}, {"id", ::CORBA::_tc_RepositoryId}, {"is_abstract", ::CORBA::_tc_boolean}, {"is_custom", ::CORBA::_tc_boolean}, {"defined_in", ::CORBA::_tc_RepositoryId}, {"version", ::CORBA::_tc_VersionSpec}, {"supported_interfaces", ::CORBA::_tc_RepositoryIdSeq}, {"abstract_base_values", ::CORBA::_tc_RepositoryIdSeq}, {"is_truncatable", ::CORBA::_tc_boolean}, {"base_value", ::CORBA::_tc_RepositoryId}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ValueDescription& value) { any._insert<::CORBA::ValueDescription>(value, _tc_ValueDescription); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ValueDescription&& value) { any._insert<::CORBA::ValueDescription>(std::move(value), _tc_ValueDescription); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ValueDescription& value) { return any._extract<::CORBA::ValueDescription>(value); }
@@ -2295,7 +2241,7 @@ namespace CORBA {
         std::string what_;
     };
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_BadFixedValue = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/BadFixedValue:1.0", "BadFixedValue", {::CORBA::TypeCode::Member{"offset", ::CORBA::_tc_ulong, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_BadFixedValue = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/BadFixedValue:1.0", "BadFixedValue", {{"offset", ::CORBA::_tc_ulong}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::BadFixedValue& value) { any._insert<::CORBA::BadFixedValue>(value, _tc_BadFixedValue); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::BadFixedValue&& value) { any._insert<::CORBA::BadFixedValue>(std::move(value), _tc_BadFixedValue); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::BadFixedValue& value) { return any._extract<::CORBA::BadFixedValue>(value); }
@@ -2354,7 +2300,7 @@ namespace CORBA {
         swap(a.arg_modes, b.arg_modes);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_NamedValue = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/NamedValue:1.0", "NamedValue", {::CORBA::TypeCode::Member{"name", ::CORBA::_tc_Identifier, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"argument", ::CORBA::_tc_any, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"len", ::CORBA::_tc_long, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"arg_modes", ::CORBA::_tc_Flags, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_NamedValue = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/NamedValue:1.0", "NamedValue", {{"name", ::CORBA::_tc_Identifier}, {"argument", ::CORBA::_tc_any}, {"len", ::CORBA::_tc_long}, {"arg_modes", ::CORBA::_tc_Flags}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::NamedValue& value) { any._insert<::CORBA::NamedValue>(value, _tc_NamedValue); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::NamedValue&& value) { any._insert<::CORBA::NamedValue>(std::move(value), _tc_NamedValue); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::NamedValue& value) { return any._extract<::CORBA::NamedValue>(value); }
@@ -2452,18 +2398,10 @@ namespace CORBA {
         public:
 
         using ObjectId = std::string;
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ObjectId = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/ORB/ObjectId:1.0", "ObjectId", ::CORBA::TypeCode::create_string_tc(0));
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ObjectId;
-        #endif
 
         using ObjectIdList = ::omg::types::sequence<::CORBA::ORB::ObjectId>;
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ObjectIdList = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/ORB/ObjectIdList:1.0", "ObjectIdList", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::ORB::_tc_ObjectId));
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ObjectIdList;
-        #endif
 
         class InvalidName : public ::CORBA::UserException {
             public:
@@ -2485,11 +2423,7 @@ namespace CORBA {
             private:
             std::string what_;
         };
-        #if __cplusplus >= 201703L
-        static inline const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InvalidName = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/ORB/InvalidName:1.0", "InvalidName", {});
-        #else
         static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_InvalidName;
-        #endif
         friend void operator<<=(::CORBA::Any& any, const ::CORBA::ORB::InvalidName& value) { any._insert<::CORBA::ORB::InvalidName>(value, _tc_InvalidName); }
         friend void operator<<=(::CORBA::Any& any, ::CORBA::ORB::InvalidName&& value) { any._insert<::CORBA::ORB::InvalidName>(std::move(value), _tc_InvalidName); }
         friend bool operator>>=(const ::CORBA::Any& any, ::CORBA::ORB::InvalidName& value) { return any._extract<::CORBA::ORB::InvalidName>(value); }
@@ -2588,15 +2522,9 @@ namespace CORBA {
         std::string _repository_id() override { return "IDL:omg.org/CORBA/ORB:1.0"; }
         static const char* _interface_repository_id() { return "IDL:omg.org/CORBA/ORB:1.0"; }
     };
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ORB::_tc_ObjectId = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/ORB/ObjectId:1.0", "ObjectId", ::CORBA::TypeCode::create_string_tc(0));
-    #endif
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ORB::_tc_ObjectIdList = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/ORB/ObjectIdList:1.0", "ObjectIdList", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::ORB::_tc_ObjectId));
-    #endif
-    #if __cplusplus < 201703L
-    const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ORB::_tc_InvalidName = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/ORB/InvalidName:1.0", "InvalidName", {});
-    #endif
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ORB::_tc_ObjectId = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/ORB/ObjectId:1.0", "ObjectId", ::CORBA::TypeCode::create_string_tc(0));
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ORB::_tc_ObjectIdList = ::CORBA::TypeCode::create_alias_tc("IDL:omg.org/CORBA/ORB/ObjectIdList:1.0", "ObjectIdList", ::CORBA::TypeCode::create_sequence_tc(0, ::CORBA::ORB::_tc_ObjectId));
+    OMG_CORBA_INLINE_VARIABLE const ::omg::types::ref_type<::CORBA::TypeCode> CORBA::ORB::_tc_InvalidName = ::CORBA::TypeCode::create_exception_tc("IDL:omg.org/CORBA/ORB/InvalidName:1.0", "InvalidName", {});
     inline void ::CORBA::ORB::InvalidName::_insert_into(::CORBA::Any& any) const { any <<= *this; }
 
     static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ORB = ::CORBA::TypeCode::create_local_interface_tc("IDL:omg.org/CORBA/ORB:1.0", "ORB");
@@ -2634,7 +2562,7 @@ namespace CORBA {
         swap(a.service_detail, b.service_detail);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ServiceDetail = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ServiceDetail:1.0", "ServiceDetail", {::CORBA::TypeCode::Member{"service_detail_type", ::CORBA::_tc_ServiceDetailType, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"service_detail", ::CORBA::_tc_ServiceDetailData, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ServiceDetail = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ServiceDetail:1.0", "ServiceDetail", {{"service_detail_type", ::CORBA::_tc_ServiceDetailType}, {"service_detail", ::CORBA::_tc_ServiceDetailData}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ServiceDetail& value) { any._insert<::CORBA::ServiceDetail>(value, _tc_ServiceDetail); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ServiceDetail&& value) { any._insert<::CORBA::ServiceDetail>(std::move(value), _tc_ServiceDetail); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ServiceDetail& value) { return any._extract<::CORBA::ServiceDetail>(value); }
@@ -2659,7 +2587,7 @@ namespace CORBA {
         swap(a.service_details, b.service_details);
     }
 
-    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ServiceInformation = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ServiceInformation:1.0", "ServiceInformation", {::CORBA::TypeCode::Member{"service_options", ::CORBA::_tc_ServiceOptionSeq, nullptr, ::CORBA::PUBLIC_MEMBER}, ::CORBA::TypeCode::Member{"service_details", ::CORBA::_tc_ServiceDetailSeq, nullptr, ::CORBA::PUBLIC_MEMBER}});
+    static const ::omg::types::ref_type<::CORBA::TypeCode> _tc_ServiceInformation = ::CORBA::TypeCode::create_struct_tc("IDL:omg.org/CORBA/ServiceInformation:1.0", "ServiceInformation", {{"service_options", ::CORBA::_tc_ServiceOptionSeq}, {"service_details", ::CORBA::_tc_ServiceDetailSeq}});
     inline void operator<<=(::CORBA::Any& any, const ::CORBA::ServiceInformation& value) { any._insert<::CORBA::ServiceInformation>(value, _tc_ServiceInformation); }
     inline void operator<<=(::CORBA::Any& any, ::CORBA::ServiceInformation&& value) { any._insert<::CORBA::ServiceInformation>(std::move(value), _tc_ServiceInformation); }
     inline bool operator>>=(const ::CORBA::Any& any, ::CORBA::ServiceInformation& value) { return any._extract<::CORBA::ServiceInformation>(value); }

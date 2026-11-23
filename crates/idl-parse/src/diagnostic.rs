@@ -110,6 +110,12 @@ pub enum DiagnosticCode {
     /// caller names a profile — §9.1 calls them "not normative for the
     /// related middleware solutions".
     OutsideProfile,
+    /// A CIDL composition or a PSDL declaration breaks a rule of CORBA
+    /// 3.3 Part 3 §8 or of Persistent State Service 2.0 §3.2: a life
+    /// cycle category constraint (Tables 8.3 to 8.5), a segment, a
+    /// delegation or a proxy home rule (§8.11 to §8.18), a key or a
+    /// factory naming no state member.
+    CompositionRule,
 }
 
 impl DiagnosticCode {
@@ -140,11 +146,12 @@ impl DiagnosticCode {
             Self::InvalidInheritance => "IDL0021",
             Self::Preprocessing => "IDL0022",
             Self::OutsideProfile => "IDL0023",
+            Self::CompositionRule => "IDL0024",
         }
     }
 
     /// Every code, so a test can assert the set is collision-free.
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::UnexpectedToken,
         Self::MissingToken,
         Self::UnterminatedDeclaration,
@@ -168,6 +175,7 @@ impl DiagnosticCode {
         Self::InvalidInheritance,
         Self::Preprocessing,
         Self::OutsideProfile,
+        Self::CompositionRule,
     ];
 }
 

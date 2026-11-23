@@ -10,12 +10,14 @@
 
 #![allow(clippy::print_stderr)]
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use zerodds_monitor::admin::AdminEndpoints;
+use zerodds_monitor::json::push_escaped as push_json_str;
 use zerodds_monitor::{Counter, Gauge, Labels, Registry};
 use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
@@ -50,11 +52,21 @@ pub struct BridgeMetrics {
     pub registry: Option<Arc<Registry>>,
     /// Spec §8.2 (`zerodds_amqp_bridge_*`), after [`Self::with_topics`].
     pub spec: Option<Arc<SpecMetrics>>,
+    /// The tenant (§1 L6) whose label every family carries; `None` for
+    /// the daemon's own participant.
+    pub tenant: Option<String>,
 }
 
 impl BridgeMetrics {
     /// Registers the standard set.
     pub fn register(registry: &Registry) -> Self {
+        Self::register_labelled(registry, None)
+    }
+
+    /// [`Self::register`] with the label `tenant` on every family when
+    /// `tenant` is set (§1 L6).
+    fn register_labelled(registry: &Registry, tenant: Option<&str>) -> Self {
+        let base = || tenant.map_or_else(Labels::new, |t| Labels::new().with("tenant", t));
         registry.set_help("zerodds_amqp_frames_in_total", "AMQP frames received");
         registry.set_help("zerodds_amqp_frames_out_total", "AMQP frames sent");
         registry.set_help("zerodds_amqp_bytes_in_total", "AMQP bytes received");
@@ -74,19 +86,18 @@ impl BridgeMetrics {
         );
         registry.set_help("zerodds_amqp_errors_total", "Wire/codec errors");
         Self {
-            frames_in_total: registry.counter("zerodds_amqp_frames_in_total", Labels::new()),
-            frames_out_total: registry.counter("zerodds_amqp_frames_out_total", Labels::new()),
-            bytes_in_total: registry.counter("zerodds_amqp_bytes_in_total", Labels::new()),
-            bytes_out_total: registry.counter("zerodds_amqp_bytes_out_total", Labels::new()),
-            connections_active: registry.gauge("zerodds_amqp_connections_active", Labels::new()),
-            connections_total: registry.counter("zerodds_amqp_connections_total", Labels::new()),
-            dds_samples_in_total: registry
-                .counter("zerodds_amqp_dds_samples_in_total", Labels::new()),
-            dds_samples_out_total: registry
-                .counter("zerodds_amqp_dds_samples_out_total", Labels::new()),
-            errors_total: registry.counter("zerodds_amqp_errors_total", Labels::new()),
+            frames_in_total: registry.counter("zerodds_amqp_frames_in_total", base()),
+            frames_out_total: registry.counter("zerodds_amqp_frames_out_total", base()),
+            bytes_in_total: registry.counter("zerodds_amqp_bytes_in_total", base()),
+            bytes_out_total: registry.counter("zerodds_amqp_bytes_out_total", base()),
+            connections_active: registry.gauge("zerodds_amqp_connections_active", base()),
+            connections_total: registry.counter("zerodds_amqp_connections_total", base()),
+            dds_samples_in_total: registry.counter("zerodds_amqp_dds_samples_in_total", base()),
+            dds_samples_out_total: registry.counter("zerodds_amqp_dds_samples_out_total", base()),
+            errors_total: registry.counter("zerodds_amqp_errors_total", base()),
             registry: None,
             spec: None,
+            tenant: tenant.map(str::to_string),
         }
     }
 
@@ -106,9 +117,27 @@ impl BridgeMetrics {
     pub fn with_topics(&self, topics: &[String], sasl_mechanism: &str) -> Self {
         let mut out = self.clone();
         if let Some(r) = &self.registry {
-            out.spec = Some(Arc::new(SpecMetrics::register(r, topics, sasl_mechanism)));
+            out.spec = Some(Arc::new(SpecMetrics::register(
+                r,
+                topics,
+                sasl_mechanism,
+                self.tenant.as_deref(),
+            )));
         }
         out
+    }
+
+    /// The set of tenant `name` (§1 L6): every family again with the label
+    /// `tenant`, in the same registry. Without a registry, unchanged.
+    #[must_use]
+    pub fn for_tenant(&self, name: &str) -> Self {
+        match &self.registry {
+            Some(r) => Self {
+                registry: Some(Arc::clone(r)),
+                ..Self::register_labelled(r, Some(name))
+            },
+            None => self.clone(),
+        }
     }
 }
 
@@ -134,6 +163,8 @@ pub struct TopicMetrics {
 /// grows the label set without bound.
 pub struct SpecMetrics {
     registry: Arc<Registry>,
+    /// The tenant label of every family (§1 L6).
+    tenant: Option<String>,
     /// Per topic, by the configuration's topic index.
     pub topics: Vec<TopicMetrics>,
     /// `connections_total{state="established"}`.
@@ -157,7 +188,13 @@ pub struct SpecMetrics {
 }
 
 impl SpecMetrics {
-    fn register(registry: &Arc<Registry>, topics: &[String], sasl_mechanism: &str) -> Self {
+    fn register(
+        registry: &Arc<Registry>,
+        topics: &[String],
+        sasl_mechanism: &str,
+        tenant: Option<&str>,
+    ) -> Self {
+        let base = || tenant.map_or_else(Labels::new, |t| Labels::new().with("tenant", t));
         for (name, help) in [
             (
                 "zerodds_amqp_bridge_connections_total",
@@ -211,17 +248,17 @@ impl SpecMetrics {
         ] {
             registry.set_help(name, help);
         }
-        let topic = |t: &String| Labels::new().with("dds_topic", t.clone());
+        let topic = |t: &String| base().with("dds_topic", t.clone());
         let conn = |state: &str| {
             registry.counter(
                 "zerodds_amqp_bridge_connections_total",
-                Labels::new().with("state", state.to_string()),
+                base().with("state", state.to_string()),
             )
         };
         let role = |r: &str| {
             registry.gauge(
                 "zerodds_amqp_bridge_links_active",
-                Labels::new().with("role", r.to_string()),
+                base().with("role", r.to_string()),
             )
         };
         Self {
@@ -245,34 +282,38 @@ impl SpecMetrics {
             connections_lost: conn("lost"),
             links_sender: role("sender"),
             links_receiver: role("receiver"),
-            dispositions_accepted: registry.counter(
-                "zerodds_amqp_bridge_dispositions_accepted_total",
-                Labels::new(),
-            ),
-            dispositions_released: registry.counter(
-                "zerodds_amqp_bridge_dispositions_released_total",
-                Labels::new(),
-            ),
-            credit_topup: registry.counter("zerodds_amqp_bridge_credit_topup_total", Labels::new()),
+            dispositions_accepted: registry
+                .counter("zerodds_amqp_bridge_dispositions_accepted_total", base()),
+            dispositions_released: registry
+                .counter("zerodds_amqp_bridge_dispositions_released_total", base()),
+            credit_topup: registry.counter("zerodds_amqp_bridge_credit_topup_total", base()),
             sasl_failures: registry.counter(
                 "zerodds_amqp_bridge_sasl_failures_total",
-                Labels::new().with("mechanism", sasl_mechanism.to_string()),
+                base().with("mechanism", sasl_mechanism.to_string()),
             ),
             registry: Arc::clone(registry),
+            tenant: tenant.map(str::to_string),
         }
     }
 
     /// A delivery settled `rejected` with the AMQP error condition `condition`.
+    /// The label `reason` is the condition when it is one AMQP 1.0 defines
+    /// (Part 2 §2.8.15 to §2.8.18, Part 4 §4.5.8), otherwise `other`, a
+    /// rejection without an error included (spec §8.2): the label values
+    /// stay a closed set however a broker names its conditions.
     pub fn rejected(&self, condition: Option<&str>) {
-        let reason = match condition {
-            Some(c) if c.starts_with("amqp:") && c.len() <= 64 => c.to_string(),
-            Some(_) => "other".to_string(),
-            None => "none".to_string(),
-        };
+        let reason = condition
+            .and_then(|c| crate::peer::condition::DEFINED.iter().find(|d| **d == c))
+            .copied()
+            .unwrap_or("other");
+        let labels = self
+            .tenant
+            .as_deref()
+            .map_or_else(Labels::new, |t| Labels::new().with("tenant", t));
         self.registry
             .counter(
                 "zerodds_amqp_bridge_dispositions_rejected_total",
-                Labels::new().with("reason", reason),
+                labels.with("reason", reason),
             )
             .inc();
     }
@@ -287,6 +328,9 @@ pub struct CatalogTopic {
     pub amqp_address: String,
     /// in/out/bidir.
     pub direction: String,
+    /// The tenant (spec §1 L6) whose participant bridges the topic; `None`
+    /// for the daemon's own.
+    pub tenant: Option<String>,
 }
 
 /// Catalog-Snapshot.
@@ -330,27 +374,14 @@ impl CatalogSnapshot {
             push_json_str(&mut out, &t.amqp_address);
             out.push_str("\",\"direction\":\"");
             push_json_str(&mut out, &t.direction);
+            if let Some(tenant) = &t.tenant {
+                out.push_str("\",\"tenant\":\"");
+                push_json_str(&mut out, tenant);
+            }
             out.push_str("\"}");
         }
         out.push_str("]}");
         out
-    }
-}
-
-fn push_json_str(out: &mut String, s: &str) {
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                use std::fmt::Write as _;
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
     }
 }
 
@@ -387,141 +418,98 @@ pub fn serve_admin_endpoints(
     healthy: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<(JoinHandle<()>, SocketAddr)> {
-    let listener = TcpListener::bind(addr)?;
-    let bound = listener.local_addr()?;
-    listener.set_nonblocking(true)?;
-    let h = thread::Builder::new()
-        .name("zerodds-amqp-admin".into())
-        .spawn(move || {
-            loop {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match listener.accept() {
-                    Ok((mut s, _peer)) => {
-                        let _ = s.set_nonblocking(false);
-                        let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-                        let _ = s.set_write_timeout(Some(Duration::from_secs(2)));
-                        admin_handle(&mut s, &catalog, &registry, &healthy);
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => thread::sleep(Duration::from_millis(100)),
-                }
-            }
-        })?;
-    Ok((h, bound))
-}
-
-fn admin_handle(
-    stream: &mut std::net::TcpStream,
-    catalog: &CatalogSnapshot,
-    registry: &Registry,
-    healthy: &AtomicBool,
-) {
-    use std::io::{Read, Write};
-    let mut buf = [0u8; 1024];
-    let n = match stream.read(&mut buf) {
-        Ok(n) => n,
-        Err(_) => return,
-    };
-    let req = String::from_utf8_lossy(&buf[..n]);
-    let first = req.lines().next().unwrap_or("");
-    let path = first
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .split('?')
-        .next()
-        .unwrap_or("/");
-    let (status, ctype, body) = match path {
-        "/catalog" => ("200 OK", "application/json", catalog.render_json()),
-        "/healthz" => {
-            if healthy.load(Ordering::SeqCst) {
-                ("200 OK", "text/plain; charset=utf-8", "OK\n".to_string())
-            } else {
-                (
-                    "503 Service Unavailable",
-                    "text/plain; charset=utf-8",
-                    "DOWN\n".to_string(),
-                )
-            }
-        }
-        "/metrics" => (
-            "200 OK",
-            "text/plain; version=0.0.4; charset=utf-8",
-            registry.render_prometheus(),
-        ),
-        "/" => (
-            "200 OK",
-            "text/plain; charset=utf-8",
-            format!("{SERVICE_NAME}\nendpoints: /catalog /healthz /metrics\n"),
-        ),
-        _ => ("404 Not Found", "text/plain; charset=utf-8", String::new()),
-    };
-    let resp = format!(
-        "HTTP/1.1 {status}\r\n\
-         Content-Type: {ctype}\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(resp.as_bytes());
+    zerodds_monitor::admin::serve_admin_endpoints(
+        addr,
+        "zerodds-amqp-admin",
+        AdminEndpoints {
+            service_name: SERVICE_NAME.into(),
+            metrics_path: "/metrics".into(),
+            catalog: move || catalog.render_json(),
+            registry,
+            healthy,
+        },
+        stop,
+    )
 }
 
 /// Parse endpoint string.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
-    let trimmed = raw
-        .strip_prefix("http://")
-        .or_else(|| raw.strip_prefix("https://"))
-        .unwrap_or(raw)
-        .trim_end_matches('/');
-    let (host, port) = match trimmed.rsplit_once(':') {
-        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(4318)),
-        None => (trimmed.to_string(), 4318),
-    };
-    OtlpConfig {
-        host,
-        port,
-        service_name: service_name.into(),
-        service_version: SERVICE_VERSION.into(),
-        timeout: Duration::from_secs(5),
-    }
+    OtlpConfig::from_endpoint(service_name, SERVICE_VERSION, raw)
 }
 
 /// Aus ENV.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
-    let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
-    Some(otlp_config_from_endpoint(service_name, &raw))
+    OtlpConfig::from_env(service_name, SERVICE_VERSION)
 }
 
-/// Periodischer flush.
+/// Flushes `exporter` every `interval` and once more when `stop` is set;
+/// the thread ends within 100 ms of the stop, after that last flush (spec
+/// §8.3).
 pub fn spawn_otlp_flush_loop(
     exporter: Arc<OtlpExporter>,
     stop: Arc<AtomicBool>,
     interval: Duration,
 ) -> std::io::Result<JoinHandle<()>> {
-    thread::Builder::new()
-        .name("zerodds-amqp-otlp".into())
-        .spawn(move || {
-            while !stop.load(Ordering::SeqCst) {
-                thread::sleep(interval);
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                let _ = exporter.flush();
-            }
-            let _ = exporter.flush();
-        })
+    zerodds_observability_otlp::spawn_flush_loop(
+        exporter,
+        stop,
+        interval,
+        Duration::from_millis(100),
+        "zerodds-amqp-otlp",
+    )
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Spec §8.2: `reason` is the AMQP error condition when it is an `amqp:`
+    /// symbol, otherwise `other`: a vendor symbol, a symbol longer than 64
+    /// octets and a rejection without an error.
+    #[test]
+    fn amqpbridge_8_2_the_reason_label_is_the_condition_or_other() {
+        let r = Arc::new(Registry::new());
+        let m = BridgeMetrics::register_shared(&r).with_topics(&[], "PLAIN");
+        let sm = m.spec.as_ref().unwrap();
+        sm.rejected(Some("amqp:decode-error"));
+        sm.rejected(Some("com.vendor:quota"));
+        sm.rejected(None);
+        sm.rejected(Some(&format!("amqp:{}", "x".repeat(60))));
+        // An `amqp:` symbol AMQP 1.0 does not define is no label value.
+        sm.rejected(Some("amqp:x1"));
+        sm.rejected(Some("amqp:link:invented"));
+        sm.rejected(Some("amqp:transaction:rollback"));
+        sm.rejected(Some("amqp:session:window-violation"));
+        let text = zerodds_monitor::render_prometheus(&r.snapshot());
+        let line = |reason: &str| {
+            text.lines()
+                .find(|l| {
+                    l.starts_with("zerodds_amqp_bridge_dispositions_rejected_total")
+                        && l.contains(&format!("reason=\"{reason}\""))
+                })
+                .and_then(|l| l.rsplit(' ').next())
+                .map(str::to_string)
+        };
+        assert_eq!(line("amqp:decode-error").as_deref(), Some("1"), "{text}");
+        assert_eq!(
+            line("amqp:transaction:rollback").as_deref(),
+            Some("1"),
+            "{text}"
+        );
+        assert_eq!(
+            line("amqp:session:window-violation").as_deref(),
+            Some("1"),
+            "{text}"
+        );
+        assert_eq!(line("other").as_deref(), Some("5"), "{text}");
+        assert!(line("none").is_none(), "{text}");
+        assert!(!text.contains("com.vendor"), "{text}");
+        assert!(!text.contains("amqp:x1"), "{text}");
+        assert!(!text.contains("invented"), "{text}");
+    }
 
     #[test]
     fn metrics_register_idempotent() {
@@ -538,6 +526,7 @@ mod tests {
             dds_name: "Sensor::Reading".into(),
             amqp_address: "queue://sensors".into(),
             direction: "out".into(),
+            tenant: None,
         }]);
         let j = snap.render_json();
         assert!(j.contains("zerodds-amqp-bridged"));
@@ -581,12 +570,34 @@ mod tests {
     }
 }
 
-#[cfg(not(unix))]
+/// The console control handler of Windows (§9.2): CTRL_C_EVENT and
+/// CTRL_BREAK_EVENT set the shutdown flag as SIGINT and SIGTERM do on Unix;
+/// the drain of §9.2 follows. CTRL_CLOSE_EVENT and the logoff and shutdown
+/// events set the flag too, but ctrlc's handler routine returns at once and
+/// Windows then ends the process, before the drain. Windows has no SIGHUP:
+/// a reload there is a restart. The returned thread ends at once; the
+/// handler stays installed for the life of the process.
+#[cfg(windows)]
 pub fn install_signal_watcher(
-    _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> std::io::Result<std::thread::JoinHandle<()>> {
-    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy thread,
-    // shutdown runs over the normal socket-close paths.
-    Ok(std::thread::spawn(|| {}))
+    shutdown_flag: Arc<AtomicBool>,
+    _reload_flag: Arc<AtomicBool>,
+) -> std::io::Result<JoinHandle<()>> {
+    ctrlc::set_handler(move || shutdown_flag.store(true, Ordering::SeqCst))
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    thread::Builder::new()
+        .name("zerodds-amqp-signals".into())
+        .spawn(|| {})
+}
+
+/// A platform with neither POSIX signals nor a Windows console: no stop
+/// from outside; the program logs `signal_watcher_init_failed`.
+#[cfg(not(any(unix, windows)))]
+pub fn install_signal_watcher(
+    _shutdown_flag: Arc<AtomicBool>,
+    _reload_flag: Arc<AtomicBool>,
+) -> std::io::Result<JoinHandle<()>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "no signals and no console control handler on this platform",
+    ))
 }

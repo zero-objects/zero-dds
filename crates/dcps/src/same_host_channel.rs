@@ -29,7 +29,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use zerodds_foundation::observability::{Component, Event, Level, SharedSink};
@@ -85,6 +85,16 @@ pub struct PeerChannel {
     pub user_source: Locator,
     /// What went to this peer, kept across a rebind of `inbound`.
     pub counts: Arc<PeerCounts>,
+}
+
+/// What one push into a channel's ring did.
+enum Push {
+    Sent,
+    /// The peer has not opened its end of the ring; counted in the
+    /// channel's `unattached`.
+    Unattached,
+    /// The ring refused the frame.
+    Refused(SendError),
 }
 
 /// How long after a channel opens a peer that has not opened its end is
@@ -145,6 +155,11 @@ pub struct SameHostChannels {
     routes: RwLock<BTreeMap<Locator, GuidPrefix>>,
     /// This participant's doorbell, opened with the first channel.
     own_bell: RwLock<Option<Arc<ShmDoorbell>>>,
+    /// Goes up with every [`Self::wake_receiver`] and when the doorbell
+    /// opens: what the receive thread waits on while it has no doorbell
+    /// to park on ([`Self::wait_for_receive_bell`]).
+    receiver_wakes: Mutex<u64>,
+    receiver_woken: Condvar,
     /// Goes up whenever the set of inbound rings changes.
     generation: AtomicU64,
     frames_sent: [AtomicU64; 2],
@@ -154,6 +169,9 @@ pub struct SameHostChannels {
     unrouted_loopback: AtomicU64,
     open_failures: AtomicU64,
     unknown_ports: AtomicU64,
+    /// Frames an inbound ring dropped as corrupt
+    /// (`zerodds-shm-transport-1.0` §3.3).
+    corrupt_frames: AtomicU64,
     /// When `report_udp_sends` last looked, and `unrouted_loopback` then.
     last_report: Mutex<(Option<Instant>, u64)>,
 }
@@ -233,12 +251,15 @@ impl SameHostChannels {
             peers: RwLock::new(BTreeMap::new()),
             routes: RwLock::new(BTreeMap::new()),
             own_bell: RwLock::new(None),
+            receiver_wakes: Mutex::new(0),
+            receiver_woken: Condvar::new(),
             generation: AtomicU64::new(0),
             frames_sent: [AtomicU64::new(0), AtomicU64::new(0)],
             fallbacks: AtomicU64::new(0),
             unrouted_loopback: AtomicU64::new(0),
             open_failures: AtomicU64::new(0),
             unknown_ports: AtomicU64::new(0),
+            corrupt_frames: AtomicU64::new(0),
             last_report: Mutex::new((None, 0)),
         })
     }
@@ -257,6 +278,14 @@ impl SameHostChannels {
             .collect();
         locators.sort();
         locators.dedup();
+        let set_routes = |locators: Vec<Locator>| {
+            if let Ok(mut routes) = self.routes.write() {
+                routes.retain(|_, p| *p != peer);
+                for l in locators {
+                    routes.insert(l, peer);
+                }
+            }
+        };
         if !self.peers.read().is_ok_and(|p| p.contains_key(&peer)) {
             // Under the write lock: SPDP for one peer arrives on several
             // receive threads at once, and two opens of one channel would
@@ -268,16 +297,20 @@ impl SameHostChannels {
                 let Some(channel) = self.open(peer, metatraffic, user) else {
                     return;
                 };
+                // The routes before the channel: whoever sees the channel
+                // finds its routes. The other way round a thread preempted
+                // between the two left an open, attached channel that no
+                // send was routed to (measured on the Linux test host: 4
+                // of 2 000 parallel runs of
+                // `same_host_e2e::flatdata_10_3_e2e_two_runtimes_shm_roundtrip`
+                // sent everything over UDP, `routes []`).
+                set_routes(locators);
                 slot.insert(channel);
                 self.generation.fetch_add(1, Ordering::AcqRel);
+                return;
             }
         }
-        if let Ok(mut routes) = self.routes.write() {
-            routes.retain(|_, p| *p != peer);
-            for l in locators {
-                routes.insert(l, peer);
-            }
-        }
+        set_routes(locators);
     }
 
     fn open(
@@ -344,6 +377,9 @@ impl SameHostChannels {
             &self.config.flink_dir,
         )?);
         *slot = Some(Arc::clone(&bell));
+        drop(slot);
+        // A receive thread without a doorbell waits for this one.
+        self.signal_receiver();
         Ok(bell)
     }
 
@@ -354,10 +390,45 @@ impl SameHostChannels {
         self.own_bell.read().ok().and_then(|b| b.clone())
     }
 
-    /// Wakes the receive thread, so it sees a stop flag at once.
+    /// Wakes the receive thread, so it sees a stop flag at once: rings the
+    /// doorbell it parks on, and ends the wait of a thread that has no
+    /// doorbell yet ([`Self::wait_for_receive_bell`]).
     pub fn wake_receiver(&self) {
         if let Some(bell) = self.receive_bell() {
             bell.ring();
+        }
+        self.signal_receiver();
+    }
+
+    /// The count [`Self::wait_for_receive_bell`] waits to change. The
+    /// receive thread reads it before it looks at its stop flag, so a wake
+    /// that follows the flag is not lost between the look and the wait.
+    #[must_use]
+    pub fn receiver_wakes(&self) -> u64 {
+        self.receiver_wakes.lock().map_or(0, |wakes| *wakes)
+    }
+
+    /// Waits until [`Self::wake_receiver`] ran or the doorbell opened after
+    /// `seen` was read from [`Self::receiver_wakes`], or until `timeout`.
+    /// What the receive thread does while there is no channel: before, it
+    /// slept 100 ms, and a shutdown of a participant without a same-host
+    /// peer waited out the rest of that sleep in the join of the thread
+    /// (92 to 119 ms, measured on the Linux test host).
+    pub fn wait_for_receive_bell(&self, seen: u64, timeout: Duration) {
+        let Ok(wakes) = self.receiver_wakes.lock() else {
+            // Poisoned: nothing to wait on, and no busy loop either.
+            std::thread::sleep(timeout);
+            return;
+        };
+        let _ = self
+            .receiver_woken
+            .wait_timeout_while(wakes, timeout, |wakes| *wakes == seen);
+    }
+
+    fn signal_receiver(&self) {
+        if let Ok(mut wakes) = self.receiver_wakes.lock() {
+            *wakes = wakes.wrapping_add(1);
+            self.receiver_woken.notify_all();
         }
     }
 
@@ -370,22 +441,25 @@ impl SameHostChannels {
     /// Closes the channel to `peer`: its routes go, and its rings with the
     /// last handle. The outbound owner's drop tells the peer it is gone.
     pub fn remove_peer(&self, peer: GuidPrefix) {
+        // Routes and channel under the channels' lock together: a channel
+        // is never visible without its routes (see `add_peer`).
+        let Ok(mut peers) = self.peers.write() else {
+            return;
+        };
         if let Ok(mut routes) = self.routes.write() {
             routes.retain(|_, p| *p != peer);
         }
-        if let Ok(mut peers) = self.peers.write()
-            && peers.remove(&peer).is_some()
-        {
+        if peers.remove(&peer).is_some() {
             self.generation.fetch_add(1, Ordering::AcqRel);
         }
     }
 
     /// Closes every channel.
     pub fn clear(&self) {
-        if let Ok(mut routes) = self.routes.write() {
-            routes.clear();
-        }
         if let Ok(mut peers) = self.peers.write() {
+            if let Ok(mut routes) = self.routes.write() {
+                routes.clear();
+            }
             peers.clear();
             self.generation.fetch_add(1, Ordering::AcqRel);
         }
@@ -410,33 +484,80 @@ impl SameHostChannels {
         let Some(channel) = self.peers.read().ok().and_then(|p| p.get(&peer).cloned()) else {
             return false;
         };
+        self.send_on(peer, channel, port, bytes)
+    }
+
+    /// [`Self::send`] through `channel`, the channel to `peer` as the send
+    /// found it. A channel closed and opened again since then
+    /// ([`Self::remove_peer`], [`Self::add_peer`]) has an owner that took
+    /// the ring over (`zerodds-shm-transport-1.0` §5.3), and `channel`'s
+    /// owner refuses the frame: it goes through the channel there is now.
+    /// Before, the two owners pushed into the ring at once.
+    fn send_on(
+        &self,
+        peer: GuidPrefix,
+        mut channel: Arc<PeerChannel>,
+        port: Port,
+        bytes: &[u8],
+    ) -> bool {
+        let mut result = self.push_to(&channel, port, bytes);
+        // Each turn moves to a newer owner; more than a couple of closes
+        // and opens during one send do not occur.
+        for _ in 0..4 {
+            if !matches!(result, Push::Refused(_)) || !channel.outbound.is_superseded() {
+                break;
+            }
+            let Some(current) = self
+                .peers
+                .read()
+                .ok()
+                .and_then(|p| p.get(&peer).cloned())
+                .filter(|c| !Arc::ptr_eq(&c.outbound, &channel.outbound))
+            else {
+                break;
+            };
+            channel = current;
+            result = self.push_to(&channel, port, bytes);
+        }
+        match result {
+            Push::Unattached => false,
+            Push::Sent => {
+                channel.peer_bell.ring();
+                self.frames_sent[port.index()].fetch_add(1, Ordering::Relaxed);
+                channel.counts.sent.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Push::Refused(e) => {
+                channel.counts.refused.fetch_add(1, Ordering::Relaxed);
+                self.note_fallback(peer, &e);
+                if !matches!(e, SendError::PayloadTooLarge { .. })
+                    && !channel.outbound.is_superseded()
+                    && reader_stalled(&channel)
+                {
+                    self.close_stalled(peer, &channel);
+                }
+                false
+            }
+        }
+    }
+
+    /// Pushes one frame into `channel`'s ring.
+    fn push_to(&self, channel: &PeerChannel, port: Port, bytes: &[u8]) -> Push {
         if !channel.outbound.peer_attached() {
             let counts = &channel.counts;
             counts.unattached.fetch_add(1, Ordering::Relaxed);
             if counts.opened_at.elapsed() > ATTACH_GRACE {
                 counts.unattached_late.fetch_add(1, Ordering::Relaxed);
             }
-            return false;
+            return Push::Unattached;
         }
         match channel.outbound.send_with_prefix(
             &channel.outbound.peer_locator(),
             &[port.tag()],
             bytes,
         ) {
-            Ok(()) => {
-                channel.peer_bell.ring();
-                self.frames_sent[port.index()].fetch_add(1, Ordering::Relaxed);
-                channel.counts.sent.fetch_add(1, Ordering::Relaxed);
-                true
-            }
-            Err(e) => {
-                channel.counts.refused.fetch_add(1, Ordering::Relaxed);
-                self.note_fallback(peer, &e);
-                if !matches!(e, SendError::PayloadTooLarge { .. }) && reader_stalled(&channel) {
-                    self.close_stalled(peer, &channel);
-                }
-                false
-            }
+            Ok(()) => Push::Sent,
+            Err(e) => Push::Refused(e),
         }
     }
 
@@ -592,6 +713,70 @@ impl SameHostChannels {
     #[must_use]
     pub fn unknown_ports(&self) -> u64 {
         self.unknown_ports.load(Ordering::Relaxed)
+    }
+
+    /// The next frame of `peer`'s ring `inbound`, without waiting, as
+    /// [`PosixShmTransport::try_recv`]. A frame the ring drops on the way
+    /// because its length or position cannot be one a writer of the
+    /// protocol published (`zerodds-shm-transport-1.0` §3.3) is counted
+    /// here and filed as `shm.corrupt_frame` with the peer and the number
+    /// dropped: the ring resumes at its `head`, and what the peer wrote up
+    /// to there is lost.
+    ///
+    /// # Errors
+    /// As [`PosixShmTransport::try_recv`].
+    pub fn receive(
+        &self,
+        peer: GuidPrefix,
+        inbound: &PosixShmTransport,
+    ) -> Result<Option<ReceivedDatagram>, RecvError> {
+        let before = inbound.corrupt_frames_seen();
+        let got = inbound.try_recv();
+        let dropped = inbound.corrupt_frames_seen().wrapping_sub(before);
+        if dropped > 0 {
+            self.corrupt_frames.fetch_add(dropped, Ordering::Relaxed);
+            self.sink.record(
+                &Event::new(Level::Error, Component::Transport, "shm.corrupt_frame")
+                    .with_attr("peer", alloc::format!("{peer:?}"))
+                    .with_attr("count", alloc::format!("{dropped}")),
+            );
+        }
+        got
+    }
+
+    /// Whether the channel to `peer` is open and how many locators route
+    /// to it, read together under the channels' lock.
+    #[cfg(test)]
+    fn channel_and_routes(&self, peer: GuidPrefix) -> (bool, usize) {
+        let Ok(peers) = self.peers.read() else {
+            return (false, 0);
+        };
+        let routes = self
+            .routes
+            .read()
+            .map(|r| r.values().filter(|p| **p == peer).count())
+            .unwrap_or(0);
+        (peers.contains_key(&peer), routes)
+    }
+
+    /// The locators a send routes to the channel of `peer`.
+    #[must_use]
+    pub fn routes_of(&self, peer: GuidPrefix) -> Vec<Locator> {
+        self.routes
+            .read()
+            .map(|r| {
+                r.iter()
+                    .filter(|(_, p)| **p == peer)
+                    .map(|(l, _)| *l)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Frames the inbound rings dropped as corrupt.
+    #[must_use]
+    pub fn corrupt_frames(&self) -> u64 {
+        self.corrupt_frames.load(Ordering::Relaxed)
     }
 
     /// Re-opens the inbound ring of `peer` when it is still `old`: the
@@ -1031,8 +1216,12 @@ mod tests {
             hex(channel_id(pa, domain)),
             hex(channel_id(pb, domain))
         ));
-        let lock = flink.with_extension("lock");
         let os_id = std::fs::read_to_string(&flink).expect("a's ring has a flink");
+        // The pair lock lies in the pair directory under the segment's name
+        // (zerodds-shm-transport-1.0 §5.4).
+        let lock = zerodds_transport_shm::posix::pair_dir()
+            .unwrap()
+            .join(alloc::format!("{}.lock", &os_id[1..]));
         assert!(lock.exists());
         let bell_weak = Arc::downgrade(&a.receive_bell().expect("a opened its doorbell"));
 
@@ -1047,6 +1236,304 @@ mod tests {
         let _ = os_id;
         assert!(bell_weak.upgrade().is_none(), "a's doorbell is released");
         drop(b);
+    }
+
+    /// The receive thread of a participant without a channel waits on
+    /// [`SameHostChannels::wait_for_receive_bell`]: `wake_receiver`, which
+    /// `shutdown` calls, ends the wait, and so does a wake that came between
+    /// the thread's read of the count and its wait.
+    #[test]
+    fn wake_receiver_ends_the_wait_of_a_receiver_without_a_doorbell() {
+        let host = [0xD1, 0xD2, 0xD3, 0xD4];
+        let sink = zerodds_foundation::observability::null_sink();
+        let a = Arc::new(
+            SameHostChannels::new(prefix(host, 0xA8), private_domain(8), 1024, sink).unwrap(),
+        );
+        assert!(a.receive_bell().is_none(), "no channel, no doorbell");
+
+        let seen = a.receiver_wakes();
+        let waiting = Arc::clone(&a);
+        let waiter = std::thread::spawn(move || {
+            let start = Instant::now();
+            waiting.wait_for_receive_bell(seen, Duration::from_secs(10));
+            start.elapsed()
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        a.wake_receiver();
+        let took = waiter.join().unwrap();
+        assert!(
+            took >= Duration::from_millis(40),
+            "it waited for the wake: {took:?}"
+        );
+        assert!(
+            took < Duration::from_secs(5),
+            "the wake ended the wait: {took:?}"
+        );
+
+        let seen = a.receiver_wakes();
+        a.wake_receiver();
+        let start = Instant::now();
+        a.wait_for_receive_bell(seen, Duration::from_secs(10));
+        let took = start.elapsed();
+        assert!(
+            took < Duration::from_secs(1),
+            "a wake before the wait is kept: {took:?}"
+        );
+    }
+
+    /// The first channel opens the doorbell, and the receive thread that
+    /// waited for one goes on to park on it at once.
+    #[test]
+    fn the_first_doorbell_ends_the_wait_of_the_receiver() {
+        let domain = private_domain(9);
+        let host = [0xE1, 0xE2, 0xE3, 0xE4];
+        let (pa, pb) = (prefix(host, 0xA9), prefix(host, 0xB9));
+        let sink = zerodds_foundation::observability::null_sink();
+        let a = Arc::new(SameHostChannels::new(pa, domain, 1024, sink.clone()).unwrap());
+        let b = SameHostChannels::new(pb, domain, 1024, sink).unwrap();
+
+        let seen = a.receiver_wakes();
+        let waiting = Arc::clone(&a);
+        let waiter = std::thread::spawn(move || {
+            let start = Instant::now();
+            waiting.wait_for_receive_bell(seen, Duration::from_secs(10));
+            start.elapsed()
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        b.add_peer(pa, &[], &[Locator::udp_v4([127, 0, 0, 1], 41091)]);
+        a.add_peer(pb, &[], &[Locator::udp_v4([127, 0, 0, 1], 41092)]);
+        let took = waiter.join().unwrap();
+        assert!(
+            a.receive_bell().is_some(),
+            "the channel opened a's doorbell"
+        );
+        assert!(
+            took < Duration::from_secs(5),
+            "the doorbell ended the wait: {took:?}"
+        );
+        a.clear();
+        b.clear();
+    }
+
+    /// What a broken or hostile owner leaves in `ring`: a length above half
+    /// the ring at its `head`, published with 8 bytes. Written through the
+    /// segment's file in `/dev/shm`, as another process would write it.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn publish_corrupt_length(ring: &PosixShmTransport) {
+        use std::os::unix::fs::FileExt;
+        let path =
+            std::path::Path::new("/dev/shm").join(ring.segment_name().trim_start_matches('/'));
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        let mut word = [0u8; 8];
+        file.read_exact_at(&mut word, 8).unwrap();
+        let capacity = u64::from_le_bytes(word);
+        file.read_exact_at(&mut word, 16).unwrap();
+        let head = u64::from_ne_bytes(word);
+        let length = u32::try_from(capacity).unwrap();
+        file.write_all_at(&length.to_le_bytes(), 64 + head % capacity)
+            .unwrap();
+        file.write_all_at(&(head + 8).to_ne_bytes(), 16).unwrap();
+    }
+
+    /// zerodds-shm-transport-1.0 §3.3: a frame an inbound ring drops as
+    /// corrupt is counted and filed as `shm.corrupt_frame`, at level
+    /// error, with the peer and the number dropped; the peer's next frame
+    /// arrives. Before, the ring counted it and nobody read the count.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shm_3_3_a_corrupt_frame_is_reported_as_an_event() {
+        use zerodds_foundation::observability::VecSink;
+        let domain = private_domain(0);
+        let host = [0x91, 0x92, 0x93, 0x94];
+        let (pa, pb) = (prefix(host, 0xA9), prefix(host, 0xBA));
+        let events = Arc::new(VecSink::new());
+        let sink: SharedSink = events.clone();
+        let a = SameHostChannels::new(
+            pa,
+            domain,
+            1024,
+            zerodds_foundation::observability::null_sink(),
+        )
+        .unwrap();
+        let b = SameHostChannels::new(pb, domain, 1024, sink).unwrap();
+        let pb_user = Locator::udp_v4([127, 0, 0, 1], 41102);
+        a.add_peer(pb, &[], &[pb_user]);
+        b.add_peer(pa, &[], &[Locator::udp_v4([127, 0, 0, 1], 41101)]);
+        let inbound = Arc::clone(&b.snapshot()[0].1.inbound);
+
+        publish_corrupt_length(&inbound);
+        assert!(
+            matches!(b.receive(pa, &inbound), Ok(None)),
+            "nothing handed up"
+        );
+        assert_eq!(b.corrupt_frames(), 1);
+        let filed: Vec<(Level, Vec<(&str, String)>)> = events
+            .snapshot()
+            .iter()
+            .filter(|e| e.name == "shm.corrupt_frame")
+            .map(|e| {
+                (
+                    e.level,
+                    e.attrs.iter().map(|a| (a.key, a.value.clone())).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            filed,
+            vec![(
+                Level::Error,
+                vec![("peer", alloc::format!("{pa:?}")), ("count", "1".into())]
+            )]
+        );
+
+        assert!(a.send(&pb_user, Port::User, b"after"));
+        let got = b.receive(pa, &inbound).unwrap().expect("the next frame");
+        assert_eq!(&got.data[..], b"\x01after");
+        assert_eq!(b.corrupt_frames(), 1, "counted once");
+        a.clear();
+        b.clear();
+    }
+
+    /// A channel is never visible without the routes to it: `add_peer`
+    /// sets them before it puts the channel in, `remove_peer` and `clear`
+    /// take both under one lock. Before, a thread between the two steps
+    /// left an open, attached channel no send was routed to; under load
+    /// `same_host_e2e::flatdata_10_3_e2e_two_runtimes_shm_roundtrip` then
+    /// sent its SEDP and its sample over UDP (17 of about 15 000 parallel
+    /// runs on the Linux test host, `routes []` in the report; OPEN-ITEMS
+    /// 132).
+    #[test]
+    fn a_channel_is_never_visible_without_its_routes() {
+        use core::sync::atomic::AtomicBool;
+        let domain = private_domain(0);
+        let host = [0xD1, 0xD2, 0xD3, 0xD4];
+        let (pa, pb) = (prefix(host, 0xAB), prefix(host, 0xBC));
+        let sink = zerodds_foundation::observability::null_sink();
+        let a = Arc::new(SameHostChannels::new(pa, domain, 1024, sink).unwrap());
+        let stop = Arc::new(AtomicBool::new(false));
+        let observer = {
+            let (a, stop) = (Arc::clone(&a), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                let (mut looks, mut without) = (0u64, 0u64);
+                while !stop.load(Ordering::Relaxed) {
+                    let (open, routes) = a.channel_and_routes(pb);
+                    looks += u64::from(open);
+                    without += u64::from(open && routes == 0);
+                }
+                (looks, without)
+            })
+        };
+        let (meta, user) = (
+            Locator::udp_v4([127, 0, 0, 1], 41111),
+            Locator::udp_v4([127, 0, 0, 1], 41112),
+        );
+        for _ in 0..2000 {
+            a.add_peer(pb, &[meta], &[user]);
+            a.add_peer(pb, &[meta], &[user]);
+            a.remove_peer(pb);
+        }
+        a.add_peer(pb, &[meta], &[user]);
+        a.clear();
+        stop.store(true, Ordering::Relaxed);
+        let (looks, without) = observer.join().unwrap();
+        assert!(looks > 0, "the observer saw the channel open");
+        assert_eq!(
+            without, 0,
+            "{without} of {looks} looks saw it without routes"
+        );
+    }
+
+    /// `zerodds-shm-transport-1.0` §5.3: a participant that closes its
+    /// channel to a peer and opens it again, with nobody else holding the
+    /// old one, makes the ring anew. The peer's inbound ring ends on the
+    /// old owner's shutdown flag, the first send goes over UDP (the peer is
+    /// not on the new ring yet), and after the peer's rebind the frames go
+    /// through the new ring.
+    #[test]
+    fn shm_5_3_the_peer_follows_a_channel_made_anew() {
+        let domain = private_domain(10);
+        let host = [0xE1, 0xE2, 0xE3, 0xE4];
+        let (pa, pb) = (prefix(host, 0xA5), prefix(host, 0xB6));
+        let sink = zerodds_foundation::observability::null_sink();
+        let a = SameHostChannels::new(pa, domain, 1024, sink.clone()).unwrap();
+        let b = SameHostChannels::new(pb, domain, 1024, sink).unwrap();
+        let pb_user = Locator::udp_v4([127, 0, 0, 1], 41102);
+        a.add_peer(pb, &[], &[pb_user]);
+        b.add_peer(pa, &[], &[Locator::udp_v4([127, 0, 0, 1], 41101)]);
+        assert!(a.send(&pb_user, Port::User, b"first"));
+        let old = Arc::clone(&b.snapshot()[0].1.inbound);
+        assert_eq!(
+            &b.receive(pa, &old).unwrap().expect("first").data[..],
+            b"\x01first"
+        );
+
+        a.remove_peer(pb);
+        assert!(
+            b.receive(pa, &old).is_err(),
+            "the old owner's drop ended the ring"
+        );
+        a.add_peer(pb, &[], &[pb_user]);
+        assert!(
+            !a.send(&pb_user, Port::User, b"early"),
+            "b is not on the new ring yet"
+        );
+        assert!(b.rebind_inbound(pa, &old));
+        let new = Arc::clone(&b.snapshot()[0].1.inbound);
+        assert!(!Arc::ptr_eq(&new, &old));
+        assert!(a.send(&pb_user, Port::User, b"second"));
+        assert_eq!(
+            &b.receive(pa, &new).unwrap().expect("second").data[..],
+            b"\x01second"
+        );
+        a.clear();
+        b.clear();
+    }
+
+    /// `zerodds-shm-transport-1.0` §5.3: a channel opened again while a
+    /// send still holds the old one takes the old ring over. The peer keeps
+    /// its inbound ring; the frame of the send that held the old channel
+    /// goes through the new one, since the old owner refuses it; and the
+    /// old owner's drop leaves the ring to the new one. Before, the two
+    /// owners pushed into one ring at once.
+    #[test]
+    fn shm_5_3_a_send_on_a_superseded_channel_goes_through_the_new_one() {
+        let domain = private_domain(11);
+        let host = [0xE5, 0xE6, 0xE7, 0xE8];
+        let (pa, pb) = (prefix(host, 0xA7), prefix(host, 0xB8));
+        let sink = zerodds_foundation::observability::null_sink();
+        let a = SameHostChannels::new(pa, domain, 1024, sink.clone()).unwrap();
+        let b = SameHostChannels::new(pb, domain, 1024, sink).unwrap();
+        let pb_user = Locator::udp_v4([127, 0, 0, 1], 41112);
+        a.add_peer(pb, &[], &[pb_user]);
+        b.add_peer(pa, &[], &[Locator::udp_v4([127, 0, 0, 1], 41111)]);
+        let inbound = Arc::clone(&b.snapshot()[0].1.inbound);
+
+        // A send in flight holds the channel.
+        let held = Arc::clone(&a.snapshot()[0].1);
+        a.remove_peer(pb);
+        a.add_peer(pb, &[], &[pb_user]);
+        assert!(held.outbound.is_superseded());
+        assert!(
+            matches!(b.receive(pa, &inbound), Ok(None)),
+            "the ring goes on"
+        );
+        assert!(a.send_on(pb, Arc::clone(&held), Port::User, b"held"));
+        assert!(a.send(&pb_user, Port::User, b"new"));
+        assert_eq!((a.frames_sent(Port::User), a.fallbacks()), (2, 0));
+        drop(held);
+        assert!(a.send(&pb_user, Port::User, b"after"));
+        for want in [&b"\x01held"[..], b"\x01new", b"\x01after"] {
+            assert_eq!(
+                &b.receive(pa, &inbound).unwrap().expect("a frame").data[..],
+                want
+            );
+        }
+        a.clear();
+        b.clear();
     }
 
     #[test]

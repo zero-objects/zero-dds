@@ -149,6 +149,30 @@ int main() {
 }
 "#;
 
+/// `region`, the C++03 part of a header, compiles as a translation unit
+/// of its own with each compiler of `found` under `-std=c++03 -Wall
+/// -Wextra -Werror`.
+fn assert_cpp03(dir: &Path, found: &[&'static str], region: &str) {
+    let three = dir.join("classic03.cpp");
+    std::fs::write(&three, format!("{region}\nint main() {{ return 0; }}\n")).unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for cxx in found {
+        let compiled = Command::new(cxx)
+            .args(["-std=c++03", "-Wall", "-Wextra", "-Werror"])
+            .arg(format!("-I{}", root.join("runtime/cpp/include").display()))
+            .arg(&three)
+            .arg("-o")
+            .arg(dir.join(format!("classic03-{cxx}")))
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{cxx}: the classic declarations are not C++03:\n{}\n{region}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+    }
+}
+
 fn compilers() -> Vec<&'static str> {
     ["clang++", "g++"]
         .into_iter()
@@ -198,24 +222,7 @@ fn xtypes_7_5_1_the_classic_types_are_cpp03_and_the_codec_writes_the_native_byte
     assert!(begin < end);
     let region = &header[begin..end];
     let region = &region[region.find('\n').unwrap() + 1..];
-    let three = dir.join("classic03.cpp");
-    std::fs::write(&three, format!("{region}\nint main() {{ return 0; }}\n")).unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for cxx in &found {
-        let compiled = Command::new(cxx)
-            .args(["-std=c++03", "-Wall", "-Wextra", "-Werror"])
-            .arg(format!("-I{}", root.join("runtime/cpp/include").display()))
-            .arg(&three)
-            .arg("-o")
-            .arg(dir.join(format!("classic03-{cxx}")))
-            .output()
-            .unwrap();
-        assert!(
-            compiled.status.success(),
-            "{cxx}: the classic declarations are not C++03:\n{}\n{region}",
-            String::from_utf8_lossy(&compiled.stderr)
-        );
-    }
+    assert_cpp03(&dir, &found, region);
 
     // The whole header, with the codec, under C++17.
     let unit = dir.join("main.cpp");
@@ -370,24 +377,7 @@ fn idl4cpp_d_2_the_classic_mapping_takes_the_idl4_building_blocks_as_annex_d_say
         "the verbatim text:\n{region}"
     );
     let region = &region[region.find('\n').unwrap() + 1..];
-    let three = dir.join("classic03.cpp");
-    std::fs::write(&three, format!("{region}\nint main() {{ return 0; }}\n")).unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for cxx in &found {
-        let compiled = Command::new(cxx)
-            .args(["-std=c++03", "-Wall", "-Wextra", "-Werror"])
-            .arg(format!("-I{}", root.join("runtime/cpp/include").display()))
-            .arg(&three)
-            .arg("-o")
-            .arg(dir.join(format!("classic03-{cxx}")))
-            .output()
-            .unwrap();
-        assert!(
-            compiled.status.success(),
-            "{cxx}: the classic declarations are not C++03:\n{}\n{region}",
-            String::from_utf8_lossy(&compiled.stderr)
-        );
-    }
+    assert_cpp03(&dir, &found, region);
     let unit = dir.join("main.cpp");
     std::fs::write(&unit, D2_MAIN).unwrap();
     for cxx in found {

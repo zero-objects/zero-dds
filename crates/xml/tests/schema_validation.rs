@@ -12,7 +12,7 @@
 //! Two directions, and the second is the one that catches the damage.
 //!
 //! 1. **What we write validates.** The crate has exactly one DDS-XML
-//!    writer, [`serialize_sample`] (§7.3.7), and seventeen XSD files under
+//!    writer, [`serialize_sample`] (§7.3.7), and seventeen XSD files of DDS-XML under
 //!    `crates/xml/schemas/` that it publishes as `zerodds_xml::schemas`.
 //!    Both are output: a document we emit and a schema someone else
 //!    validates against. Every schema must compile, and the writer's
@@ -281,7 +281,10 @@ fn every_in_tree_schema_compiles() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 17, "expected seventeen XSD files under schemas/");
+    // Seventeen of DDS-XML 1.0 and DDS-XTypes 1.3, and the schema of the
+    // QoS profiles of DDS4CCM 1.1 (Annex C), which
+    // `tests/dds4ccm_profiles.rs` compiles and measures.
+    assert_eq!(checked, 18, "expected eighteen XSD files under schemas/");
 
     // Compiling the schema is a separate step from parsing it: an
     // unresolved include or a duplicate type only shows up here. Every

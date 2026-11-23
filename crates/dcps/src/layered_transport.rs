@@ -57,7 +57,10 @@ impl LayeredUserTransport {
         let mut recv_threads = Vec::with_capacity(transports.len());
 
         for transport in transports {
-            let kind = transport.local_locator().kind;
+            // The two kind sets of TCP name one transport (§1.1 of
+            // zerodds-tcp-transport-1.0): a leg is looked up by the
+            // transport kind, whichever set it or a destination carries.
+            let kind = transport.local_locator().kind.transport_kind();
             legs.push(Leg {
                 kind,
                 transport: Arc::clone(&transport),
@@ -109,7 +112,7 @@ impl LayeredUserTransport {
     /// `true` if a leg serves the given locator kind.
     #[must_use]
     pub fn serves_kind(&self, kind: LocatorKind) -> bool {
-        self.legs.iter().any(|l| l.kind == kind)
+        self.legs.iter().any(|l| l.kind == kind.transport_kind())
     }
 
     /// Stop all recv threads (idempotent). A `recv` waiting for a datagram
@@ -144,7 +147,7 @@ impl Transport for LayeredUserTransport {
 
     fn add_destination(&self, dest: &Locator) {
         for leg in &self.legs {
-            if leg.kind == dest.kind {
+            if leg.kind == dest.kind.transport_kind() {
                 leg.transport.add_destination(dest);
             }
         }
@@ -152,7 +155,7 @@ impl Transport for LayeredUserTransport {
 
     fn forget_destination(&self, dest: &Locator) {
         for leg in &self.legs {
-            if leg.kind == dest.kind {
+            if leg.kind == dest.kind.transport_kind() {
                 leg.transport.forget_destination(dest);
             }
         }
@@ -161,7 +164,7 @@ impl Transport for LayeredUserTransport {
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
         // Preference order = leg order: first matching kind wins.
         for leg in &self.legs {
-            if leg.kind == dest.kind {
+            if leg.kind == dest.kind.transport_kind() {
                 return leg.transport.send(dest, data);
             }
         }
@@ -176,7 +179,7 @@ impl Transport for LayeredUserTransport {
         priority: i32,
     ) -> Result<(), SendError> {
         for leg in &self.legs {
-            if leg.kind == dest.kind {
+            if leg.kind == dest.kind.transport_kind() {
                 return leg.transport.send_with_priority(dest, data, priority);
             }
         }

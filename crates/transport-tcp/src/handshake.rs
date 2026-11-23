@@ -4,39 +4,43 @@
 //!
 //! # Spec status
 //!
-//! **There is no normative OMG spec for a TCP-PSM handshake.**
-//! DDSI-RTPS 2.5 §9.4 standardizes only the locator kind (`TCPv4`=4,
-//! `TCPv6`=8) and §9.5 the wire-bytes mapping (RTPS header +
-//! submessages, identical to the UDP PSM). Vendor-specific are:
-//! Cyclone's `ddsi_tcp` (no handshake, raw RTPS frames with a length
-//! prefix), the FastDDS TCPv4 transport (its own BindConnection
-//! submessages 0x71/0x72), RTI DDS TCP (TLS-oriented).
+//! No OMG specification defines a TCP mapping of RTPS, and so none
+//! defines a handshake: DDSI-RTPS 2.5 names the locator kinds UDPv4 and
+//! UDPv6 (§9.3.2.1), maps messages to UDP/IP (§9.5) and leaves the range
+//! 3 to `0x01ffffff` of locator kinds to the vendors (§9.3.2.4). Every
+//! vendor opens a TCP connection in its own way.
 //!
 //! This handshake is part of the **ZeroDDS TCP Transport 1.0** spec
-//! (`docs/spec-coverage/zerodds-tcp-transport-1.0.md`) and is
-//! ZeroDDS-vendor-specific.
+//! (`docs/spec-coverage/zerodds-tcp-transport-1.0.md` §3) and is
+//! ZeroDDS-specific. It belongs to the dialect `zerodds` of the transport
+//! (`TcpDialect::ZeroDds`, the default). A transport of the dialect `rtps`
+//! (`TcpDialect::Rtps`, §2.5) has no handshake: its connections begin
+//! with the first RTPS message.
 //!
 //! # Scope
 //!
-//! On connection setup, client and server exchange a fixed 16-byte
-//! `BindConnection` request + response **before** any RTPS frame. The
-//! handshake:
+//! On connection setup in the dialect `zerodds`, client and server
+//! exchange a fixed 16-byte `BindConnection` request + response **before**
+//! any RTPS frame. The handshake:
 //!
 //! 1. Verifies that the peer is actually a ZeroDDS TCP transport and
 //!    not HTTP/TLS/nonsense — the magic prefix rattles immediately.
 //! 2. Aligns protocol version, vendor id, and a logical-port claim.
-//! 3. Lets the server reject the connection with a reason code
-//!    (version mismatch, port conflict, resource limit).
+//! 3. Lets the server reject the connection with a reason code. The
+//!    server holds a request against its [`ServerPolicy`] in a fixed
+//!    order ([`decide`]): version, reserved flags, vendor id, peer limit,
+//!    logical-port claim; the first check that fails names the reason.
 //!
 //! # Cross-vendor interop
 //!
-//! Cross-vendor TCP interop requires vendor-specific compatibility
-//! modes, and none of them is built. The handshake is mandatory on both
-//! roles: `accept_one` runs `server_handshake` before the first frame,
-//! so a Cyclone `ddsi_tcp` peer sending raw RTPS is rejected with
-//! `HandshakeError::BadMagic`. A handshake-skip mode for Cyclone and
-//! feature-gated FastDDS/RTI formats are open items; see
-//! `docs/spec-coverage/zerodds-tcp-transport-1.0.open.md`.
+//! In the dialect `zerodds` the handshake is mandatory on both roles:
+//! `accept_one` runs `server_handshake_with` before the first frame, so a
+//! peer that does not begin with it, one of another vendor or a transport
+//! of the dialect `rtps`, is refused with `HandshakeError::BadMagic`. A
+//! transport has one dialect, set per transport
+//! (`transport.tcp_dialect`); a listener does not tell the two apart at
+//! the first octet (§4.2). The dialects of other vendors are open items;
+//! see `docs/spec-coverage/zerodds-tcp-transport-1.0.open.md`.
 //!
 //! # Wire-Layout
 //!
@@ -77,6 +81,9 @@
 //! - Wrong magic prefix → `HandshakeError::BadMagic`. The sender is
 //!   not ZeroDDS TCP — drop the connection.
 //! - Version mismatch → the server answers with Reject/`VersionMismatch`.
+//! - A request with a bit of the reserved `flags` set → the server answers
+//!   with Reject/`ReservedFlagsSet`; a response with one set → the client
+//!   fails with `HandshakeError::ReservedFlags` (§3.5).
 //! - Reject for any reason → the client drops the connection and
 //!   signals the pool a `backoff`, so no tight loop.
 
@@ -106,7 +113,7 @@ pub const HANDSHAKE_WIRE_SIZE: usize = 16;
 /// DDS's OMG vendor id; `tests/contract_rtps.rs` holds the two together.
 pub const VENDOR_ID_ZERODDS: [u8; 2] = zerodds_rtps::wire_types::VendorId::ZERODDS.0;
 
-/// Bind-connection request (§5.2.1.3, fixed layout here).
+/// Bind-connection request (`zerodds-tcp-transport-1.0` §3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BindConnectionRequest {
     /// Protocol major version of the sender.
@@ -117,8 +124,10 @@ pub struct BindConnectionRequest {
     pub vendor_id: [u8; 2],
     /// Reserved, must be 0.
     pub flags: u32,
-    /// DDS endpoint logical port this sender wants to query on this
-    /// connection. 0 = "unspecified, use default".
+    /// The logical port the sender claims on this connection (§3.6): the
+    /// port of its own listener, which is the port of the locator it
+    /// announces. 0 = no claim. A value above 65535 is no port of a TCP
+    /// listener and is refused.
     pub logical_port: u32,
 }
 
@@ -147,6 +156,8 @@ pub enum RejectReason {
     LogicalPortConflict = 3,
     /// Vendor id not accepted (policy).
     VendorNotAccepted = 4,
+    /// The request has a bit of the reserved `flags` set (§3.5).
+    ReservedFlagsSet = 5,
 }
 
 impl RejectReason {
@@ -160,6 +171,7 @@ impl RejectReason {
             2 => Self::ResourceLimit,
             3 => Self::LogicalPortConflict,
             4 => Self::VendorNotAccepted,
+            5 => Self::ReservedFlagsSet,
             _ => Self::Unknown,
         }
     }
@@ -215,6 +227,12 @@ pub enum HandshakeError {
         /// 4-byte prefix.
         got: [u8; 4],
     },
+    /// The response has a bit of the reserved `flags` set (§3.5): the
+    /// server means something by it that this version does not know.
+    ReservedFlags {
+        /// The `flags` word received.
+        got: u32,
+    },
 }
 
 impl core::fmt::Display for HandshakeError {
@@ -233,6 +251,9 @@ impl core::fmt::Display for HandshakeError {
             Self::Rejected { reason } => write!(f, "handshake rejected: {reason:?}"),
             Self::BadResponse { got } => {
                 write!(f, "handshake unexpected response magic: {got:?}")
+            }
+            Self::ReservedFlags { got } => {
+                write!(f, "handshake response with reserved flags set: {got:#010x}")
             }
         }
     }
@@ -345,52 +366,150 @@ pub fn client_handshake<S: Read + Write>(
     let mut buf = [0u8; HANDSHAKE_WIRE_SIZE];
     stream.read_exact(&mut buf)?;
     let resp = decode_response(&buf)?;
+    // §3.5: a bit this version does not know is not ignored, whatever the
+    // status beside it.
+    if resp.flags != 0 {
+        return Err(HandshakeError::ReservedFlags { got: resp.flags });
+    }
     match resp.status {
         ResponseStatus::Accept => Ok(resp),
         ResponseStatus::Reject(reason) => Err(HandshakeError::Rejected { reason }),
     }
 }
 
-/// Server side of the handshake. Reads the request, checks the
-/// version, sends an Accept or Reject response. On Reject, Ok(...) is
-/// still returned so the caller can decide whether to drop the
-/// connection; the server should normally drop.
+/// What the accepting side holds a request against, beside the version
+/// and the reserved flags (§3.3). The default accepts every vendor, is
+/// below its peer limit and grants every claim.
+#[derive(Default)]
+pub struct ServerPolicy<'a> {
+    /// The vendor ids a peer may carry; `None` accepts every vendor.
+    pub accepted_vendors: Option<&'a [[u8; 2]]>,
+    /// The listener reads as many connections as it may (§3.7).
+    pub at_peer_limit: bool,
+    /// Called with the logical port a request claims, never with 0 and
+    /// never with a value above 65535, once every other check has passed;
+    /// says whether the claim is granted (§3.6). `None` grants every
+    /// claim of a port up to 65535.
+    pub claim: Option<&'a mut dyn FnMut(u32) -> bool>,
+}
+
+impl core::fmt::Debug for ServerPolicy<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ServerPolicy")
+            .field("accepted_vendors", &self.accepted_vendors)
+            .field("at_peer_limit", &self.at_peer_limit)
+            .field("claim", &self.claim.is_some())
+            .finish()
+    }
+}
+
+/// Reads the request of §3.1.
+///
+/// # Errors
+/// I/O error; `BadMagic` for a peer that does not begin with `ZDDS`.
+pub fn read_request<S: Read>(stream: &mut S) -> Result<BindConnectionRequest, HandshakeError> {
+    let mut buf = [0u8; HANDSHAKE_WIRE_SIZE];
+    stream.read_exact(&mut buf)?;
+    decode_request(&buf)
+}
+
+/// Whether a request of version `peer` is taken.
+fn version_accepted(peer: (u8, u8)) -> bool {
+    let local = (TCP_PSM_VERSION_MAJOR, TCP_PSM_VERSION_MINOR);
+    peer.0 == local.0
+        && peer.0.abs_diff(local.0) <= ACCEPTED_VERSION_DIFF.0
+        && peer.1.abs_diff(local.1) <= ACCEPTED_VERSION_DIFF.1
+}
+
+/// The answer to a request (§3.3). The checks run in a fixed order and
+/// the first that fails names the reason:
+///
+/// 1. the version (`VersionMismatch`): the fields behind it mean what
+///    this version says only if it matches;
+/// 2. the reserved flags (`ReservedFlagsSet`, §3.5);
+/// 3. the vendor id against `policy.accepted_vendors`
+///    (`VendorNotAccepted`);
+/// 4. the peer limit (`ResourceLimit`, §3.7);
+/// 5. the logical-port claim (`LogicalPortConflict`, §3.6). It is last,
+///    because a granted claim is held: a request refused for another
+///    reason has claimed nothing. A claim above 65535 is refused with the
+///    same reason before the policy is asked: it names no port of a TCP
+///    listener, and the frames of the connection would carry a source no
+///    send can reach.
+pub fn decide(req: &BindConnectionRequest, policy: &mut ServerPolicy<'_>) -> ResponseStatus {
+    if !version_accepted((req.version_major, req.version_minor)) {
+        return ResponseStatus::Reject(RejectReason::VersionMismatch);
+    }
+    if req.flags != 0 {
+        return ResponseStatus::Reject(RejectReason::ReservedFlagsSet);
+    }
+    if let Some(accepted) = policy.accepted_vendors
+        && !accepted.contains(&req.vendor_id)
+    {
+        return ResponseStatus::Reject(RejectReason::VendorNotAccepted);
+    }
+    if policy.at_peer_limit {
+        return ResponseStatus::Reject(RejectReason::ResourceLimit);
+    }
+    if req.logical_port > u32::from(u16::MAX) {
+        return ResponseStatus::Reject(RejectReason::LogicalPortConflict);
+    }
+    if req.logical_port != 0
+        && let Some(claim) = policy.claim.as_mut()
+        && !claim(req.logical_port)
+    {
+        return ResponseStatus::Reject(RejectReason::LogicalPortConflict);
+    }
+    ResponseStatus::Accept
+}
+
+/// Writes the response of §3.2 with `status`, this side's version and
+/// vendor id, and no flag.
+///
+/// # Errors
+/// I/O error.
+pub fn write_response<S: Write>(
+    stream: &mut S,
+    status: ResponseStatus,
+) -> Result<BindConnectionResponse, HandshakeError> {
+    let resp = BindConnectionResponse {
+        status,
+        version_major: TCP_PSM_VERSION_MAJOR,
+        version_minor: TCP_PSM_VERSION_MINOR,
+        vendor_id: VENDOR_ID_ZERODDS,
+        flags: 0,
+    };
+    stream.write_all(&encode_response(&resp))?;
+    stream.flush()?;
+    Ok(resp)
+}
+
+/// Server side of the handshake with the default [`ServerPolicy`]: reads
+/// the request, checks the version and the reserved flags, sends an
+/// Accept or Reject response. On Reject, Ok(...) is still returned so the
+/// caller can decide whether to drop the connection; the server should
+/// normally drop.
 ///
 /// # Errors
 /// I/O error, protocol error on the request.
 pub fn server_handshake<S: Read + Write>(
     stream: &mut S,
 ) -> Result<(BindConnectionRequest, BindConnectionResponse), HandshakeError> {
-    let mut buf = [0u8; HANDSHAKE_WIRE_SIZE];
-    stream.read_exact(&mut buf)?;
-    let req = decode_request(&buf)?;
+    server_handshake_with(stream, &mut ServerPolicy::default())
+}
 
-    let local = (TCP_PSM_VERSION_MAJOR, TCP_PSM_VERSION_MINOR);
-    let peer = (req.version_major, req.version_minor);
-    let within_window = peer.0 == local.0
-        && peer.0.abs_diff(local.0) <= ACCEPTED_VERSION_DIFF.0
-        && peer.1.abs_diff(local.1) <= ACCEPTED_VERSION_DIFF.1;
-
-    let resp = if within_window {
-        BindConnectionResponse {
-            status: ResponseStatus::Accept,
-            version_major: local.0,
-            version_minor: local.1,
-            vendor_id: VENDOR_ID_ZERODDS,
-            flags: 0,
-        }
-    } else {
-        BindConnectionResponse {
-            status: ResponseStatus::Reject(RejectReason::VersionMismatch),
-            version_major: local.0,
-            version_minor: local.1,
-            vendor_id: VENDOR_ID_ZERODDS,
-            flags: 0,
-        }
-    };
-    let encoded = encode_response(&resp);
-    stream.write_all(&encoded)?;
-    stream.flush()?;
+/// Server side of the handshake: [`read_request`], [`decide`] against
+/// `policy`, [`write_response`]. On Reject, Ok(...) is still returned; the
+/// caller drops the connection (§3.4).
+///
+/// # Errors
+/// I/O error, protocol error on the request.
+pub fn server_handshake_with<S: Read + Write>(
+    stream: &mut S,
+    policy: &mut ServerPolicy<'_>,
+) -> Result<(BindConnectionRequest, BindConnectionResponse), HandshakeError> {
+    let req = read_request(stream)?;
+    let resp = write_response(stream, decide(&req, policy))?;
     Ok((req, resp))
 }
 
@@ -480,11 +599,47 @@ mod tests {
         );
     }
 
-    /// The reserved `flags` word survives encode/decode unchanged. The
-    /// receiver does **not** reject a non-zero value — the spec item for
-    /// §3.1 carries that as its `partial` remainder.
+    /// A stream that yields `input` and keeps what is written to it.
+    struct Duplex {
+        input: Cursor<Vec<u8>>,
+        output: Vec<u8>,
+    }
+
+    impl Duplex {
+        fn new(input: &[u8]) -> Self {
+            Self {
+                input: Cursor::new(input.to_vec()),
+                output: Vec::new(),
+            }
+        }
+    }
+
+    impl Read for Duplex {
+        fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+            self.input.read(b)
+        }
+    }
+
+    impl Write for Duplex {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.output.write(b)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The response octets of a server that reads `req` under `policy`.
+    fn server_answer(req: &BindConnectionRequest, policy: &mut ServerPolicy<'_>) -> Vec<u8> {
+        let mut stream = Duplex::new(&encode_request(req));
+        server_handshake_with(&mut stream, policy).unwrap();
+        stream.output
+    }
+
+    /// The codec carries the `flags` word as it is; the check is in the
+    /// roles (§3.5).
     #[test]
-    fn nonzero_flags_are_carried_not_rejected() {
+    fn the_codec_carries_the_flags_word() {
         let req = BindConnectionRequest {
             flags: 0xDEAD_BEEF,
             ..sample_request()
@@ -493,6 +648,259 @@ mod tests {
         assert_eq!(&bytes[8..12], &0xDEAD_BEEFu32.to_be_bytes());
         let back = decode_request(&bytes).unwrap();
         assert_eq!(back.flags, 0xDEAD_BEEF);
+    }
+
+    /// §3.5: a request with reserved flags set is answered `ZDA-` with
+    /// reason code 5, and the claim it carries is not looked at.
+    #[test]
+    fn tcp_3_5_server_rejects_a_request_with_reserved_flags_set() {
+        let req = BindConnectionRequest {
+            flags: 0x8000_0001,
+            ..sample_request()
+        };
+        let claims = core::cell::Cell::new(0u32);
+        let mut claim = |_port: u32| {
+            claims.set(claims.get() + 1);
+            true
+        };
+        let mut policy = ServerPolicy {
+            claim: Some(&mut claim),
+            ..ServerPolicy::default()
+        };
+        let out = server_answer(&req, &mut policy);
+        assert_eq!(out.len(), HANDSHAKE_WIRE_SIZE);
+        assert_eq!(&out[..4], b"ZDA-");
+        assert_eq!(out[8..12], [0, 0, 0, 0], "the response sets no flag");
+        assert_eq!(out[12..16], 5u32.to_be_bytes());
+        assert_eq!(claims.get(), 0);
+        // The same request without the flags is accepted and claims.
+        let out = server_answer(&sample_request(), &mut policy);
+        assert_eq!(&out[..4], b"ZDA+");
+        assert_eq!(claims.get(), 1);
+    }
+
+    /// §3.5: the client fails on a response with reserved flags set,
+    /// Accept or Reject, and takes the same response without them.
+    #[test]
+    fn tcp_3_5_client_drops_a_response_with_reserved_flags_set() {
+        for status in [
+            ResponseStatus::Accept,
+            ResponseStatus::Reject(RejectReason::ResourceLimit),
+        ] {
+            let with_flags = encode_response(&BindConnectionResponse {
+                status,
+                version_major: 1,
+                version_minor: 0,
+                vendor_id: VENDOR_ID_ZERODDS,
+                flags: 0x0000_0100,
+            });
+            let (res, _) = run_client_against_server_bytes(with_flags);
+            match res {
+                Err(HandshakeError::ReservedFlags { got }) => assert_eq!(got, 0x0000_0100),
+                other => panic!("expected ReservedFlags, got {other:?}"),
+            }
+        }
+        let clean = encode_response(&BindConnectionResponse {
+            status: ResponseStatus::Accept,
+            version_major: 1,
+            version_minor: 0,
+            vendor_id: VENDOR_ID_ZERODDS,
+            flags: 0,
+        });
+        let (res, sent) = run_client_against_server_bytes(clean);
+        assert!(res.is_ok());
+        assert_eq!(sent[8..12], [0, 0, 0, 0], "the client sets no flag");
+    }
+
+    /// §3.5: each of the 32 bits alone is refused, in both directions.
+    #[test]
+    fn tcp_3_5_each_single_flag_bit_is_rejected() {
+        for bit in 0..32 {
+            let flags = 1u32 << bit;
+            let req = BindConnectionRequest {
+                flags,
+                ..sample_request()
+            };
+            assert_eq!(
+                decide(&req, &mut ServerPolicy::default()),
+                ResponseStatus::Reject(RejectReason::ReservedFlagsSet),
+                "request bit {bit}"
+            );
+            let resp = encode_response(&BindConnectionResponse {
+                status: ResponseStatus::Accept,
+                version_major: 1,
+                version_minor: 0,
+                vendor_id: VENDOR_ID_ZERODDS,
+                flags,
+            });
+            let (res, _) = run_client_against_server_bytes(resp);
+            assert!(
+                matches!(res, Err(HandshakeError::ReservedFlags { got }) if got == flags),
+                "response bit {bit}: {res:?}"
+            );
+        }
+    }
+
+    /// §3.3: a vendor id that is not on the list is answered `ZDA-` with
+    /// reason code 4.
+    #[test]
+    fn tcp_3_3_server_rejects_vendor_not_accepted() {
+        let accepted = [[0x01, 0x10], [0x01, 0x0F]];
+        let mut policy = ServerPolicy {
+            accepted_vendors: Some(&accepted),
+            ..ServerPolicy::default()
+        };
+        let out = server_answer(&sample_request(), &mut policy);
+        assert_eq!(&out[..4], b"ZDA-");
+        assert_eq!(out[12..16], 4u32.to_be_bytes());
+        // An empty list accepts no vendor.
+        let mut none = ServerPolicy {
+            accepted_vendors: Some(&[]),
+            ..ServerPolicy::default()
+        };
+        assert_eq!(
+            decide(&sample_request(), &mut none),
+            ResponseStatus::Reject(RejectReason::VendorNotAccepted)
+        );
+    }
+
+    /// §3.3: a vendor on the list is accepted, and so is every vendor
+    /// without a list.
+    #[test]
+    fn tcp_3_3_server_accepts_a_listed_vendor() {
+        let accepted = [[0x01, 0x10], VENDOR_ID_ZERODDS];
+        let mut policy = ServerPolicy {
+            accepted_vendors: Some(&accepted),
+            ..ServerPolicy::default()
+        };
+        let out = server_answer(&sample_request(), &mut policy);
+        assert_eq!(&out[..4], b"ZDA+");
+        assert_eq!(out[12..16], [0, 0, 0, 0]);
+        let other = BindConnectionRequest {
+            vendor_id: [0x01, 0x10],
+            ..sample_request()
+        };
+        assert_eq!(decide(&other, &mut policy), ResponseStatus::Accept);
+        let unknown = BindConnectionRequest {
+            vendor_id: [0xAB, 0xCD],
+            ..sample_request()
+        };
+        assert_eq!(
+            decide(&unknown, &mut policy),
+            ResponseStatus::Reject(RejectReason::VendorNotAccepted)
+        );
+        assert_eq!(
+            decide(&unknown, &mut ServerPolicy::default()),
+            ResponseStatus::Accept
+        );
+    }
+
+    /// §3.3: a request that fails every check is refused for the version;
+    /// with each check repaired in turn the next one names the reason,
+    /// and the claim is asked for only when all others have passed.
+    #[test]
+    fn tcp_3_3_decide_checks_in_the_stated_order() {
+        let accepted = [VENDOR_ID_ZERODDS];
+        let asked = core::cell::Cell::new(0u32);
+        let mut refuse = |_port: u32| {
+            asked.set(asked.get() + 1);
+            false
+        };
+        let mut policy = ServerPolicy {
+            accepted_vendors: Some(&accepted),
+            at_peer_limit: true,
+            claim: Some(&mut refuse),
+        };
+        let mut req = BindConnectionRequest {
+            version_major: 2,
+            version_minor: 0,
+            vendor_id: [0xAB, 0xCD],
+            flags: 1,
+            logical_port: 7400,
+        };
+        let reason = |req: &BindConnectionRequest, policy: &mut ServerPolicy<'_>| match decide(
+            req, policy,
+        ) {
+            ResponseStatus::Reject(reason) => Some(reason),
+            ResponseStatus::Accept => None,
+        };
+        assert_eq!(
+            reason(&req, &mut policy),
+            Some(RejectReason::VersionMismatch)
+        );
+        req.version_major = 1;
+        assert_eq!(
+            reason(&req, &mut policy),
+            Some(RejectReason::ReservedFlagsSet)
+        );
+        req.flags = 0;
+        assert_eq!(
+            reason(&req, &mut policy),
+            Some(RejectReason::VendorNotAccepted)
+        );
+        req.vendor_id = VENDOR_ID_ZERODDS;
+        assert_eq!(reason(&req, &mut policy), Some(RejectReason::ResourceLimit));
+        assert_eq!(asked.get(), 0, "no claim is taken for a refused request");
+        policy.at_peer_limit = false;
+        assert_eq!(
+            reason(&req, &mut policy),
+            Some(RejectReason::LogicalPortConflict)
+        );
+        assert_eq!(asked.get(), 1);
+        // No claim: the callback is not asked.
+        req.logical_port = 0;
+        assert_eq!(reason(&req, &mut policy), None);
+        assert_eq!(asked.get(), 1);
+    }
+
+    /// §3.6: a claim above 65535 names no port of a TCP listener. The
+    /// response is `ZDA-` with reason code 3, with a policy that grants
+    /// every claim and with one that is asked; that one is not asked.
+    /// 65535 is a port and is granted.
+    #[test]
+    fn tcp_3_6_a_claim_above_65535_is_refused() {
+        let beyond = BindConnectionRequest {
+            logical_port: 65_536,
+            ..sample_request()
+        };
+        let out = server_answer(&beyond, &mut ServerPolicy::default());
+        assert_eq!(&out[..4], b"ZDA-");
+        assert_eq!(out[4..8], [1, 0, 0x01, 0xF0]);
+        assert_eq!(out[8..12], [0, 0, 0, 0]);
+        assert_eq!(out[12..16], 3u32.to_be_bytes());
+
+        let asked = core::cell::Cell::new(0u32);
+        let mut grant = |_port: u32| {
+            asked.set(asked.get() + 1);
+            true
+        };
+        let mut policy = ServerPolicy {
+            claim: Some(&mut grant),
+            ..ServerPolicy::default()
+        };
+        let highest = BindConnectionRequest {
+            logical_port: u32::MAX,
+            ..sample_request()
+        };
+        for req in [&beyond, &highest] {
+            assert_eq!(
+                decide(req, &mut policy),
+                ResponseStatus::Reject(RejectReason::LogicalPortConflict)
+            );
+        }
+        assert_eq!(
+            asked.get(),
+            0,
+            "the policy is not asked for what is no port"
+        );
+        let last = BindConnectionRequest {
+            logical_port: 65_535,
+            ..sample_request()
+        };
+        assert_eq!(decide(&last, &mut policy), ResponseStatus::Accept);
+        assert_eq!(asked.get(), 1);
+        let out = server_answer(&last, &mut ServerPolicy::default());
+        assert_eq!(&out[..4], b"ZDA+");
     }
 
     #[test]
@@ -545,9 +953,12 @@ mod tests {
             RejectReason::ResourceLimit,
             RejectReason::LogicalPortConflict,
             RejectReason::VendorNotAccepted,
+            RejectReason::ReservedFlagsSet,
         ] {
             assert_eq!(RejectReason::from_code(r.as_code()), r);
         }
+        assert_eq!(RejectReason::ReservedFlagsSet.as_code(), 5);
+        assert_eq!(RejectReason::from_code(0), RejectReason::Unknown);
     }
 
     #[test]

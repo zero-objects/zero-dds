@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use crate::plan::PackageConfiguration;
 
 /// In-memory RepositoryManager — D&C §8.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct RepositoryManager {
     packages: BTreeMap<String, PackageConfiguration>,
 }

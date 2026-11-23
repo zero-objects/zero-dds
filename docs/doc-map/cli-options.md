@@ -30,7 +30,7 @@ Verwandte Seiten: [README.md](README.md) · [architecture.md](architecture.md) �
 | `zerodds-mqtt-bridged` | `crates/mqtt-bridge/src/bin/zerodds-mqtt-bridged.rs` | `mqtt-bridged.yaml` | `man1`, `man5` | `zerodds-mqtt-bridge` |
 | `zerodds-coap-bridged` | `crates/coap-bridge/src/bin/zerodds-coap-bridged.rs` | `coap-bridged.yaml` | `man1`, `man5` | `zerodds-coap-bridge` |
 | `zerodds-amqp-bridged` | `crates/amqp-endpoint/src/bin/zerodds-amqp-bridged.rs` | `amqp-bridged.yaml` | `man1`, `man5` | `zerodds-amqp-bridge` |
-| `zerodds-grpc-bridged` | `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs` | `grpc-bridged.yaml` | `man1`, `man5` | `zerodds-grpc-bridge` |
+| `zerodds-grpc-bridged` | `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs`, `crates/grpc-bridge/src/bridge_daemon/mod.rs` | `grpc-bridged.yaml` | `man1`, `man5` | `zerodds-grpc-bridge` |
 | `zerodds-corba-bridged` | `crates/corba-dds-bridge/src/bin/zerodds-corba-bridged.rs` | `corba-bridged.yaml` | `man1`, `man5` | `zerodds-corba-bridge` |
 | `zerodds-secure-permissions` | `tools/secure-permissions/src/main.rs` | keine | keine | nur rpm `zerodds-cli` |
 | `zerodds-chaos` | `tools/chaos/src/main.rs` | keine | keine | `zerodds-cli` |
@@ -303,7 +303,7 @@ Liest OMG IDL 4.2: prüft, lintet, formatiert, gibt Modell und Abhängigkeiten a
 zerodds-idlc <SUBCOMMAND> [OPTIONS] FILE...
 ```
 
-Unterbefehle: `check`, `lint`, `format`, `dump-ast`, `print-deps`, `generate`. Optionen und Dateien dürfen gemischt stehen.
+Unterbefehle: `check`, `lint`, `format`, `dump-ast`, `print-deps`, `dump-cidl`, `generate`, `dlrl`. Optionen und Dateien dürfen gemischt stehen. Eine Datei mit der Endung `.cdl` ist OMG CIDL (CORBA 3.3 Part 3 §8.1): `check`, `dump-ast`, `print-deps` und `dump-cidl` lesen sie, `generate`, `dlrl`, `lint` und `format` weisen sie ab; `dump-cidl` liest nur `.cdl`.
 
 | Option | Gilt für | Bedeutung | Vorgabe |
 |---|---|---|---|
@@ -395,7 +395,7 @@ Exit-Codes: 0; 1 für jeden Fehler, auch ohne Unterbefehl.
 
 ## Bridge-Daemons
 
-Gemeinsam: Konfigurationsdatei `<stem>.yaml` mit `<stem>.d/` im Systemverzeichnis, außer `--config` nennt eine andere; jede eigene Option ist `--set` ihres Schlüssels. Die systemd-Units starten jeden Daemon mit `--config /etc/zerodds/<stem>.yaml` (`packaging/linux/systemd/*.service`), die launchd-Plists mit `--config /usr/local/etc/zerodds/<stem>.yaml`. SIGTERM/SIGINT beenden, SIGHUP liest die Konfiguration neu (Umfang je Bridge in der Manpage). `OTEL_EXPORTER_OTLP_ENDPOINT` aktiviert einen OTLP-Export (`otlp_config_from_env`; aufgerufen in ws, mqtt, coap, amqp, corba; in `zerodds-grpc-bridged.rs` kein Aufruf gefunden).
+Gemeinsam: Konfigurationsdatei `<stem>.yaml` mit `<stem>.d/` im Systemverzeichnis, außer `--config` nennt eine andere; jede eigene Option ist `--set` ihres Schlüssels. Die systemd-Units starten jeden Daemon mit `--config /etc/zerodds/<stem>.yaml` (`packaging/linux/systemd/*.service`), die launchd-Plists mit `--config /usr/local/etc/zerodds/<stem>.yaml`. SIGTERM/SIGINT beenden, SIGHUP liest die Konfiguration neu (Umfang je Bridge in der Manpage). `OTEL_EXPORTER_OTLP_ENDPOINT` aktiviert einen OTLP-Export (`otlp_config_from_env`; aufgerufen in ws, mqtt, coap, amqp, corba und grpc, `crates/grpc-bridge/src/bridge_daemon/mod.rs`).
 
 Zwei Parser-Familien:
 
@@ -408,7 +408,7 @@ DDS ↔ WebSocket. Spezifikation `docs/specs/zerodds-ws-bridge-1.0.md`.
 
 | Option | Schlüssel | Vorgabe |
 |---|---|---|
-| `--listen <ADDR>` | `listen` | `0.0.0.0:8080` |
+| `--listen <ADDR>` | `listen` | `127.0.0.1:8080` |
 | `--domain <ID>` | `domain` | 0 |
 | `--topic <NAME>` | `+topics` | |
 | `--tls-cert <FILE>` | `tls.cert_file`, `tls.enabled=true` | |
@@ -471,7 +471,7 @@ DDS ↔ AMQP 1.0.
 | `--once` | Testhilfe: eine Verbindung bedienen, dann Ende |
 | `--connect-timeout-ms <N>` | Testhilfe: Verbindungsaufbau aufgeben, Vorgabe 5000 |
 
-Umgebung: `AMQP_PASSWORD` → `amqp.sasl.password`. Exit-Codes laut `DaemonError`-Doku in `crates/amqp-endpoint/src/bridge_daemon.rs`: 1 Konfiguration, 2 Verbindung, 3 DDS; der Code erzeugt genau diese drei. Hilfetext nennt keine Exit-Codes.
+Umgebung: `AMQP_PASSWORD` → `amqp.sasl.password`. Exit-Codes laut `DaemonError` in `crates/amqp-endpoint/src/bridge_daemon.rs` und `zerodds-amqp-bridged(1)` EXIT STATUS: 0 normales Ende oder `--check-config` gültig; 1 Konfiguration ungültig; 2 mit `--once` TCP-Verbindung gescheitert oder verloren, mit `--check-config` Datei nicht lesbar oder nicht parsebar; 3 DDS-Participant oder Endpunkt; 4 TLS-Handshake vor der ersten Verbindung; 5 SASL vor der ersten Verbindung; 6 Broker lehnt das `open` ab oder sein `open` passt nicht zur Bridge, vor der ersten Verbindung. Eine Zeitüberschreitung in diesen Stufen und jeder Fehler nach einer bestehenden Verbindung werden nach dem Back-off wiederholt. Hilfetext nennt keine Exit-Codes.
 
 ### zerodds-grpc-bridged
 
@@ -504,11 +504,11 @@ DDS ↔ CORBA GIOP/IIOP und SSLIOP.
 | `--orb-id <ID>` | `corba.orb_id` | |
 | `--tls-cert` + `--tls-key` (nur paarweise) | `corba.ssliop.cert_file`, `.key_file`, `corba.ssliop.enabled=true` | |
 | `--topic <REPO_ID=TOPIC>` | `+mappings` | |
-| `--dump-iors` | eine Zeile pro Mapping `repo_id operation IOR:…`, dann Ende; Host aus `corba.iiop.advertise_host` (Umgebung `ZERODDS_CORBA_ADVERTISE_HOST`) | `127.0.0.1` |
+| `--dump-iors` | eine Zeile pro Mapping `repo_id operation IOR:…`, die eines Mandanten `@<mandant> repo_id operation IOR:…`, dann Ende; Host aus `corba.iiop.advertise_host` (Umgebung `ZERODDS_CORBA_ADVERTISE_HOST`) | `127.0.0.1` |
 | `--log-level`, `--metrics` | `log_level`; `metrics.listen` + `metrics.enabled=true` | |
 | `--idle-timeout-ms <N>` | Testhilfe: Stopp nach N ms | 0 (aus) |
 
-Exit-Codes laut Manpage: 0, 1 Konfiguration, 2 Bind, 3 DDS, 4 TLS. Das Binary erzeugt selbst nur Code 1; `crates/corba-dds-bridge/src/bridge_daemon.rs` erzeugt 1, 2, 3 und 4 (Zuordnung zu Bind/DDS/TLS nicht einzeln nachverfolgt).
+Exit-Codes laut Manpage: 0, 1 Konfiguration, 2 Bind, 3 DDS, 4 TLS, 5 NameService. Das Binary erzeugt selbst nur Code 1; `crates/corba-dds-bridge/src/bridge_daemon/mod.rs` erzeugt 1, 2, 3 (ein Teilnehmer, der nicht startet), 4 und 5; Tests: `crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_2_*`.
 
 ## Weitere Anwenderprogramme
 

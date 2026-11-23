@@ -3,8 +3,6 @@
 
 //! WebSocket payload masking — RFC 6455 §5.3.
 
-use core::sync::atomic::{AtomicU64, Ordering};
-
 /// Spec §5.3 (p. 32): "octet i of the transformed data ('transformed-
 /// octet-i') is the XOR of octet i of the original data ('original-
 /// octet-i') with octet at index i modulo 4 of the masking key
@@ -18,61 +16,77 @@ pub fn apply_mask(data: &mut [u8], key: [u8; 4]) {
     }
 }
 
-/// Generates a masking key. Spec §5.3 (p. 32): "The masking key is
-/// a 32-bit value chosen at random by the client. [...] The masking
-/// key needs to be unpredictable; thus, the masking key MUST be
-/// derived from a strong source of entropy."
-///
-/// This library provides a default implementation based on a
-/// Splitmix64 PRNG with a seed from a monotonically increasing counter +
-/// `core::ptr::addr_of!` position hash. Spec conformance **requires**
-/// a cryptographically strong source — applications with security
-/// requirements MUST use their own key generation scheme
-/// (e.g. the `getrandom` crate or an OS RNG). This function is meant
-/// only as a codec convenience; it is explicitly `not for security`.
-#[must_use]
-pub fn generate_masking_key() -> [u8; 4] {
-    static COUNTER: AtomicU64 = AtomicU64::new(0xCAFE_F00D_DEAD_BEEF);
-    let n = COUNTER.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::SeqCst);
-    let mut x = n;
-    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    x ^= x >> 31;
-    let bytes = x.to_le_bytes();
-    [bytes[0], bytes[1], bytes[2], bytes[3]]
+/// The random source could not deliver a masking key. A client that cannot
+/// draw a key cannot send the frame: RFC 6455 §5.3 allows no frame from a
+/// client without a key from a strong source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntropyError;
+
+impl core::fmt::Display for EntropyError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("the random source delivered no masking key")
+    }
 }
 
-/// Spec §5.3 — `MaskingKeyProvider` trait for caller-injected
-/// secure RNGs.
+#[cfg(feature = "std")]
+impl std::error::Error for EntropyError {}
+
+/// A masking key from the operating system's random source. Spec §5.3
+/// (p. 32): "The masking key is a 32-bit value chosen at random by the
+/// client. [...] The masking key needs to be unpredictable; thus, the
+/// masking key MUST be derived from a strong source of entropy, and the
+/// masking key for a given frame MUST NOT make it simple for a server/proxy
+/// to predict the masking key for a subsequent frame."
 ///
-/// Applications with security requirements MUST implement this trait
-/// and wire in a cryptographically strong RNG (e.g. `getrandom`,
-/// `rand::rngs::OsRng`). The default implementation
-/// [`InsecureSplitmixProvider`] is `not for security`.
+/// Each call reads four octets from the operating system (`getrandom`); no
+/// state of this crate takes part, so one key says nothing about the next.
+///
+/// # Errors
+/// [`EntropyError`] when the operating system delivers no random octets.
+#[cfg(feature = "std")]
+pub fn generate_masking_key() -> Result<[u8; 4], EntropyError> {
+    let mut key = [0u8; 4];
+    getrandom::getrandom(&mut key).map_err(|_| EntropyError)?;
+    Ok(key)
+}
+
+/// The source of a client's masking keys (Spec §5.3, §10.3): one call, one
+/// key for one frame.
+///
+/// With `std` the crate's source is [`OsRngProvider`]. A `no_std` caller
+/// implements the trait over the random source of its platform (a hardware
+/// generator, a CSPRNG seeded from one); the crate ships no generator of
+/// its own, because one that is not seeded from a strong source is exactly
+/// what §5.3 excludes.
 pub trait MaskingKeyProvider {
-    /// Returns a 32-bit masking key.
-    fn next_key(&mut self) -> [u8; 4];
+    /// A new 32-bit masking key.
+    ///
+    /// # Errors
+    /// [`EntropyError`] when the source delivers none.
+    fn next_key(&mut self) -> Result<[u8; 4], EntropyError>;
 }
 
-/// Default provider — explicitly `not for security`.
-///
-/// Wraps the library-internal `generate_masking_key` function.
-#[derive(Debug, Default)]
-pub struct InsecureSplitmixProvider;
+/// The operating system's random source ([`generate_masking_key`]).
+#[cfg(feature = "std")]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct OsRngProvider;
 
-impl MaskingKeyProvider for InsecureSplitmixProvider {
-    fn next_key(&mut self) -> [u8; 4] {
+#[cfg(feature = "std")]
+impl MaskingKeyProvider for OsRngProvider {
+    fn next_key(&mut self) -> Result<[u8; 4], EntropyError> {
         generate_masking_key()
     }
 }
 
 /// Caller-supplied provider — wraps an `FnMut` that returns a key.
-/// Lets applications inject their own sources (OsRng, getrandom,
-/// hardware RNG) without writing their own trait impl.
-pub struct ClosureMaskingKeyProvider<F: FnMut() -> [u8; 4]>(pub F);
+/// Lets applications inject their own sources (a hardware RNG, a CSPRNG)
+/// without writing their own trait impl.
+pub struct ClosureMaskingKeyProvider<F: FnMut() -> Result<[u8; 4], EntropyError>>(pub F);
 
-impl<F: FnMut() -> [u8; 4]> MaskingKeyProvider for ClosureMaskingKeyProvider<F> {
-    fn next_key(&mut self) -> [u8; 4] {
+impl<F: FnMut() -> Result<[u8; 4], EntropyError>> MaskingKeyProvider
+    for ClosureMaskingKeyProvider<F>
+{
+    fn next_key(&mut self) -> Result<[u8; 4], EntropyError> {
         (self.0)()
     }
 }
@@ -130,7 +144,16 @@ pub const fn validate_masking(
     frame: &crate::frame::Frame,
     receiver: Role,
 ) -> Result<(), MaskingViolation> {
-    match (receiver, frame.masking_key.is_some()) {
+    check_masking(frame.masking_key.is_some(), receiver)
+}
+
+/// [`validate_masking`] on the MASK bit of a frame header alone, before
+/// the frame is complete.
+///
+/// # Errors
+/// [`MaskingViolation`] when the bit violates the directional rule.
+pub const fn check_masking(masked: bool, receiver: Role) -> Result<(), MaskingViolation> {
+    match (receiver, masked) {
         (Role::Server, false) => Err(MaskingViolation::UnmaskedFrameFromClient),
         (Role::Client, true) => Err(MaskingViolation::MaskedFrameFromServer),
         _ => Ok(()),
@@ -221,31 +244,75 @@ mod tests {
         assert!(data.is_empty());
     }
 
+    #[cfg(feature = "std")]
+    /// The generator this crate had before: Splitmix64 over a counter that
+    /// started at a constant, so every process drew the same key sequence.
+    fn former_fixed_sequence(n: usize) -> alloc::vec::Vec<[u8; 4]> {
+        let mut counter: u64 = 0xCAFE_F00D_DEAD_BEEF;
+        (0..n)
+            .map(|_| {
+                let mut x = counter;
+                counter = counter.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                x ^= x >> 31;
+                let b = x.to_le_bytes();
+                [b[0], b[1], b[2], b[3]]
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "std")]
     #[test]
-    fn ws_5_3_generate_masking_key_returns_4_bytes() {
-        let k = generate_masking_key();
-        assert_eq!(k.len(), 4);
+    fn ws_5_3_the_masking_key_comes_from_the_operating_system() {
+        // §5.3: "MUST be derived from a strong source of entropy". The keys
+        // are not the sequence a constant seed gives (what the crate drew
+        // before, in every process the same) ...
+        let drawn: alloc::vec::Vec<[u8; 4]> = (0..4096)
+            .map(|_| generate_masking_key().expect("os random source"))
+            .collect();
+        let fixed = former_fixed_sequence(4096);
+        let same = drawn.iter().zip(&fixed).filter(|(a, b)| a == b).count();
+        assert!(same < 4, "{same} of 4096 keys are the fixed sequence");
+        // ... every bit of the key is used: over 4096 keys each of the 32
+        // bits is set in 40 to 60 percent of them (a fair bit leaves that
+        // band with a probability below 1e-36) ...
+        for bit in 0..32 {
+            let set = drawn
+                .iter()
+                .filter(|k| (u32::from_le_bytes(**k) >> bit) & 1 == 1)
+                .count();
+            assert!((1638..=2458).contains(&set), "bit {bit}: {set} of 4096");
+        }
+        // ... and 4096 keys of 32 bits repeat rarely: the expected number
+        // of equal pairs is 0.002, three or more do not happen by chance.
+        let mut sorted = drawn.clone();
+        sorted.sort_unstable();
+        let repeats = sorted.windows(2).filter(|w| w[0] == w[1]).count();
+        assert!(repeats < 3, "{repeats} repeated keys in 4096");
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn ws_5_3_the_os_provider_draws_a_key_per_call() {
+        let mut p = OsRngProvider;
+        let a = p.next_key().expect("key");
+        let b = p.next_key().expect("key");
+        let c = p.next_key().expect("key");
+        // Three equal 32-bit draws: probability 2^-64.
+        assert!(!(a == b && b == c));
     }
 
     #[test]
-    fn ws_5_3_generate_masking_key_returns_distinct_values_across_calls() {
-        // Spec §5.3 requires unpredictability; minimal sanity: the counter
-        // produces distinct values.
-        let k1 = generate_masking_key();
-        let k2 = generate_masking_key();
-        assert_ne!(k1, k2);
-    }
-
-    #[test]
-    fn ws_5_3_insecure_splitmix_provider_implements_trait() {
-        let mut p = InsecureSplitmixProvider;
-        let k = p.next_key();
-        assert_eq!(k.len(), 4);
+    fn ws_5_3_a_source_without_entropy_is_an_error_not_a_key() {
+        // A provider that has no key says so; the caller sends no frame.
+        let mut p = ClosureMaskingKeyProvider(|| Err(EntropyError));
+        assert_eq!(p.next_key(), Err(EntropyError));
     }
 
     #[test]
     fn ws_5_3_closure_provider_calls_user_supplied_fn() {
-        let mut p = ClosureMaskingKeyProvider(|| [9, 9, 9, 9]);
-        assert_eq!(p.next_key(), [9, 9, 9, 9]);
+        let mut p = ClosureMaskingKeyProvider(|| Ok([9, 9, 9, 9]));
+        assert_eq!(p.next_key(), Ok([9, 9, 9, 9]));
     }
 }

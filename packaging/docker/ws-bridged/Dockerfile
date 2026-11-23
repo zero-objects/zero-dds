@@ -29,7 +29,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 999 --home /var/lib/zerodds --shell /usr/sbin/nologin zerodds
 COPY --from=builder /build/target/release/zerodds-ws-bridged /usr/local/bin/
-COPY packaging/linux/configs/ws-bridged.yaml.example /etc/zerodds/ws-bridged.yaml
+# Listens on 0.0.0.0 with `bearer` and the token of WS_BRIDGE_TOKEN: a
+# published port is not the container's loopback, and `auth.mode: none` is
+# served on loopback only (zerodds-ws-bridge-1.0 §7.2).
+COPY packaging/docker/ws-bridged/ws-bridged.yaml /etc/zerodds/ws-bridged.yaml
 RUN mkdir -p /var/log/zerodds /var/lib/zerodds /etc/zerodds/certs \
     && chown -R zerodds:zerodds /var/log/zerodds /var/lib/zerodds /etc/zerodds
 USER zerodds

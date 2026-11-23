@@ -13,6 +13,10 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use amqp_dds_endpoint::handler::{HandlerConfig, handle_connection};
+use amqp_dds_endpoint::{read_frame, write_frame};
+use zerodds_amqp_bridge::extended_types::AmqpExtValue;
+use zerodds_amqp_bridge::frame::FrameType;
+use zerodds_amqp_bridge::performatives::{decode_performative, encode_performative};
 use zerodds_amqp_endpoint::MetricsHub;
 
 /// Set up test server instance.
@@ -107,4 +111,35 @@ pub fn test_handler_cfg_with_tls(tls_active: bool) -> HandlerConfig {
     let mut c = HandlerConfig::for_tests(Arc::new(MetricsHub::new()));
     c.tls_active = tls_active;
     c
+}
+
+/// A frame of the server (AMQP 1.0 performative): channel, descriptor, fields, payload.
+pub type Frame = (u16, u64, Vec<AmqpExtValue>, Vec<u8>);
+
+/// Writes the performative `code` with `fields` and `payload` on
+/// `channel`.
+pub fn send(s: &mut TcpStream, channel: u16, code: u64, fields: Vec<AmqpExtValue>, payload: &[u8]) {
+    let mut body = encode_performative(code, &AmqpExtValue::List(fields)).expect("encode");
+    body.extend_from_slice(payload);
+    write_frame(s, FrameType::Amqp, channel, &body).expect("write");
+}
+
+/// The next frame with a body; empty frames (heartbeats) are skipped.
+pub fn recv(s: &mut TcpStream) -> Frame {
+    loop {
+        let frame = read_frame(s, 1 << 20).expect("a frame from the server");
+        if frame.body.is_empty() {
+            continue;
+        }
+        let (code, value, used) = decode_performative(&frame.body).expect("a performative");
+        let AmqpExtValue::List(fields) = value else {
+            panic!("a performative is a list");
+        };
+        return (
+            frame.header.channel,
+            code,
+            fields,
+            frame.body[used..].to_vec(),
+        );
+    }
 }

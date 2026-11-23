@@ -106,10 +106,13 @@ fn coapbridge_11_example_yaml_has_no_unknown_top_level_keys() {
         "log_level",
         "coap",
         "oscore",
+        "proxy",
         "auth",
         "acl",
         "metrics",
+        "content_format",
         "topics",
+        "tenants",
     ];
     for key in top_level_keys(EXAMPLE_YAML) {
         assert!(
@@ -126,4 +129,35 @@ fn top_level_keys(yaml: &str) -> Vec<String> {
         .filter(|l| !l.starts_with([' ', '\t', '#', '-']) && !l.trim().is_empty())
         .filter_map(|l| l.split_once(':').map(|(k, _)| k.trim().to_string()))
         .collect()
+}
+
+/// Spec §3: the example of the specification itself, taken from
+/// `docs/specs/zerodds-coap-bridge-1.0.md`, loads through the parser, with
+/// the values it names (it used to stop at `coap.block_size`,
+/// `content_format`, `metrics.path` and `history.kind`).
+#[test]
+fn coapbridge_3_the_example_of_the_spec_loads() {
+    let spec = include_str!("../../../docs/specs/zerodds-coap-bridge-1.0.md");
+    let section = &spec[spec.find("## §3 Config file format").expect("§3")..];
+    let start = section.find("```yaml\n").expect("the example") + "```yaml\n".len();
+    let yaml = &section[start..start + section[start..].find("```").expect("its end")];
+    let cfg = DaemonConfig::load_from_str(yaml).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(cfg.block_size, 1024);
+    assert_eq!(cfg.max_body_size, 65_536);
+    assert_eq!(cfg.metrics_path, "/metrics");
+    assert_eq!(cfg.content_formats.cdr2_be, 65001);
+    assert_eq!(cfg.content_formats.cbor, 60);
+    let chat = &cfg.topics[0];
+    assert_eq!(chat.history_kind, "keep_last");
+    assert_eq!(chat.history_depth, 10);
+    assert_eq!(chat.idl_file, "/etc/zerodds/idl/chat.idl");
+    assert_eq!(chat.lifespan_ms, Some(30_000));
+    assert_eq!(chat.deadline_ms, Some(5_000));
+    assert_eq!(chat.partition, vec!["site-a".to_string()]);
+    assert_eq!(cfg.topics[1].extensibility, "final");
+    assert_eq!(cfg.topics.len(), 3);
+    assert_eq!(cfg.tenants.len(), 1);
+    assert_eq!(cfg.tenants[0].domain, 7);
+    assert_eq!(cfg.tenants[0].subjects, vec!["psk:device-001".to_string()]);
+    assert_eq!(cfg.tenants[0].topics[0].coap_uri_path, "plant/status");
 }

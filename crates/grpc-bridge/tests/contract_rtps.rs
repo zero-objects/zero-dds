@@ -3,7 +3,7 @@
 //! Contract of `zerodds-grpc-bridge` with `zerodds-rtps`
 //! (internal/release/rc8-test-suite.md, "Crate tier").
 //!
-//! What this crate uses of `zerodds-rtps` (`src/bin/zerodds-grpc-bridged.rs`,
+//! What this crate uses of `zerodds-rtps` (`src/bridge_daemon/`,
 //! feature `std`): `wire_types::GuidPrefix::zerodds(host_id, unique)` for the
 //! prefix of its participant, and `wire_types::EntityId` as the handle of each
 //! per-topic writer and reader. Oracle: DDSI-RTPS 2.5 §9.3.1.5 (the first two

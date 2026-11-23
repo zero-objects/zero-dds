@@ -4,6 +4,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added (OMG Time Service 1.1 App. B.1)
+
+- Feature `time-service`, module `time_audit`: `JsonLinesLoggingPlugin` implements
+  `zerodds_time_service::admin::AuditSink`; each administrative operation of an administered
+  Time Service becomes one JSON line, category `time.admin.<operation>`, `NOTICE` when granted,
+  `WARNING` when denied or failed. A write error refuses the operation.
+- `JsonLinesLoggingPlugin::append_synced`: one line past the level filter, flushed and
+  `sync_data`, with the `io::Error` returned.
+
 ### Changed
 
 - The fan-out, JSONL, stderr and syslog sinks take `set_log_options`, `enable_logging` and

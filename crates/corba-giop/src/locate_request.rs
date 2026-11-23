@@ -105,7 +105,10 @@ mod tests {
     fn round_trip_giop_1_2_with_profile_addr() {
         let l = LocateRequest {
             request_id: 22,
-            target: TargetAddress::Profile(alloc::vec![0xa, 0xb]),
+            target: TargetAddress::Profile(crate::target_address::TargetProfile {
+                tag: 0,
+                profile_data: alloc::vec![0xa, 0xb],
+            }),
         };
         let mut w = Writer::new(Endianness::Little);
         l.encode(Version::V1_2, &mut w).unwrap();
@@ -119,7 +122,10 @@ mod tests {
     fn giop_1_0_rejects_profile_target() {
         let l = LocateRequest {
             request_id: 1,
-            target: TargetAddress::Profile(alloc::vec![]),
+            target: TargetAddress::Profile(crate::target_address::TargetProfile {
+                tag: 0,
+                profile_data: alloc::vec![],
+            }),
         };
         let mut w = Writer::new(Endianness::Big);
         let err = l.encode(Version::V1_0, &mut w).unwrap_err();

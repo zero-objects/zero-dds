@@ -1,106 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CIDL data model — spec §7.
+//! The CIDL model — CORBA 3.3 Part 3 §8.
 //!
-//! CIDL (Component Implementation Definition Language) extends
-//! IDL with:
-//!
-//! * `composition` — couples a home executor to a
-//!   storage type.
-//! * `home executor <Name> <Home> { ... }` — implementer skeleton
-//!   for the home.
-//! * `storagetype` / `storagehome` — persistent state mapping
-//!   (spec §7.4 + Persistent State Service §10).
-//!
-//! We provide the data model; the CIDL parser is the caller layer
-//! (can build on the `crates/idl/` parser extension).
+//! One model for the compiler and the runtime: `zerodds_ast::cidl`, which
+//! `zerodds-idl-lower` produces from a `.cdl` file (`lower_cidl`) and a
+//! container host builds from a deployment plan. This module re-exports
+//! it and adds what the runtime knows of a home and its component:
+//! [`home_facts`] turns a [`HomeDef`] and a [`ComponentDef`] into the
+//! [`HomeFacts`] that [`Composition::validate`] checks a composition
+//! against (the life cycle category constraints of Tables 8.3 to 8.5,
+//! the segments of §8.11 and §8.13, the delegations of §8.14 to §8.18).
 
+pub use zerodds_ast::cidl::*;
+
+use crate::component_def::ComponentDef;
+use crate::home::HomeDef;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Storage type definition — spec §7.4.1.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct StorageType {
-    /// Name.
-    pub name: String,
-    /// Repository ID.
-    pub repository_id: String,
-    /// Optional: single inheritance from a base storage type.
-    pub base: Option<String>,
-    /// Storage state members as a (name, idl-type) list.
-    pub state_members: Vec<(String, String)>,
-}
-
-/// Storage home — spec §7.4.2.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct StorageHome {
-    /// Name.
-    pub name: String,
-    /// Repository ID.
-    pub repository_id: String,
-    /// The storage type that is managed.
-    pub managed_storage_type: String,
-    /// Optional: primary key type ID.
-    pub primary_key: Option<String>,
-}
-
-/// Home executor — spec §7.5.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct HomeExecutor {
-    /// Executor name.
-    pub name: String,
-    /// Implemented home repository ID.
-    pub home_id: String,
-    /// Component executor reference (bound via composition).
-    pub component_executor: Option<String>,
-}
-
-/// Composition — spec §7.3.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Composition {
-    /// Composition name.
-    pub name: String,
-    /// Category — `session` / `entity` / `service` / `process`
-    /// (spec §7.3.1).
-    pub category: CompositionCategory,
-    /// Home executor name.
-    pub home_executor: String,
-    /// Storage home name (optional, only for the `entity` category).
-    pub home_storage: Option<String>,
-}
-
-/// Composition category — spec §7.3.1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum CompositionCategory {
-    /// `session` — non-persistent (default).
-    #[default]
-    Session,
-    /// `service` — stateless service.
-    Service,
-    /// `process` — long-running process.
-    Process,
-    /// `entity` — persistent entity (requires a storage home).
-    Entity,
-}
-
-impl Composition {
-    /// Spec §7.3.1: `entity` compositions require a
-    /// storage home, others do not.
-    #[must_use]
-    pub fn requires_storage_home(&self) -> bool {
-        matches!(self.category, CompositionCategory::Entity)
-    }
-
-    /// Spec validation: for `entity`, `home_storage` must be set.
-    ///
-    /// # Errors
-    /// Static string if the composition is inconsistent.
-    pub fn validate(&self) -> Result<(), &'static str> {
-        if self.requires_storage_home() && self.home_storage.is_none() {
-            return Err("entity composition requires home_storage");
+/// The facts [`Composition::validate`] reads, from the runtime's
+/// definitions of a home and of the component it manages.
+///
+/// [`HomeDef`] carries the primary key and no explicit operations; the
+/// result holds the orthodox operations of Part 3 §6.8.1 (`create`, and
+/// for a keyed home `find_by_primary_key`, `remove` and
+/// `get_primary_key`). A caller that knows the home's explicit factories,
+/// finders and operations adds them to the fields of the result.
+#[must_use]
+pub fn home_facts(home: &HomeDef, component: &ComponentDef) -> HomeFacts {
+    let keyed = home.primary_key_id.is_some();
+    let mut operations: Vec<String> = alloc::vec![String::from("create")];
+    if keyed {
+        for name in ["find_by_primary_key", "remove", "get_primary_key"] {
+            operations.push(String::from(name));
         }
-        Ok(())
+    }
+    let stateful_features = component
+        .attributes
+        .iter()
+        .map(|a| a.name.clone())
+        .chain(component.receptacles.iter().map(|r| r.name.clone()))
+        .chain(component.event_sources.iter().map(|s| s.name.clone()))
+        .collect();
+    HomeFacts {
+        primary_key: keyed,
+        explicit_finders: Vec::new(),
+        factories: alloc::vec![String::from("create")],
+        operations,
+        facets: component.facets.iter().map(|f| f.name.clone()).collect(),
+        stateful_features,
     }
 }
 
@@ -108,77 +57,69 @@ impl Composition {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::component_def::{AttributeDef, FacetDef};
 
-    #[test]
-    fn session_composition_does_not_require_storage() {
-        let c = Composition {
-            name: "TraderImpl".into(),
-            category: CompositionCategory::Session,
-            home_executor: "TraderHomeExec".into(),
-            home_storage: None,
-        };
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn entity_composition_without_storage_invalid() {
-        let c = Composition {
-            name: "OrderImpl".into(),
-            category: CompositionCategory::Entity,
-            home_executor: "OrderHomeExec".into(),
-            home_storage: None,
-        };
-        assert!(c.validate().is_err());
-    }
-
-    #[test]
-    fn entity_composition_with_storage_valid() {
-        let c = Composition {
-            name: "OrderImpl".into(),
-            category: CompositionCategory::Entity,
-            home_executor: "OrderHomeExec".into(),
-            home_storage: Some("OrderStorageHome".into()),
-        };
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn storage_type_can_inherit() {
-        let st = StorageType {
-            name: "OrderStorage".into(),
-            repository_id: "IDL:demo/OrderStorage:1.0".into(),
-            base: Some("BaseStorage".into()),
-            state_members: alloc::vec![
-                ("id".into(), "long".into()),
-                ("amount".into(), "double".into()),
-            ],
-        };
-        assert!(st.base.is_some());
-        assert_eq!(st.state_members.len(), 2);
-    }
-
-    #[test]
-    fn home_executor_optional_component_binding() {
-        let he = HomeExecutor {
-            name: "TraderHomeExec".into(),
-            home_id: "IDL:demo/TraderHome:1.0".into(),
-            component_executor: Some("TraderExec".into()),
-        };
-        assert!(he.component_executor.is_some());
-    }
-
-    #[test]
-    fn all_four_composition_categories_distinct() {
-        let cats = [
-            CompositionCategory::Session,
-            CompositionCategory::Service,
-            CompositionCategory::Process,
-            CompositionCategory::Entity,
-        ];
-        for (i, a) in cats.iter().enumerate() {
-            for b in cats.iter().skip(i + 1) {
-                assert_ne!(a, b);
-            }
+    fn toon() -> ComponentDef {
+        ComponentDef {
+            name: "Toon".into(),
+            repository_id: "IDL:LooneyToons/Toon:1.0".into(),
+            facets: alloc::vec![FacetDef {
+                name: "bird".into(),
+                interface_id: "IDL:LooneyToons/Bird:1.0".into(),
+            }],
+            attributes: alloc::vec![AttributeDef {
+                name: "episode".into(),
+                type_spec: "string".into(),
+                readonly: false,
+                set_raises: Vec::new(),
+                get_raises: Vec::new(),
+            }],
+            ..ComponentDef::default()
         }
+    }
+
+    #[test]
+    fn corba_p3_8_5_1_an_entity_composition_needs_a_keyed_home_at_run_time() {
+        let keyless = HomeDef {
+            name: "ToonTown".into(),
+            repository_id: "IDL:LooneyToons/ToonTown:1.0".into(),
+            managed_component_id: "IDL:LooneyToons/Toon:1.0".into(),
+            primary_key_id: None,
+        };
+        let keyed = HomeDef {
+            primary_key_id: Some("IDL:LooneyToons/EpisodeName:1.0".into()),
+            ..keyless.clone()
+        };
+        let entity = Composition {
+            name: "MerryMelodies::ToonImpl".into(),
+            category: CompositionCategory::Entity,
+            home_executor: HomeExecutorDef {
+                name: "ToonTownImpl".into(),
+                implements: "LooneyToons::ToonTown".into(),
+                executor: ExecutorDef {
+                    name: "ToonEntityImpl".into(),
+                    ..ExecutorDef::default()
+                },
+                ..HomeExecutorDef::default()
+            },
+            proxy_home: None,
+        };
+        let errors = entity.validate(&home_facts(&keyless, &toon()), None);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].clause, "CORBA 3.3 Part 3 §8.5.1, Table 8.5");
+        assert!(
+            entity
+                .validate(&home_facts(&keyed, &toon()), None)
+                .is_empty()
+        );
+        // The facet and the attribute of the component are what a
+        // segment and a feature delegation may name.
+        let facts = home_facts(&keyed, &toon());
+        assert_eq!(facts.facets, alloc::vec![String::from("bird")]);
+        assert_eq!(
+            facts.stateful_features,
+            alloc::vec![String::from("episode")]
+        );
+        assert!(facts.operations.iter().any(|o| o == "find_by_primary_key"));
     }
 }

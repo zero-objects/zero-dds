@@ -29,7 +29,10 @@
 //! that no wire runtime should: **`TypeCode`** (CORBA 3.3 part 2 §15.3.5,
 //! [`type_code`]), **`any`** with its `wstring` (§15.3.7 and §15.3.2.7,
 //! [`any`]), and **`ObjectReference`** with **`ValueBase`** (§13.6.2 and
-//! OMG IDL 4.2 rule (131), [`object`]). `zerodds-wire` reads and writes
+//! OMG IDL 4.2 rule (131), [`object`]), and the **system exceptions** of
+//! CORBA 3.3 part 1 §8.12 with kind, minor code and completion status
+//! ([`exception`]), and **`DynAny`** with its factory (§13.2,
+//! [`dyn_any`]). `zerodds-wire` reads and writes
 //! bytes at the alignment a layout plan names; a self-describing type
 //! graph is a model, and this is the CORBA runtime the services above
 //! already sit on.
@@ -53,6 +56,8 @@ extern crate std;
 
 pub mod any;
 pub mod current;
+pub mod dyn_any;
+pub mod exception;
 pub mod mutex;
 pub mod object;
 pub mod policy;
@@ -62,10 +67,14 @@ pub mod scheduling;
 pub mod threadpool;
 pub mod type_code;
 
-pub use any::{AnyValue, CorbaAny, WString};
+pub use any::{
+    AbstractValue, AnyValue, CorbaAny, KnownValueTypes, ValueInstance, ValueRef, WString,
+};
 pub use current::RtCurrent;
+pub use dyn_any::{DynAny, DynAnyError, DynAnyFactory, InconsistentTypeCode};
+pub use exception::{CompletionStatus, OMGVMCID, SystemException, SystemExceptionKind};
 pub use mutex::PriorityInheritance;
-pub use object::{ObjectReference, ValueBase};
+pub use object::{ObjectReference, PolicyOverride, RawProfile, ValueBase};
 pub use policy::{
     Lane, PriorityBand, PriorityBandedConnectionPolicy, PriorityModel, PriorityModelPolicy,
     Threadpool, ThreadpoolPolicy,
@@ -73,7 +82,10 @@ pub use policy::{
 pub use priority::{LinearPriorityMapping, Priority, PriorityMapping};
 pub use propagation::{RT_CORBA_PRIORITY_SC_ID, decode_priority_context, encode_priority_context};
 pub use scheduling::{Task, TaskSet};
-pub use type_code::{MAX_TYPECODE_DEPTH, TypeCode};
+pub use type_code::{
+    MAX_TYPECODE_DEPTH, MAX_TYPECODE_REREAD_FACTOR, TopLevelTypeCodes, TypeCode, UnionLabel,
+    UnionMember, ValueMember,
+};
 
 #[cfg(feature = "std")]
 pub use mutex::{RtMutex, RtMutexGuard};

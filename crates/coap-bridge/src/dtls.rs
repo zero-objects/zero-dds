@@ -9,11 +9,9 @@
 //! - **RawPublicKey** (§9.1.2): asymmetric curve keys without a cert chain.
 //! - **Certificate** (§9.1.3): X.509 chain validation.
 //!
-//! Here we provide the configuration layer + profile selection. The
-//! actual DTLS record-layer implementation is on the caller side
-//! (e.g. via `tokio-rustls` or another DTLS crate); ZeroDDS
-//! provides the identity and key data structures
-//! (reusing the `security-pki` + `security-crypto` building blocks).
+//! Here the configuration layer: the modes, the cipher suites and the
+//! credentials of `coap.dtls`. The record layer is
+//! `crate::dtls_transport` (feature `dtls`) on `zerodds-dtls-openssl`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -311,6 +309,12 @@ pub struct DtlsCredentials {
     pub ca_file: Option<String>,
     /// `psk` — the accepted identities.
     pub psk: PskStore,
+    /// `rpk_key_file` — the private key whose public key the bridge shows
+    /// as its raw public key (RFC 7252 §9.1.3.2, RFC 7250), PEM.
+    pub rpk_key_file: Option<String>,
+    /// `rpk_trusted` — the RFC 6920 names (`ni:`, `nih:` or binary hex) of
+    /// the clients' raw public keys the bridge accepts (§9.1.3.2.1).
+    pub rpk_trusted: Vec<String>,
     /// The cipher suites to offer, in preference order. Empty selects the
     /// §7.1 default for the configured credentials.
     pub cipher_suites: Vec<DtlsCipherSuite>,

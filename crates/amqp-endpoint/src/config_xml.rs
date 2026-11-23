@@ -36,8 +36,11 @@
 //!         <rpc-aware>false</rpc-aware>
 //!       </topic-mapping>
 //!     </topics>
-//!     <limits max-connections="1024" max-frame-size="1048576"
+//!     <limits max-connections="1024" max-sessions-per-connection="8"
+//!             max-links-per-session="16" max-frame-size="1048576"
 //!             idle-timeout-ms="60000"/>
+//!     <nodes max-nodes="1024" max-messages="10000" max-octets="67108864"/>
+//!     <transactions max-transactions="64" timeout-ms="300000"/>
 //!   </endpoint>
 //! </dds-amqp>
 //! ```
@@ -177,10 +180,50 @@ fn parse_endpoint(node: roxmltree::Node) -> Result<AmqpEndpointConfig, XmlConfig
             "topics" => cfg.topics = parse_topics(child)?,
             "dynamic" => cfg.dynamic = parse_dynamic(child)?,
             "limits" => cfg.limits = parse_limits(child)?,
+            "nodes" => cfg.nodes = parse_nodes(child)?,
+            "transactions" => cfg.transactions = parse_transactions(child)?,
             _ => return Err(unknown(child)),
         }
     }
     Ok(cfg)
+}
+
+/// `<nodes max-nodes=".." max-messages=".." max-octets=".."/>`: the bounds
+/// of the listener's nodes ([`crate::limits::NodeLimits`]).
+fn parse_nodes(node: roxmltree::Node) -> Result<crate::limits::NodeLimits, XmlConfigError> {
+    only_attributes(&node, &["max-nodes", "max-messages", "max-octets"])?;
+    if let Some(child) = node.children().find(roxmltree::Node::is_element) {
+        return Err(unknown(child));
+    }
+    let mut n = crate::limits::NodeLimits::default();
+    if let Some(s) = attr(&node, "max-nodes") {
+        n.max_nodes = parse_u32_str(&s, "max-nodes")?;
+    }
+    if let Some(s) = attr(&node, "max-messages") {
+        n.max_messages = parse_u32_str(&s, "max-messages")?;
+    }
+    if let Some(s) = attr(&node, "max-octets") {
+        n.max_octets = parse_u64_str(&s, "max-octets")?;
+    }
+    Ok(n)
+}
+
+/// `<transactions max-transactions=".." timeout-ms=".."/>`: the bounds of
+/// the transactions of the listener's coordinator
+/// ([`crate::limits::TxnLimits`]).
+fn parse_transactions(node: roxmltree::Node) -> Result<crate::limits::TxnLimits, XmlConfigError> {
+    only_attributes(&node, &["max-transactions", "timeout-ms"])?;
+    if let Some(child) = node.children().find(roxmltree::Node::is_element) {
+        return Err(unknown(child));
+    }
+    let mut t = crate::limits::TxnLimits::default();
+    if let Some(s) = attr(&node, "max-transactions") {
+        t.max_transactions = parse_u32_str(&s, "max-transactions")?;
+    }
+    if let Some(s) = attr(&node, "timeout-ms") {
+        t.timeout_ms = parse_u64_str(&s, "timeout-ms")?;
+    }
+    Ok(t)
 }
 
 fn parse_bridge(node: roxmltree::Node) -> Result<AmqpBridgeConfig, XmlConfigError> {
