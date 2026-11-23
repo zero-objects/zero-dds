@@ -49,7 +49,13 @@ fn start() -> (DaemonHandle, zerodds_test_domains::DomainLease) {
 fn start_with(
     change: impl FnOnce(&mut DaemonConfig),
 ) -> (DaemonHandle, zerodds_test_domains::DomainLease) {
-    let idl = std::env::temp_dir().join(format!("zerodds-ws-rfc-{}.idl", std::process::id()));
+    // One file per call: under `cargo test` the tests of this file run as
+    // threads of one process, and a file named after the process alone was
+    // rewritten by one test while the daemon of another read it.
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let idl =
+        std::env::temp_dir().join(format!("zerodds-ws-rfc-{}-{call}.idl", std::process::id()));
     std::fs::write(&idl, "@final struct TradeRfc { string sym; long seq; };")
         .expect("the IDL file");
     let mut cfg = DaemonConfig::default_for_dev();

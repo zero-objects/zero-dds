@@ -289,7 +289,13 @@ jobs:
             # and fails to cross-compile for aarch64 (clang can't find stddef.h
             # in the cross sysroot). Not part of the shipped library and
             # meaningless on an aarch64 embedded target.
-            cross build --workspace --exclude iceoryx2-oracle-consumer --target ${{ matrix.target }}
+            # Exclude zerodds-dtls-openssl as well: it links OpenSSL through
+            # openssl-sys, and the cross image has no OpenSSL for aarch64
+            # (openssl-sys' build script fails). The only crate that uses it
+            # is zerodds-coap-bridge with its opt-in feature `dtls`; the
+            # x86_64 build here and the GitLab jobs build and test it.
+            cross build --workspace --exclude iceoryx2-oracle-consumer --exclude zerodds-dtls-openssl \
+              --target ${{ matrix.target }}
           else
             cargo build --workspace --target ${{ matrix.target }}
           fi
@@ -304,25 +310,49 @@ jobs:
       - name: Test (non-DCPS workspace, parallel)
         if: ${{ !matrix.cross }}
         run: >-
-          cargo test --no-fail-fast --workspace --exclude zerodds-dcps --exclude zerodds-interop-results
+          cargo test --no-fail-fast --workspace
+          --exclude zerodds-dcps --exclude zerodds-dds4ccm --exclude zerodds-dlrl
+          --exclude zerodds-corba-interop --exclude zerodds-opcua-bridge --exclude zerodds-transport-uds
+          --exclude zerodds-interop-results
           --target ${{ matrix.target }}
           -- --skip every_language_has_a_cell_generator
           --skip the_matrix_cells_are_the_recorded_rows
           --skip the_shape_with_no_storage_is_left_to_the_clause
       # `cargo nextest`: every test in a process of its own, one at a time
       # (UDP multicast tests share one multicast group), as the GitLab jobs
-      # run them. A DDS domain stays leased until its process ends
-      # (crates/test-domains); in one process for the binary,
-      # group_access_e2e's 18 tests ran out of the band's 11 domains.
+      # run them. The packages here need a process per test:
+      # - zerodds-dcps, zerodds-dds4ccm, zerodds-dlrl: a DDS domain stays
+      #   leased until its process ends (crates/test-domains); in one
+      #   process for the binary, group_access_e2e's 18 tests ran out of the
+      #   band's 11 domains, and the 12 to 19 tests of dds4ccm's connectors,
+      #   entities and subscribing_ports and of dlrl's entity_tables out of
+      #   this runner's band (run 45217018088).
+      # - zerodds-corba-interop: `register_orb_initializer` holds for every
+      #   ORB the process makes afterwards (CORBA 3.3 Part 2 §16.9.3); in one
+      #   process the initializers of service_contexts' tests add their
+      #   interceptor twice and orb_init answers INITIALIZE.
+      # - zerodds-opcua-bridge: the daemon's log threshold belongs to the
+      #   process; a daemon_e2e test at `warn` saw another test's `info`.
+      # - zerodds-transport-uds without its binary l2_cross_uid: those tests
+      #   start processes under other UIDs and need root, which a hosted
+      #   runner does not give the job (uid 1001); the GitLab jobs and the
+      #   Linux test host run them as root.
       # `!cancelled()`: this step runs after a failed step above too.
-      - name: Test (DCPS, a process per test, one at a time)
+      - name: Test (DCPS and the packages that need a process per test, one at a time)
         if: ${{ !matrix.cross && !cancelled() }}
         run: >-
-          cargo nextest run --no-fail-fast -p zerodds-dcps --target ${{ matrix.target }}
-          --test-threads 1
-      - name: Doctests (DCPS)
+          cargo nextest run --no-fail-fast
+          -p zerodds-dcps -p zerodds-dds4ccm -p zerodds-dlrl
+          -p zerodds-corba-interop -p zerodds-opcua-bridge -p zerodds-transport-uds
+          -E 'not (package(zerodds-transport-uds) and binary(l2_cross_uid))'
+          --target ${{ matrix.target }} --test-threads 1
+      - name: Doctests (the packages of the step above)
         if: ${{ !matrix.cross && !cancelled() }}
-        run: cargo test --doc -p zerodds-dcps --target ${{ matrix.target }}
+        run: >-
+          cargo test --doc
+          -p zerodds-dcps -p zerodds-dds4ccm -p zerodds-dlrl
+          -p zerodds-corba-interop -p zerodds-opcua-bridge -p zerodds-transport-uds
+          --target ${{ matrix.target }}
 
   # ---------------------------------------------------------------------------
   # tsn-live — live AF_PACKET transport (DDS-TSN 1.0 Annex A, EtherType
@@ -450,18 +480,26 @@ jobs:
         # reason — they read the zerodds-matrix repository, which this
         # job does not check out.
         #
-        # zerodds-dcps under `cargo nextest`, as in `build-test`: a process
-        # per test, one at a time. The two runs keep their profiles
-        # (`--no-report`), `report` joins them; the first run's failure
-        # does not stop the second.
+        # zerodds-dcps, zerodds-dds4ccm, zerodds-dlrl, zerodds-corba-interop,
+        # zerodds-opcua-bridge and zerodds-transport-uds (without its binary
+        # l2_cross_uid, which needs root) under `cargo nextest`, as in
+        # `build-test` and for its reasons: a process per test, one at a
+        # time. The two runs keep their profiles (`--no-report`), `report`
+        # joins them; the first run's failure does not stop the second.
         run: |
           status=0
-          cargo llvm-cov --no-report --no-fail-fast --workspace --exclude zerodds-dcps --include-build-script \
+          cargo llvm-cov --no-report --no-fail-fast --workspace --include-build-script \
+            --exclude zerodds-dcps --exclude zerodds-dds4ccm --exclude zerodds-dlrl \
+            --exclude zerodds-corba-interop --exclude zerodds-opcua-bridge --exclude zerodds-transport-uds \
             -- --test-threads=1 \
             --skip every_language_has_a_cell_generator \
             --skip the_matrix_cells_are_the_recorded_rows \
             --skip the_shape_with_no_storage_is_left_to_the_clause || status=1
-          cargo llvm-cov nextest --no-report --include-build-script --no-fail-fast -p zerodds-dcps --test-threads 1 || status=1
+          cargo llvm-cov nextest --no-report --include-build-script --no-fail-fast \
+            -p zerodds-dcps -p zerodds-dds4ccm -p zerodds-dlrl \
+            -p zerodds-corba-interop -p zerodds-opcua-bridge -p zerodds-transport-uds \
+            -E 'not (package(zerodds-transport-uds) and binary(l2_cross_uid))' \
+            --test-threads 1 || status=1
           cargo llvm-cov report --include-build-script --lcov --output-path lcov.info
           exit "$status"
       # The report of the run above; `cargo llvm-cov` without `report` would
@@ -484,22 +522,27 @@ jobs:
       # firing under the workflow's `-D warnings` must not turn the mirror
       # red, and the number is a diagnostic rather than a threshold. The
       # test arguments are those of the run above, for its reasons: without
-      # them the matrix tests fail and no number is printed. zerodds-dcps
-      # runs under `cargo nextest` there too.
+      # them the matrix tests fail and no number is printed. The packages
+      # of the step above run under `cargo nextest` there too.
       - name: Branch coverage (nightly, non-gating)
         continue-on-error: true
         env:
           RUSTFLAGS: ""
         run: |
           rustup toolchain install nightly --profile minimal --component llvm-tools-preview
-          cargo +nightly llvm-cov --no-report --branch --no-fail-fast --workspace --exclude zerodds-dcps \
+          cargo +nightly llvm-cov --no-report --branch --no-fail-fast --workspace \
+            --exclude zerodds-dcps --exclude zerodds-dds4ccm --exclude zerodds-dlrl \
+            --exclude zerodds-corba-interop --exclude zerodds-opcua-bridge --exclude zerodds-transport-uds \
             --include-build-script \
             -- --test-threads=1 \
             --skip every_language_has_a_cell_generator \
             --skip the_matrix_cells_are_the_recorded_rows \
             --skip the_shape_with_no_storage_is_left_to_the_clause || true
           cargo +nightly llvm-cov nextest --no-report --branch --include-build-script --no-fail-fast \
-            -p zerodds-dcps --test-threads 1 || true
+            -p zerodds-dcps -p zerodds-dds4ccm -p zerodds-dlrl \
+            -p zerodds-corba-interop -p zerodds-opcua-bridge -p zerodds-transport-uds \
+            -E 'not (package(zerodds-transport-uds) and binary(l2_cross_uid))' \
+            --test-threads 1 || true
           cargo +nightly llvm-cov report --include-build-script --summary-only
       - name: Upload lcov artifact
         uses: actions/upload-artifact@v7

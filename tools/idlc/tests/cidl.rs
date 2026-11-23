@@ -39,8 +39,13 @@ module Impl {
 ";
 
 fn run(args: &[&str], name: &str, text: &str) -> (i32, String) {
+    // One directory per call: under `cargo test` the tests run as threads of
+    // one process, and a directory named after the process and the file
+    // alone was removed by one test while another still read its file.
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "zerodds-idlc-cidl-{}-{}",
+        "zerodds-idlc-cidl-{}-{call}-{}",
         std::process::id(),
         name.replace('.', "-")
     ));

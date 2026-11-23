@@ -94,6 +94,16 @@ ignore = [
     # so there is no zenoh to move to. It parses the bridge's zenoh
     # configuration file, which the operator supplies.
     { id = "RUSTSEC-2024-0449", reason = "default features; unsafe-libyaml via serde_yaml <- zenoh-config, no zenoh without it" },
+    # RUSTSEC-2026-0542 (humantime 2.4.0): unmaintained — the advisory
+    # gives "humantime wraps chrono" as the reason, after RUSTSEC-2026-0543;
+    # humantime 2.4.0 has no dependency at all (`cargo tree -p humantime`).
+    # Not a safety bug; no safe upgrade. Measured with `cargo tree --workspace
+    # -i humantime`: the only parent is uhlc 0.8.2 <- zenoh 1.10 <-
+    # zerodds-zenoh-bridge, default through its `daemon` feature. The newest
+    # zenoh (1.10.2) requires uhlc ^0.8.0; uhlc 0.9.0 makes humantime
+    # optional, but its `std` feature turns it on. Goes away when zenoh moves
+    # off it.
+    { id = "RUSTSEC-2026-0542", reason = "default features; humantime via uhlc 0.8 <- zenoh, the newest zenoh still requires uhlc 0.8" },
 
     # Group 2 — visible ONLY when an opt-in feature is enabled. In a default-
     # feature scan each of these raises `warning[advisory-not-detected]`; that
@@ -150,6 +160,17 @@ ignore = [
     # FEATURE: `zerodds-xrce-agent/serial` (serialport) and
     # `zerodds-coap-bridge/dtls` or `zerodds-xrce/dtls` (webrtc-util).
     { id = "RUSTSEC-2026-0441", reason = "only under zerodds-xrce-agent/serial, zerodds-coap-bridge/dtls or zerodds-xrce/dtls; pin-utils via nix 0.26, which the newest serialport and webrtc-util require" },
+    # RUSTSEC-2026-0543 (chrono 0.4.45): unmaintained — the chrono project
+    # ended (chronotope/chrono#1768); the advisory recommends jiff or time
+    # and names no safe upgrade. Not a safety bug. No crate of the workspace
+    # depends on chrono itself. Chain: chrono <- arrow-arith, arrow-array,
+    # arrow-cast 58.4 <- arrow 58.4 <- duckdb 1.10506 <-
+    # zerodds-durability-store-lakehouse. The newest arrow-array (60.2.0)
+    # still requires chrono ^0.4.40. Goes away when arrow moves off chrono.
+    # FEATURE: `zerodds-durability-store-lakehouse/duckdb`, which
+    # `zerodds-durability-service-bin/lakehouse` turns on; both are off by
+    # default and neither crate is on crates.io (the system libduckdb).
+    { id = "RUSTSEC-2026-0543", reason = "only under zerodds-durability-store-lakehouse/duckdb; chrono via arrow <- duckdb, the newest arrow still requires chrono" },
 ]
 
 [licenses]
