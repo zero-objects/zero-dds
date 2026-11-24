@@ -758,14 +758,25 @@ fn coapbridge_6_the_ping_and_the_bound_of_unconfirmed_notifications() {
     );
     assert_eq!(watch.code, CoapCode::CONTENT);
     // A notification or a ping, whichever comes; a ping is answered with
-    // a Reset (RFC 7252 §4.3).
-    let next_notification = |client: &Client| loop {
-        let m = client.recv(Duration::from_secs(5)).expect("a message");
-        if m.code == CoapCode::EMPTY {
-            client.answer(&m, MessageType::Reset);
-            continue;
+    // a Reset (RFC 7252 §4.3). The daemon pings every second, so a wait
+    // without its own deadline never ends when no notification comes: a
+    // hosted runner sat here until the job's six hours were up.
+    let next_notification = |client: &Client| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            // `set_read_timeout` refuses a zero duration.
+            let left = deadline
+                .saturating_duration_since(Instant::now())
+                .max(Duration::from_millis(1));
+            let m = client
+                .recv(left)
+                .expect("a notification within 10 s (pings answered)");
+            if m.code == CoapCode::EMPTY {
+                client.answer(&m, MessageType::Reset);
+                continue;
+            }
+            return m;
         }
-        return m;
     };
     write(1.0);
     let n = next_notification(&client);
