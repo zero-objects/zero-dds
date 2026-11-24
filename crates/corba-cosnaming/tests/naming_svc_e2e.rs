@@ -860,9 +860,12 @@ fn corba_p2_7_9_an_ipv6_daemon_publishes_1_4_profiles_and_replies_in_1_4() {
         let l = std::net::TcpListener::bind("[::1]:0").expect("bind [::1]");
         l.local_addr().expect("addr").port()
     };
+    // The daemon's stderr reaches the test log: on a hosted runner this test
+    // once read a reset connection (`ConnectionReset` at the reply header),
+    // which 300 runs on the Linux test host did not repeat.
     let child = Command::new(daemon_binary())
         .args(["--bind", &format!("[::1]:{port}")])
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .stdout(Stdio::null())
         .spawn()
         .expect("spawn daemon");
