@@ -231,11 +231,7 @@ mod tests {
     /// sample.
     #[test]
     fn corbabridge_4_4_an_unreachable_target_does_not_stop_the_others() {
-        let dead = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let dead = zerodds_test_domains::free_tcp_port();
         let (b, hb) = target();
         let (d, _lease) = fixture(&notify_yaml(&[dead, b]));
         let mut n = notifiers_of(&d.cfg.mappings[0]);

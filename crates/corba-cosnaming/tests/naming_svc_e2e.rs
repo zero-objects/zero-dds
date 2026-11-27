@@ -84,20 +84,14 @@ fn terminate_child_gracefully(child: &mut Child) {
     }
 }
 
-fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
-    let p = s.local_addr().expect("addr").port();
-    drop(s);
-    p
-}
-
-/// Waits until the daemon `child`, spawned with a piped stderr, logs that
-/// it listens (`{"event":"listening",...}`, after its acceptor bound the
-/// port). A connection made earlier could reach whatever else held the
-/// port the test picked and released: on a hosted runner the IPv6 test
-/// read `ConnectionReset` while its daemon had logged nothing yet. The
-/// daemon's log goes on to the test's stderr.
-fn wait_listening(child: &mut Child) {
+/// Waits until the daemon `child`, spawned on port 0 with a piped stderr,
+/// logs that it listens (`{"event":"listening","addr":...}`, after its
+/// acceptor bound the port), and returns the port that line names. A port
+/// the test picked and released could be taken by something else before
+/// the daemon bound it: on a hosted runner the IPv6 test read
+/// `ConnectionReset` while its daemon had logged nothing yet. The daemon's
+/// log goes on to the test's stderr.
+fn wait_listening(child: &mut Child) -> u16 {
     use std::io::BufRead as _;
     let stderr = child.stderr.take().expect("the daemon's stderr is piped");
     let (tx, rx) = std::sync::mpsc::channel();
@@ -105,13 +99,13 @@ fn wait_listening(child: &mut Child) {
         for line in std::io::BufReader::new(stderr).lines() {
             let Ok(line) = line else { break };
             eprintln!("[zerodds-naming-svc] {line}");
-            if line.contains("\"event\":\"listening\"") {
-                let _ = tx.send(());
+            if let Some(port) = zerodds_test_domains::logged_port(&line, "listening", "addr") {
+                let _ = tx.send(port);
             }
         }
     });
     match rx.recv_timeout(Duration::from_secs(10)) {
-        Ok(()) => {}
+        Ok(port) => port,
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
             panic!("the daemon did not log that it listens within 10 s")
         }
@@ -122,16 +116,14 @@ fn wait_listening(child: &mut Child) {
 }
 
 fn spawn_daemon(extra_args: &[&str]) -> (DaemonGuard, u16) {
-    let port = pick_port();
-    let bind = format!("127.0.0.1:{port}");
     let mut child = Command::new(daemon_binary())
-        .args(["--bind", &bind])
+        .args(["--bind", "127.0.0.1:0"])
         .args(extra_args)
         .stderr(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
         .expect("spawn daemon");
-    wait_listening(&mut child);
+    let port = wait_listening(&mut child);
     (DaemonGuard { child }, port)
 }
 
@@ -490,25 +482,23 @@ fn csiv2_accepts_valid_and_refuses_invalid_or_missing_credentials() {
 }
 
 /// A binding survives a SIGTERM restart when `naming.persist_file` is
-/// set: bind, terminate, spawn a fresh daemon on the same file and
-/// port, resolve the same name.
+/// set: bind, terminate, spawn a fresh daemon on the same file, resolve
+/// the same name.
 #[test]
 fn a_binding_survives_a_restart_with_persist_file_set() {
     let dir = std::env::temp_dir().join(format!("zd-naming-restart-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let persist_file = dir.join("graph.txt");
-    let port = pick_port();
-    let bind = format!("127.0.0.1:{port}");
     let persist_arg = format!("naming.persist_file={}", persist_file.display());
 
     {
         let mut child = Command::new(daemon_binary())
-            .args(["--bind", &bind, "--set", &persist_arg])
+            .args(["--bind", "127.0.0.1:0", "--set", &persist_arg])
             .stderr(Stdio::piped())
             .stdout(Stdio::null())
             .spawn()
             .expect("spawn daemon");
-        wait_listening(&mut child);
+        let port = wait_listening(&mut child);
         let mut guard = DaemonGuard { child };
         let mut s = connect(port);
         let body =
@@ -530,12 +520,12 @@ fn a_binding_survives_a_restart_with_persist_file_set() {
     assert!(persist_file.exists(), "the daemon persists on clean stop");
 
     let mut child = Command::new(daemon_binary())
-        .args(["--bind", &bind, "--set", &persist_arg])
+        .args(["--bind", "127.0.0.1:0", "--set", &persist_arg])
         .stderr(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
         .expect("spawn daemon");
-    wait_listening(&mut child);
+    let port = wait_listening(&mut child);
     let _guard = DaemonGuard { child };
     let mut s = connect(port);
     let body = wire::encode_name_request(&name(&["durable"]), Endianness::Little).unwrap();
@@ -886,17 +876,13 @@ fn locate_request_answers_object_here_and_unknown_object() {
 #[test]
 fn corba_p2_7_9_an_ipv6_daemon_publishes_1_4_profiles_and_replies_in_1_4() {
     use zerodds_corba_iiop::{IiopProfileBody, IiopVersion};
-    let port = {
-        let l = std::net::TcpListener::bind("[::1]:0").expect("bind [::1]");
-        l.local_addr().expect("addr").port()
-    };
     let mut child = Command::new(daemon_binary())
-        .args(["--bind", &format!("[::1]:{port}")])
+        .args(["--bind", "[::1]:0"])
         .stderr(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
         .expect("spawn daemon");
-    wait_listening(&mut child);
+    let port = wait_listening(&mut child);
     let _guard = DaemonGuard { child };
     let mut s = TcpStream::connect(("::1", port)).expect("connect [::1]");
     s.set_read_timeout(Some(Duration::from_secs(3))).unwrap();

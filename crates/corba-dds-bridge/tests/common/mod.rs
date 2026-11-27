@@ -39,11 +39,7 @@ pub fn lease() -> DomainLease {
 
 /// A free TCP port on the loopback interface.
 pub fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 /// Waits until something accepts on `127.0.0.1:port`.

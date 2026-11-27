@@ -30,11 +30,7 @@ use zerodds_amqp_endpoint::{ConnectionState, MetricsHub};
 #[test]
 fn ddsamqp_10_8_the_client_reconnects_once_the_server_is_up() {
     // A port nobody listens on until the server below binds it.
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = zerodds_test_domains::free_tcp_port();
     let metrics = Arc::new(MetricsHub::new());
     let shutdown = Arc::new(AtomicBool::new(false));
     let cfg = ClientConfig {

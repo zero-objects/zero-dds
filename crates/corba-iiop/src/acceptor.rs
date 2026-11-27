@@ -68,7 +68,26 @@ impl Acceptor {
     where
         F: Fn(Connection) + Send + Sync + 'static,
     {
-        let listener = TcpListener::bind(config.bind)?;
+        Self::start_on(TcpListener::bind(config.bind)?, config, handler)
+    }
+
+    /// Like [`Self::start`], on a `listener` the caller has bound;
+    /// `config.bind` is not used. A server that names its own port in
+    /// what it hands out (an IOR) binds first, reads the port the system
+    /// chose for port 0, builds the handler with it and then starts here:
+    /// a second bind to the port read from a closed probe socket can find
+    /// it taken.
+    ///
+    /// # Errors
+    /// `Io` when the listener's address cannot be read or its mode set.
+    pub fn start_on<F>(
+        listener: TcpListener,
+        config: AcceptorConfig,
+        handler: F,
+    ) -> Result<Self, IiopError>
+    where
+        F: Fn(Connection) + Send + Sync + 'static,
+    {
         let listen_addr = listener.local_addr()?;
         listener.set_nonblocking(false)?;
         // Make the listener "short-timeout" so that shutdown checks
@@ -407,6 +426,34 @@ mod tests {
         )
         .unwrap();
         assert!(acceptor.listen_addr().port() != 0);
+        acceptor.shutdown();
+    }
+
+    #[test]
+    fn start_on_serves_the_listener_it_is_given() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let bound = listener.local_addr().unwrap();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&accepted);
+        // `config.bind` names another port: the listener's is the one served.
+        let acceptor = Acceptor::start_on(
+            listener,
+            AcceptorConfig::new("127.0.0.1:1".parse().unwrap()),
+            move |_conn| {
+                seen.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+        .unwrap();
+        assert_eq!(acceptor.listen_addr(), bound);
+        let _client = std::net::TcpStream::connect(bound).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while accepted.load(Ordering::SeqCst) == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no connection accepted"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
         acceptor.shutdown();
     }
 }

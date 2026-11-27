@@ -240,7 +240,39 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn alive(rx: &std::sync::mpsc::Receiver<UserSample>) -> (Vec<u8>, [u8; 2], Option<[u8; 16]>) {
+/// A sample as [`alive`] gives it: its CDR bytes, representation
+/// identifier and key hash.
+type Alive = (Vec<u8>, [u8; 2], Option<[u8; 16]>);
+
+/// `post` (one request, one sample of the daemon's DataWriter) until a
+/// sample reaches `rx`, the samples of the later requests taken
+/// ([`zerodds_test_domains::publish_until_received`]: the reader's match
+/// count says nothing about the DataWriter's). Returns the requests and
+/// the first sample as [`alive`] gives it.
+fn post_until_received(
+    rx: &std::sync::mpsc::Receiver<UserSample>,
+    post: impl FnMut(),
+) -> (i64, Alive) {
+    zerodds_test_domains::publish_until_received(
+        rx,
+        |sample| match sample {
+            UserSample::Alive {
+                payload,
+                representation_identifier,
+                key_hash,
+                source_sequence_number,
+                ..
+            } => Some((
+                source_sequence_number,
+                (payload.to_vec(), representation_identifier, key_hash),
+            )),
+            _ => None,
+        },
+        post,
+    )
+}
+
+fn alive(rx: &std::sync::mpsc::Receiver<UserSample>) -> Alive {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -271,7 +303,7 @@ fn coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form() {
     let mut handle = server::start(cfg).expect("daemon start");
     let mut client = Client::new(&handle.local_addr);
     let dds = peer(lease.id(), 1);
-    let (reader, rx) = dds
+    let (_reader, rx) = dds
         .register_user_reader(UserReaderConfig {
             topic_name: "Sensor::Reading".into(),
             type_name: "Sensor::Reading".into(),
@@ -279,8 +311,15 @@ fn coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form() {
             ..Default::default()
         })
         .unwrap();
-    until(&dds, "the daemon's writer matched", || {
-        dds.user_reader_matched_count(reader) >= 1
+    let probe = json!({ "id": 0, "value": 0.0, "unit": "u" }).to_string();
+    let (probes, _) = post_until_received(&rx, || {
+        let resp = client.request(
+            CoapCode::POST,
+            "sensors/reading",
+            vec![uint(numbers::CONTENT_FORMAT, 50)],
+            probe.as_bytes(),
+        );
+        assert_eq!(resp.code, CoapCode::CHANGED);
     });
     let ty = reading();
     let numbers_of = [
@@ -397,13 +436,15 @@ fn coapbridge_4_5_every_form_goes_to_dds_and_comes_back_in_every_form() {
         .unwrap();
     let mut page = String::new();
     s.read_to_string(&mut page).ok();
+    // The five forms and the POSTs before them.
+    let changed = 5 + probes;
     for line in [
-        "zerodds_coap_bridge_requests_total{code=\"2.04\",method=\"POST\"} 5",
-        "zerodds_coap_bridge_requests_total{code=\"4.00\",method=\"POST\"} 1",
-        "zerodds_coap_bridge_requests_total{code=\"4.15\",method=\"POST\"} 1",
-        "zerodds_coap_bridge_dds_samples_published{topic=\"Sensor::Reading\"} 5",
+        format!("zerodds_coap_bridge_requests_total{{code=\"2.04\",method=\"POST\"}} {changed}"),
+        "zerodds_coap_bridge_requests_total{code=\"4.00\",method=\"POST\"} 1".to_string(),
+        "zerodds_coap_bridge_requests_total{code=\"4.15\",method=\"POST\"} 1".to_string(),
+        format!("zerodds_coap_bridge_dds_samples_published{{topic=\"Sensor::Reading\"}} {changed}"),
     ] {
-        assert!(page.contains(line), "{line} in\n{page}");
+        assert!(page.contains(&line), "{line} in\n{page}");
     }
     assert!(page.contains("zerodds_coap_bridge_dds_samples_received{topic=\"Sensor::Reading\"}"));
     dds.shutdown();
@@ -497,7 +538,7 @@ fn coapbridge_4_2_delete_disposes_the_instance_it_names() {
     let mut handle = server::start(cfg).expect("daemon start");
     let mut client = Client::new(&handle.local_addr);
     let dds = peer(lease.id(), 3);
-    let (reader, rx) = dds
+    let (_reader, rx) = dds
         .register_user_reader(UserReaderConfig {
             topic_name: "Sensor::Reading".into(),
             type_name: "Sensor::Reading".into(),
@@ -505,20 +546,18 @@ fn coapbridge_4_2_delete_disposes_the_instance_it_names() {
             ..Default::default()
         })
         .unwrap();
-    until(&dds, "the daemon's writer matched", || {
-        dds.user_reader_matched_count(reader) >= 1
-    });
     let ty = reading();
     let value = json!({ "id": 9, "value": 1.0, "unit": "A" });
     let key = ty.key_hash(&value).unwrap();
-    let resp = client.request(
-        CoapCode::POST,
-        "sensors/reading",
-        vec![uint(numbers::CONTENT_FORMAT, 50)],
-        value.to_string().as_bytes(),
-    );
-    assert_eq!(resp.code, CoapCode::CHANGED);
-    alive(&rx);
+    post_until_received(&rx, || {
+        let resp = client.request(
+            CoapCode::POST,
+            "sensors/reading",
+            vec![uint(numbers::CONTENT_FORMAT, 50)],
+            value.to_string().as_bytes(),
+        );
+        assert_eq!(resp.code, CoapCode::CHANGED);
+    });
 
     let disposed = |rx: &std::sync::mpsc::Receiver<UserSample>| {
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1132,7 +1171,7 @@ fn coapbridge_1_l6_a_dtls_session_is_bound_to_the_tenant_of_its_subject() {
     let dtls_addr = handle.dtls_local_addr().expect("dtls listener");
     // A DDS reader on the tenant's domain.
     let dds = peer(tenant_lease.id(), 7);
-    let (reader, rx) = dds
+    let (_reader, rx) = dds
         .register_user_reader(UserReaderConfig {
             topic_name: "Plant::Reading".into(),
             type_name: "Sensor::Reading".into(),
@@ -1140,9 +1179,6 @@ fn coapbridge_1_l6_a_dtls_session_is_bound_to_the_tenant_of_its_subject() {
             ..Default::default()
         })
         .unwrap();
-    until(&dds, "the tenant's writer matched", || {
-        dds.user_reader_matched_count(reader) >= 1
-    });
     let mut client = Client::new(&handle.local_addr);
     let mut mid = 0x6000u16;
     let mut ask = |session: &mut zerodds_coap_bridge::dtls_transport::DtlsCoapSession,
@@ -1168,15 +1204,16 @@ fn coapbridge_1_l6_a_dtls_session_is_bound_to_the_tenant_of_its_subject() {
         Duration::from_secs(5),
     )
     .expect("the tenant's session");
-    let r = ask(
-        &mut tenant,
-        CoapCode::POST,
-        "plant/reading",
-        vec![uint(numbers::CONTENT_FORMAT, 50)],
-        value.to_string().as_bytes(),
-    );
-    assert_eq!(r.code, CoapCode::CHANGED);
-    let (payload, identifier, _) = alive(&rx);
+    let (_, (payload, identifier, _)) = post_until_received(&rx, || {
+        let r = ask(
+            &mut tenant,
+            CoapCode::POST,
+            "plant/reading",
+            vec![uint(numbers::CONTENT_FORMAT, 50)],
+            value.to_string().as_bytes(),
+        );
+        assert_eq!(r.code, CoapCode::CHANGED);
+    });
     assert_eq!(reading().read_body(&payload, identifier).unwrap(), value);
     let catalog = ask(&mut tenant, CoapCode::GET, ".well-known/core", vec![], b"");
     let text = String::from_utf8(catalog.payload).unwrap();

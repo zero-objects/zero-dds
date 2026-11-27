@@ -208,10 +208,7 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn pick_unused_port() -> u16 {
-        let l = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
-        let port = l.local_addr().expect("local_addr").port();
-        drop(l);
-        port
+        zerodds_test_domains::free_tcp_port()
     }
 
     fn cert_set_with(pem: &[u8]) -> CertSet {

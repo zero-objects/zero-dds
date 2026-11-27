@@ -43,11 +43,6 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    s.local_addr().unwrap().port()
-}
-
 struct Daemon {
     child: Child,
     port: u16,
@@ -56,16 +51,15 @@ struct Daemon {
 }
 
 impl Daemon {
-    /// Starts the binary on `config` (`PORT` is the listener port) on a
-    /// leased DDS domain and waits for the listener.
+    /// Starts the binary on `config` on a leased DDS domain, its listener
+    /// on port 0, and waits for the listener and the port it names.
     fn start(dir: &Path, config: &str) -> Self {
-        let port = pick_port();
         let domain = zerodds_test_domains::lease_domain();
         let path = dir.join("grpc-bridged.yaml");
         std::fs::write(
             &path,
             format!(
-                "domain: {}\ngrpc:\n  bind: \"127.0.0.1:{port}\"\n{config}",
+                "domain: {}\ngrpc:\n  bind: \"127.0.0.1:0\"\n{config}",
                 domain.id()
             ),
         )
@@ -80,18 +74,28 @@ impl Daemon {
             .stderr(out)
             .spawn()
             .unwrap();
-        let d = Self {
+        let mut d = Self {
             child,
-            port,
+            port: 0,
             log,
             _domain: domain,
         };
+        d.port = d.logged_port("listening");
+        d
+    }
+
+    /// The port the daemon names in the `addr` of its `event` line, once
+    /// it has written that line.
+    fn logged_port(&self, event: &str) -> u16 {
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !d.log_text().contains("\"event\":\"listening\"") {
-            assert!(Instant::now() < deadline, "no listener: {}", d.log_text());
+        loop {
+            let text = self.log_text();
+            if let Some(port) = zerodds_test_domains::logged_port(&text, event, "addr") {
+                return port;
+            }
+            assert!(Instant::now() < deadline, "no {event} line: {text}");
             std::thread::sleep(Duration::from_millis(50));
         }
-        d
     }
 
     fn log_text(&self) -> String {
@@ -249,11 +253,10 @@ const RESOURCE_EXHAUSTED: u32 = 8;
 #[test]
 fn grpcbridge_3_the_limits_of_the_file_reach_the_wire() {
     let dir = temp_dir("settings");
-    let admin = pick_port();
     let d = Daemon::start(
         &dir,
         &format!(
-            "  max_concurrent_streams: 5\n  initial_window_size: 100000\n  max_frame_size: 32768\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n  path: /prom\n{TOPIC}"
+            "  max_concurrent_streams: 5\n  initial_window_size: 100000\n  max_frame_size: 32768\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n  path: /prom\n{TOPIC}"
         ),
     );
     let mut c = d.connect();
@@ -285,6 +288,7 @@ fn grpcbridge_3_the_limits_of_the_file_reach_the_wire() {
     c.frame(FrameType::Data, Flags::END_STREAM, 1, &big);
     assert_eq!(c.status_of(1), 0);
 
+    let admin = d.logged_port("admin_endpoint");
     let mut s = TcpStream::connect(("127.0.0.1", admin)).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     s.write_all(b"GET /prom HTTP/1.1\r\nHost: x\r\n\r\n")

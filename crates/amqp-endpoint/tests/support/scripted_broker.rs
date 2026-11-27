@@ -105,11 +105,7 @@ impl Broker {
 
     /// A port of 127.0.0.1 nobody listens on (until [`Broker::bind_port`]).
     pub fn free_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
+        zerodds_test_domains::free_tcp_port()
     }
 
     pub fn url(&self) -> String {

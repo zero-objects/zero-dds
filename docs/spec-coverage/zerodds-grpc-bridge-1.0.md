@@ -507,7 +507,10 @@ nach RFC 8259 §7 maskiert, Zahlen als Zahlen; Schwelle `log_level`),
 `warn` mit `grpc_message`; ein vom Client zurückgesetzter Call und einer,
 dessen Verbindung vor dem Status endet, als CANCELLED),
 `crates/grpc-bridge/src/bridge_daemon/catalog.rs::log_http` (Zeile `http`
-des IDL-Endpunkts über HTTP/1.1 und h2). Alle übrigen Ereignisse laufen über
+des IDL-Endpunkts über HTTP/1.1 und h2),
+`crates/grpc-bridge/src/bridge_daemon/connection.rs::serve` (`listening` mit
+der Adresse, die der Listener gebunden hat; bei Port 0 in `grpc.bind` der
+Port, den das System gewählt hat). Alle übrigen Ereignisse laufen über
 denselben Weg.
 
 **Tests:** `crates/grpc-bridge/src/bridge_daemon/log.rs::tests::grpcbridge_8_1_a_call_line_carries_the_fields_of_the_spec`,
@@ -520,7 +523,10 @@ denselben Weg.
 `::grpcbridge_8_1_log_level_warn_hides_ok_calls_and_the_flag_wins_over_the_file`,
 `::grpcbridge_8_1_a_reset_call_and_a_closed_connection_are_cancelled`,
 `::grpcbridge_8_1_a_request_to_the_idl_endpoint_is_an_http_line`;
-`crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_2_log_level_filters_the_lines`.
+`crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_2_log_level_filters_the_lines`;
+`crates/grpc-bridge/tests/daemon_limits_e2e.rs::grpcbridge_3_the_limits_of_the_file_reach_the_wire`
+(Listener und Admin-Endpunkt auf Port 0, die Ports aus `listening` und
+`admin_endpoint`).
 
 **Status:** done — gegen den Daemon: ein Publish und ein Call auf einen
 nicht gemappten Service ergeben genau zwei `rpc`-Zeilen auf stdout, jede

@@ -2,6 +2,14 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), and versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- `Acceptor::start_on`: the acceptor on a listener the caller has bound,
+  for a server that names its own port in what it hands out (an IOR) and
+  binds port 0.
+
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial release materialization of the `zerodds-corba-iiop` crate.

@@ -51,11 +51,6 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    s.local_addr().unwrap().port()
-}
-
 struct Daemon {
     child: Child,
     port: u16,
@@ -78,14 +73,13 @@ impl Daemon {
 
     /// As [`Self::start_with`], with `log_level` (`None`: the default).
     fn start_at(dir: &Path, log_level: Option<&str>, extra: &str, topics: &str) -> Self {
-        let port = pick_port();
         let domain = zerodds_test_domains::lease_domain();
         let path = dir.join("grpc-bridged.yaml");
         let level = log_level.map_or(String::new(), |l| format!("log_level: {l}\n"));
         std::fs::write(
             &path,
             format!(
-                "domain: {}\n{level}grpc:\n  bind: \"127.0.0.1:{port}\"\n{extra}topics:\n{topics}",
+                "domain: {}\n{level}grpc:\n  bind: \"127.0.0.1:0\"\n{extra}topics:\n{topics}",
                 domain.id()
             ),
         )
@@ -100,18 +94,28 @@ impl Daemon {
             .stderr(out)
             .spawn()
             .unwrap();
-        let d = Self {
+        let mut d = Self {
             child,
-            port,
+            port: 0,
             log,
             domain,
         };
+        d.port = d.logged_port("listening");
+        d
+    }
+
+    /// The port the daemon names in the `addr` of its `event` line, once
+    /// it has written that line.
+    fn logged_port(&self, event: &str) -> u16 {
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !d.log_text().contains("\"event\":\"listening\"") {
-            assert!(Instant::now() < deadline, "no listener: {}", d.log_text());
+        loop {
+            let text = self.log_text();
+            if let Some(port) = zerodds_test_domains::logged_port(&text, event, "addr") {
+                return port;
+            }
+            assert!(Instant::now() < deadline, "no {event} line: {text}");
             std::thread::sleep(Duration::from_millis(50));
         }
-        d
     }
 
     /// The daemon with the bidirectional topic `Demo::Bytes` as
@@ -957,12 +961,12 @@ fn participant(d: &Daemon, tag: u8) -> std::sync::Arc<zerodds_dcps::runtime::Dcp
 fn grpcbridge_4_1_a_stream_takes_no_sample_once_256_kib_wait_for_the_window() {
     const N: u8 = 40;
     const QUEUE_LIMIT: f64 = 256.0 * 1024.0;
-    let admin = pick_port();
     let d = Daemon::start_with(
         &temp_dir("queue"),
-        &format!("metrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n"),
+        "metrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n",
         DEMO_TOPIC,
     );
+    let admin = d.logged_port("admin_endpoint");
     let mut sub = d.connect();
     sub.grant = false;
     subscribe(&mut sub, 1, &SubscribeReq::default(), &[]);
@@ -1242,12 +1246,12 @@ fn grpcbridge_6_the_burst_keeps_depth_per_instance_and_not_a_disposed_one() {
 fn grpcbridge_6_the_burst_stops_once_256_kib_wait_for_the_window() {
     const N: u8 = 40;
     const QUEUE_LIMIT: f64 = 256.0 * 1024.0;
-    let admin = pick_port();
     let d = Daemon::start_with(
         &temp_dir("burstwindow"),
-        &format!("metrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n"),
+        "metrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n",
         "  - dds_name: \"Demo::Bytes\"\n    grpc_service: DemoStream\n    qos:\n      durability: transient_local\n",
     );
+    let admin = d.logged_port("admin_endpoint");
     let body = |i: u8| vec![i; 16 * 1024];
     let mut c = d.connect();
     c.open(1, "Publish", &[], false);
@@ -1388,14 +1392,14 @@ fn grpcbridge_6_the_burst_and_the_live_samples_of_another_participant_have_no_ga
 #[test]
 fn grpcbridge_6_a_best_effort_stream_drops_when_the_window_is_full_and_counts_it() {
     const N: u8 = 40;
-    let admin = pick_port();
     // The default log level (`info`) shows the `samples_dropped` line.
     let d = Daemon::start_at(
         &temp_dir("besteffort"),
         None,
-        &format!("metrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n"),
+        "metrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n",
         "  - dds_name: \"Demo::Bytes\"\n    grpc_service: DemoStream\n    qos:\n      reliability: best_effort\n",
     );
+    let admin = d.logged_port("admin_endpoint");
     let mut sub = d.connect();
     sub.grant = false;
     subscribe(&mut sub, 1, &SubscribeReq::default(), &[]);
@@ -1785,14 +1789,12 @@ fn frame_ready(c: &mut Client, wait: Duration) -> bool {
 fn grpcbridge_4_6_a_reflection_stream_answers_no_request_once_256_kib_wait_for_the_window() {
     const N: usize = 3_000;
     const QUEUE_LIMIT: usize = 256 * 1024;
-    let admin = pick_port();
     let d = Daemon::start_with(
         &temp_dir("reflection-queue"),
-        &format!(
-            "  initial_window_size: 65535\n  reflection:\n    enabled: true\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n"
-        ),
+        "  initial_window_size: 65535\n  reflection:\n    enabled: true\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n",
         "  - dds_name: \"Chat::Message\"\n",
     );
+    let admin = d.logged_port("admin_endpoint");
     let request = reflection_request(4, b"zerodds.chat.v1.ChatMessageStream.Subscribe");
     let need = request.len() as i64 + 5;
     let mut c = d.connect();

@@ -54,11 +54,6 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn pick_port() -> u16 {
-    let s = TcpListener::bind("127.0.0.1:0").unwrap();
-    s.local_addr().unwrap().port()
-}
-
 /// The daemon with its stdout and stderr read into memory, line by line.
 struct Daemon {
     child: Child,
@@ -80,17 +75,17 @@ fn collect(from: impl Read + Send + 'static) -> Arc<Mutex<Vec<String>>> {
 }
 
 impl Daemon {
-    /// The daemon on `config` (the listener port and the leased domain put
-    /// in front), with `args` and `env`, once its listener accepts.
+    /// The daemon on `config` (its listener on port 0 and the leased
+    /// domain put in front), with `args` and `env`, once its listener
+    /// names the port it bound.
     fn start(name: &str, config: &str, args: &[&str], env: &[(&str, String)]) -> Self {
         let dir = temp_dir(name);
-        let port = pick_port();
         let domain = zerodds_test_domains::lease_domain();
         let path = dir.join("grpc-bridged.yaml");
         std::fs::write(
             &path,
             format!(
-                "domain: {}\ngrpc:\n  bind: \"127.0.0.1:{port}\"\n{config}",
+                "domain: {}\ngrpc:\n  bind: \"127.0.0.1:0\"\n{config}",
                 domain.id()
             ),
         )
@@ -108,23 +103,29 @@ impl Daemon {
         let mut child = command.spawn().unwrap();
         let stdout = collect(child.stdout.take().unwrap());
         let stderr = collect(child.stderr.take().unwrap());
-        let d = Self {
+        let mut d = Self {
             child,
-            port,
+            port: 0,
             stdout,
             stderr,
             _domain: domain,
         };
+        d.port = d.logged_port("listening");
+        d
+    }
+
+    /// The port the daemon names in the `addr` of its `event` line, once
+    /// it has written that line.
+    fn logged_port(&self, event: &str) -> u16 {
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !d
-            .out()
-            .iter()
-            .any(|l| l.contains("\"event\":\"listening\""))
-        {
-            assert!(Instant::now() < deadline, "no listener: {:?}", d.out());
+        loop {
+            let out = self.out().join("\n");
+            if let Some(port) = zerodds_test_domains::logged_port(&out, event, "addr") {
+                return port;
+            }
+            assert!(Instant::now() < deadline, "no {event} line: {out}");
             std::thread::sleep(Duration::from_millis(20));
         }
-        d
     }
 
     fn out(&self) -> Vec<String> {
@@ -467,11 +468,12 @@ fn grpcbridge_8_1_log_level_warn_hides_ok_calls_and_the_flag_wins_over_the_file(
 }
 
 impl Daemon {
-    /// [`Self::start`] for a daemon that writes no `listening` line: ready
-    /// once a TCP connection is accepted and served.
+    /// [`Self::start`] for a daemon that writes no `listening` line, on a
+    /// port of [`zerodds_test_domains::free_tcp_port`]: ready once a TCP
+    /// connection is accepted and served.
     fn start_quiet(name: &str, config: &str, args: &[&str]) -> Self {
         let dir = temp_dir(name);
-        let port = pick_port();
+        let port = zerodds_test_domains::free_tcp_port();
         let domain = zerodds_test_domains::lease_domain();
         let path = dir.join("grpc-bridged.yaml");
         std::fs::write(
@@ -758,13 +760,13 @@ impl Daemon {
 /// in `zerodds_grpc_bridge_rpcs_total` with `status="CANCELLED"`.
 #[test]
 fn grpcbridge_8_1_a_reset_call_and_a_closed_connection_are_cancelled() {
-    let admin = pick_port();
     let d = Daemon::start(
         "cancel",
-        &format!("{TOPIC}metrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n"),
+        &format!("{TOPIC}metrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n"),
         &[],
         &[],
     );
+    let admin = d.logged_port("admin_endpoint");
     // A Publish opened and reset with RST_STREAM(CANCEL), then a call behind
     // it on the same connection: its answer means the reset has been read.
     let mut c = H2::open(d.port);
@@ -911,9 +913,8 @@ fn start_fails(name: &str, args: &[&str], env: &[(&str, &str)]) -> (Option<i32>,
     std::fs::write(
         &path,
         format!(
-            "domain: {}\ngrpc:\n  bind: \"127.0.0.1:{}\"\n{TOPIC}",
-            domain.id(),
-            pick_port()
+            "domain: {}\ngrpc:\n  bind: \"127.0.0.1:0\"\n{TOPIC}",
+            domain.id()
         ),
     )
     .unwrap();
@@ -1027,7 +1028,7 @@ fn grpcbridge_8_3_without_an_endpoint_nothing_is_recorded() {
 #[test]
 fn grpcbridge_8_3_a_failed_export_is_a_warn_line() {
     // A port nothing listens on: the export is refused.
-    let closed = pick_port();
+    let closed = zerodds_test_domains::free_tcp_port();
     let mut d = Daemon::start(
         "otlp-down",
         TOPIC,

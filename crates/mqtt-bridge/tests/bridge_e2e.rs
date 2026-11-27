@@ -75,12 +75,9 @@ fn base_config(dir: &std::path::Path) -> PathBuf {
     p
 }
 
+/// A port nothing listens on, of [`zerodds_test_domains::free_tcp_port`].
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 /// The daemon process, killed and reaped when the test ends.
@@ -867,8 +864,7 @@ fn mqttbridge_2_every_flag_reaches_the_connect_and_the_subscribe() {
         ..ServerConfig::default()
     });
     let url = format!("mqtt://{}", h.local_addr());
-    let metrics = format!("127.0.0.1:{}", free_port());
-    let _daemon = Daemon(
+    let mut daemon = Daemon(
         Command::new(BIN)
             .args(args(
                 &dir,
@@ -885,14 +881,36 @@ fn mqttbridge_2_every_flag_reaches_the_connect_and_the_subscribe() {
                     "--topic",
                     "Flag::T:flag/t",
                     "--metrics",
-                    &metrics,
+                    "127.0.0.1:0",
                 ],
             ))
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .unwrap(),
     );
+    // Spec §8.1: the JSON log is on stdout; `admin_bound` names the port
+    // the admin endpoint bound for port 0.
+    let metrics = {
+        use std::io::BufRead as _;
+        let stdout = daemon.0.stdout.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            // To the end: the daemon blocks on a full pipe.
+            for line in std::io::BufReader::new(stdout)
+                .lines()
+                .map_while(Result::ok)
+            {
+                if let Some(port) =
+                    zerodds_test_domains::logged_port(&line, "admin_bound", "listen")
+                {
+                    let _ = tx.send(port);
+                }
+            }
+        });
+        let port = rx.recv_timeout(TO).expect("the admin_bound line");
+        format!("127.0.0.1:{port}")
+    };
     wait_until("the CONNECT", || !auth.seen.lock().unwrap().is_empty());
     assert_eq!(
         auth.seen.lock().unwrap()[0],
@@ -1083,12 +1101,23 @@ fn mqttbridge_4_1_a_restarted_daemon_resends_what_the_broker_did_not_acknowledge
     // flow (the format of daemon/session.rs); the catalog's flows of §5.2
     // follow it.
     let pid = again.packet_id.unwrap().to_be_bytes();
-    wait_until("the completion in the session file", || {
+    // The file's octets on a timeout: the test once ran into its 10 s here
+    // with 63 others beside it (OPEN-ITEMS 77).
+    let deadline = Instant::now() + TO;
+    loop {
         let bytes = std::fs::read(&file).unwrap_or_default();
-        bytes
+        if bytes
             .windows(7)
             .any(|w| w == [b'C', pid[0], pid[1], 0, 0, 0, 0])
-    });
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no completion of {pid:?} in the session file within {TO:?}: {bytes:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
     shutdown(second);
     broker.join().unwrap();
 }

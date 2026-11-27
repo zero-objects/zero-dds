@@ -22,6 +22,15 @@ pub(crate) fn serve(
     listener
         .set_nonblocking(false)
         .map_err(|e| DaemonError::new(2, format!("set_nonblocking: {e}")))?;
+    // With port 0 in `grpc.bind` the system picks the port: the log line
+    // and the catalog's fallback authority (§5.2) name the one it picked.
+    let bound = listener
+        .local_addr()
+        .map_err(|e| DaemonError::new(2, format!("bind {}: {e}", cfg.bind)))?;
+    let cfg = &DaemonConfig {
+        bind: bound.to_string(),
+        ..cfg.clone()
+    };
 
     if idle_timeout_ms > 0 {
         // For test mode: stop accepting after timeout.

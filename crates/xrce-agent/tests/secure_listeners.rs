@@ -74,11 +74,7 @@ fn bounded(seconds: u64, body: impl FnOnce() + Send + 'static) {
 }
 
 fn free_tcp_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 fn free_udp_port() -> u16 {

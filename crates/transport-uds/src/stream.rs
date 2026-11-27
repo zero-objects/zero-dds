@@ -498,6 +498,28 @@ fn wait_readable(socket: &Socket, timeout: Duration) -> io::Result<bool> {
     Ok(n > 0)
 }
 
+/// Whether the peer of the outgoing connection `socket` has closed it: the
+/// connection is readable (the peer writes nothing on it, so only its end
+/// makes it so) and a look at the receive side finds no octet.
+///
+/// On Linux and macOS the write after the peer closed fails (`EPIPE`) and
+/// the send connects anew (§3.5). On Windows that write succeeds, and the
+/// frame is lost: after the peer's restart the second message never
+/// arrived (`uds_3_5_stream_reconnects_after_the_peer_restarts` on the Windows CI runner,
+/// pipeline 10055, job 239493). So there a send first looks, as the TCP
+/// transport does before each write.
+#[cfg(windows)]
+fn peer_closed(socket: &Socket) -> bool {
+    match wait_readable(socket, Duration::ZERO) {
+        Ok(false) => false,
+        Ok(true) => {
+            let mut probe = [std::mem::MaybeUninit::<u8>::uninit(); 1];
+            !matches!(socket.peek(&mut probe), Ok(n) if n > 0)
+        }
+        Err(_) => true,
+    }
+}
+
 /// How a read of a fixed number of octets ended.
 enum Fill {
     Done,
@@ -513,10 +535,33 @@ enum Fill {
 /// when one is given: before each read it waits with `poll` at most the
 /// time left. The deadline is no `SO_RCVTIMEO`: macOS refuses that option
 /// with `EINVAL` on a connection whose peer has closed, while the octets
-/// the peer wrote before are still there to read.
-fn fill(socket: &Socket, buf: &mut [u8], deadline: Option<Instant>) -> Fill {
+/// the peer wrote before are still there to read. Once `closed` is set
+/// the read fails.
+///
+/// Without a deadline the read blocks, and the close of the transport
+/// ends it by shutting the connection down: on Linux and macOS a `recv`
+/// that waits returns then. On Windows it does not, while the peer holds
+/// the connection open, and the close waited on the reading thread
+/// (measured on the Windows CI runner: past 25 s, pipeline 10050, job 239479); after a
+/// timed-out `SO_RCVTIMEO` the connection is in an indeterminate state
+/// (Microsoft, `setsockopt`). So on Windows a read without a deadline
+/// first waits with `WSAPoll`, at most [`ACCEPT_POLL`] at a time, and
+/// looks at `closed` in between.
+fn fill(socket: &Socket, buf: &mut [u8], deadline: Option<Instant>, closed: &AtomicBool) -> Fill {
     let mut got = 0;
     while got < buf.len() {
+        if closed.load(Ordering::Acquire) {
+            return Fill::Failed;
+        }
+        #[cfg(windows)]
+        if deadline.is_none() {
+            match wait_readable(socket, ACCEPT_POLL) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => return Fill::Failed,
+            }
+        }
         if let Some(deadline) = deadline {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
@@ -540,11 +585,11 @@ fn fill(socket: &Socket, buf: &mut [u8], deadline: Option<Instant>) -> Fill {
 }
 
 /// Reads and discards `len` octets.
-fn skip(socket: &Socket, mut len: usize) -> Fill {
+fn skip(socket: &Socket, mut len: usize, closed: &AtomicBool) -> Fill {
     let mut buf = [0u8; 8192];
     while len > 0 {
         let take = len.min(buf.len());
-        match fill(socket, &mut buf[..take], None) {
+        match fill(socket, &mut buf[..take], None, closed) {
             Fill::Done => len -= take,
             Fill::EndBefore => return Fill::EndInside,
             other => return other,
@@ -557,7 +602,7 @@ fn skip(socket: &Socket, mut len: usize) -> Fill {
 /// `hello_deadline`, then frames until it ends or the transport closes.
 fn read_connection(socket: &Socket, shared: &Shared, hello_deadline: Instant) {
     let mut hello = [0u8; STREAM_HELLO_LEN];
-    match fill(socket, &mut hello, Some(hello_deadline)) {
+    match fill(socket, &mut hello, Some(hello_deadline), &shared.closed) {
         Fill::Done if hello[..4] == STREAM_MAGIC => {}
         // `close` shut the connection down.
         _ if shared.closed.load(Ordering::Acquire) => return,
@@ -571,7 +616,7 @@ fn read_connection(socket: &Socket, shared: &Shared, hello_deadline: Instant) {
     let source = Locator::uds(id);
     loop {
         let mut header = [0u8; STREAM_FRAME_HEADER_LEN];
-        match fill(socket, &mut header, None) {
+        match fill(socket, &mut header, None, &shared.closed) {
             Fill::Done => {}
             Fill::EndBefore => return,
             Fill::EndInside => {
@@ -589,7 +634,7 @@ fn read_connection(socket: &Socket, shared: &Shared, hello_deadline: Instant) {
         let item = if len > shared.max_datagram {
             // The frame is skipped and reported; the stream stays in step
             // and the next frame is read (§3.5).
-            match skip(socket, len) {
+            match skip(socket, len, &shared.closed) {
                 Fill::Done => Err(RecvError::BufferTooSmall {
                     datagram_size: len,
                     buffer_size: shared.max_datagram,
@@ -601,7 +646,7 @@ fn read_connection(socket: &Socket, shared: &Shared, hello_deadline: Instant) {
             }
         } else {
             let mut data = vec![0u8; len];
-            match fill(socket, &mut data, None) {
+            match fill(socket, &mut data, None, &shared.closed) {
                 Fill::Done => Ok(ReceivedDatagram {
                     source,
                     data: Arc::<[u8]>::from(data.into_boxed_slice()).into(),
@@ -700,7 +745,16 @@ impl Transport for UdsStreamTransport {
         let mut reconnected = false;
         loop {
             let conn = self.connection(dest.address)?;
-            let written = write_frame(&lock(&conn), &frame, self.config.send_timeout);
+            let socket = lock(&conn);
+            #[cfg(windows)]
+            if !reconnected && peer_closed(&socket) {
+                drop(socket);
+                self.forget(dest.address, &conn);
+                reconnected = true;
+                continue;
+            }
+            let written = write_frame(&socket, &frame, self.config.send_timeout);
+            drop(socket);
             match written {
                 Ok(()) => return Ok(()),
                 Err((e, in_part)) => {

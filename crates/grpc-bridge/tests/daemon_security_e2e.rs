@@ -27,6 +27,8 @@ use std::time::{Duration, Instant};
 
 #[path = "support/metrics.rs"]
 mod metrics;
+#[path = "support/writer_match.rs"]
+mod writer_match;
 
 use metrics::{metric, scrape};
 use zerodds_hpack::{Decoder, Encoder, HeaderField};
@@ -46,14 +48,12 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    s.local_addr().unwrap().port()
-}
-
 struct Daemon {
     child: Child,
     port: u16,
+    /// The port of `grpc.bind` in the file, kept by a rewrite: 0, or the
+    /// port of [`Daemon::start_quiet`].
+    file_port: u16,
     log: PathBuf,
     /// The daemon's DDS domain, leased: the daemons of the tests run side
     /// by side, and on one domain each reader of `T::Open` received what
@@ -62,8 +62,11 @@ struct Daemon {
     domain: zerodds_test_domains::DomainLease,
 }
 
-/// `config` with the leased DDS domain in front and the listener port in.
-fn with_domain_and_port(config: &str, domain: i32, port: u16) -> String {
+/// `config` with the leased DDS domain in front and `port` for `PORT`: 0,
+/// and the daemon binds a port the system picks and names it in its
+/// `listening` line. A rewrite for a reload keeps the port, the
+/// `grpc.bind` the daemon started with.
+fn with_domain(config: &str, domain: i32, port: u16) -> String {
     format!(
         "domain: {domain}\n{}",
         config.replace("PORT", &port.to_string())
@@ -78,10 +81,32 @@ impl Daemon {
 
     /// [`Self::start`] with further command-line arguments.
     fn start_with(dir: &Path, config: &str, args: &[&str]) -> Self {
-        let port = pick_port();
+        let mut d = Self::spawn(dir, config, args, 0);
+        d.port = d.logged_port("listening");
+        d
+    }
+
+    /// [`Self::start_with`] for a log level that hides the `listening`
+    /// line: on a port of [`zerodds_test_domains::free_tcp_port`], ready
+    /// once a TCP connection is accepted.
+    fn start_quiet(dir: &Path, config: &str, args: &[&str]) -> Self {
+        let port = zerodds_test_domains::free_tcp_port();
+        let mut d = Self::spawn(dir, config, args, port);
+        d.port = port;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while TcpStream::connect(("127.0.0.1", port)).is_err() {
+            assert!(Instant::now() < deadline, "no listener: {}", d.log_text());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        d
+    }
+
+    /// The binary on `config` with `file_port` for `PORT`, on a leased
+    /// domain; `port` is still to be set.
+    fn spawn(dir: &Path, config: &str, args: &[&str], file_port: u16) -> Self {
         let domain = zerodds_test_domains::lease_domain();
         let path = dir.join("grpc-bridged.yaml");
-        std::fs::write(&path, with_domain_and_port(config, domain.id(), port)).unwrap();
+        std::fs::write(&path, with_domain(config, domain.id(), file_port)).unwrap();
         let log = dir.join("daemon.log");
         let out = std::fs::File::create(&log).unwrap();
         let child = Command::new(env!("CARGO_BIN_EXE_zerodds-grpc-bridged"))
@@ -93,18 +118,27 @@ impl Daemon {
             .stderr(out)
             .spawn()
             .unwrap();
-        let d = Self {
+        Self {
             child,
-            port,
+            port: 0,
+            file_port,
             log,
             domain,
-        };
+        }
+    }
+
+    /// The port the daemon names in the `addr` of its `event` line, once
+    /// it has written that line.
+    fn logged_port(&self, event: &str) -> u16 {
         let deadline = Instant::now() + Duration::from_secs(10);
-        while TcpStream::connect(("127.0.0.1", port)).is_err() {
-            assert!(Instant::now() < deadline, "no listener: {}", d.log_text());
+        loop {
+            let text = self.log_text();
+            if let Some(port) = zerodds_test_domains::logged_port(&text, event, "addr") {
+                return port;
+            }
+            assert!(Instant::now() < deadline, "no {event} line: {text}");
             std::thread::sleep(Duration::from_millis(50));
         }
-        d
     }
 
     fn log_text(&self) -> String {
@@ -114,7 +148,7 @@ impl Daemon {
     fn rewrite(&self, dir: &Path, config: &str) {
         std::fs::write(
             dir.join("grpc-bridged.yaml"),
-            with_domain_and_port(config, self.domain.id(), self.port),
+            with_domain(config, self.domain.id(), self.file_port),
         )
         .unwrap();
     }
@@ -401,7 +435,7 @@ fn grpcbridge_7_2_bearer_and_acl_are_checked_per_call() {
 fn grpcbridge_2_log_level_filters_the_lines() {
     for (level, accept_logged) in [("warn", false), ("debug", true)] {
         let dir = temp_dir("log-level");
-        let d = Daemon::start_with(&dir, &bearer_config("tk-1"), &["--log-level", level]);
+        let d = Daemon::start_quiet(&dir, &bearer_config("tk-1"), &["--log-level", level]);
         assert_eq!(tcp_publish(&d, "OpenStream", None), UNAUTHENTICATED);
         let deadline = Instant::now() + Duration::from_secs(5);
         while !d.log_text().contains("\"event\":\"auth_failed\"") {
@@ -1261,12 +1295,12 @@ fn grpcbridge_7_2_mode_none_on_a_public_bind_does_not_start() {
 #[test]
 fn grpcbridge_8_2_the_metrics_of_section_8_2_count_calls_failures_and_resets() {
     let dir = temp_dir("metrics");
-    let admin = pick_port();
     let config = format!(
-        "{}\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:{admin}\"\n",
+        "{}\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n",
         bearer_config("tk-m")
     );
     let d = Daemon::start(&dir, &config);
+    let admin = d.logged_port("admin_endpoint");
     // A Subscribe stream (spec §4.3), open before anything is published: its
     // own DataReader receives what the Publish below writes.
     let mut sub = open(d.tcp());
@@ -1671,7 +1705,7 @@ fn grpcbridge_9_2_a_sample_published_before_sigterm_reaches_the_dds_reader() {
     let dir = temp_dir("drain-dds");
     let mut d = Daemon::start(&dir, &bearer_config("tk-w"));
     let dds = dds_peer(d.domain.id());
-    let (reader, rx) = dds
+    let (_reader, rx) = dds
         .register_user_reader(UserReaderConfig {
             topic_name: "T::Open".into(),
             type_name: "ZeroDdsBridgeBytes".into(),
@@ -1679,14 +1713,9 @@ fn grpcbridge_9_2_a_sample_published_before_sigterm_reaches_the_dds_reader() {
             ..Default::default()
         })
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while dds.user_reader_matched_count(reader) < 1 {
-        assert!(
-            Instant::now() < deadline,
-            "the daemon's writer did not match"
-        );
-        dds.wait_match_event(Duration::from_millis(200));
-    }
+    writer_match::publish_until_received(&rx, || {
+        assert_eq!(tcp_publish(&d, "OpenStream", Some("Bearer tk-w")), OK);
+    });
     assert_eq!(tcp_publish(&d, "OpenStream", Some("Bearer tk-w")), OK);
     let started = sigterm(&d);
     let payload = loop {
@@ -1713,12 +1742,12 @@ fn grpcbridge_9_2_a_sample_published_before_sigterm_reaches_the_dds_reader() {
 }
 
 /// §9.2 "drain pending DDS writes" with an acknowledgement outstanding at
-/// SIGTERM: the test's reliable reader matches the daemon's writer, then
-/// its participant stops without notice (no SEDP dispose, no SPDP
-/// departure), so the reader stays matched for its lease and never
-/// acknowledges. A Publish writes a sample, SIGTERM follows: the exit is
-/// held until `grpc.drain_secs` (2 s) and the daemon logs that its writers
-/// were not acknowledged, then exits 0.
+/// SIGTERM: the daemon's writer matches the test's reliable reader (a
+/// sample reached it), then the reader's participant stops without notice
+/// (no SEDP dispose, no SPDP departure), so the reader stays matched for
+/// its lease and never acknowledges. A Publish writes a sample, SIGTERM
+/// follows: the exit is held until `grpc.drain_secs` (2 s) and the daemon
+/// logs that its writers were not acknowledged, then exits 0.
 #[test]
 fn grpcbridge_9_2_an_acknowledgement_outstanding_at_sigterm_holds_the_exit_to_the_drain_limit() {
     use zerodds_dcps::runtime::UserReaderConfig;
@@ -1729,7 +1758,7 @@ fn grpcbridge_9_2_an_acknowledgement_outstanding_at_sigterm_holds_the_exit_to_th
     );
     let mut d = Daemon::start(&dir, &config);
     let dds = dds_peer(d.domain.id());
-    let (reader, _rx) = dds
+    let (_reader, rx) = dds
         .register_user_reader(UserReaderConfig {
             topic_name: "T::Open".into(),
             type_name: "ZeroDdsBridgeBytes".into(),
@@ -1737,14 +1766,9 @@ fn grpcbridge_9_2_an_acknowledgement_outstanding_at_sigterm_holds_the_exit_to_th
             ..Default::default()
         })
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while dds.user_reader_matched_count(reader) < 1 {
-        assert!(
-            Instant::now() < deadline,
-            "the daemon's writer did not match"
-        );
-        dds.wait_match_event(Duration::from_millis(200));
-    }
+    writer_match::publish_until_received(&rx, || {
+        assert_eq!(tcp_publish(&d, "OpenStream", Some("Bearer tk-u")), OK);
+    });
     dds.__vanish();
     assert_eq!(tcp_publish(&d, "OpenStream", Some("Bearer tk-u")), OK);
     let started = sigterm(&d);
@@ -1791,7 +1815,7 @@ fn dds_peer(domain: i32) -> Arc<zerodds_dcps::runtime::DcpsRuntime> {
 /// with a certificate no tenant names see the topics of `domain` only.
 #[test]
 fn grpcbridge_1_l6_a_tls_connection_is_bound_to_the_tenant_of_its_certificate() {
-    use zerodds_dcps::runtime::{UserReaderConfig, UserSample};
+    use zerodds_dcps::runtime::UserReaderConfig;
     let dir = temp_dir("tenant");
     let pki = Pki::new();
     let tenant_domain = zerodds_test_domains::lease_domain();
@@ -1820,7 +1844,7 @@ tenants:\n  - name: plant-a\n    domain: {1}\n    subjects: [\"CN=plant-a\"]\n  
     );
 
     let dds = dds_peer(tenant_domain.id());
-    let (reader, rx) = dds
+    let (_reader, rx) = dds
         .register_user_reader(UserReaderConfig {
             topic_name: "Plant::Status".into(),
             type_name: "ZeroDdsBridgeBytes".into(),
@@ -1828,34 +1852,23 @@ tenants:\n  - name: plant-a\n    domain: {1}\n    subjects: [\"CN=plant-a\"]\n  
             ..Default::default()
         })
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while dds.user_reader_matched_count(reader) < 1 {
-        assert!(
-            Instant::now() < deadline,
-            "the tenant's writer did not match"
-        );
-        dds.wait_match_event(Duration::from_millis(200));
-    }
 
     let mut plant = open(tls_client(&d, &pki.ca_pem, Some((&plant_der, &plant_key))));
-    assert_eq!(call(&mut plant, 1, "PlantStream", "Publish", None).0, OK);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let payload = loop {
-        let left = deadline.saturating_duration_since(Instant::now());
-        match rx
-            .recv_timeout(left)
-            .expect("the sample on the tenant's domain")
-        {
-            UserSample::Alive { payload, .. } => break payload.to_vec(),
-            _ => continue,
-        }
-    };
+    let mut stream = 1;
+    let payload = writer_match::publish_until_received(&rx, || {
+        assert_eq!(
+            call(&mut plant, stream, "PlantStream", "Publish", None).0,
+            OK
+        );
+        stream += 2;
+    })
+    .payload;
     assert_eq!(payload, b"hi");
     assert_eq!(
-        call(&mut plant, 3, "OpenStream", "Publish", None).0,
+        call(&mut plant, stream, "OpenStream", "Publish", None).0,
         NOT_FOUND
     );
-    let (status, catalog) = call_body(&mut plant, 5, "PlantStream", "Catalog", None);
+    let (status, catalog) = call_body(&mut plant, stream + 2, "PlantStream", "Catalog", None);
     assert_eq!(status, OK);
     let catalog = String::from_utf8_lossy(&catalog);
     assert!(catalog.contains("Plant::Status"), "{catalog}");

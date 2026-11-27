@@ -398,6 +398,50 @@ const ACCEPT_ERROR_PAUSE: Duration = Duration::from_millis(50);
 const WAKE_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
 // ---------------------------------------------------------------------
+// UntilClosed
+// ---------------------------------------------------------------------
+
+/// How long a read of an accepted connection waits on Windows before it
+/// looks at the closed flag of the transport again.
+#[cfg(windows)]
+const CLOSE_POLL: Duration = Duration::from_millis(50);
+
+/// An accepted connection, read until its peer ends it or the transport
+/// closes. `close` shuts every accepted connection down, and on Linux and
+/// macOS that ends a `recv` waiting on it. On Windows it does not: the
+/// `recv` keeps waiting while the peer holds the connection open, and
+/// `serve` waits on the reading thread (measured on the Windows CI runner: the shutdown of a
+/// runtime whose test peer held its connection did not end within 25 s,
+/// pipeline 10050, job 239478). A receive timeout (`SO_RCVTIMEO`) is no
+/// way out there: after a timed-out receive the connection is in an
+/// indeterminate state (Microsoft, `setsockopt`). So on Windows a read
+/// first waits with `WSAPoll`, at most [`CLOSE_POLL`] at a time. On every
+/// platform a read after `close` is the end of the connection.
+struct UntilClosed<'a> {
+    stream: TcpStream,
+    closed: &'a AtomicBool,
+}
+
+impl<'a> UntilClosed<'a> {
+    fn new(stream: TcpStream, closed: &'a AtomicBool) -> Self {
+        Self { stream, closed }
+    }
+}
+
+impl Read for UntilClosed<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        #[cfg(windows)]
+        while !self.closed.load(Ordering::Acquire)
+            && !crate::windows::wait_readable(&self.stream, CLOSE_POLL)?
+        {}
+        if self.closed.load(Ordering::Acquire) {
+            return Ok(0);
+        }
+        (&self.stream).read(buf)
+    }
+}
+
+// ---------------------------------------------------------------------
 // DeadlineStream
 // ---------------------------------------------------------------------
 
@@ -2177,7 +2221,7 @@ impl TcpTransport {
             IpAddr::V6(v6) => Locator::tcp_v6(v6.octets(), source_port),
         }
         .with_tcp_kind_set(self.locator_kinds);
-        let mut reader = BufReader::new(stream);
+        let mut reader = BufReader::new(UntilClosed::new(stream, &self.closed));
         self.inbound
             .pump(&mut reader, TcpDialect::ZeroDds, source_locator, None)
     }
@@ -2207,7 +2251,7 @@ impl TcpTransport {
         let source = socket_locator(peer, self.locator_kinds);
         let vendors = self.accepted_vendors.as_deref();
         let answer_side = stream.try_clone().map_err(TcpTransportError::Accept)?;
-        let mut reader = BufReader::new(stream);
+        let mut reader = BufReader::new(UntilClosed::new(stream, &self.closed));
         // Both dialects begin a message with 28 octets, and the
         // submessage id is octet 20.
         let mut head = [0u8; rtps_stream::STREAM_HEAD_LEN];
@@ -2261,7 +2305,7 @@ impl TcpTransport {
         id: u64,
     ) -> Result<(), TcpTransportError> {
         let vendors = self.accepted_vendors.as_deref();
-        let (link, mut reader, request) = rtcp::Link::accept(
+        let (link, accepted, request) = rtcp::Link::accept(
             &stream,
             self.rtcp_own(),
             deadline,
@@ -2285,6 +2329,12 @@ impl TcpTransport {
         ));
         let link = Arc::new(link);
         let _answering = self.answer_on_link(&stream, listener, &link, id)?;
+        // What the accept read past its request is read first; the
+        // connection after it until the transport closes.
+        let pending = accepted.buffer().to_vec();
+        let mut reader = BufReader::new(
+            (&pending[..]).chain(UntilClosed::new(accepted.into_inner(), &self.closed)),
+        );
         let inbound = &self.inbound;
         link.run(&mut reader, &inbound.rtcp, |port, data| {
             inbound.push(ReceivedDatagram {

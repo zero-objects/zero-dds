@@ -510,7 +510,17 @@ pub fn run(cfg: &DaemonConfig, shutdown: &Arc<AtomicBool>) -> Result<(), DaemonE
     } else {
         bind_host.clone()
     };
-    let mut servant = NamingServant::new(Arc::clone(&graph), advertise_host, bind_port);
+    let bind_addr: std::net::SocketAddr = alloc::format!("{bind_host}:{bind_port}")
+        .parse()
+        .map_err(|e| err(2, alloc::format!("naming.bind: {e}")))?;
+    // Bound before the servant is built: its IORs name the port, and with
+    // port 0 in `naming.bind` that is the one the system picked.
+    let listener = std::net::TcpListener::bind(bind_addr)
+        .map_err(|e| err(2, alloc::format!("naming.bind {bind_addr}: {e}")))?;
+    let bind_addr = listener
+        .local_addr()
+        .map_err(|e| err(2, alloc::format!("naming.bind {bind_addr}: {e}")))?;
+    let mut servant = NamingServant::new(Arc::clone(&graph), advertise_host, bind_addr.port());
     if !cfg.persist_file.is_empty() {
         servant = servant.with_persistence(Persistence {
             path: std::path::PathBuf::from(&cfg.persist_file),
@@ -518,13 +528,10 @@ pub fn run(cfg: &DaemonConfig, shutdown: &Arc<AtomicBool>) -> Result<(), DaemonE
     }
     let servant = Arc::new(servant);
 
-    let bind_addr: std::net::SocketAddr = alloc::format!("{bind_host}:{bind_port}")
-        .parse()
-        .map_err(|e| err(2, alloc::format!("naming.bind: {e}")))?;
     let csiv2 = store.clone().map(|s| (s, cfg.csiv2_target_supports));
     let acceptor_servant = Arc::clone(&servant);
     let acceptor_csiv2 = csiv2.clone();
-    let acceptor = Acceptor::start(AcceptorConfig::new(bind_addr), move |conn| {
+    let acceptor = Acceptor::start_on(listener, AcceptorConfig::new(bind_addr), move |conn| {
         let pair = acceptor_csiv2.as_ref().map(|(s, t)| (s, *t));
         serve_connection(&acceptor_servant, pair, conn);
     })
@@ -559,7 +566,10 @@ pub fn run(cfg: &DaemonConfig, shutdown: &Arc<AtomicBool>) -> Result<(), DaemonE
             serve_connection(&acceptor_servant, pair, conn);
         })
         .map_err(|e| err(2, alloc::format!("naming.ssliop.bind {ssl_addr}: {e}")))?;
-        log("listening_ssliop", &[("addr", &ssl_addr.to_string())]);
+        log(
+            "listening_ssliop",
+            &[("addr", &a.listen_addr().to_string())],
+        );
         Some(a)
     } else {
         None

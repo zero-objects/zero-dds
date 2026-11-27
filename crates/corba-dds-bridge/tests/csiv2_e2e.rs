@@ -92,11 +92,11 @@ impl Drop for DaemonGuard {
     }
 }
 
+/// A port for the bridge: its start order (spec §9.1) has it name its port
+/// in the GUID of its participant before it binds, so it gets a port of
+/// [`zerodds_test_domains::free_tcp_port`], not port 0.
 fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
-    let p = s.local_addr().expect("addr").port();
-    drop(s);
-    p
+    zerodds_test_domains::free_tcp_port()
 }
 
 /// Spawns the daemon against a YAML config naming one mapping, CSIv2

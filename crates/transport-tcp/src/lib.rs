@@ -95,5 +95,9 @@ pub mod handshake;
 pub mod rtcp;
 pub mod rtps_stream;
 pub mod tcp_transport;
+// The `WSAPoll` of a read of an accepted connection, the crate's only
+// `unsafe` code.
+#[cfg(windows)]
+mod windows;
 
 pub use tcp_transport::{TcpDialect, TcpTransport, TcpTransportError};

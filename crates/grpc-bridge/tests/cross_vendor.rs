@@ -47,6 +47,9 @@ use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{DcpsRuntime, UserReaderConfig, UserSample, UserWriterConfig};
 
+#[path = "support/writer_match.rs"]
+mod writer_match;
+
 use zerodds_grpc_bridge::reflection::{REFLECTION_PATH, encode_list_services};
 use zerodds_grpc_bridge::service_gen::{ServiceCatalog, TopicService};
 
@@ -980,8 +983,9 @@ fn dds_peer(domain: i32, n: u8) -> Arc<DcpsRuntime> {
     .unwrap()
 }
 
-/// The reliable DataReader of `ChatMessage` (`Chat::Message`) on `rt`, once
-/// it matched the daemon's DataWriter.
+/// The reliable DataReader of `ChatMessage` (`Chat::Message`) on `rt`.
+/// Whether the daemon's DataWriter matched it shows a sample that arrives
+/// (`writer_match::publish_until_received`).
 fn chat_reader(
     rt: &DcpsRuntime,
 ) -> (
@@ -996,14 +1000,6 @@ fn chat_reader(
             ..Default::default()
         })
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while rt.user_reader_matched_count(reader) < 1 {
-        assert!(
-            Instant::now() < deadline,
-            "the daemon's DataWriter did not match"
-        );
-        rt.wait_match_event(Duration::from_millis(200));
-    }
     (reader, rx)
 }
 
@@ -1082,11 +1078,13 @@ fn client_ok(program: &Path, address: &str, args: &[&str]) -> Vec<String> {
 /// (`proto/zerodds/chat/v1/bridge.proto`) by its own generator, its own
 /// protobuf runtime and its own HTTP/2 transport, against the daemon, with a
 /// DDS participant of the test on the other side, on a leased domain:
+/// - `PublishOne` calls until one reaches the DDS DataReader, so that the
+///   daemon's DataWriter has matched it (`writer_match`);
 /// - a client-streaming `Publish` of two samples (CDR_LE) reaches the DDS
 ///   DataReader octet for octet, the encapsulation header as its
 ///   representation identifier; the `PublishAck` names the sequence number
 ///   of the second;
-/// - a `PublishOne` (CDR2_LE) likewise, sequence number 3;
+/// - a `PublishOne` (CDR2_LE) likewise, the sequence number after them;
 /// - a `PublishOne` whose `cdr_payload` has no encapsulation header ends
 ///   `INVALID_ARGUMENT` (3) with the daemon's `grpc-message` (§4.5), as the
 ///   client decodes them;
@@ -1109,6 +1107,11 @@ fn client_matrix(client: &Path) {
     let address = daemon.address();
     let dds = dds_peer(lease.id(), 1);
     let (reader, samples) = chat_reader(&dds);
+    let probe = hex(&encapsulated([0x00, 0x01], b"hi"));
+    let calls = writer_match::publish_until_received(&samples, || {
+        client_ok(client, &address, &["publish-one", &probe]);
+    })
+    .calls;
 
     let (first, second) = (every_octet(0), every_octet(0x55));
     let ack = client_ok(
@@ -1120,7 +1123,7 @@ fn client_matrix(client: &Path) {
             &hex(&encapsulated([0x00, 0x01], &second)),
         ],
     );
-    assert_eq!(ack, ["ack seq=2"]);
+    assert_eq!(ack, [format!("ack seq={}", calls + 2)]);
     assert_eq!(next_alive(&samples), ([0x00, 0x01], first));
     assert_eq!(next_alive(&samples), ([0x00, 0x01], second));
 
@@ -1130,7 +1133,7 @@ fn client_matrix(client: &Path) {
         &address,
         &["publish-one", &hex(&encapsulated([0x00, 0x07], &third))],
     );
-    assert_eq!(ack, ["ack seq=3"]);
+    assert_eq!(ack, [format!("ack seq={}", calls + 3)]);
     assert_eq!(next_alive(&samples), ([0x00, 0x07], third));
 
     let (code, lines) = run_client(client, &address, &["publish-one", "0001"]);
@@ -1334,36 +1337,48 @@ fn grpcbridge_10_ghz_2000_publish_one_calls_all_ok_and_all_reach_dds() {
     let dds = dds_peer(lease.id(), 1);
     let (_, samples) = chat_reader(&dds);
     let proto = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("proto");
+    let ghz = |data: &str, count: &str, concurrency: &str, connections: &str| {
+        Command::new("ghz")
+            .arg("--insecure")
+            .arg("--proto")
+            .arg(proto.join("zerodds/chat/v1/bridge.proto"))
+            .arg("--import-paths")
+            .arg(&proto)
+            .args([
+                "--call",
+                "zerodds.chat.v1.ChatMessageStream.PublishOne",
+                "-d",
+                data,
+                "-n",
+                count,
+                "-c",
+                concurrency,
+                "--connections",
+                connections,
+                "--timeout",
+                "10s",
+                "--format",
+                "json",
+                &daemon.address(),
+            ])
+            .output()
+            .expect("spawn ghz")
+    };
+    // One call at a time until a sample arrives: then the daemon's
+    // DataWriter has matched the reader (`writer_match`).
+    let probe = format!(
+        "{{\"cdrPayload\":\"{}\"}}",
+        base64::engine::general_purpose::STANDARD.encode(encapsulated([0x00, 0x01], b"hi"))
+    );
+    writer_match::publish_until_received(&samples, || {
+        ghz(&probe, "1", "1", "1");
+    });
     let body = every_octet(0x3c);
     let data = format!(
         "{{\"cdrPayload\":\"{}\"}}",
         base64::engine::general_purpose::STANDARD.encode(encapsulated([0x00, 0x01], &body))
     );
-    let out = Command::new("ghz")
-        .arg("--insecure")
-        .arg("--proto")
-        .arg(proto.join("zerodds/chat/v1/bridge.proto"))
-        .arg("--import-paths")
-        .arg(&proto)
-        .args([
-            "--call",
-            "zerodds.chat.v1.ChatMessageStream.PublishOne",
-            "-d",
-            &data,
-            "-n",
-            "2000",
-            "-c",
-            "20",
-            "--connections",
-            "2",
-            "--timeout",
-            "10s",
-            "--format",
-            "json",
-            &daemon.address(),
-        ])
-        .output()
-        .expect("spawn ghz");
+    let out = ghz(&data, "2000", "20", "2");
     let report: String = String::from_utf8_lossy(&out.stdout)
         .chars()
         .filter(|c| !c.is_whitespace())
@@ -1415,9 +1430,11 @@ fn grpcbridge_10_ghz_2000_publish_one_calls_all_ok_and_all_reach_dds() {
 /// PublishOne and Catalog open, presses each play button over the DevTools
 /// protocol and reads the response pane. The `PublishOne` sample reaches the
 /// DDS DataReader of the test octet for octet; BloomRPC shows the
-/// `PublishAck` with sequence number 1 and the `CatalogResp` of the topic.
+/// `PublishAck` with the sequence number of that sample and the
+/// `CatalogResp` of the topic. Before it, `PublishOne` calls of the tonic
+/// client make sure the daemon's DataWriter has matched the reader.
 #[test]
-#[ignore = "needs BloomRPC (/opt/bloomrpc or ZERODDS_BLOOMRPC), xvfb-run and Python websockets; runs in integration-bridges-vendor-grpc"]
+#[ignore = "needs BloomRPC (/opt/bloomrpc or ZERODDS_BLOOMRPC), xvfb-run, Python websockets and the tonic client of tests/interop/build_peers.sh; runs in integration-bridges-vendor-grpc"]
 fn grpcbridge_10_bloomrpc_calls_publish_one_and_catalog() {
     use base64::Engine as _;
     let bloomrpc = std::env::var_os("ZERODDS_BLOOMRPC")
@@ -1437,10 +1454,22 @@ fn grpcbridge_10_bloomrpc_calls_publish_one_and_catalog() {
     let (_, samples) = chat_reader(&dds);
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let body = every_octet(0x5a);
+    // `PublishOne` calls of the tonic client of the job until one reaches
+    // the reader: then the daemon's DataWriter has matched it
+    // (`writer_match`), and BloomRPC runs once, its `PublishAck` the
+    // sequence number after those calls. A second start of BloomRPC in one
+    // test is not needed.
+    let tonic = grpc_peer("tonic-client");
+    let address = daemon.address();
+    let probe = hex(&encapsulated([0x00, 0x01], b"hi"));
+    let calls = writer_match::publish_until_received(&samples, || {
+        client_ok(&tonic, &address, &["publish-one", &probe]);
+    })
+    .calls;
     let out = Command::new("python3")
         .arg(manifest.join("tests/interop/bloomrpc_drive.py"))
         .arg(&bloomrpc)
-        .arg(daemon.address())
+        .arg(&address)
         .arg(manifest.join("proto"))
         .arg(base64::engine::general_purpose::STANDARD.encode(encapsulated([0x00, 0x01], &body)))
         .output()
@@ -1456,10 +1485,11 @@ fn grpcbridge_10_bloomrpc_calls_publish_one_and_catalog() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(
-        lines[0].starts_with("publish-one {\"sequence_number\":\"1\",\"acked_at_ns\":\""),
-        "{lines:?}"
+    let acked = format!(
+        "publish-one {{\"sequence_number\":\"{}\",\"acked_at_ns\":\"",
+        calls + 1
     );
+    assert!(lines[0].starts_with(&acked), "{lines:?}");
     assert_eq!(next_alive(&samples), ([0x00, 0x01], body));
     assert_eq!(
         lines[1],

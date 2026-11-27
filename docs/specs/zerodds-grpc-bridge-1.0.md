@@ -753,7 +753,9 @@ A request to the IDL endpoint (§5.2) is a line with `event` `http` and
 `bytes` (the body) and `latency_us`, at `info` for a 2xx answer and at
 `warn` otherwise. The other events (`startup`, `listening`, `accept`,
 `auth_failed`, `goaway`, `drain_limit`, `dds_writes_drained`,
-`otlp_export_failed` (§8.3), …) carry their own fields. A line the daemon cannot write (stdout closed) is lost;
+`otlp_export_failed` (§8.3), …) carry their own fields; `listening` names
+in `addr` the address the listener bound, with port 0 in `grpc.bind` the
+port the system picked. A line the daemon cannot write (stdout closed) is lost;
 the daemon goes on. The usage text of `--help` and the error a start ends
 with (§2) are on stderr.
 

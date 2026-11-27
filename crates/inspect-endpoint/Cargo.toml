@@ -35,4 +35,5 @@ thiserror = "1.0"
 sha2 = { workspace = true }
 
 [dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }
 tempfile = "3.10"

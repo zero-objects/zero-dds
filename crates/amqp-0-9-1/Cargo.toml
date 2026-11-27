@@ -24,3 +24,6 @@ path = "src/lib.rs"
 default = ["std"]
 std = ["alloc"]
 alloc = []
+
+[dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }

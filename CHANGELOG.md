@@ -10,6 +10,9 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Added
 
+- **`zerodds-corba-iiop`: `Acceptor::start_on`** starts the acceptor on a
+  listener the caller has bound, for a server that names its port in what
+  it hands out (an IOR) and binds port 0.
 - **`zerodds-monitor`: `admin` and `json`** — the admin endpoints of a daemon
   (`/catalog`, `/healthz`, the metrics path, `/`) and the JSON log text (escaping,
   RFC 3339 timestamp, the five log levels, threshold, log line);
@@ -1218,6 +1221,84 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ### Fixed
 
+- **Daemons on port 0 name the port they bound; tests no longer pick a
+  port by closing a probe socket.** `zerodds-grpc-bridged` names the
+  address its listener bound in the `listening` line and as the catalog's
+  fallback authority (§5.2), where it named `grpc.bind` as written.
+  `zerodds-naming-svc` binds before it builds its servant, so that the
+  IORs of its contexts carry the bound port where `naming.bind` names port
+  0 (they carried port 0), and `listening_ssliop` names the bound address.
+  The tests start these daemons on port 0 and read the port from the log.
+  The tests of the other peers (Mosquitto, RabbitMQ, Artemis, Broker-J,
+  omniORB, TAO, JacORB, Cyclone DDS and Fast DDS over TCP, and
+  `zerodds-corba-bridged`, whose participant takes its GUID from the bind
+  address before it binds, spec §9.1) take their ports from
+  `zerodds_test_domains::free_tcp_ports`: the probes stay open until every
+  port is picked, and a process hands a port out once. A test that closed
+  its probe before the next pick gave `zerodds-grpc-bridged` its admin
+  endpoint and its listener on one port (GitHub run 45424496317,
+  `grpcbridge_3_the_limits_of_the_file_reach_the_wire`: `bind
+  127.0.0.1:33415: Address already in use`).
+- **The DDS tests of `zerodds-grpc-bridged` wait until the daemon's
+  DataWriter matched their reader, not only until their reader matched the
+  DataWriter.** The reader matches when the daemon's SEDP publication
+  arrives, the DataWriter when the reader's SEDP subscription reaches the
+  daemon, which can be later; a sample written before is not sent to the
+  reader. `grpcbridge_9_2_an_acknowledgement_outstanding_at_sigterm_holds_the_exit_to_the_drain_limit`
+  stopped its reader's participant in between, the write needed no
+  acknowledgement and the daemon exited 72 ms after SIGTERM (merge
+  pipeline 10029, job 239344; on the Linux test host 3 of 40 runs). The three tests of
+  `daemon_security_e2e` that read the daemon's samples now publish until a
+  sample arrives and take the samples of the further calls before they go
+  on (on the Linux test host 0 of 140 runs of the drain test, 0 of 40 of the other
+  two).
+- **The DDS tests of `zerodds-grpc-bridge` (`bridge_e2e`, `cross_vendor`)
+  and of `zerodds-coap-bridge` (`topic_e2e`) wait as `daemon_security_e2e`
+  does for the daemon's DataWriter to match their reader.** The wait is
+  `zerodds_test_domains::publish_until_received`: calls until a sample
+  arrives, the samples of the later calls taken; `daemon_security_e2e` uses
+  it as well. The sequence numbers the tests expect in a `PublishAck`
+  (grpcurl, the clients of `client_matrix`, BloomRPC) and the counts of the
+  CoAP metrics add these calls.
+- **`dlrl_8_1_4_5_a_fixed_cyclone_model_is_read_and_written_as_objects`
+  runs its Cache with `xtypes.key_must_understand: implied`.** The `idlc`
+  of Cyclone 11.0.1 writes the key members of `Legacy::StationType`
+  without IS_MUST_UNDERSTAND (member flags 0x21, the Cache's type 0x31),
+  and Cyclone's reader announces no TypeConsistencyEnforcement, which
+  DDS-XTypes 1.3 §7.6.3.4.1 reads as DISALLOW_TYPE_COERCION: the Cache's
+  DataWriter found the two minimal types not equivalent and did not match
+  the reader (`type.inconsistent`), so the direction DLRL to Cyclone failed
+  in every run since the test came (weekly pipeline 9999, job 238912; on
+  the Linux test host 10 of 10 runs, also at the test's own commit `d380dbfcb1c`; with
+  the setting 0 of 10; OPEN-ITEMS 59).
+- **The coverage of `zerodds-dcps` builds in a job of its own,
+  `coverage-dcps-build`.** `coverage-dcps-1` built the instrumented test
+  binaries (2:37), ran its share (0:51), wrote the tracefile (0:47) and
+  went past its 5 minutes while `cargo llvm-cov report --summary-only`
+  read the profiles a second time (weekly pipeline 9999, job 238920). The
+  build job runs nextest with the filter `none()` (cargo-llvm-cov refuses
+  `--no-run` beside `--no-report`); the summary of a job is now taken from
+  its tracefile. On the Linux test host a share after the build compiles nothing and
+  ends in 69 s.
+- **On Windows a closed transport ends the reading of a connection whose
+  peer holds it open (`zerodds-transport-tcp`, the stream transport of
+  `zerodds-transport-uds`).** The shutdown of the connection ends a `recv`
+  waiting on it on Linux and macOS, not on Windows: the close waited on the
+  reading thread, the shutdown of a runtime whose peer held its TCP
+  connection did not end within 25 s (`tcp_4_1` and `tcp_4_3` of
+  `zerodds-dcps`), nor the drop of a UDS stream transport with a
+  connection of another (five tests of `zerodds-transport-uds`); measured
+  on the Windows CI runner, pipeline 10050. A read there waits with `WSAPoll`, at most
+  50 ms at a time, and looks at the closed flag in between; a receive
+  timeout would leave the connection in an indeterminate state
+  (Microsoft, `setsockopt`). A send of the UDS stream transport on
+  Windows looks first whether the peer has closed its connection and
+  connects anew if so: the write after the close succeeded there and the
+  frame was lost (`uds_3_5_stream_reconnects_after_the_peer_restarts`).
+  A UDS base directory created by a process
+  that runs as `SYSTEM` gets one ACL entry, `D:P(A;OICI;FA;;;SY)`, as
+  Windows kept anyway (the test expected two equal entries; weekly
+  pipeline 9999, jobs 238929, 238930 and 238934).
 - **`zerodds-time-service` with the feature `serve` compiles again**: the
   pseudo-operations of `CORBA::Object` get the request body as an
   `AlignedBody` at its offset, as `object_ops::dispatch_with_bases` takes it

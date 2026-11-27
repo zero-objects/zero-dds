@@ -162,12 +162,10 @@ fn workdir(leaf: &str) -> TestDir {
     TestDir(dir)
 }
 
+/// A port for the broker (Mosquitto takes it from its file), of
+/// [`zerodds_test_domains::free_tcp_port`].
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 struct Broker {

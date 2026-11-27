@@ -507,8 +507,10 @@ per call that ended with `peer`, `service`, `method`, `dds_topic`, `bytes`,
 with `grpc_message`; a call the client reset and one whose connection ends
 before its status as CANCELLED),
 `crates/grpc-bridge/src/bridge_daemon/catalog.rs::log_http` (the `http` line
-of the IDL endpoint over HTTP/1.1 and h2). Every other event takes the same
-path.
+of the IDL endpoint over HTTP/1.1 and h2),
+`crates/grpc-bridge/src/bridge_daemon/connection.rs::serve` (`listening` with
+the address the listener bound; with port 0 in `grpc.bind` the port the
+system picked). Every other event takes the same path.
 
 **Tests:** `crates/grpc-bridge/src/bridge_daemon/log.rs::tests::grpcbridge_8_1_a_call_line_carries_the_fields_of_the_spec`,
 `::grpcbridge_8_1_a_failed_call_is_warn_with_its_message`,
@@ -520,7 +522,10 @@ path.
 `::grpcbridge_8_1_log_level_warn_hides_ok_calls_and_the_flag_wins_over_the_file`,
 `::grpcbridge_8_1_a_reset_call_and_a_closed_connection_are_cancelled`,
 `::grpcbridge_8_1_a_request_to_the_idl_endpoint_is_an_http_line`;
-`crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_2_log_level_filters_the_lines`.
+`crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_2_log_level_filters_the_lines`;
+`crates/grpc-bridge/tests/daemon_limits_e2e.rs::grpcbridge_3_the_limits_of_the_file_reach_the_wire`
+(the listener and the admin endpoint on port 0, the ports from `listening`
+and `admin_endpoint`).
 
 **Status:** done — against the daemon: a Publish and a call to a service
 that is not mapped give exactly two `rpc` lines on stdout, every line on

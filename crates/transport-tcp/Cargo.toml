@@ -39,6 +39,11 @@ socket2 = { workspace = true }
 # from libc.
 libc = { workspace = true }
 
+# Windows: `WSAPoll` before a read of an accepted connection, so that the
+# read sees `close` (`UntilClosed`).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Networking_WinSock"] }
+
 [dev-dependencies]
 zerodds-rtps = { path = "../rtps" }
 zerodds-transport = { path = "../transport" }

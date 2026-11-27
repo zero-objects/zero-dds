@@ -81,6 +81,9 @@ zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security",
 rustls = { workspace = true, optional = true }
 signal-hook = { workspace = true, optional = true }
 
+[dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }
+
 # SIGTERM-graceful shutdown in tests/naming_svc_e2e.rs's DaemonGuard
 # (otherwise SIGKILL -> corrupt .profraw under cargo-llvm-cov).
 [target.'cfg(unix)'.dev-dependencies]

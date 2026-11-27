@@ -43,11 +43,7 @@ impl Drop for Broker {
 
 impl Broker {
     fn start(label: &str) -> Self {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let port = zerodds_test_domains::free_tcp_port();
         // Under the system temp directory: Mosquitto started as root drops
         // to its own user, which cannot enter a checkout under /root.
         let dir = std::env::temp_dir().join(format!(

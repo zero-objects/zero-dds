@@ -1970,11 +1970,7 @@ fn wsbridge_8_1_the_binary_logs_json_lines_for_a_frame_exchange() {
     drop(child);
 
     // `log_level: error`: the same exchange writes no line.
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = zerodds_test_domains::free_tcp_port();
     let addr = format!("127.0.0.1:{port}");
     let (child, rx) = spawn_daemon("ws-log-error", &daemon_yaml(lease.id(), &addr, "error"));
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -2009,11 +2005,7 @@ fn wsbridge_8_1_the_binary_logs_json_lines_for_a_frame_exchange() {
 fn wsbridge_8_1_a_sighup_reload_applies_a_changed_log_level() {
     use std::process::Command;
     let lease = zerodds_test_domains::lease_domain();
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = zerodds_test_domains::free_tcp_port();
     let addr = format!("127.0.0.1:{port}");
     let name = "ws-log-reload";
     let file = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))

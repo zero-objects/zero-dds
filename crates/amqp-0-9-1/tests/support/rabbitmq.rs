@@ -19,7 +19,6 @@
 #[path = "child_lines.rs"]
 mod child_lines;
 
-use std::net::TcpListener;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -50,10 +49,7 @@ pub struct RabbitNode {
 }
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .expect("a free port")
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 /// Where a node keeps its data: `/dev/shm` when it is a tmpfs with at

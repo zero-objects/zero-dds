@@ -46,6 +46,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use zerodds_dcps::runtime::{DcpsRuntime, UserReaderConfig, UserSample, UserWriterConfig};
 
+#[path = "support/writer_match.rs"]
+mod writer_match;
+
 use zerodds_hpack::{Encoder as HpackEncoder, HeaderField};
 use zerodds_http2::{Flags, FrameHeader, FrameType, encode_frame};
 
@@ -103,12 +106,13 @@ fn terminate_child_gracefully(child: &mut Child) {
     }
 }
 
-fn spawn_daemon(port: u16) -> DaemonGuard {
-    let bind = format!("127.0.0.1:{port}");
+/// A daemon of this build on port 0, and the port it names in its
+/// `listening` line.
+fn spawn_daemon() -> (DaemonGuard, u16) {
     let child = Command::new(daemon_binary())
         .args([
             "--bind",
-            &bind,
+            "127.0.0.1:0",
             "--reflection",
             "--topic",
             "Chat::Message=ChatMessageStream",
@@ -116,20 +120,27 @@ fn spawn_daemon(port: u16) -> DaemonGuard {
             "5000",
         ])
         .stderr(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .spawn()
         .expect("spawn daemon");
-    // Wait for "listening" log.
-    std::thread::sleep(Duration::from_millis(300));
-    DaemonGuard { child }
+    let mut guard = DaemonGuard { child };
+    let port = listening_port(&mut guard.child);
+    (guard, port)
 }
 
-fn pick_port() -> u16 {
-    // Bind ephemeral once to find a free port, then immediately drop.
-    let s = std::net::TcpListener::bind("127.0.0.1:0").expect("ephemeral bind");
-    let p = s.local_addr().expect("addr").port();
-    drop(s);
-    p
+/// The port of the `listening` line on `child`'s stdout (spec §8.1: the
+/// JSON log). The rest of the log is drained, or the daemon blocks once
+/// the pipe fills.
+fn listening_port(child: &mut Child) -> u16 {
+    let stdout = child.stdout.take().expect("a piped stdout");
+    let mut lines = BufReader::new(stdout).lines();
+    let port = lines
+        .by_ref()
+        .take(40)
+        .map_while(Result::ok)
+        .find_map(|line| zerodds_test_domains::logged_port(&line, "listening", "addr"));
+    std::thread::spawn(move || lines.for_each(drop));
+    port.expect("the daemon did not report its listener")
 }
 
 fn connect(port: u16) -> TcpStream {
@@ -171,8 +182,7 @@ fn write_frame(
 
 #[test]
 fn grpcbridge_2_http2_roundtrip_publish_topic() {
-    let port = pick_port();
-    let _guard = spawn_daemon(port);
+    let (_guard, port) = spawn_daemon();
     let mut stream = connect(port);
 
     // 1) Send preface + empty SETTINGS (client-side).
@@ -272,8 +282,7 @@ fn grpcbridge_2_http2_roundtrip_publish_topic() {
 
 #[test]
 fn grpcbridge_2_http2_unknown_service_yields_status_5() {
-    let port = pick_port();
-    let _guard = spawn_daemon(port);
+    let (_guard, port) = spawn_daemon();
     let mut stream = connect(port);
 
     stream.write_all(PREFACE).expect("preface");
@@ -357,16 +366,15 @@ fn require_grpcurl() {
     );
 }
 
-/// A daemon of this build on `domain` and a port of its own, `Chat::Message`
-/// mapped both ways, with `extra` arguments; ready once it logged its
-/// listener (a probing connect would reach it as a connection without a
-/// preface).
+/// A daemon of this build on `domain` and port 0, `Chat::Message` mapped
+/// both ways, with `extra` arguments; ready once it logged its listener and
+/// the port it bound (a probing connect would reach it as a connection
+/// without a preface).
 fn spawn_on(domain: i32, extra: &[&str]) -> (DaemonGuard, String) {
-    let port = pick_port();
-    let mut child = Command::new(daemon_binary())
+    let child = Command::new(daemon_binary())
         .args([
             "--bind",
-            &format!("127.0.0.1:{port}"),
+            "127.0.0.1:0",
             "--domain",
             &domain.to_string(),
             "--topic",
@@ -379,21 +387,9 @@ fn spawn_on(domain: i32, extra: &[&str]) -> (DaemonGuard, String) {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn zerodds-grpc-bridged");
-    // Spec §8.1: the JSON log is on stdout.
-    let stdout = child.stdout.take().expect("a piped stdout");
-    let mut lines = BufReader::new(stdout).lines();
-    let listening = lines
-        .by_ref()
-        .take(40)
-        .map_while(Result::ok)
-        .find(|line| line.contains("\"event\":\"listening\""));
-    assert!(
-        listening.is_some(),
-        "the daemon did not report its listener on 127.0.0.1:{port}"
-    );
-    // Keep draining, or the daemon blocks once the pipe fills.
-    std::thread::spawn(move || lines.for_each(drop));
-    (DaemonGuard { child }, format!("127.0.0.1:{port}"))
+    let mut guard = DaemonGuard { child };
+    let port = listening_port(&mut guard.child);
+    (guard, format!("127.0.0.1:{port}"))
 }
 
 /// A DDS participant of the test on `domain`.
@@ -411,10 +407,11 @@ fn dds_peer(domain: i32) -> Arc<DcpsRuntime> {
     .unwrap()
 }
 
-/// The reliable DataReader of `TOPIC` on `rt` with the bridge's type name,
-/// once it matched the daemon's DataWriter.
+/// The reliable DataReader of `TOPIC` on `rt` with the bridge's type name.
+/// Whether the daemon's DataWriter matched it shows a sample that arrives
+/// (`writer_match::publish_until_received`).
 fn dds_reader(rt: &DcpsRuntime) -> mpsc::Receiver<UserSample> {
-    let (reader, rx) = rt
+    let (_reader, rx) = rt
         .register_user_reader(UserReaderConfig {
             topic_name: TOPIC.into(),
             type_name: "ZeroDdsBridgeBytes".into(),
@@ -422,15 +419,31 @@ fn dds_reader(rt: &DcpsRuntime) -> mpsc::Receiver<UserSample> {
             ..Default::default()
         })
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while rt.user_reader_matched_count(reader) < 1 {
-        assert!(
-            Instant::now() < deadline,
-            "the daemon's DataWriter did not match"
-        );
-        rt.wait_match_event(Duration::from_millis(200));
-    }
     rx
+}
+
+/// A `PublishOne` by grpcurl of a small sample (`CDR_LE`), through the
+/// daemon's reflection or, given, the protoset `protoset`; until the
+/// daemon's DataWriter has matched `rx` (`writer_match`). Returns the calls.
+fn grpcurl_until_received(
+    rx: &mpsc::Receiver<UserSample>,
+    addr: &str,
+    protoset: Option<&str>,
+) -> i64 {
+    let sample = format!(
+        "{{\"cdrPayload\":\"{}\"}}",
+        B64.encode([0x00, 0x01, 0x00, 0x00, b'h', b'i'])
+    );
+    writer_match::publish_until_received(rx, || {
+        let mut args = vec!["-plaintext"];
+        if let Some(protoset) = protoset {
+            args.extend(["-protoset", protoset]);
+        }
+        let method = format!("{SERVICE}/PublishOne");
+        args.extend(["-d", &sample, addr, &method]);
+        grpcurl(&args);
+    })
+    .calls
 }
 
 /// The next Alive sample of `rx`: its representation identifier and its
@@ -486,6 +499,7 @@ fn grpcbridge_12_2_grpcurl_publish_reaches_the_dds_reader_byte_exact() {
     let (_daemon, addr) = spawn_on(lease.id(), &["--reflection"]);
     let dds = dds_peer(lease.id());
     let rx = dds_reader(&dds);
+    let calls = grpcurl_until_received(&rx, &addr, None);
     let (first, second) = (every_octet(0), every_octet(0x80));
     let cdr = |body: &[u8]| {
         let mut c = vec![0x00, 0x07, 0x00, 0x00];
@@ -504,7 +518,8 @@ fn grpcbridge_12_2_grpcurl_publish_reaches_the_dds_reader_byte_exact() {
         &addr,
         &format!("{SERVICE}/Publish"),
     ]);
-    assert!(ack.contains("\"sequenceNumber\": \"2\""), "{ack}");
+    let second_number = format!("\"sequenceNumber\": \"{}\"", calls + 2);
+    assert!(ack.contains(&second_number), "{ack}");
     assert_eq!(next_alive(&rx), ([0x00, 0x07], first));
     assert_eq!(next_alive(&rx), ([0x00, 0x07], second));
     dds.shutdown();
@@ -648,6 +663,7 @@ fn grpcbridge_12_2_grpcurl_describe_round_trips_the_service_through_reflection()
     );
     let dds = dds_peer(lease.id());
     let rx = dds_reader(&dds);
+    let calls = grpcurl_until_received(&rx, &addr, Some(protoset));
     let body = every_octet(0x5a);
     let mut cdr = vec![0x00, 0x01, 0x00, 0x00];
     cdr.extend_from_slice(&body);
@@ -660,7 +676,8 @@ fn grpcbridge_12_2_grpcurl_describe_round_trips_the_service_through_reflection()
         &addr,
         &format!("{SERVICE}/PublishOne"),
     ]);
-    assert!(ack.contains("\"sequenceNumber\": \"1\""), "{ack}");
+    let number = format!("\"sequenceNumber\": \"{}\"", calls + 1);
+    assert!(ack.contains(&number), "{ack}");
     assert_eq!(next_alive(&rx), ([0x00, 0x01], body));
     dds.shutdown();
     let _ = std::fs::remove_dir_all(&dir);

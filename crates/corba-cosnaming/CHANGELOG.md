@@ -2,6 +2,14 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- `zerodds-naming-svc` binds `naming.bind` before it builds its servant: with
+  port 0 the IORs of its contexts carried port 0, now the port the system
+  picked. `listening_ssliop` names the bound SSLIOP address.
+
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial release materialization of the `zerodds-corba-cosnaming` crate.

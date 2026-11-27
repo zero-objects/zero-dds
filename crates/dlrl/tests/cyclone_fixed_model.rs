@@ -173,9 +173,18 @@ fn dlrl_8_1_4_5_a_fixed_cyclone_model_is_read_and_written_as_objects() {
     // Cyclone discovers on the specification's SPDP group: the default
     // configuration, with fast discovery.
     let domain = zerodds_test_domains::unique_domain();
+    // The `idlc` of Cyclone 11.0.1 writes the key members SITE and NUM
+    // without IS_MUST_UNDERSTAND (member flags 0x21, the Cache's type 0x31
+    // by DDS-XTypes 1.3 §7.2.2.4.4.4.8), and Cyclone's reader announces no
+    // TypeConsistencyEnforcement, which §7.6.3.4.1 reads as
+    // DISALLOW_TYPE_COERCION: with the default `xtypes.key_must_understand:
+    // flagged` the two minimal types are not equivalent and the Cache's
+    // DataWriter does not match the reader (OPEN-ITEMS 59). `implied` takes
+    // the bit from IS_KEY, as the OMG group `rtps-cyclone-master` does.
     let cfg = RuntimeConfig {
         tick_period: Duration::from_millis(20),
         spdp_period: Duration::from_millis(100),
+        key_must_understand: zerodds_types::assignability::KeyMustUnderstand::ImpliedByKey,
         ..RuntimeConfig::default()
     };
     let participant = DomainParticipantFactory::instance()

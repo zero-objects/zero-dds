@@ -27,3 +27,4 @@ prometheus-server = ["std"]
 zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false, features = ["std"] }
 
 [dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }

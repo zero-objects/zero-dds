@@ -42,7 +42,6 @@
     missing_docs
 )]
 
-use std::net::{Ipv4Addr, TcpListener};
 use std::time::{Duration, Instant};
 
 use zerodds_dcps::interop::ShapeType;
@@ -58,10 +57,7 @@ mod cross_vendor;
 
 /// A TCP port the system just gave out and that is free again.
 fn free_port() -> u16 {
-    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .and_then(|listener| listener.local_addr())
-        .expect("a free TCP port")
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 /// A participant that has TCP alone towards another process, in the

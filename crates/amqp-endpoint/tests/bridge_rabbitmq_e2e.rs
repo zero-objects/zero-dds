@@ -1456,11 +1456,7 @@ fn write_pki(dir: &std::path::Path, clients: &[&str]) {
 /// node, `zd-stranger` has a certificate of the same CA and no user.
 /// Returns the node and its TLS port.
 fn rabbit_with_external() -> (RabbitNode, u16) {
-    let tls_port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let tls_port = zerodds_test_domains::free_tcp_port();
     let node = RabbitNode::start_with(&["rabbitmq_auth_mechanism_ssl"], |dir| {
         write_pki(dir, &["zd-bridge", "zd-stranger"]);
         format!(

@@ -849,7 +849,8 @@ Auf Windows ist der UDS-Transport daher der Stream-Modus von §3.5
 Wurzel eines Laufwerks, und der Pfad der Socket-Datei muss in
 `sun_path` (108 Oktette) passen. Ein Basis-Verzeichnis, das der Bind
 anlegt, erhält eine geschützte ACL mit Vollzugriff für den Benutzer des
-Prozesses und `SYSTEM` (`D:P(A;OICI;FA;;;<SID>)(A;OICI;FA;;;SY)`), die
+Prozesses und `SYSTEM` (`D:P(A;OICI;FA;;;<SID>)(A;OICI;FA;;;SY)`; ein
+Prozess, der als `SYSTEM` läuft, hat nur den zweiten Eintrag), die
 Socket-Dateien darin erben sie: das Verzeichnis ist privat wie `0700`
 unter Unix (§2.2). Ein bestehendes Verzeichnis behält seine ACL; ein
 Reparse-Point (symbolischer Link, Junction) wird abgelehnt.
@@ -858,8 +859,14 @@ Reparse-Point (symbolischer Link, Junction) wird abgelehnt.
 der Betreiber mit einer ACL vor. Die Fehlerklassen sind die von §4.3; ein
 abgelaufener `SO_SNDTIMEO` (`WSAETIMEDOUT`) gilt als voller Sendepuffer,
 und die Verbindung wird danach nicht weiter benutzt, weil Microsoft ihren
-Zustand nach einem Timeout als unbestimmt beschreibt. Named Pipes sind
-nicht Teil dieser Spec.
+Zustand nach einem Timeout als unbestimmt beschreibt. Das Schließen des
+Transports fährt die Verbindungen herunter, was unter Windows ein Lesen,
+das auf eine wartet, nicht beendet; ein Lesen wartet dort mit `WSAPoll`,
+höchstens `ACCEPT_POLL` am Stück, und sieht dazwischen nach dem
+Schließ-Flag. Ein Schreiben, nachdem die Gegenseite geschlossen hat,
+gelingt unter Windows; ein Senden sieht dort zuerst nach, ob die
+Gegenseite geschlossen hat, und verbindet dann neu (§3.5). Named Pipes
+sind nicht Teil dieser Spec.
 
 **Repo:** `crates/transport-uds/src/lib.rs` (`#![cfg(any(unix,
 windows))]`; Datagramm-Transport, Modes und `abstract_dgram` unter
@@ -902,7 +909,8 @@ Benutzers, die Socket-Datei erbt Vollzugriff für Benutzer und `SYSTEM`),
 `transport.uds.bind_failed` mit `mode` `datagram` und dem Grund, im
 `base_dir` entsteht nichts),
 `crates/dcps/tests/contract_transport_uds.rs::uds_3_5_a_refused_stream_bind_is_reported_with_its_mode`
-(auf Windows über die Prüfung des Basis-Verzeichnisses von `windows.rs`),
+(auf Windows über die Prüfung des Basis-Verzeichnisses von
+`crates/transport-uds/src/windows.rs`),
 `crates/dcps/tests/runtime_config_layering.rs::uds_5_1_the_uds_directory_modes_and_datagram_limit_are_settings`
 (Default `stream` auf Windows; `/run/zerodds-uds` gilt dort als Pfad ab
 der Wurzel); die Tests von `src/stream.rs` (§3.5) laufen im Windows-Job

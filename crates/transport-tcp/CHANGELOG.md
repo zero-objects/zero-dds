@@ -5,6 +5,10 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows `close` ends the reading of an accepted connection whose peer holds it open: a read waits with `WSAPoll`, at most 50 ms at a time, and looks at the closed flag in between (`UntilClosed`). The shutdown of the connection did not end a `recv` waiting on it there, and `serve` waited on the reading thread (the shutdown of a runtime did not end within 25 s, `tcp_4_1` and `tcp_4_3` of `zerodds-dcps` on the Windows CI runner). On every platform a read after `close` is the end of the connection. The crate depends on `windows-sys` (`Win32_Networking_WinSock`) on Windows.
+
 ### Changed
 
 - The TCP locator kinds are `0x01F0_0004` / `0x01F0_0005` by default (see `zerodds-rtps`); `max_message_size` has a test.

@@ -53,23 +53,16 @@ impl Drop for DaemonGuard {
     }
 }
 
-fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").expect("ephemeral bind");
-    let p = s.local_addr().expect("addr").port();
-    drop(s);
-    p
-}
-
 /// Starts the daemon on a leased DDS domain (the host's share of the band,
-/// `zerodds-test-domains`) and returns once it reports `listening`, after its
-/// DDS participant started (spec §9.1).
-fn spawn_daemon(port: u16) -> DaemonGuard {
+/// `zerodds-test-domains`) and port 0, and returns once it reports
+/// `listening`, after its DDS participant started (spec §9.1), with the
+/// port that line names.
+fn spawn_daemon() -> (DaemonGuard, u16) {
     let domain = zerodds_test_domains::lease_domain();
-    let bind = format!("127.0.0.1:{port}");
     let mut child = Command::new(daemon_binary())
         .args([
             "--bind",
-            &bind,
+            "127.0.0.1:0",
             "--domain",
             &domain.id().to_string(),
             "--topic",
@@ -92,18 +85,21 @@ fn spawn_daemon(port: u16) -> DaemonGuard {
             let _ = tx.send(line);
         }
     });
+    let guard = DaemonGuard {
+        child,
+        _domain: domain,
+    };
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(left) {
-            Ok(line) if line.contains("\"event\":\"listening\"") => break,
-            Ok(_) => {}
+            Ok(line) => {
+                if let Some(port) = zerodds_test_domains::logged_port(&line, "listening", "addr") {
+                    return (guard, port);
+                }
+            }
             Err(e) => panic!("the daemon did not report listening: {e:?}"),
         }
-    }
-    DaemonGuard {
-        child,
-        _domain: domain,
     }
 }
 
@@ -351,8 +347,7 @@ fn next_message(stream: &mut TcpStream) -> Vec<u8> {
 
 #[test]
 fn grpcbridge_4_3_dds_publish_reaches_every_subscribe_stream() {
-    let port = pick_port();
-    let _daemon = spawn_daemon(port);
+    let (_daemon, port) = spawn_daemon();
     let mut first = open_subscribe(port);
     let mut second = open_subscribe(port);
 
@@ -381,8 +376,7 @@ fn grpcbridge_4_3_dds_publish_reaches_every_subscribe_stream() {
 /// XCDR version and the byte order alone (`CDR2_BE`, `00 06`).
 #[test]
 fn xtypes_7_6_3_1_2_a_stream_message_carries_the_header_the_sample_came_under() {
-    let port = pick_port();
-    let _daemon = spawn_daemon(port);
+    let (_daemon, port) = spawn_daemon();
     let mut stream = open_subscribe(port);
     let octets: Vec<u8> = (0..30)
         .map(|i| {

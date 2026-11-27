@@ -5,6 +5,12 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows the close of the stream transport ends the reading of a connection whose peer holds it open: a read without a deadline waits with `WSAPoll`, at most `ACCEPT_POLL` (50 ms) at a time, and looks at the closed flag in between. The shutdown of the connection did not end a `recv` waiting on it there, and the close waited on the reading thread (five stream tests on the Windows CI runner past 25 s).
+- On Windows a send of the stream transport looks first whether the peer has closed its outgoing connection (`WSAPoll` without waiting, then a peek) and connects anew if so (§3.5). The write after the peer closed succeeded there, and the frame was lost; on Linux and macOS that write fails with `EPIPE`.
+- A `base_dir` created by a process that runs as `SYSTEM` gets the ACL `D:P(A;OICI;FA;;;SY)`: its user is `SYSTEM`, and Windows kept one of the two equal entries anyway.
+
 ### Added
 
 - `Transport::max_message_size` is the datagram limit of the socket (DDSI-RTPS 2.5 §8.4.14.1).

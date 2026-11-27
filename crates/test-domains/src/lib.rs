@@ -770,6 +770,144 @@ pub fn unique_domain() -> i32 {
     domain
 }
 
+// ---------------------------------------------------------------------
+// TCP ports for a test's peers
+// ---------------------------------------------------------------------
+
+/// TCP ports this process has handed out, so that two tests of one process
+/// never get the same one.
+static TCP_PORTS_HERE: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
+
+/// `N` distinct TCP ports of `127.0.0.1` nothing listened on a moment ago,
+/// for a peer a test starts that takes its port from its command line or
+/// its file: a broker, a foreign ORB, a daemon whose start order puts the
+/// port into what it publishes before it binds.
+///
+/// The system picks each port (a bind to port 0), and every probe socket
+/// stays open until all `N` are picked, so that the system cannot hand one
+/// port out twice. A helper that closed its probe before the next pick did
+/// gave `zerodds-grpc-bridged` its admin endpoint and its gRPC listener on
+/// one port (GitHub run 45424496317: `bind 127.0.0.1:33415: Address
+/// already in use`). A port this process handed out before is not handed
+/// out again.
+///
+/// What this cannot exclude: another process binding the port between the
+/// return and the peer's bind. A daemon that can bind port 0 and names its
+/// bound port in its log needs no port from here.
+pub fn free_tcp_ports<const N: usize>() -> [u16; N] {
+    let mut handed = TCP_PORTS_HERE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut ports = [0u16; N];
+    let mut found = 0;
+    // Held to the end: a probe that closed could come back as the next pick.
+    let mut probes = Vec::new();
+    while found < N {
+        // zerodds-lint: allow no_panic_in_safe — a host where this process
+        // cannot bind loopback has no port to hand out.
+        assert!(
+            probes.len() < N + 4096,
+            "no {N} TCP ports on 127.0.0.1 this process has not handed out yet"
+        );
+        // zerodds-lint: allow no_panic_in_safe — see above.
+        let probe = std::net::TcpListener::bind(("127.0.0.1", 0))
+            .unwrap_or_else(|why| panic!("bind 127.0.0.1:0: {why}"));
+        // zerodds-lint: allow no_panic_in_safe — see above.
+        let port = probe
+            .local_addr()
+            .unwrap_or_else(|why| panic!("local address of 127.0.0.1:0: {why}"))
+            .port();
+        if handed.insert(port) {
+            ports[found] = port;
+            found += 1;
+        }
+        probes.push(probe);
+    }
+    ports
+}
+
+/// The port of the `field` address (`"field":"host:port"`) on the first
+/// line of `log` whose `event` is `event`: where a daemon of this
+/// workspace that was given port 0 names the port it bound. `None` while
+/// that line is not there.
+pub fn logged_port(log: &str, event: &str, field: &str) -> Option<u16> {
+    let tag = format!("\"event\":\"{event}\"");
+    let key = format!("\"{field}\":\"");
+    log.lines()
+        .filter(|line| line.contains(&tag))
+        .find_map(|line| {
+            let addr = line.split(&key).nth(1)?.split('"').next()?;
+            addr.rsplit(':').next()?.parse().ok()
+        })
+}
+
+/// One port of [`free_tcp_ports`].
+pub fn free_tcp_port() -> u16 {
+    let [port] = free_tcp_ports::<1>();
+    port
+}
+
+/// Calls `publish` (one call, one sample of a DataWriter of another
+/// participant) until a sample reaches the test's reader `rx`, then takes the
+/// samples of the later calls, so that `rx` holds none of them. Returns the
+/// number of calls and what `alive` kept of the first sample that arrived.
+/// `alive` gives the source sequence number of a sample and what the test
+/// keeps of it, `None` for an item that is no sample (a lifecycle change).
+///
+/// The test's reader matches the DataWriter when the writer's SEDP
+/// publication reaches it; the DataWriter matches the reader when the
+/// reader's SEDP subscription reaches the writer's participant
+/// (DDSI-RTPS 2.5 §8.5.4), which can be later, so the reader's match count
+/// says nothing about the writer's. A VOLATILE DataWriter sends a sample
+/// only to the readers it matched: a sample that arrives shows that it
+/// matched the reader. Measured: in merge pipeline 10029 (job 239344) the
+/// reader of a `zerodds-grpc-bridge` test had matched the daemon's
+/// DataWriter, the DataWriter had not matched the reader, and the daemon's
+/// write needed no acknowledgement. A DataWriter numbers its samples from
+/// 1, one per call, so the sample of the last call carries the number of
+/// calls, and the next sample it writes the number `calls + 1`.
+///
+/// A second call is made also after the 10 s: one call of a slow client can
+/// take longer.
+pub fn publish_until_received<S, T>(
+    rx: &std::sync::mpsc::Receiver<S>,
+    alive: impl Fn(S) -> Option<(i64, T)>,
+    mut publish: impl FnMut(),
+) -> (i64, T) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut calls = 0i64;
+    let (mut seen, first) = loop {
+        // zerodds-lint: allow no_panic_in_safe — a test helper: a writer that never matches fails the test
+        assert!(
+            calls < 2 || std::time::Instant::now() < deadline,
+            "no sample of {calls} calls reached the reader"
+        );
+        publish();
+        calls += 1;
+        if let Some(sample) = rx
+            .recv_timeout(Duration::from_millis(200))
+            .ok()
+            .and_then(&alive)
+        {
+            break sample;
+        }
+    };
+    while seen < calls {
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(item) => {
+                if let Some((number, _)) = alive(item) {
+                    seen = number;
+                }
+            }
+            // zerodds-lint: allow no_panic_in_safe — a test helper: the samples of the later calls are missing
+            Err(_) => panic!(
+                "the samples of the later calls up to {calls} did not come, the last was {seen}"
+            ),
+        }
+    }
+    (calls, first)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -926,5 +1064,57 @@ mod tests {
         );
         assert!(!claim_in(&dir, 215), "this process holds it now");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn logged_port_reads_the_address_of_the_named_event() {
+        let log = "{\"event\":\"startup\",\"bind\":\"127.0.0.1:0\"}\n\
+                   {\"event\":\"admin_endpoint\",\"addr\":\"127.0.0.1:41001\"}\n\
+                   {\"event\":\"listening\",\"addr\":\"[::1]:41002\"}\n";
+        assert_eq!(logged_port(log, "listening", "addr"), Some(41002));
+        assert_eq!(logged_port(log, "admin_endpoint", "addr"), Some(41001));
+        assert_eq!(logged_port(log, "startup", "addr"), None);
+        assert_eq!(logged_port(log, "shutdown", "addr"), None);
+    }
+
+    /// The calls go on until a sample arrives; the samples of the later
+    /// calls are taken, past an item that is no sample, and the count is the
+    /// calls made: calls 1 and 2 are lost, the sample of call 2 arrives
+    /// only after call 3.
+    #[test]
+    fn publish_until_received_counts_the_calls_and_takes_the_later_samples() {
+        let (tx, rx) = std::sync::mpsc::channel::<(bool, i64)>();
+        let mut calls = 0i64;
+        let (count, first) = publish_until_received(
+            &rx,
+            |(alive, number)| alive.then_some((number, number)),
+            || {
+                calls += 1;
+                if calls == 3 {
+                    tx.send((true, 2)).unwrap();
+                    tx.send((false, 0)).unwrap();
+                    tx.send((true, 3)).unwrap();
+                }
+            },
+        );
+        assert_eq!((count, first), (3, 2));
+        assert!(rx.try_recv().is_err(), "a sample of the calls is left");
+    }
+
+    #[test]
+    fn free_tcp_ports_are_distinct_within_a_call_and_across_calls() {
+        let first: [u16; 3] = free_tcp_ports();
+        let second: [u16; 3] = free_tcp_ports();
+        let single = free_tcp_port();
+        let mut all: Vec<u16> = first.iter().chain(&second).copied().collect();
+        all.push(single);
+        let distinct: BTreeSet<u16> = all.iter().copied().collect();
+        assert_eq!(distinct.len(), all.len(), "{all:?}");
+        assert!(!distinct.contains(&0), "{all:?}");
+        for port in all {
+            // Free a moment ago, and nobody here took it since.
+            std::net::TcpListener::bind(("127.0.0.1", port))
+                .unwrap_or_else(|why| panic!("bind 127.0.0.1:{port}: {why}"));
+        }
     }
 }

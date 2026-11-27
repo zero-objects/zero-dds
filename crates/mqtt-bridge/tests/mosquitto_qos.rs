@@ -68,12 +68,10 @@ fn workdir(leaf: &str) -> PathBuf {
     dir
 }
 
+/// A port for the broker (Mosquitto takes it from its file), of
+/// [`zerodds_test_domains::free_tcp_port`].
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    zerodds_test_domains::free_tcp_port()
 }
 
 struct Broker(Child);

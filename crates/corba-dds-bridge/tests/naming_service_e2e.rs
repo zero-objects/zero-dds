@@ -81,11 +81,56 @@ fn workspace_target_dir() -> PathBuf {
         .to_path_buf()
 }
 
+/// The bridge's ports: its start order (spec §9.1) has it name its port in
+/// the GUID of its participant before it binds, so it gets a port of
+/// [`zerodds_test_domains::free_tcp_port`], not port 0.
 fn pick_port() -> u16 {
-    let s = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
-    let p = s.local_addr().expect("addr").port();
-    drop(s);
-    p
+    zerodds_test_domains::free_tcp_port()
+}
+
+/// `zerodds-naming-svc` with `args`, its IIOP listener on port 0, once it
+/// logged its listeners: the IIOP port it bound, and with `ssliop` the
+/// SSLIOP port (`--ssliop-bind` in `args`, on port 0 too).
+fn spawn_naming_svc(args: &[&str], ssliop: bool) -> (Guard, u16, u16) {
+    use std::io::BufRead as _;
+    let mut child = Command::new(naming_svc_binary())
+        .args(["--bind", "127.0.0.1:0"])
+        .args(args)
+        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("spawn zerodds-naming-svc");
+    let stderr = child.stderr.take().expect("a piped stderr");
+    let guard = Guard(child);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        // To the end: the daemon blocks on a full pipe.
+        for line in std::io::BufReader::new(stderr).lines() {
+            let Ok(line) = line else { break };
+            let _ = tx.send(line);
+        }
+    });
+    let (mut iiop, mut ssl) = (None, None);
+    let mut log = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while iiop.is_none() || (ssliop && ssl.is_none()) {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let line = rx
+            .recv_timeout(left)
+            .unwrap_or_else(|e| panic!("zerodds-naming-svc did not listen ({e:?}): {log:?}"));
+        iiop = iiop.or(zerodds_test_domains::logged_port(
+            &line,
+            "listening",
+            "addr",
+        ));
+        ssl = ssl.or(zerodds_test_domains::logged_port(
+            &line,
+            "listening_ssliop",
+            "addr",
+        ));
+        log.push(line);
+    }
+    (guard, iiop.unwrap_or_default(), ssl.unwrap_or_default())
 }
 
 fn connect(port: u16) -> TcpStream {
@@ -200,17 +245,8 @@ fn resolve_until_ready(stream: &mut TcpStream, object_key: &[u8], name: &[NameCo
 
 #[test]
 fn the_bridge_rebinds_into_a_real_naming_svc_and_unbinds_on_stop() {
-    let naming_bin = naming_svc_binary();
-    let naming_port = pick_port();
-    let naming_child = Command::new(&naming_bin)
-        .args(["--bind", &format!("127.0.0.1:{naming_port}")])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn zerodds-naming-svc");
-    let _naming_guard = Guard(naming_child);
     // The bridge rebinds at its start: the NameService listens first.
-    drop(connect(naming_port));
+    let (_naming_guard, naming_port, _) = spawn_naming_svc(&[], false);
 
     // 2. The bridge, configured to rebind into it.
     let bridge_bin = PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"));
@@ -287,7 +323,6 @@ fn the_bridge_rebinds_into_a_real_naming_svc_and_unbinds_on_stop() {
 /// via `corba.ior.naming_ssliop.ca_file`) and rebinds successfully.
 #[test]
 fn the_bridge_rebinds_over_ssliop() {
-    let naming_bin = naming_svc_binary();
     let dir = std::env::temp_dir().join(format!("zd-naming-ssliop-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -297,21 +332,18 @@ fn the_bridge_rebinds_over_ssliop() {
     std::fs::write(&cert_path, cert.cert.pem()).unwrap();
     std::fs::write(&key_path, cert.key_pair.serialize_pem()).unwrap();
 
-    let naming_iiop_port = pick_port();
-    let naming_ssliop_port = pick_port();
-    let naming_child = Command::new(&naming_bin)
-        .args(["--bind", &format!("127.0.0.1:{naming_iiop_port}")])
-        .args(["--ssliop-bind", &format!("127.0.0.1:{naming_ssliop_port}")])
-        .args(["--tls-cert", cert_path.to_str().unwrap()])
-        .args(["--tls-key", key_path.to_str().unwrap()])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn zerodds-naming-svc");
-    let _naming_guard = Guard(naming_child);
     // The bridge rebinds at its start: the NameService listens first.
-    drop(connect(naming_iiop_port));
-    drop(connect(naming_ssliop_port));
+    let (_naming_guard, naming_iiop_port, naming_ssliop_port) = spawn_naming_svc(
+        &[
+            "--ssliop-bind",
+            "127.0.0.1:0",
+            "--tls-cert",
+            cert_path.to_str().unwrap(),
+            "--tls-key",
+            key_path.to_str().unwrap(),
+        ],
+        true,
+    );
 
     let bridge_bin = PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"));
     let bridge_port = pick_port();
@@ -366,17 +398,8 @@ fn the_bridge_rebinds_over_ssliop() {
 /// `zerodds-naming-svc` and rebinds successfully.
 #[test]
 fn the_bridge_rebinds_through_a_rir_initial_reference() {
-    let naming_bin = naming_svc_binary();
-    let naming_port = pick_port();
-    let naming_child = Command::new(&naming_bin)
-        .args(["--bind", &format!("127.0.0.1:{naming_port}")])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn zerodds-naming-svc");
-    let _naming_guard = Guard(naming_child);
     // The bridge rebinds at its start: the NameService listens first.
-    drop(connect(naming_port));
+    let (_naming_guard, naming_port, _) = spawn_naming_svc(&[], false);
 
     let bridge_bin = PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"));
     let bridge_port = pick_port();

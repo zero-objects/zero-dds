@@ -10,9 +10,10 @@
 //!
 //! - a `base_dir` the bind creates gets a protected discretionary ACL with
 //!   full access for the process's user and for `SYSTEM` and nothing else
-//!   (`D:P(A;OICI;FA;;;<user SID>)(A;OICI;FA;;;SY)`): the directory is
-//!   private to the user, as `0700` makes it on Unix (§2.2), and the socket
-//!   files inherit that ACL;
+//!   (`D:P(A;OICI;FA;;;<user SID>)(A;OICI;FA;;;SY)`, the second entry alone
+//!   for a process that runs as `SYSTEM`): the directory is private to the
+//!   user, as `0700` makes it on Unix (§2.2), and the socket files inherit
+//!   that ACL;
 //! - an existing `base_dir` keeps its ACL; one that is a reparse point (a
 //!   symbolic link or a junction) is refused, as a symlink is on Unix;
 //! - `socket_mode` and a `base_dir_mode` other than
@@ -104,9 +105,19 @@ fn check_existing(meta: &fs::Metadata) -> io::Result<()> {
     Ok(())
 }
 
+/// The SID of `SYSTEM` (`S-1-5-18`; `SY` in SDDL).
+const SYSTEM_SID: &str = "S-1-5-18";
+
 /// The SDDL of the ACL a created `base_dir` gets: protected, full access
 /// for `user_sid` and `SYSTEM`, inherited by files and directories in it.
+/// A process that runs as `SYSTEM` (a service; the Windows CI runner) has
+/// one entry: its user is `SYSTEM`, and Windows keeps one of two equal
+/// entries (the directory read back as `D:P(A;OICI;FA;;;SY)`, weekly
+/// pipeline 9999, job 238934).
 pub(crate) fn private_dacl_sddl(user_sid: &str) -> String {
+    if user_sid == SYSTEM_SID || user_sid == "SY" {
+        return String::from("D:P(A;OICI;FA;;;SY)");
+    }
     format!("D:P(A;OICI;FA;;;{user_sid})(A;OICI;FA;;;SY)")
 }
 

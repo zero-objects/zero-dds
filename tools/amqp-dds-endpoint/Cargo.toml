@@ -46,6 +46,7 @@ zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../../crates/bridge-
 signal-hook = { workspace = true }
 
 [dev-dependencies]
+zerodds-test-domains = { path = "../../crates/test-domains" }
 # Self-signed cert generation for TLS tests.
 rcgen = "0.13"
 

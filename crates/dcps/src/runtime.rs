@@ -37421,11 +37421,7 @@ mod tests {
         let peer = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let peer_port = peer.local_addr().unwrap().port();
         // A free port for the runtime's listener.
-        let own_port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let own_port = zerodds_test_domains::free_tcp_port();
         let rt = DcpsRuntime::start(
             lease.id(),
             GuidPrefix::from_bytes([0xC4; 12]),
@@ -37717,11 +37713,7 @@ mod tests {
         );
 
         // One port for both address families.
-        let port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let port = zerodds_test_domains::free_tcp_port();
         let fixed = RuntimeConfig {
             tcp_port: port,
             user_transports: vec![UserTransportKind::TcpV4, UserTransportKind::TcpV6],

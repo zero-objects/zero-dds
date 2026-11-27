@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), version
 
 ### Fixed
 
+- The `listening` line names the address the listener bound, and the
+  catalog's fallback authority (spec §5.2) is that address: with port 0 in
+  `grpc.bind` both named port 0.
 - `Sample.cdr_payload` keeps the encapsulation header the sample came under
   (spec §4.4; DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 §7.6.3.1.2, Table 60). The
   daemon built it from the XCDR version and the byte order, so a

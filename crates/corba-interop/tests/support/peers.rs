@@ -191,10 +191,7 @@ pub fn scratch(name: &str) -> PathBuf {
 /// A TCP port nothing listens on now, for a daemon that takes its port as
 /// an argument.
 pub fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .expect("a free port")
+    zerodds_test_domains::free_tcp_port()
 }
 
 /// Like [`run_client`] for a client that must fail: the exit status is not

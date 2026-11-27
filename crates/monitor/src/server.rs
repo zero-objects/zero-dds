@@ -119,8 +119,7 @@ mod tests {
     use std::time::Duration;
 
     fn pick_free_port() -> u16 {
-        let s = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        s.local_addr().expect("addr").port()
+        zerodds_test_domains::free_tcp_port()
     }
 
     #[test]

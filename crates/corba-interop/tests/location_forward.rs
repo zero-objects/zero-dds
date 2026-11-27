@@ -51,11 +51,7 @@ fn call(conn: &IiopCorbaConnection, target: &ObjectReference) -> Result<String, 
 
 /// A port nothing listens on.
 fn dead_reference(key: &[u8]) -> ObjectReference {
-    let port = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = zerodds_test_domains::free_tcp_port();
     object_reference("IDL:Echo:1.0", "127.0.0.1", port, key)
 }
 
